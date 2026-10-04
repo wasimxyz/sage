@@ -4,11 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import {
-  blobPathname,
-  contentTypeFor,
-  listReportFiles,
-} from "./upload.ts";
+import { blobPathname, contentTypeFor, listReportFiles } from "./upload.ts";
 
 test("listReportFiles skips gitignore and hidden files", () => {
   const dir = mkdtempSync(join(tmpdir(), "sage-eval-reports-"));

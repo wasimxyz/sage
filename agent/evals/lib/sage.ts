@@ -168,8 +168,7 @@ async function postJson(
   body: { limit: number; query: string }
 ): Promise<unknown> {
   const embedding = embeddingFor(body.query);
-  const payload =
-    embedding === undefined ? body : { ...body, embedding };
+  const payload = embedding === undefined ? body : { ...body, embedding };
   const response = await sageFetch(pathname, {
     body: JSON.stringify(payload),
     headers: { "content-type": "application/json" },

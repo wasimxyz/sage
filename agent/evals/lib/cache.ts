@@ -18,6 +18,8 @@ import { fileURLToPath } from "node:url";
 import { evalDataRoot } from "./dataset.ts";
 import { ollamaBaseURL } from "./models.ts";
 
+const trailingSlashPattern = /\/$/;
+
 const checkpointAttempts = 5;
 const checkpointRetryMs = 200;
 
@@ -77,7 +79,10 @@ export function evalCacheDir(): string {
   return join(repoRoot(), "agent", "evals", ".cache", "dream");
 }
 
-export function evalCacheEntryDir(key: string, cacheDir = evalCacheDir()): string {
+export function evalCacheEntryDir(
+  key: string,
+  cacheDir = evalCacheDir()
+): string {
   return join(cacheDir, key);
 }
 
@@ -140,7 +145,7 @@ export async function loadCacheKeyParts(
 export async function fetchOllamaDigests(
   models: string[]
 ): Promise<Partial<Record<string, string>>> {
-  const url = `${ollamaBaseURL().replace(/\/$/, "")}/tags`;
+  const url = `${ollamaBaseURL().replace(trailingSlashPattern, "")}/tags`;
   const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
   if (!response.ok) {
     throw new Error(`Ollama tags returned HTTP ${response.status}.`);
@@ -193,7 +198,7 @@ export function snapshotDreamCache(options: SnapshotOptions): string {
     writeFileSync(join(tmp, "key.json"), `${JSON.stringify(stamp, null, 2)}\n`);
     renameSync(tmp, dest);
   } catch (error) {
-    rmSync(tmp, { recursive: true, force: true });
+    rmSync(tmp, { force: true, recursive: true });
     if (
       existsSync(join(dest, "app.db")) &&
       existsSync(join(dest, "manifest.json"))
@@ -205,9 +210,7 @@ export function snapshotDreamCache(options: SnapshotOptions): string {
   return dest;
 }
 
-export async function snapshotDreamCacheFromEnv(
-  key?: string
-): Promise<string> {
+export async function snapshotDreamCacheFromEnv(key?: string): Promise<string> {
   const parts = await loadCacheKeyParts();
   const resolvedKey =
     key !== undefined && key.length > 0 ? key : computeCacheKey(parts);
@@ -349,7 +352,9 @@ function requireDataDir(): string {
 }
 
 function requireSqlite(): typeof import("node:sqlite") {
-  return createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+  return createRequire(import.meta.url)(
+    "node:sqlite"
+  ) as typeof import("node:sqlite");
 }
 
 interface OllamaTagRow {

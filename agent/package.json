@@ -8,12 +8,14 @@
   },
   "scripts": {
     "build": "EVE_TELEMETRY_DISABLED=1 eve build",
+    "check": "ultracite check",
     "dev": "EVE_TELEMETRY_DISABLED=1 NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=\\\"$(pwd)/scripts/dev-auth-hook.ts\\\" --import=\\\"$(pwd)/agent/lib/workflow-guard-preload.ts\\\"\" eve dev --no-default-extensions",
-    "start": "EVE_TELEMETRY_DISABLED=1 eve start",
-    "test:world": "node --test --experimental-strip-types packages/world-encrypted-local/index.test.ts",
-    "test:scripts": "node --test --experimental-strip-types scripts/*.test.ts",
-    "test:evals": "node --test --experimental-strip-types evals/lib/*.test.ts",
     "eval": "EVE_TELEMETRY_DISABLED=1 eve eval --max-concurrency 1",
+    "fix": "ultracite fix",
+    "start": "EVE_TELEMETRY_DISABLED=1 eve start",
+    "test:evals": "node --test --experimental-strip-types evals/lib/*.test.ts",
+    "test:scripts": "node --test --experimental-strip-types scripts/*.test.ts",
+    "test:world": "node --test --experimental-strip-types packages/world-encrypted-local/index.test.ts",
     "typecheck": "tsc"
   },
   "overrides": {
@@ -33,10 +35,12 @@
     "zod": "4.5.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
     "@types/node": "24.x",
     "@vercel/blob": "^2.8.0",
     "microsandbox": "^0.5.10",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "ultracite": "^7.12.2"
   },
   "engines": {
     "node": "24.x"

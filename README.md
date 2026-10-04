@@ -40,7 +40,7 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | `make setup` | Install frontend, agent, and eval-viewer dependencies |
 | `make dev` | Start the Chat agent and the app window for development |
 | `make build` | Build the frontend and the release binary in `zig-out/bin/` |
-| `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the frontend lint and types |
+| `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the lint and types for the frontend, agent, and eval viewer |
 | `make test` | Run the Zig, frontend, agent, eval-viewer, and security tests |
 | `make precommit` | Run `make check`, `make test`, and `make package` |
 | `make eval` | Seed a throwaway journal, run Dream, and grade with eve eval |

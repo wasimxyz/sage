@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  compareCurrentAndStale,
-  currentOutranksStale,
-} from "./rank.ts";
+import { compareCurrentAndStale, currentOutranksStale } from "./rank.ts";
 
 const current = "Sam is the user's boyfriend or partner";
 const stale = "Sam is the user's friend or climbing partner";

@@ -4,6 +4,9 @@ import { dirname } from "node:path";
 import type { EvalCase } from "./dataset.ts";
 import { embedModel, ollamaBaseURL } from "./models.ts";
 
+const lineBreakPattern = /\r?\n/;
+const trailingSlashPattern = /\/$/;
+
 export interface QueryEmbedding {
   embedding: number[];
   text: string;
@@ -71,7 +74,11 @@ export function writeQueryEmbeddings(rows: QueryEmbedding[]): void {
   }
   mkdirSync(dirname(path), { recursive: true });
   const lines = rows.map((row) => JSON.stringify(row));
-  writeFileSync(path, lines.length === 0 ? "" : `${lines.join("\n")}\n`, "utf8");
+  writeFileSync(
+    path,
+    lines.length === 0 ? "" : `${lines.join("\n")}\n`,
+    "utf8"
+  );
   cachedPath = path;
   cachedRows = mapFromRows(rows);
 }
@@ -91,7 +98,7 @@ export function loadQueryEmbeddings(): QueryEmbedding[] {
     throw error;
   }
   const rows: QueryEmbedding[] = [];
-  const lines = raw.split(/\r?\n/);
+  const lines = raw.split(lineBreakPattern);
   for (const [offset, line] of lines.entries()) {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
@@ -108,7 +115,7 @@ export async function embedQueryTexts(
   if (texts.length === 0) {
     return [];
   }
-  const url = `${ollamaBaseURL().replace(/\/$/, "")}/embed`;
+  const url = `${ollamaBaseURL().replace(trailingSlashPattern, "")}/embed`;
   const response = await fetch(url, {
     body: JSON.stringify({
       input: texts,
@@ -136,7 +143,7 @@ export function parseEmbedResponse(
   ) {
     throw new Error("Ollama embed response is missing embeddings.");
   }
-  const embeddings = (payload as { embeddings: unknown[] }).embeddings;
+  const { embeddings } = payload as { embeddings: unknown[] };
   if (embeddings.length !== texts.length) {
     throw new Error(
       `Ollama embed returned ${embeddings.length} vectors for ${texts.length} queries.`
@@ -178,15 +185,17 @@ function parseRow(
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
-  } catch {
-    throw new Error(`${path}:${lineNumber} is not valid JSON.`);
+  } catch (error) {
+    throw new Error(`${path}:${lineNumber} is not valid JSON.`, {
+      cause: error,
+    });
   }
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`${path}:${lineNumber} must be a JSON object.`);
   }
   const row = parsed as Record<string, unknown>;
   const label = `${path}:${lineNumber}`;
-  const text = row.text;
+  const { text } = row;
   if (typeof text !== "string" || text.trim().length === 0) {
     throw new Error(`${label} is missing text.`);
   }
@@ -197,11 +206,14 @@ function parseRow(
 }
 
 function floatList(value: unknown, label: string | number): number[] {
-  const where = typeof label === "number" ? `embedding ${label}` : String(label);
+  const where =
+    typeof label === "number" ? `embedding ${label}` : String(label);
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`${where} is missing a non-empty embedding.`);
   }
-  if (!value.every((item) => typeof item === "number" && Number.isFinite(item))) {
+  if (
+    !value.every((item) => typeof item === "number" && Number.isFinite(item))
+  ) {
     throw new Error(`${where} embedding must be a list of finite numbers.`);
   }
   return value;

@@ -2,6 +2,8 @@
 // node_modules, and Node will not strip TypeScript there.
 import { readFileSync } from "node:fs";
 
+const hexPattern = /^[0-9a-fA-F]+$/;
+
 const TOKEN_HEX_LENGTH = 64;
 const WORLD_KEY_HEX_LENGTH = 64;
 
@@ -18,7 +20,7 @@ export function parseSpawnSecrets(text) {
   const lines = normalized.split("\n");
   const token = lines[0] ?? "";
   const worldKeyHex = lines[1] ?? "";
-  if (token.length !== TOKEN_HEX_LENGTH || !/^[0-9a-fA-F]+$/.test(token)) {
+  if (token.length !== TOKEN_HEX_LENGTH || !hexPattern.test(token)) {
     throw new Error("Sage spawn token is missing or invalid.");
   }
   if (worldKeyHex.length === 0) {
@@ -26,7 +28,7 @@ export function parseSpawnSecrets(text) {
   }
   if (
     worldKeyHex.length !== WORLD_KEY_HEX_LENGTH ||
-    !/^[0-9a-fA-F]+$/.test(worldKeyHex)
+    !hexPattern.test(worldKeyHex)
   ) {
     throw new Error("Sage spawn world key is invalid.");
   }
@@ -37,7 +39,7 @@ export function parseSpawnSecrets(text) {
 export function readSpawnSecrets() {
   const socket = process.env.SAGE_AGENT_SOCKET;
   if (socket === undefined || socket.length === 0) {
-    return undefined;
+    return;
   }
   const existing = globalThis[CACHE];
   if (existing !== undefined) {

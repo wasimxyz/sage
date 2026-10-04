@@ -14,6 +14,8 @@ import {
   utf8Chunks,
 } from "./bridge.ts";
 
+const alreadyDreamingPattern = /already dreaming/;
+
 test("parseBridgeJson reads a journal.save envelope", () => {
   const parsed = parseBridgeJson(
     '{"id":"save-sam-example-1-0","ok":true,"result":{"id":1}}'
@@ -79,8 +81,14 @@ test("matchingBridgeResponse ignores a leftover models list", () => {
     '{"id":"56","ok":true,"result":{"models":["qwen3:8b","llama3.2:latest"]}}';
   const save =
     'delivered bridge -> /tmp/sage-eval\n{"id":"save-breakup-reconciliation-4-0","ok":true,"result":{"id":4}}\n';
-  assert.equal(matchingBridgeResponse("save-breakup-reconciliation-4-0", leftover), null);
-  const matched = matchingBridgeResponse("save-breakup-reconciliation-4-0", save);
+  assert.equal(
+    matchingBridgeResponse("save-breakup-reconciliation-4-0", leftover),
+    null
+  );
+  const matched = matchingBridgeResponse(
+    "save-breakup-reconciliation-4-0",
+    save
+  );
   assert.ok(matched);
   assert.equal(resultNumber(matched, "id"), 4);
 });
@@ -99,13 +107,16 @@ test("requireOk throws the handler error message", () => {
     () =>
       requireOk(
         {
+          error: {
+            code: "handler_failed",
+            message: "Sage is already dreaming.",
+          },
           id: "eval-dream-start",
           ok: false,
-          error: { code: "handler_failed", message: "Sage is already dreaming." },
         },
         "dream.start"
       ),
-    /already dreaming/
+    alreadyDreamingPattern
   );
 });
 

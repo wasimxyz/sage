@@ -8,7 +8,7 @@ const contextWindow = Number(process.env.OLLAMA_CONTEXT_WINDOW ?? "32768");
 // The Chat model picker tops out at the 262_144 entry in
 // frontend/src/lib/chat/model-prefs.ts. The header is the untrusted side, so
 // the agent never allocates a larger num_ctx than the picker can offer.
-const MAX_CONTEXT_LENGTH = 262144;
+const MAX_CONTEXT_LENGTH = 262_144;
 const extractThinkTags = extractReasoningMiddleware({ tagName: "think" });
 
 // Chat only talks to Ollama on this Mac. A non-loopback URL stops the agent.
@@ -16,9 +16,11 @@ const baseURL = localOllamaBaseURL(process.env.OLLAMA_BASE_URL);
 
 const ollama = createOllama({ baseURL });
 
-type SessionAuthCtx = {
-  session: { auth: { current?: { attributes?: Record<string, unknown> } | null } };
-};
+interface SessionAuthCtx {
+  session: {
+    auth: { current?: { attributes?: Record<string, unknown> } | null };
+  };
+}
 
 function modelIdFromContext(ctx: SessionAuthCtx): string {
   const value = ctx.session.auth.current?.attributes?.model;
@@ -47,12 +49,19 @@ function contextLengthFromContext(ctx: SessionAuthCtx): number {
 
 function ollamaChatModel(modelId: string) {
   return wrapLanguageModel({
-    model: ollama(modelId),
     middleware: extractThinkTags,
+    model: ollama(modelId),
   });
 }
 
 export default defineAgent({
+  build: {
+    externalDependencies: [
+      "@sage/world-encrypted-local",
+      "@sage/world-encrypted-local/spawn",
+      "@workflow/world-local",
+    ],
+  },
   // Local models have small context windows: skip eve's default tools and
   // keep only the authored journal tools and memory search.
   defaultTools: false,
@@ -60,13 +69,6 @@ export default defineAgent({
     workflow: {
       world: "@sage/world-encrypted-local",
     },
-  },
-  build: {
-    externalDependencies: [
-      "@sage/world-encrypted-local",
-      "@sage/world-encrypted-local/spawn",
-      "@workflow/world-local",
-    ],
   },
   model: defineDynamic({
     events: {
@@ -82,8 +84,8 @@ export default defineAgent({
           modelOptions: {
             providerOptions: {
               ollama: {
-                think: thinkingFromContext(ctx),
                 options: { num_ctx: tokens },
+                think: thinkingFromContext(ctx),
               },
             },
           },

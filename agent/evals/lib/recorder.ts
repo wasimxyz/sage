@@ -2,10 +2,9 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { EveEvalResult } from "eve/evals";
-import type {
-  EvalReporter,
-  EveEvalCompleteContext,
-} from "eve/evals/reporters";
+import type { EvalReporter, EveEvalCompleteContext } from "eve/evals/reporters";
+
+const lineBreakPattern = /\r?\n/;
 
 export interface RecordedAssertion {
   errored?: boolean;
@@ -57,8 +56,12 @@ export function sageEvalRecorder(path: string): EvalReporter {
       mkdirSync(dirname(path), { recursive: true });
       appendFileSync(path, `${JSON.stringify(row)}\n`, "utf8");
     },
-    onRunComplete() {},
-    onRunStart() {},
+    onRunComplete() {
+      // Rows are appended as each result arrives, so there is nothing to flush.
+    },
+    onRunStart() {
+      // The first appended row creates the file.
+    },
   };
 }
 
@@ -73,7 +76,7 @@ export function loadRecordedResults(path: string): RecordedEvalResult[] {
     throw error;
   }
   const rows: RecordedEvalResult[] = [];
-  const lines = raw.split(/\r?\n/);
+  const lines = raw.split(lineBreakPattern);
   for (const [offset, line] of lines.entries()) {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
@@ -92,8 +95,10 @@ function parseRow(
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
-  } catch {
-    throw new Error(`${path}:${lineNumber} is not valid JSON.`);
+  } catch (error) {
+    throw new Error(`${path}:${lineNumber} is not valid JSON.`, {
+      cause: error,
+    });
   }
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`${path}:${lineNumber} must be a JSON object.`);
@@ -124,7 +129,7 @@ function assertionList(value: unknown, label: string): RecordedAssertion[] {
       throw new Error(`${label} assertions[${index}] must be an object.`);
     }
     const row = item as Record<string, unknown>;
-    const name = row.name;
+    const { name } = row;
     if (typeof name !== "string" || name.length === 0) {
       throw new Error(`${label} assertions[${index}] is missing name.`);
     }

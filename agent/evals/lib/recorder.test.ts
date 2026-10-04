@@ -9,6 +9,8 @@ import type { EveEvalCompleteContext } from "eve/evals/reporters";
 
 import { loadRecordedResults, sageEvalRecorder } from "./recorder.ts";
 
+const notValidJSONPattern = /not valid JSON/;
+
 test("loadRecordedResults returns an empty list when the file is missing", () => {
   assert.deepEqual(
     loadRecordedResults(join(tmpdir(), "sage-eval-results-missing.jsonl")),
@@ -69,12 +71,10 @@ test("loadRecordedResults throws on a malformed line", () => {
   const reporter = sageEvalRecorder(path);
   reporter.onEvalComplete(sampleResult({ id: "chat/0000" }));
   appendFileSync(path, "not-json\n");
-  assert.throws(() => loadRecordedResults(path), /not valid JSON/);
+  assert.throws(() => loadRecordedResults(path), notValidJSONPattern);
 });
 
-function sampleResult(
-  overrides: Partial<EveEvalResult> = {}
-): EveEvalResult {
+function sampleResult(overrides: Partial<EveEvalResult> = {}): EveEvalResult {
   return {
     assertions: overrides.assertions ?? [
       {
@@ -119,7 +119,9 @@ function sampleContext(
       _tag: "EveEval",
       id: "chat/0000",
       metadata,
-      test() {},
+      test() {
+        // The recorder only reads the evaluation's metadata.
+      },
     },
     target: {
       capabilities: { devRoutes: true },

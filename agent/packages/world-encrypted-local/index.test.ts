@@ -7,6 +7,9 @@ import { createWorld } from "./index.ts";
 import { decodeWorldKey, WORLD_KEY_ENV } from "./key.ts";
 import { parseSpawnSecrets, readSpawnSecrets } from "./spawn.js";
 
+const worldKeyPattern = /world key/;
+const spawnTokenPattern = /spawn token/;
+
 test("decodeWorldKey treats missing and empty values as plaintext", () => {
   assert.equal(decodeWorldKey(undefined), undefined);
   assert.equal(decodeWorldKey(""), undefined);
@@ -43,12 +46,12 @@ test("createWorld encrypts when the key is set and passes through when it is not
     delete process.env[WORLD_KEY_ENV];
     delete process.env.SAGE_AGENT_SOCKET;
     const plain = createWorld();
-    assert.equal(await plain.getEncryptionKeyForRun?.(), undefined);
+    assert.equal(await plain.getEncryptionKeyForRun(), undefined);
 
     const hex = "ab".repeat(32);
     process.env[WORLD_KEY_ENV] = hex;
     const encrypted = createWorld();
-    const key = await encrypted.getEncryptionKeyForRun?.();
+    const key = await encrypted.getEncryptionKeyForRun();
     assert.ok(key);
     assert.equal(key.length, 32);
     assert.equal(key[0], 0xab);
@@ -86,14 +89,14 @@ test("parseSpawnSecrets allows an empty world key line", () => {
 
 test("parseSpawnSecrets rejects a short token", () => {
   assert.throws(() => parseSpawnSecrets("short\n\n"), {
-    message: /spawn token/,
+    message: spawnTokenPattern,
   });
 });
 
 test("parseSpawnSecrets rejects a malformed world key", () => {
   const token = "ab".repeat(32);
   assert.throws(() => parseSpawnSecrets(`${token}\nzz\n`), {
-    message: /world key/,
+    message: worldKeyPattern,
   });
 });
 

@@ -1,6 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+const trailingSlashesPattern = /\/+$/;
+
 export const defaultBlobPrefix = "sage-evals";
 
 export function listReportFiles(dir: string): string[] {
@@ -33,7 +35,7 @@ export function blobPathname(
 ): string {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   const fileName = slash === -1 ? filePath : filePath.slice(slash + 1);
-  const folder = prefix.replace(/\/+$/, "");
+  const folder = prefix.replace(trailingSlashesPattern, "");
   return `${folder}/${fileName}`;
 }
 

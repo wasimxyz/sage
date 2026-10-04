@@ -5,7 +5,8 @@ import {
   snapshotDreamCacheFromEnv,
 } from "../evals/lib/cache.ts";
 
-const command = process.argv[2] ?? "";
+const [, , commandArg, keyArg] = process.argv;
+const command = commandArg ?? "";
 
 if (command === "key") {
   const parts = await loadCacheKeyParts();
@@ -15,9 +16,8 @@ if (command === "key") {
     process.exit(0);
   }
   try {
-    const key = process.argv[3];
     const dest = await snapshotDreamCacheFromEnv(
-      key !== undefined && key.length > 0 ? key : undefined
+      keyArg !== undefined && keyArg.length > 0 ? keyArg : undefined
     );
     console.error(`Saved Dream artifacts to ${dest}`);
   } catch (error) {

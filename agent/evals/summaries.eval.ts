@@ -12,15 +12,13 @@ import { skipEval } from "./lib/skip.ts";
 import { summaryForEntry } from "./lib/store.ts";
 
 const cases = await loadAllCases();
-const evals = [];
-
-for (const fixture of cases) {
-  for (const summary of fixture.summaries) {
+const evals = cases.flatMap((fixture) =>
+  fixture.summaries.flatMap((summary) => {
     const entry = fixture.entries[summary.entry - 1];
     if (entry === undefined) {
-      continue;
+      return [];
     }
-    evals.push(
+    return [
       defineEval({
         description: `${fixture.id}: summary of entry ${summary.entry} (${entry.title})`,
         tags: tagsFor(fixture, "summaries"),
@@ -37,10 +35,10 @@ for (const fixture of cases) {
           ).label("summary present");
           judgeSummary(t, summary.reference, text ?? "", "summary quality");
         },
-      })
-    );
-  }
-}
+      }),
+    ];
+  })
+);
 
 export default evals.length > 0
   ? evals

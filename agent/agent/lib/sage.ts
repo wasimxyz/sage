@@ -1,5 +1,5 @@
-import http from "node:http";
 import { readFile } from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { readSpawnSecrets } from "@sage/world-encrypted-local/spawn";
@@ -28,33 +28,55 @@ function bodyBuffer(body: BodyInit | null | undefined): Buffer | undefined {
   throw new Error(unreachableMessage);
 }
 
+function requestHeaders(
+  init: RequestInit,
+  token: string,
+  body: Buffer | undefined
+): http.OutgoingHttpHeaders {
+  const headers: http.OutgoingHttpHeaders = {
+    authorization: `Bearer ${token}`,
+  };
+  if (init.headers !== undefined) {
+    new Headers(init.headers).forEach((value, key) => {
+      if (key.toLowerCase() !== "authorization") {
+        headers[key] = value;
+      }
+    });
+  }
+  if (body !== undefined) {
+    headers["content-length"] = body.length;
+  }
+  return headers;
+}
+
+function responseFrom(res: http.IncomingMessage, chunks: Buffer[]): Response {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(res.headers)) {
+    if (typeof value === "string") {
+      headers.set(key, value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        headers.append(key, item);
+      }
+    }
+  }
+  return new Response(Buffer.concat(chunks), {
+    headers,
+    status: res.statusCode ?? 0,
+  });
+}
+
 function requestOnSocket(
   discovery: Discovery,
   pathname: string,
   init: RequestInit = {}
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
-    const method = init.method ?? "GET";
-    const headers: http.OutgoingHttpHeaders = {
-      authorization: `Bearer ${discovery.token}`,
-    };
-    if (init.headers !== undefined) {
-      const incoming = new Headers(init.headers);
-      incoming.forEach((value, key) => {
-        if (key.toLowerCase() === "authorization") {
-          return;
-        }
-        headers[key] = value;
-      });
-    }
     const body = bodyBuffer(init.body);
-    if (body !== undefined) {
-      headers["content-length"] = body.length;
-    }
     const req = http.request(
       {
-        headers,
-        method,
+        headers: requestHeaders(init, discovery.token, body),
+        method: init.method ?? "GET",
         path: pathname,
         socketPath: discovery.socket,
       },
@@ -64,26 +86,11 @@ function requestOnSocket(
           chunks.push(chunk);
         });
         res.on("end", () => {
-          const responseHeaders = new Headers();
-          for (const [key, value] of Object.entries(res.headers)) {
-            if (typeof value === "string") {
-              responseHeaders.set(key, value);
-            } else if (Array.isArray(value)) {
-              for (const item of value) {
-                responseHeaders.append(key, item);
-              }
-            }
-          }
-          resolve(
-            new Response(Buffer.concat(chunks), {
-              headers: responseHeaders,
-              status: res.statusCode ?? 0,
-            })
-          );
+          resolve(responseFrom(res, chunks));
         });
       }
     );
-    const signal = init.signal;
+    const { signal } = init;
     const onAbort = () => {
       req.destroy();
       reject(new Error(unreachableMessage));
@@ -173,6 +180,7 @@ async function loadDiscovery(): Promise<Discovery> {
 
   let sawFile = false;
   for (const file of discoveryCandidates()) {
+    // biome-ignore lint/performance/noAwaitInLoops: candidates are tried in order and the first reachable one wins.
     const discovery = await readDiscoveryFile(file);
     if (discovery === null) {
       continue;
@@ -200,6 +208,7 @@ export async function expectedChatToken(): Promise<string | null> {
   }
 
   for (const file of discoveryCandidates()) {
+    // biome-ignore lint/performance/noAwaitInLoops: candidates are tried in order and the first token wins.
     const discovery = await readDiscoveryFile(file);
     if (discovery !== null && discovery.token.length > 0) {
       return discovery.token;
@@ -218,8 +227,8 @@ export async function sageFetch(
       ...init,
       signal: init.signal ?? AbortSignal.timeout(30_000),
     });
-  } catch {
-    throw new Error(unreachableMessage);
+  } catch (error) {
+    throw new Error(unreachableMessage, { cause: error });
   }
 }
 
