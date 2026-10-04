@@ -78,13 +78,6 @@ for tree in $module_trees; do
   done
 done
 
-# The packaged sandbox is eve's default engine, so it stays in the bundle.
-fixture="$tmp/sandbox/node_modules"
-mkdir -p "$fixture/microsandbox"
-echo '{}' >"$fixture/microsandbox/package.json"
-sh "$guard_script" "$fixture" ||
-  fail "the guard rejects microsandbox, the packaged sandbox engine."
-
 # Copy only `agent/`, `.output/`, `package.json`, and production node_modules.
 sources=$(sed -n 's/^rsync -a --delete "\([^"]*\)".*$/\1/p' "$copy_script")
 [ -n "$sources" ] || fail "copy-agent-into-app.sh copies no agent files."

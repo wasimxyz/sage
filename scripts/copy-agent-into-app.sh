@@ -32,9 +32,7 @@ rsync -a --delete "$src/.output/" "$dest/.output/"
 rsync -a --delete "$src/node_modules/" "$dest/node_modules/"
 
 # `make package` installs the agent with --omit=dev, so these trees hold no dev
-# modules. Fail instead of shipping them if one comes back. `microsandbox`
-# stays: eve loads it as the sandbox engine, and the build prepares a template
-# for it.
+# modules. Fail instead of shipping them if one comes back.
 sh "$root/scripts/refuse-packaged-dev-modules.sh" "$dest/node_modules" "$dest/.output/server/node_modules"
 
 cp "$src/package.json" "$dest/package.json"
