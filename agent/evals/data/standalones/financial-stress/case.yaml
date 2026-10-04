@@ -1,0 +1,39 @@
+id: financial-stress
+kind: standalone
+tags:
+  - money
+facts:
+  - subject: user
+    reference: The user built a budget and started freelance work to manage money
+    stale: The user is in ongoing panic about rent and an empty bank account
+  - subject: user
+    reference: The user put a $2,400 car transmission repair on a credit card
+events:
+  - entry: 1
+    reference: The user anxiously checked their bank account ahead of rent being due
+  - entry: 2
+    reference: The user's car needed an expensive transmission repair, adding to financial strain
+  - entry: 3
+    reference: The user created a budget and started freelancing to manage financial stress
+summaries:
+  - entry: 1
+    reference: The user describes persistent anxiety about money, repeatedly checking their bank balance as rent approaches.
+  - entry: 2
+    reference: The user describes an unexpected $2,400 car repair, putting it on a credit card, and skipping a friend's trip because of the cost.
+  - entry: 3
+    reference: The user builds a budget for the first time in a long while and takes on freelance work, feeling more in control of their finances.
+retrieval:
+  - query: checking my bank account before rent was due
+    expectEntry: 1
+  - query: when my car transmission broke
+    expectEntry: 2
+  - query: when I started freelancing for extra money
+    expectEntry: 3
+chat:
+  - question: Have I been stressed about money?
+    reference: "Yes. The user has been anxious about money, including rent and a car repair"
+  - question: Why did I skip my friend's birthday trip?
+    reference: The user skipped the trip because of financial strain from the car repair
+    expectTool: true
+  - question: How's my financial situation these days?
+    reference: The user now has a budget and freelance work and feels more in control, not the earlier panic

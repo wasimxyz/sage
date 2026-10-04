@@ -1,0 +1,16 @@
+<!-- Lucide leaf (ISC). Native SDK app icons cannot use transform, so the centering offset is baked into the path data. -->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 48 48"
+  fill="none"
+  stroke="#171717"
+  stroke-width="2.5"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <rect x="0" y="0" width="48" height="48" fill="#ffffff" stroke="none" />
+  <path d="M23 32a10 10 0 0010-10 25.9 25.9 0 00-1.04-7.281 1 1 0 00-1.755-.325C27.833 17.5 25 17.5 21.8 18.1A7 7 0 0023 32" />
+  <path d="M14 33a5 5 0 012.911-4.544C19.613 27.212 20.351 27.24 23 25" />
+</svg>

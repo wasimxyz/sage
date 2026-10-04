@@ -1,0 +1,26 @@
+id: breakup-reconciliation
+kind: timeline
+tags:
+  - breakup
+facts:
+  - subject: Theo
+    reference: The user and Theo are back together
+    stale: The user and Theo broke up
+events:
+  - entry: 1
+    reference: The user and Theo broke up
+  - entry: 2
+    reference: Two weeks after the breakup the user was going through the motions
+  - entry: 3
+    reference: The user ran into Theo at the farmer's market and they got coffee
+  - entry: 4
+    reference: The user and Theo decided to get back together
+summaries:
+  - entry: 3
+    reference: The user runs into Theo unexpectedly, and the conversation goes more easily than expected, with Theo suggesting the breakup wasn't as clear-cut as it seemed.
+retrieval:
+  - query: when did Theo and I get back together
+    expectEntry: 4
+chat:
+  - question: Are Theo and I still together?
+    reference: "Yes. They reconciled and are currently together, not broken up"

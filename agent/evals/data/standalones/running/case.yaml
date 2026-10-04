@@ -1,0 +1,26 @@
+id: running
+kind: standalone
+tags:
+  - running
+facts:
+  - subject: user
+    reference: The user was told to stop running for four weeks because of shin splints
+    stale: The user recently finished a half marathon and is actively running
+events:
+  - entry: 1
+    reference: The user finished their first half marathon
+  - entry: 2
+    reference: The user was told by a doctor to stop running for four weeks due to shin splints
+summaries:
+  - entry: 1
+    reference: The user completes their first half marathon in just under two hours, proud of not stopping despite it not being a fast time.
+  - entry: 2
+    reference: The user is diagnosed with shin splints and told to stop running for a month, frustrated at having pushed through the pain.
+retrieval:
+  - query: when I finished my first half marathon
+    expectEntry: 1
+  - query: when I got told to stop running because of shin splints
+    expectEntry: 2
+chat:
+  - question: Am I currently running?
+    reference: "No. The more recent state is time off for shin splints, not the half marathon"

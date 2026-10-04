@@ -1,0 +1,19 @@
+id: getting-engaged
+kind: standalone
+tags:
+  - relationship
+facts:
+  - subject: Jordan
+    reference: The user is engaged to Jordan
+events:
+  - entry: 1
+    reference: Jordan proposed to the user on the pier where they had their first date
+summaries:
+  - entry: 1
+    reference: The user describes Jordan proposing on the pier from their first date, taking them completely by surprise.
+retrieval:
+  - query: the night Jordan proposed
+    expectEntry: 1
+chat:
+  - question: Am I engaged?
+    reference: "Yes. The user is engaged to Jordan"

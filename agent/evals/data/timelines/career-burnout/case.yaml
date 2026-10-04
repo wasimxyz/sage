@@ -1,0 +1,26 @@
+id: career-burnout
+kind: timeline
+tags:
+  - work
+facts:
+  - subject: user
+    reference: The user is taking a six-week leave from work due to burnout
+    stale: The user is tired at work or in a rough patch
+events:
+  - entry: 1
+    reference: The user described dreading work each Monday and feeling checked out in meetings
+  - entry: 2
+    reference: The user missed a real work deadline after nights of inbox insomnia
+  - entry: 3
+    reference: The user had a breaking-point moment of exhaustion before work
+  - entry: 4
+    reference: The user's manager approved a six-week leave for burnout
+summaries:
+  - entry: 3
+    reference: The user describes reaching a breaking point with work exhaustion, crying in the parking garage before going in, and recognizing they can't keep going as things are.
+retrieval:
+  - query: when did I decide to take leave from work
+    expectEntry: 4
+chat:
+  - question: How am I doing with work lately?
+    reference: Burnout built up until the user arranged a six-week leave, not just that they seem tired

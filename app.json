@@ -1,0 +1,114 @@
+{
+    "$schema": "https://schema.native-sdk.dev/app/v1.json",
+    "id": "com.wasimxyz.sage",
+    "name": "Sage",
+    "display_name": "Sage",
+    "description": "An AI-native journal that uses local LLMs so that your private thoughts never leave your machine.",
+    "version": "0.1.0",
+    "icons": ["assets/icon.svg"],
+    "platforms": ["macos"],
+    "permissions": [],
+    "capabilities": ["webview", "js_bridge", "sqlite"],
+    "frontend": {
+        "dist": "frontend/dist",
+        "entry": "index.html",
+        "spa_fallback": true,
+        "dev": {
+            "url": "http://127.0.0.1:5173/",
+            "command": ["npm", "--prefix", "frontend", "run", "dev", "--", "--host", "127.0.0.1"],
+            "ready_path": "/",
+            "timeout_ms": 30000
+        }
+    },
+    "bridge": {
+        "commands": [
+            { "name": "journal.list", "origins": ["zero://app"] },
+            { "name": "journal.get", "origins": ["zero://app"] },
+            { "name": "home.feed", "origins": ["zero://app"] },
+            { "name": "journal.search", "origins": ["zero://app"] },
+            { "name": "journal.save", "origins": ["zero://app"] },
+            { "name": "journal.delete", "origins": ["zero://app"] },
+            { "name": "journal.readFile", "origins": ["zero://app"] },
+            { "name": "journal.importDialog", "origins": ["zero://app"] },
+            { "name": "journal.export", "origins": ["zero://app"] },
+            { "name": "journal.exportDialog", "origins": ["zero://app"] },
+            { "name": "data.counts", "origins": ["zero://app"] },
+            { "name": "data.deleteEntries", "origins": ["zero://app"] },
+            { "name": "data.deleteConversations", "origins": ["zero://app"] },
+            { "name": "data.deleteEmbeddings", "origins": ["zero://app"] },
+            { "name": "data.deleteMemories", "origins": ["zero://app"] },
+            { "name": "data.deleteAll", "origins": ["zero://app"] },
+            { "name": "embeddings.status", "origins": ["zero://app"] },
+            { "name": "embeddings.generate", "origins": ["zero://app"] },
+            { "name": "embeddings.pending", "origins": ["zero://app"] },
+            { "name": "dream.start", "origins": ["zero://app"] },
+            { "name": "dream.status", "origins": ["zero://app"] },
+            { "name": "memory.list", "origins": ["zero://app"] },
+            { "name": "memory.search", "origins": ["zero://app"] },
+            { "name": "memory.save", "origins": ["zero://app"] },
+            { "name": "memory.delete", "origins": ["zero://app"] },
+            { "name": "features.get", "origins": ["zero://app"] },
+            { "name": "window.drag", "origins": ["zero://app"] },
+            { "name": "window.alignTitlebar", "origins": ["zero://app"] },
+            { "name": "lock.status", "origins": ["zero://app"] },
+            { "name": "lock.setIdleTimeout", "origins": ["zero://app"] },
+            { "name": "lock.unlock", "origins": ["zero://app"] },
+            { "name": "lock.unlockTouchId", "origins": ["zero://app"] },
+            { "name": "lock.unlockRecoveryKey", "origins": ["zero://app"] },
+            { "name": "lock.setPassword", "origins": ["zero://app"] },
+            { "name": "lock.removePassword", "origins": ["zero://app"] },
+            { "name": "lock.disable", "origins": ["zero://app"] },
+            { "name": "lock.setTouchId", "origins": ["zero://app"] },
+            { "name": "encryption.enable", "origins": ["zero://app"] },
+            { "name": "encryption.disable", "origins": ["zero://app"] },
+            { "name": "encryption.newRecoveryKey", "origins": ["zero://app"] },
+            { "name": "encryption.saveRecoveryKey", "origins": ["zero://app"] },
+            { "name": "encryption.scrub", "origins": ["zero://app"] },
+            { "name": "chat.list", "origins": ["zero://app"] },
+            { "name": "chat.search", "origins": ["zero://app"] },
+            { "name": "chat.get", "origins": ["zero://app"] },
+            { "name": "chat.save", "origins": ["zero://app"] },
+            { "name": "chat.savePrefs", "origins": ["zero://app"] },
+            { "name": "chat.rename", "origins": ["zero://app"] },
+            { "name": "chat.delete", "origins": ["zero://app"] },
+            { "name": "chat.agent", "origins": ["zero://app"] },
+            { "name": "chat.agentToken", "origins": ["zero://app"] },
+            { "name": "agent.instructions.get", "origins": ["zero://app"] },
+            { "name": "agent.instructions.save", "origins": ["zero://app"] },
+            { "name": "ollama.models", "origins": ["zero://app"] },
+            { "name": "ollama.start", "origins": ["zero://app"] },
+            { "name": "ollama.pull", "origins": ["zero://app"] },
+            { "name": "ollama.pulls", "origins": ["zero://app"] },
+            { "name": "ollama.pullCancel", "origins": ["zero://app"] },
+            { "name": "ollama.delete", "origins": ["zero://app"] },
+            { "name": "system.hardware", "origins": ["zero://app"] }
+        ]
+    },
+    "security": {
+        "navigation": {
+            "allowed_origins": ["zero://app"],
+            "external_links": {
+                "action": "open_system_browser",
+                "allowed_urls": [
+                    "https://canirun.ai",
+                    "https://canirun.ai/*",
+                    "https://www.canirun.ai",
+                    "https://www.canirun.ai/*"
+                ]
+            }
+        }
+    },
+    "web_engine": "system",
+    "cef": { "dir": "third_party/cef/macos", "auto_install": false },
+    "windows": [
+        {
+            "label": "main",
+            "title": "Sage",
+            "width": 1440,
+            "height": 900,
+            "restore_state": true,
+            "titlebar": "hidden_inset",
+            "transparent": true
+        }
+    ]
+}

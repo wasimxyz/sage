@@ -1,0 +1,9 @@
+node_modules
+.env*
+!.env.example
+.eve
+.output
+.DS_Store
+*.tsbuildinfo
+evals/reports
+!evals/reports/.gitignore

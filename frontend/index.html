@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173 http://127.0.0.1:2001"
+      http-equiv="Content-Security-Policy"
+    >
+    <style>
+    html,
+    body,
+    #root {
+      height: 100%;
+      background: transparent;
+    }
+    </style>
+    <title>Sage</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="/src/main.tsx" type="module"></script>
+  </body>
+</html>

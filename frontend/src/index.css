@@ -1,0 +1,371 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Streamdown styles itself with Tailwind utilities from node_modules.
+   Scan those files so list markers and fences keep their classes. */
+@source "../node_modules/streamdown/dist/**/*.js";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-dialog-border: var(--dialog-border);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-row-hover: var(--row-hover);
+  --color-surface: var(--surface);
+  --color-dragon: var(--dragon);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --surface: #ffffff;
+  --dragon: #c85152;
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.205 0 0);
+  --row-hover: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card: #ffffff;
+  --card-foreground: oklch(0.205 0 0);
+  --popover: #ffffff;
+  --popover-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --warning: oklch(0.553 0.14 70);
+  --border: oklch(0.9 0 0);
+  --dialog-border: var(--border);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar-solid: oklch(0.94 0 0);
+  --sidebar: oklch(0.94 0 0 / 68%);
+  --sidebar-foreground: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.98 0 0 / 70%);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.88 0 0 / 55%);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* Hidden titlebar band. Leading inset is set in app-shell.tsx. */
+  --titlebar-height: 3.25rem;
+}
+
+.dark {
+  --surface: oklch(0.28 0 0);
+  --dragon: #c85152;
+  --background: oklch(0.21 0 0);
+  --foreground: oklch(0.9 0 0);
+  --card: oklch(0.28 0 0);
+  --card-foreground: oklch(0.9 0 0);
+  --popover: oklch(0.28 0 0);
+  --popover-foreground: oklch(0.9 0 0);
+  --primary: oklch(0.9 0 0);
+  --primary-foreground: oklch(0.21 0 0);
+  --secondary: oklch(0.27 0 0);
+  --secondary-foreground: oklch(0.9 0 0);
+  --muted: oklch(0.27 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.27 0 0);
+  --accent-foreground: oklch(0.9 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --warning: oklch(0.82 0.12 80);
+  --border: oklch(1 0 0 / 10%);
+  --dialog-border: color-mix(in oklab, var(--popover) 80%, white);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar-solid: oklch(0.26 0 0);
+  --sidebar: oklch(0.26 0 0 / 58%);
+  --sidebar-foreground: oklch(0.9 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.35 0 0 / 55%);
+  --sidebar-accent-foreground: oklch(0.9 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+html[data-fullscreen] {
+  --sidebar: var(--sidebar-solid);
+}
+
+[data-slot="sidebar"][data-mobile="true"] {
+  --sidebar: var(--sidebar-solid);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans h-full bg-transparent;
+  }
+  body {
+    @apply bg-transparent text-foreground h-full overflow-hidden;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: inherit;
+  }
+  #root {
+    @apply h-full bg-transparent;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="menuitemcheckbox"]:not([aria-disabled="true"]),
+  [role="menuitemradio"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]),
+  [role="checkbox"]:not([aria-disabled="true"]),
+  [role="radio"]:not([aria-disabled="true"]),
+  input[type="button"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  select:not(:disabled),
+  summary,
+  a[href],
+  label[for] {
+    cursor: pointer;
+  }
+}
+
+:is([data-slot="window-titlebar"], [data-slot="window-drag"]) {
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+}
+
+:is([data-slot="window-titlebar"], [data-slot="window-drag"])
+  :is(button, a, input, [role="button"], [data-slot="toggle"]),
+:is([data-slot="window-titlebar"], [data-slot="window-drag"])
+  :is(button, a, [role="button"], [data-slot="toggle"])
+  * {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Dialogs overlap the title-bar drag band; keep those clicks on the dialog. */
+:is(
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="dialog-viewport"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"]
+) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+html:has(
+    :is([data-slot="dialog-overlay"], [data-slot="sheet-overlay"])[data-open]
+  )
+  :is([data-slot="window-titlebar"], [data-slot="window-drag"]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+[data-slot="entry-title"] {
+  width: 100%;
+  min-width: 0;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  outline: none;
+  background: transparent;
+}
+
+[data-slot="entry-title"]::placeholder {
+  color: var(--muted-foreground);
+}
+
+[data-slot="save-status"] svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.tiptap {
+  min-height: 12rem;
+  padding: 0;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.tiptap :first-child {
+  margin-top: 0;
+}
+
+.tiptap p {
+  margin: 0.75em 0;
+}
+
+.tiptap h1 {
+  margin: 1em 0 0.5em;
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.tiptap h2 {
+  margin: 1em 0 0.5em;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.tiptap h3 {
+  margin: 1em 0 0.5em;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.tiptap ul,
+.tiptap ol {
+  padding-inline-start: 1.5rem;
+  margin: 0.75em 0;
+}
+
+.tiptap ul {
+  list-style: disc;
+}
+
+.tiptap ol {
+  list-style: decimal;
+}
+
+.tiptap blockquote {
+  padding-inline-start: 1rem;
+  margin: 0.75em 0;
+  color: var(--muted-foreground);
+  border-inline-start: 2px solid var(--border);
+}
+
+.tiptap code {
+  padding: 0.1em 0.3em;
+  font-size: 0.875em;
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+}
+
+.tiptap pre {
+  padding: 0.75rem;
+  overflow-x: auto;
+  background: var(--muted);
+  border-radius: var(--radius-md);
+}
+
+.tiptap pre code {
+  padding: 0;
+  background: transparent;
+}
+
+@utility hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes conversation-shimmer {
+  0% {
+    background-position: 100% center;
+  }
+  100% {
+    background-position: 0% center;
+  }
+}
+
+@keyframes assistant-pending-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.28;
+  }
+}
+
+[data-streamdown="code-block"]:has(
+  > [data-streamdown="code-block-header"][data-language=""]
+) {
+  position: relative;
+}
+[data-streamdown="code-block-header"][data-language=""] {
+  display: none;
+}
+[data-streamdown="code-block-header"][data-language=""] + div {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  margin-top: 0;
+}
+
+[data-role="assistant"] [data-streamdown="code-block"],
+[data-role="assistant"] [data-streamdown="code-block-header"],
+[data-role="assistant"] [data-streamdown="code-block-body"] {
+  @apply bg-surface;
+}
+
+[data-streamdown="mermaid"] text {
+  font-family: inherit;
+}

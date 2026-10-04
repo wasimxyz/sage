@@ -1,0 +1,20 @@
+id: losing-a-pet
+kind: standalone
+tags:
+  - pet
+facts:
+  - subject: Biscuit
+    reference: The user's dog Biscuit died
+    stale: The user currently has a living dog named Biscuit
+events:
+  - entry: 1
+    reference: The user's dog Biscuit was put down due to kidney failure
+summaries:
+  - entry: 1
+    reference: The user describes putting down their fourteen-year-old dog Biscuit, and the quiet, disorienting grief of the apartment afterward.
+retrieval:
+  - query: when Biscuit died
+    expectEntry: 1
+chat:
+  - question: Do I have a dog?
+    reference: Biscuit died. The user should not be treated as still having a living dog

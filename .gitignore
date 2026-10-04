@@ -1,0 +1,8 @@
+.native/
+zig-out/
+.zig-cache/
+node_modules/
+frontend/dist/
+.DS_Store
+agent/evals/.cache/
+third_party/node/

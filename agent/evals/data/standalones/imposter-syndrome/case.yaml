@@ -1,0 +1,19 @@
+id: imposter-syndrome
+kind: standalone
+tags:
+  - work
+facts:
+  - subject: user
+    reference: The user started a new role recently and has been feeling like an impostor
+events:
+  - entry: 1
+    reference: The user felt out of their depth during a planning meeting in their new role
+summaries:
+  - entry: 1
+    reference: The user describes feeling like an impostor three weeks into a new role, staying quiet in a meeting instead of admitting they lacked context.
+retrieval:
+  - query: feeling like an impostor in my new job
+    expectEntry: 1
+chat:
+  - question: How am I feeling about my new job?
+    reference: The user has been feeling self-doubt and like an impostor in the new role

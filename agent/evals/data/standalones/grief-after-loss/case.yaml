@@ -1,0 +1,38 @@
+id: grief-after-loss
+kind: standalone
+tags:
+  - grief
+facts:
+  - subject: Mom
+    reference: The user's mother has died
+  - subject: user
+    reference: The user has a sister
+events:
+  - entry: 1
+    reference: The user's mother died
+  - entry: 2
+    reference: The user was unexpectedly overwhelmed by grief after smelling their mother's perfume on a stranger
+  - entry: 3
+    reference: The user marked their mother's first birthday since her death by baking her lemon cake recipe
+summaries:
+  - entry: 1
+    reference: The user describes the days right after their mother's death, feeling numb and disconnected while handling practical tasks.
+  - entry: 2
+    reference: The user is caught off guard by a wave of grief after smelling their late mother's perfume on a stranger, months after her death.
+  - entry: 3
+    reference: The user bakes their late mother's lemon cake recipe on what would have been her birthday, and finds the moment bittersweet rather than only painful.
+retrieval:
+  - query: right after my mom died
+    expectEntry: 1
+  - query: the time I smelled Mom's perfume
+    expectEntry: 2
+  - query: the lemon cake I made for Mom's birthday
+    expectEntry: 3
+chat:
+  - question: What happened with my mom?
+    reference: The user's mother passed away
+  - question: Have I had any moments where grief caught me off guard?
+    reference: The user was ambushed by grief after smelling their mother's perfume on a stranger
+    expectTool: true
+  - question: How am I doing with grieving my mom these days?
+    reference: Grief is quieter and sometimes bittersweet, not the numbness of the first days

@@ -1,0 +1,26 @@
+id: portugal-trip
+kind: standalone
+tags:
+  - travel
+facts:
+  - subject: user
+    reference: The user traveled to Portugal and missed a connecting flight in Madrid
+events:
+  - entry: 1
+    reference: The user began researching and planning a trip to Portugal
+  - entry: 2
+    reference: The user missed a connecting flight in Madrid during their trip to Portugal
+summaries:
+  - entry: 1
+    reference: The user spends an evening excitedly researching a Portugal trip, comparing Lisbon and Porto.
+  - entry: 2
+    reference: The user misses a connecting flight in Madrid due to a delay, losing hours rebooking before eventually reaching Lisbon.
+retrieval:
+  - query: when I started planning my Portugal trip
+    expectEntry: 1
+  - query: when I missed my flight in Madrid
+    expectEntry: 2
+chat:
+  - question: Did anything go wrong on my Portugal trip?
+    reference: "Yes. The user missed a connecting flight in Madrid, not just that they were excited to plan the trip"
+    expectTool: true

@@ -1,0 +1,20 @@
+id: milestone-birthday
+kind: standalone
+tags:
+  - birthday
+facts:
+  - subject: user
+    reference: The user turned 30
+events:
+  - entry: 1
+    reference: The user turned 30 and had a small dinner with friends
+summaries:
+  - entry: 1
+    reference: The user reflects on turning 30, moving past comparison to an imagined checklist and ending the day grateful at a small dinner with friends.
+retrieval:
+  - query: how I felt turning 30
+    expectEntry: 1
+chat:
+  - question: How did I feel on my birthday?
+    reference: Reflective and ultimately grateful at a small dinner, not only anxious about a checklist
+    expectTool: true

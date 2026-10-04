@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  native:
+    name: Native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vercel-labs/setup-zig@v1
+        with:
+          version: 0.16.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install the pinned Native SDK CLI
+        run: npm install -g "@native-sdk/cli@$(cat .native-sdk-version)"
+      - name: Assert the Native SDK CLI version
+        run: test "$(native --version | awk '{print $2}')" = "$(cat .native-sdk-version)"
+      - run: native validate app.json
+      - run: native test -Dnative-sdk-path="$(npm root -g)/@native-sdk/cli"

@@ -1,0 +1,18 @@
+id: sam-example
+kind: timeline
+facts:
+  - subject: Sam
+    reference: Sam is the user's boyfriend or partner
+    stale: Sam is the user's friend or climbing partner
+events:
+  - entry: 3
+    reference: The user and Sam started dating
+summaries:
+  - entry: 3
+    reference: The user and Sam mutually admit their feelings and decide to start dating.
+retrieval:
+  - query: when did I start dating Sam
+    expectEntry: 3
+chat:
+  - question: How would you describe my relationship with Sam right now?
+    reference: Sam is the user's boyfriend or partner, not just a friend

@@ -1,0 +1,44 @@
+{
+  "name": "sage-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#*": "./agent/*"
+  },
+  "scripts": {
+    "build": "EVE_TELEMETRY_DISABLED=1 eve build",
+    "dev": "EVE_TELEMETRY_DISABLED=1 NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=\\\"$(pwd)/scripts/dev-auth-hook.ts\\\" --import=\\\"$(pwd)/agent/lib/workflow-guard-preload.ts\\\"\" eve dev --no-default-extensions",
+    "start": "EVE_TELEMETRY_DISABLED=1 eve start",
+    "test:world": "node --test --experimental-strip-types packages/world-encrypted-local/index.test.ts",
+    "test:scripts": "node --test --experimental-strip-types scripts/*.test.ts",
+    "test:evals": "node --test --experimental-strip-types evals/lib/*.test.ts",
+    "eval": "EVE_TELEMETRY_DISABLED=1 eve eval --max-concurrency 1",
+    "typecheck": "tsc"
+  },
+  "overrides": {
+    "@ai-sdk/provider-utils": {
+      "undici": "^7.29.1"
+    },
+    "eve": {
+      "undici": "^8.10.2"
+    }
+  },
+  "dependencies": {
+    "@ai-sdk/provider-utils": "^5.0.44",
+    "@sage/world-encrypted-local": "file:./packages/world-encrypted-local",
+    "ai": "^7.0.106",
+    "eve": "^0.66.0",
+    "ollama-ai-provider-v2": "^4.0.1",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.x",
+    "@vercel/blob": "^2.8.0",
+    "microsandbox": "^0.5.10",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

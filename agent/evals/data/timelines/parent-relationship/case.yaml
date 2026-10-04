@@ -1,0 +1,26 @@
+id: parent-relationship
+kind: timeline
+tags:
+  - parent
+facts:
+  - subject: Dad
+    reference: The user's relationship with their father is closer and more open
+    stale: The user's relationship with their father is distant or surface-level
+events:
+  - entry: 1
+    reference: The user called their father for his birthday and the conversation stayed surface-level
+  - entry: 2
+    reference: The user's father shared that he used to sit in his car before shifts just to breathe
+  - entry: 3
+    reference: The user's father opened up about his own difficult upbringing and apologized
+  - entry: 4
+    reference: The user's father called just to check in and said he loved them
+summaries:
+  - entry: 3
+    reference: The user's father opens up about his own difficult childhood and apologizes, and the user shares that they'd felt distant from him.
+retrieval:
+  - query: when did my dad apologize
+    expectEntry: 3
+chat:
+  - question: How would you describe my relationship with my dad right now?
+    reference: The relationship is currently warm and open, not the old distant dynamic
