@@ -33,6 +33,7 @@ check-native-sdk-version:
 	fi
 
 check: check-native-sdk-version
+	sh scripts/release-version.sh
 	native check
 	npm --prefix frontend run check
 	npm --prefix frontend run typecheck
@@ -45,6 +46,7 @@ test:
 	npm --prefix agent run test:world
 	npm --prefix eval-viewer test
 	sh scripts/eval-env.test.sh
+	sh scripts/release-version.test.sh
 	node --test --experimental-strip-types security-tests/*.test.ts
 	sh security-tests/eval-leftover-automation.sh
 	sh security-tests/eval-server-token.sh
@@ -103,6 +105,7 @@ package:
 
 package-archive: package
 	sh scripts/archive-packaged-app.sh
+	sh scripts/update-archive-packaged-app.sh
 
 precommit:
 	make check

@@ -38,4 +38,5 @@ These pages explain how Sage works once you are past the [README](../README.md).
 ## Building and scripts
 
 - [Scripts](../scripts/README.md): packaging the app and running evals
+- [Releasing Sage](release.md): the update key, cutting a release, and how installed copies update
 - [AGENTS.md](../AGENTS.md): rules for coding agents in this repo

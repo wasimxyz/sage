@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and publish
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the tag
+        id: version
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tag $GITHUB_REF_NAME is not on main. Merge it first, then tag the merge commit." >&2
+            exit 1
+          fi
+          sh scripts/release-version.sh "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+      - uses: vercel-labs/setup-zig@v1
+        with:
+          version: 0.16.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            agent/package-lock.json
+            eval-viewer/package-lock.json
+      - name: Install the pinned Native SDK CLI
+        run: npm install -g "@native-sdk/cli@$(cat .native-sdk-version)"
+      - name: Install dependencies
+        run: |
+          npm --prefix frontend ci
+          npm --prefix agent ci
+          npm --prefix eval-viewer ci
+      - run: native validate app.json
+      - run: make check
+      - run: make test
+      # Tests need the agent's dev modules. `make package` installs it again
+      # with --omit=dev, so it must run after them.
+      - name: Package the app
+        run: make package-archive
+      - name: Sign the update feed
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$UPDATE_PRIVATE_KEY" ]; then
+            echo "The UPDATE_PRIVATE_KEY secret is not set." >&2
+            exit 1
+          fi
+          key="$RUNNER_TEMP/sage-update.key"
+          trap 'rm -f "$key"' EXIT
+          umask 077
+          printf '%s' "$UPDATE_PRIVATE_KEY" | base64 --decode > "$key"
+          zip="Sage-$VERSION-macos-update.zip"
+          native update sign \
+            --archive "zig-out/package/$zip" \
+            --url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$zip" \
+            --target macos-aarch64 \
+            --private-key "$key" \
+            --output zig-out/package/native-update.json
+      # Create the release as a draft and publish it once all three files are
+      # attached, so "latest" never points at a release with a missing ZIP.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          title="Sage ${GITHUB_REF_NAME#v}"
+          files="zig-out/package/Sage-$VERSION-macos.dmg zig-out/package/Sage-$VERSION-macos-update.zip zig-out/package/native-update.json"
+          if [ "$PRERELEASE" = true ]; then
+            # shellcheck disable=SC2086
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes --prerelease --title "$title" $files
+            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease
+          else
+            # shellcheck disable=SC2086
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes --title "$title" $files
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          fi

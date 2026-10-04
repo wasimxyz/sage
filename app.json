@@ -98,6 +98,11 @@
             }
         }
     },
+    "updates": {
+        "feed_url": "https://github.com/wasimxyz/sage/releases/latest/download/native-update.json",
+        "public_key": "unxANL3H921mekkUoXyWYLfVgUtntByyxHDVv2JOdQc=",
+        "check_on_start": true
+    },
     "web_engine": "system",
     "cef": { "dir": "third_party/cef/macos", "auto_install": false },
     "windows": [

@@ -13,7 +13,18 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 1. `refuse-packaged-dev-modules.sh` stops the copy when `typescript`, `@types`, or `@vercel/blob` is still installed in the copied agent.
 2. `fetch-node.sh` downloads Node.js 24.21.0 once into `third_party/node/`, checks that the download is the expected file, and copies the `node` program into the app.
 
-`make package-archive` runs `archive-packaged-app.sh` after that copy. The script builds `zig-out/package/Sage-0.1.0-macos.dmg` from the app that already contains the Chat agent and Node.js.
+`make package-archive` runs two more scripts after that copy. Both read the version from the app’s `Info.plist` and work on the app that already contains the Chat agent and Node.js.
+
+- `archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos.dmg`.
+- `update-archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos-update.zip`, the file installed copies download. It stands in for `native package --update-archive`, which zips the app before the Chat agent is copied in.
+
+`zig build package` runs `update-archive-packaged-app.sh` itself when `app.json` has an `updates` block.
+
+## Releasing
+
+`release-version.sh` checks that every version in the repo matches `app.json`: `build.zig.zon`, each `package.json`, and the root entries of each `package-lock.json`. `make check` runs it with no arguments. The release workflow runs it with the pushed tag, which must be `v<version>` or `v<version>-rc.<n>`, and takes the version and prerelease flag from its output. [Releasing Sage](../docs/release.md) has the full steps.
+
+`make test` runs `release-version.test.sh`, which checks the script against a copy of those files.
 
 ## Eval
 
