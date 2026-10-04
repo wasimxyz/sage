@@ -14,7 +14,6 @@ An eve agent is a directory of files, and `agent/agent/` follows that layout:
 - `tools/`: one file per tool, `search_journal.ts` and `get_journal_entry.ts`
 - `memory/`: `facts.ts` and `episodic.ts`, which recall facts and dated events in a memory build. They only read. Dream and the Memories screen write.
 - `channels/eve.ts`: the HTTP channel the frontend talks to, with its token check
-- `sandbox.ts`: the default sandbox setup, kept so the layout stays standard while the bash tool is off
 
 Shared code lives in `agent/agent/lib/`:
 
@@ -58,6 +57,8 @@ In a memory build, the facts slot also adds **`facts__search_memories`**. It sea
 
 All tools reach the agent server through `lib/sage.ts`, over a Unix socket with the bearer token. `agent.ts` sets `defaultTools: false`, so eve’s built-in tools stay off.
 
+Sage has no sandbox. The built-in tools that need one, such as bash and file access, are the ones that stay off, and the journal tools reach Sage over the socket. `npm --prefix agent run build` passes `--skip-sandbox-prewarm`, because `eve build` otherwise tries to prepare a virtual machine for eve’s default sandbox, and Sage does not install the `microsandbox` package. A tool that needs a sandbox would have to drop that flag and install a provider first.
+
 The journal tools are always on. Memory slots, the memory search tool, and profile recall turn on only when `/features` reports that memory is on. That endpoint and the `features.get` bridge command read the same compiled value, and a failed lookup leaves memory off.
 
 ## Authentication
@@ -92,7 +93,7 @@ A packaged app starts the built Chat server, `.output/server/index.mjs`, on `127
 
 The working directory is `~/Library/Application Support/com.wasimxyz.sage/eve/`. It points at the agent source, `.output/`, and `node_modules`, all copied into the app bundle.
 
-That `node_modules` is a production install: `make package` runs `npm --prefix agent install --omit=dev`, so `typescript`, `@types`, Biome, and `@vercel/blob` never reach the bundle. `microsandbox` stays, because eve’s default sandbox uses it on macOS. Run `npm --prefix agent install` again before `make check`, which needs `typescript` and Biome.
+That `node_modules` is a production install: `make package` runs `npm --prefix agent install --omit=dev`, so `typescript`, `@types`, Biome, and `@vercel/blob` never reach the bundle. Run `npm --prefix agent install` again before `make check`, which needs `typescript` and Biome.
 
 Chat calls `http://127.0.0.1:2001` through `useEveAgent({ host })`. If the bundled Node.js is missing, the port is in use, or the bundle has no built agent, Chat shows the reason from the `chat.agent` bridge command. Chat waits for both that command and the health check, so another program answering on port 2001 cannot make Chat ready.
 
