@@ -21,24 +21,29 @@ function sageHeaders(request: Request): Record<string, string> {
 }
 
 function sageDesktop(): AuthFn<Request> {
-  return withAuthChallenges(async (request) => {
-    const expected = await expectedChatToken();
-    const presented = extractBearerToken(request.headers.get("authorization"));
-    if (
-      expected === null ||
-      presented === null ||
-      !bearerMatches(expected, presented) ||
-      !(await sageChatReady())
-    ) {
-      return null;
-    }
-    return {
-      attributes: sageHeaders(request),
-      authenticator: "sage-desktop",
-      principalId: "local",
-      principalType: "user",
-    };
-  }, [{ scheme: "Bearer" }]);
+  return withAuthChallenges(
+    async (request) => {
+      const expected = await expectedChatToken();
+      const presented = extractBearerToken(
+        request.headers.get("authorization")
+      );
+      if (
+        expected === null ||
+        presented === null ||
+        !bearerMatches(expected, presented) ||
+        !(await sageChatReady())
+      ) {
+        return null;
+      }
+      return {
+        attributes: sageHeaders(request),
+        authenticator: "sage-desktop",
+        principalId: "local",
+        principalType: "user",
+      };
+    },
+    [{ scheme: "Bearer" }]
+  );
 }
 
 export default eveChannel({

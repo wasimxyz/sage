@@ -1,6 +1,8 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+const lineBreakPattern = /\r?\n/;
+
 export interface ChatTranscript {
   caseId: string;
   expectTool: boolean;
@@ -44,7 +46,7 @@ export function loadChatTranscripts(): ChatTranscript[] {
     throw error;
   }
   const rows: ChatTranscript[] = [];
-  const lines = raw.split(/\r?\n/);
+  const lines = raw.split(lineBreakPattern);
   for (const [offset, line] of lines.entries()) {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
@@ -55,12 +57,18 @@ export function loadChatTranscripts(): ChatTranscript[] {
   return rows;
 }
 
-function parseRow(line: string, path: string, lineNumber: number): ChatTranscript {
+function parseRow(
+  line: string,
+  path: string,
+  lineNumber: number
+): ChatTranscript {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
-  } catch {
-    throw new Error(`${path}:${lineNumber} is not valid JSON.`);
+  } catch (error) {
+    throw new Error(`${path}:${lineNumber} is not valid JSON.`, {
+      cause: error,
+    });
   }
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`${path}:${lineNumber} must be a JSON object.`);
@@ -119,7 +127,9 @@ function stringList(value: unknown, label: string): string[] {
   if (value === undefined) {
     return [];
   }
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+  if (
+    !(Array.isArray(value) && value.every((item) => typeof item === "string"))
+  ) {
     throw new Error(`${label} tags must be a list of strings.`);
   }
   return value;

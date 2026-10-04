@@ -51,7 +51,9 @@ function withBearer(
   const headers = new Headers(
     input instanceof Request ? input.headers : undefined
   );
-  new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+  new Headers(init?.headers).forEach((value, key) => {
+    headers.set(key, value);
+  });
   headers.set("authorization", `Bearer ${token}`);
   if (input instanceof Request) {
     return [new Request(input, { ...init, headers }), undefined];

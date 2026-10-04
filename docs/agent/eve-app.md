@@ -92,7 +92,7 @@ A packaged app starts the built Chat server, `.output/server/index.mjs`, on `127
 
 The working directory is `~/Library/Application Support/com.wasimxyz.sage/eve/`. It points at the agent source, `.output/`, and `node_modules`, all copied into the app bundle.
 
-That `node_modules` is a production install: `make package` runs `npm --prefix agent install --omit=dev`, so `typescript`, `@types`, and `@vercel/blob` never reach the bundle. `microsandbox` stays, because eve’s default sandbox uses it on macOS. Run `npm --prefix agent install` again before `npm --prefix agent run typecheck`, which needs `typescript`.
+That `node_modules` is a production install: `make package` runs `npm --prefix agent install --omit=dev`, so `typescript`, `@types`, Biome, and `@vercel/blob` never reach the bundle. `microsandbox` stays, because eve’s default sandbox uses it on macOS. Run `npm --prefix agent install` again before `make check`, which needs `typescript` and Biome.
 
 Chat calls `http://127.0.0.1:2001` through `useEveAgent({ host })`. If the bundled Node.js is missing, the port is in use, or the bundle has no built agent, Chat shows the reason from the `chat.agent` bridge command. Chat waits for both that command and the health check, so another program answering on port 2001 cannot make Chat ready.
 

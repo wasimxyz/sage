@@ -12,26 +12,31 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
+  type CacheKeyParts,
   computeCacheKey,
   evalCacheDir,
   evalCacheEnabled,
   loadCacheKeyParts,
   snapshotDreamCache,
-  type CacheKeyParts,
 } from "./cache.ts";
+
+const sha256HexPattern = /^[a-f0-9]{64}$/;
 
 test("computeCacheKey is stable for fixed inputs", () => {
   const fixture = makeFixture();
   const first = computeCacheKey(fixture.parts);
   const second = computeCacheKey(fixture.parts);
   assert.equal(first, second);
-  assert.match(first, /^[a-f0-9]{64}$/);
+  assert.match(first, sha256HexPattern);
 });
 
 test("computeCacheKey changes when an entry body changes", () => {
   const fixture = makeFixture();
   const before = computeCacheKey(fixture.parts);
-  writeFileSync(join(fixture.dataRoot, "timelines", "sam", "01.md"), "edited\n");
+  writeFileSync(
+    join(fixture.dataRoot, "timelines", "sam", "01.md"),
+    "edited\n"
+  );
   const after = computeCacheKey(fixture.parts);
   assert.notEqual(after, before);
 });
@@ -123,9 +128,9 @@ test("loadCacheKeyParts falls back to empty digests when lookup fails", async ()
   process.env.SAGE_SUMMARY_MODEL = "qwen3:8b";
   process.env.SAGE_EMBED_MODEL = "nomic-embed-text";
   try {
-    const parts = await loadCacheKeyParts(async () => {
-      throw new Error("offline");
-    });
+    const parts = await loadCacheKeyParts(() =>
+      Promise.reject(new Error("offline"))
+    );
     assert.equal(parts.summaryModel, "qwen3:8b");
     assert.equal(parts.embedModel, "nomic-embed-text");
     assert.equal(parts.summaryDigest, "");
@@ -168,7 +173,10 @@ test("snapshotDreamCache copies a checkpointed database into a key-named dir", (
   assert.equal(existsSync(join(dest, "app.db")), true);
   assert.equal(existsSync(join(dest, "manifest.json")), true);
   assert.equal(existsSync(join(dest, "key.json")), true);
-  assert.equal(readFileSync(join(dest, "manifest.json"), "utf8"), '{"cases":{}}\n');
+  assert.equal(
+    readFileSync(join(dest, "manifest.json"), "utf8"),
+    '{"cases":{}}\n'
+  );
   const stamp = JSON.parse(readFileSync(join(dest, "key.json"), "utf8")) as {
     key?: string;
   };
@@ -185,7 +193,11 @@ test("snapshotDreamCache copies a checkpointed database into a key-named dir", (
   }
 });
 
-function makeFixture(): { dataRoot: string; parts: CacheKeyParts; repoRoot: string } {
+function makeFixture(): {
+  dataRoot: string;
+  parts: CacheKeyParts;
+  repoRoot: string;
+} {
   const root = mkdtempSync(join(tmpdir(), "sage-eval-cache-"));
   const repoRoot = join(root, "repo");
   const dataRoot = join(root, "data");
@@ -202,7 +214,6 @@ function makeFixture(): { dataRoot: string; parts: CacheKeyParts; repoRoot: stri
   writeFileSync(join(dataRoot, "timelines", "sam", "case.yaml"), "id: sam\n");
   return {
     dataRoot,
-    repoRoot,
     parts: {
       dataRoot,
       embedDigest: "sha256:embed",
@@ -211,6 +222,7 @@ function makeFixture(): { dataRoot: string; parts: CacheKeyParts; repoRoot: stri
       summaryDigest: "sha256:summary",
       summaryModel: "qwen3:8b",
     },
+    repoRoot,
   };
 }
 

@@ -1,3 +1,6 @@
+const trailingV1Pattern = /\/v1\/?$/;
+const trailingSlashPattern = /\/$/;
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const TAGS_TIMEOUT_MS = 10_000;
 
@@ -12,13 +15,15 @@ export function localOllamaBaseURL(raw: string | undefined): string {
   let hostname: string;
   try {
     ({ hostname } = new URL(value));
-  } catch {
-    throw new Error("OLLAMA_BASE_URL must point at Ollama on this Mac.");
+  } catch (error) {
+    throw new Error("OLLAMA_BASE_URL must point at Ollama on this Mac.", {
+      cause: error,
+    });
   }
   if (!LOOPBACK_HOSTS.has(hostname)) {
     throw new Error("OLLAMA_BASE_URL must point at Ollama on this Mac.");
   }
-  return value.replace(/\/v1\/?$/, "/api");
+  return value.replace(trailingV1Pattern, "/api");
 }
 
 function isRemote(entry: Record<string, unknown>): boolean {
@@ -76,7 +81,8 @@ function remoteModelNames(tags: unknown): Set<string> {
 
 function listed(names: Set<string>, modelId: string): boolean {
   return (
-    names.has(modelId) || (!modelId.includes(":") && names.has(`${modelId}:latest`))
+    names.has(modelId) ||
+    (!modelId.includes(":") && names.has(`${modelId}:latest`))
   );
 }
 
@@ -92,20 +98,21 @@ export async function assertLocalModel(
 ): Promise<void> {
   let tags: unknown;
   try {
-    const response = await fetchFn(`${baseURL.replace(/\/$/, "")}/tags`, {
-      signal: AbortSignal.timeout(TAGS_TIMEOUT_MS),
-    });
+    const response = await fetchFn(
+      `${baseURL.replace(trailingSlashPattern, "")}/tags`,
+      {
+        signal: AbortSignal.timeout(TAGS_TIMEOUT_MS),
+      }
+    );
     if (!response.ok) {
       throw new Error("tags request failed");
     }
     tags = await response.json();
-  } catch {
-    throw new Error("Ollama is not running.");
+  } catch (error) {
+    throw new Error("Ollama is not running.", { cause: error });
   }
   if (listed(remoteModelNames(tags), modelId)) {
-    throw new Error(
-      `${modelId} runs in the cloud. Pick a model on this Mac.`
-    );
+    throw new Error(`${modelId} runs in the cloud. Pick a model on this Mac.`);
   }
   if (!listed(localModelNames(tags), modelId)) {
     throw new Error(`${modelId} is not pulled. Pick a model on this Mac.`);

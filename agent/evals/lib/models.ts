@@ -1,3 +1,5 @@
+const trailingV1Pattern = /\/v1\/?$/;
+
 const defaultChatModel = "qwen3.5:9b";
 
 export function chatModel(): string {
@@ -10,14 +12,16 @@ export function chatModel(): string {
 
 export function chatModels(): string[] {
   const raw =
-    process.env.SAGE_CHAT_MODELS ?? process.env.OLLAMA_MODEL ?? defaultChatModel;
+    process.env.SAGE_CHAT_MODELS ??
+    process.env.OLLAMA_MODEL ??
+    defaultChatModel;
   const models = splitModelList(raw);
   return models.length > 0 ? models : [defaultChatModel];
 }
 
 export function ollamaBaseURL(): string {
   const raw = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/api";
-  return raw.replace(/\/v1\/?$/, "/api");
+  return raw.replace(trailingV1Pattern, "/api");
 }
 
 export function judgeModelId(): string {

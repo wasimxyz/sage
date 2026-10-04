@@ -31,6 +31,7 @@ async function main(): Promise<void> {
   let skipped = 0;
   for (const filePath of files) {
     const pathname = blobPathname(filePath, prefix);
+    // biome-ignore lint/performance/noAwaitInLoops: one report at a time keeps the log in order and the uploads gentle.
     if (await blobExists(pathname)) {
       console.log(`skip ${pathname}`);
       skipped += 1;

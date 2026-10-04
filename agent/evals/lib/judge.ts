@@ -9,14 +9,14 @@ export function judgeFactuality(
   label: string
 ): void {
   t.judge({
-    state: { output, reference },
     questions: {
       factuality: {
-        type: "boolean",
         instructions:
           "Is the output factually consistent with the reference? Paraphrase is allowed.",
+        type: "boolean",
       },
     },
+    state: { output, reference },
   }).factuality.label(label);
 }
 
@@ -36,13 +36,13 @@ export function judgeSummary(
   label: string
 ): void {
   t.judge({
-    state: { output, reference },
     questions: {
       quality: {
-        type: "boolean",
         instructions:
           "Does the output summarize the reference without adding unsupported claims?",
+        type: "boolean",
       },
     },
+    state: { output, reference },
   }).quality.label(label);
 }

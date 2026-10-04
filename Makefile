@@ -37,6 +37,10 @@ check: check-native-sdk-version
 	native check
 	npm --prefix frontend run check
 	npm --prefix frontend run typecheck
+	npm --prefix agent run check
+	npm --prefix agent run typecheck
+	npm --prefix eval-viewer run check
+	npm --prefix eval-viewer run typecheck
 
 test:
 	native test $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)

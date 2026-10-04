@@ -7,6 +7,8 @@ import test from "node:test";
 
 import { readEntrySummary } from "./store.ts";
 
+const encryptedPattern = /encrypted/;
+
 test("readEntrySummary returns plaintext summaries and rejects encrypted rows", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "sage-eval-store-"));
   const db = new DatabaseSync(join(dataDir, "app.db"));
@@ -27,7 +29,7 @@ test("readEntrySummary returns plaintext summaries and rejects encrypted rows", 
   process.env.SAGE_DATA_DIR = dataDir;
   try {
     assert.equal(readEntrySummary(3), "The user and Sam started dating.");
-    assert.throws(() => readEntrySummary(4), /encrypted/);
+    assert.throws(() => readEntrySummary(4), encryptedPattern);
     assert.equal(readEntrySummary(99), null);
   } finally {
     if (previous === undefined) {

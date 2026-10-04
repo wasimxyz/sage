@@ -51,11 +51,7 @@ const provider = defineMemoryProvider({
     return {
       search_memories: defineTool({
         description:
-          "Search durable facts and dated events by meaning. Each result names its source as sourceType and sourceId. When sourceType is \"entry\", call get_journal_entry with that sourceId to read the full journal text. Sources of type \"conversation\" have no fetch tool.",
-        inputSchema: z.object({
-          query: z.string().min(1),
-          limit: z.number().int().min(1).max(25).optional(),
-        }),
+          'Search durable facts and dated events by meaning. Each result names its source as sourceType and sourceId. When sourceType is "entry", call get_journal_entry with that sourceId to read the full journal text. Sources of type "conversation" have no fetch tool.',
         async execute({ query, limit }) {
           if (!(await memoryFeatureEnabled())) {
             return [];
@@ -98,6 +94,10 @@ const provider = defineMemoryProvider({
           merged.sort(byScoreDescending);
           return merged.slice(0, take);
         },
+        inputSchema: z.object({
+          limit: z.number().int().min(1).max(25).optional(),
+          query: z.string().min(1),
+        }),
       }),
     };
   },
@@ -146,7 +146,10 @@ type MemorySearchHit =
       sourceType: string;
     };
 
-function byScoreDescending(left: MemorySearchHit, right: MemorySearchHit): number {
+function byScoreDescending(
+  left: MemorySearchHit,
+  right: MemorySearchHit
+): number {
   return right.score - left.score;
 }
 

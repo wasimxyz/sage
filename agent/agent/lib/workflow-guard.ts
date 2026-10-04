@@ -13,9 +13,9 @@
 // comes from expectedChatToken(): the spawn pipe in a packaged app,
 // agent-server.json in dev and eval.
 
-import { extractBearerToken } from "eve/channels/auth";
 import http from "node:http";
 import type { Duplex } from "node:stream";
+import { extractBearerToken } from "eve/channels/auth";
 import {
   bearerMatches,
   createBearerFetch,
@@ -24,6 +24,8 @@ import {
   type ReadToken,
 } from "./bearer.ts";
 import { expectedChatToken } from "./sage.ts";
+
+const queryOrFragmentPattern = /[?#]/;
 
 type Env = Record<string, string | undefined>;
 
@@ -44,7 +46,7 @@ const unauthorizedHeaders = {
 // spelling the router might accept is still caught. A path it cannot decode is
 // treated as a workflow path: a false positive only costs a 401.
 export function isWorkflowPath(rawUrl: string): boolean {
-  const raw = rawUrl.split(/[?#]/, 1)[0] ?? "";
+  const raw = rawUrl.split(queryOrFragmentPattern, 1)[0] ?? "";
   let decoded: string;
   try {
     decoded = decodeURIComponent(raw);
@@ -59,9 +61,7 @@ export function isWorkflowPath(rawUrl: string): boolean {
   } catch {
     return true;
   }
-  return (
-    resolved.startsWith(workflowPrefix) || folded.includes(workflowPrefix)
-  );
+  return resolved.startsWith(workflowPrefix) || folded.includes(workflowPrefix);
 }
 
 export function tokenAdmits(
@@ -116,10 +116,7 @@ function isRunnerUrl(url: URL, env: Env): boolean {
   return port !== null && effectivePort(url) === port;
 }
 
-export function isWorkflowUrl(
-  rawUrl: string,
-  env: Env = process.env
-): boolean {
+export function isWorkflowUrl(rawUrl: string, env: Env = process.env): boolean {
   const url = parseLoopbackUrl(rawUrl);
   return url !== null && isRunnerUrl(url, env);
 }
@@ -194,16 +191,13 @@ function guardServers(readToken: ReadToken): void {
       request.resume();
       deny(args[1] as http.ServerResponse);
     };
-    readToken().then(
-      (expected) => {
-        if (tokenAdmits(request.headers.authorization, expected)) {
-          original.call(this, event, ...args);
-          return;
-        }
-        refuse();
-      },
-      refuse
-    );
+    readToken().then((expected) => {
+      if (tokenAdmits(request.headers.authorization, expected)) {
+        original.call(this, event, ...args);
+        return;
+      }
+      refuse();
+    }, refuse);
     return true;
   } as typeof http.Server.prototype.emit;
 }

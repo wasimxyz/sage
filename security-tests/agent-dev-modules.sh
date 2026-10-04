@@ -57,7 +57,7 @@ module_trees="node_modules .output/server/node_modules"
 # directory ships nothing.
 for tree in $module_trees; do
   fixture="$tmp/empty/$tree"
-  mkdir -p "$fixture/@types" "$fixture/@vercel"
+  mkdir -p "$fixture/@types" "$fixture/@biomejs" "$fixture/@vercel"
   sh "$guard_script" "$fixture" ||
     fail "an empty $tree/@types directory counts as a shipped dev module."
 done
@@ -67,7 +67,7 @@ sh "$guard_script" "$tmp/empty/absent" ||
   fail "the guard fails on a missing node_modules directory."
 
 for tree in $module_trees; do
-  for dev_module in typescript @types/node @vercel/blob; do
+  for dev_module in typescript @types/node @biomejs/biome ultracite @vercel/blob; do
     fixture="$tmp/real/$tree"
     rm -rf "$tmp/real"
     mkdir -p "$fixture/$dev_module"

@@ -123,9 +123,9 @@ test("replaces the bearer on a Request and keeps its body", async () => {
 test("leaves health, Ollama, and other hosts on the header eve built", async () => {
   const { calls, fetch } = recordingFetch();
   const reads = { value: 0 };
-  const hooked = createSageAuthFetch(fetch, async () => {
+  const hooked = createSageAuthFetch(fetch, () => {
     reads.value += 1;
-    return sageToken;
+    return Promise.resolve(sageToken);
   });
   const urls = [
     "http://127.0.0.1:2000/eve/v1/health",
@@ -134,9 +134,9 @@ test("leaves health, Ollama, and other hosts on the header eve built", async () 
     "https://example.com/eve/v1/info",
   ];
 
-  for (const url of urls) {
-    await hooked(url, { headers: { authorization: vercelBearer } });
-  }
+  await Promise.all(
+    urls.map((url) => hooked(url, { headers: { authorization: vercelBearer } }))
+  );
 
   assert.equal(reads.value, 0);
   for (const call of calls) {

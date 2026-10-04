@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   countWords,
+  type EvalManifest,
   evalDataRoot,
   journalIdFor,
   loadAllCases,
@@ -14,8 +15,11 @@ import {
   parseFrontmatter,
   requireSeededEntry,
   tagsFor,
-  type EvalManifest,
 } from "./dataset.ts";
+
+const missingPattern = /missing/;
+const entry99Pattern = /entry 99/;
+const dateFormatPattern = /YYYY-MM-DD/;
 
 test("parseFrontmatter reads date, title, and body", () => {
   const parsed = parseFrontmatter(
@@ -113,7 +117,10 @@ test("journalIdFor maps 1-based entry indexes onto seeded ids", () => {
 });
 
 test("journalIdFor rejects a missing case", () => {
-  assert.throws(() => journalIdFor({ cases: {} }, "missing", 1), /missing/);
+  assert.throws(
+    () => journalIdFor({ cases: {} }, "missing", 1),
+    missingPattern
+  );
 });
 
 test("loadManifest reads journal ids from SAGE_EVAL_MANIFEST", () => {
@@ -128,7 +135,7 @@ test("loadManifest reads journal ids from SAGE_EVAL_MANIFEST", () => {
   try {
     assert.equal(journalIdFor(loadManifest(), "sam-example", 3), 12);
     requireSeededEntry("sam-example", 3);
-    assert.throws(() => requireSeededEntry("sam-example", 99), /entry 99/);
+    assert.throws(() => requireSeededEntry("sam-example", 99), entry99Pattern);
   } finally {
     if (previous === undefined) {
       delete process.env.SAGE_EVAL_MANIFEST;
@@ -165,6 +172,9 @@ test("loadCaseDir reads expectTool and rejects a missing date", async () => {
     join(dir, "bad", "case.yaml"),
     "id: bad-date\nkind: standalone\n"
   );
-  writeFileSync(join(dir, "bad", "01.md"), "---\ntitle: No date\n---\n\nBody.\n");
-  await assert.rejects(() => loadCaseDir(join(dir, "bad")), /YYYY-MM-DD/);
+  writeFileSync(
+    join(dir, "bad", "01.md"),
+    "---\ntitle: No date\n---\n\nBody.\n"
+  );
+  await assert.rejects(() => loadCaseDir(join(dir, "bad")), dateFormatPattern);
 });

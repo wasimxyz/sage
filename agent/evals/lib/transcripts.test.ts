@@ -6,9 +6,11 @@ import test from "node:test";
 
 import {
   appendChatTranscript,
-  loadChatTranscripts,
   type ChatTranscript,
+  loadChatTranscripts,
 } from "./transcripts.ts";
+
+const notValidJSONPattern = /not valid JSON/;
 
 test("loadChatTranscripts returns an empty list when the env var is unset", () => {
   const previous = process.env.SAGE_EVAL_TRANSCRIPTS;
@@ -90,7 +92,7 @@ test("loadChatTranscripts throws on a malformed line", () => {
   writeFileSync(path, "not-json\n");
   process.env.SAGE_EVAL_TRANSCRIPTS = path;
   try {
-    assert.throws(() => loadChatTranscripts(), /not valid JSON/);
+    assert.throws(() => loadChatTranscripts(), notValidJSONPattern);
   } finally {
     restoreEnv("SAGE_EVAL_TRANSCRIPTS", previous);
   }

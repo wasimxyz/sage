@@ -8,7 +8,6 @@ const rows = loadChatTranscripts();
 const evals = rows.map((row) =>
   defineEval({
     description: `${row.caseId}: chat ${row.index + 1} (judge)`,
-    tags: row.tags,
     metadata: {
       caseId: row.caseId,
       expectTool: row.expectTool,
@@ -18,7 +17,8 @@ const evals = rows.map((row) =>
       reference: row.reference,
       reply: row.reply,
     },
-    async test(t) {
+    tags: row.tags,
+    test(t) {
       judgeFactuality(t, row.reference, row.reply, "chat factuality");
     },
   })

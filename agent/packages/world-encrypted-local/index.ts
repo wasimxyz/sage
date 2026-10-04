@@ -3,9 +3,6 @@ import { createWorld as createLocalWorld } from "@workflow/world-local";
 import { decodeWorldKey, WORLD_KEY_ENV } from "./key.ts";
 import { readSpawnSecrets } from "./spawn.js";
 
-export { decodeWorldKey, WORLD_KEY_ENV };
-export { parseSpawnSecrets, readSpawnSecrets } from "./spawn.js";
-
 const WORLD_DATA_DIR = join(".eve", ".workflow-data");
 
 function worldKeyHex(): string | undefined {
@@ -26,5 +23,3 @@ export function createWorld() {
     getEncryptionKeyForRun: async () => encryptionKey,
   };
 }
-
-export default createWorld;

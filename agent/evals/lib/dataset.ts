@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import { loadYaml } from "eve/evals/loaders";
 
+const leadingBomPattern = /^\uFEFF/;
+const lineBreakPattern = /\r?\n/;
+
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/;
 const whitespacePattern = /\s+/;
@@ -61,6 +64,7 @@ export interface ChatRef {
 }
 
 export interface EvalCase {
+  chat: ChatRef[];
   dir: string;
   entries: JournalEntryFixture[];
   events: EventRef[];
@@ -68,7 +72,6 @@ export interface EvalCase {
   id: string;
   kind: CaseKind;
   retrieval: RetrievalRef[];
-  chat: ChatRef[];
   summaries: SummaryRef[];
   tags: string[];
 }
@@ -79,31 +82,28 @@ export interface EvalManifest {
 
 export async function loadAllCases(): Promise<EvalCase[]> {
   const groups = ["timelines", "standalones"] as const;
-  const cases: EvalCase[] = [];
-  for (const group of groups) {
-    const groupDir = join(evalDataRoot(), group);
-    let names: string[] = [];
-    try {
-      names = await readdir(groupDir);
-    } catch (error) {
-      if (isMissing(error)) {
-        continue;
-      }
-      throw error;
+  const loaded = await Promise.all(groups.map((group) => loadGroup(group)));
+  return loaded.flat();
+}
+
+async function loadGroup(group: "timelines" | "standalones") {
+  const groupDir = join(evalDataRoot(), group);
+  let names: string[];
+  try {
+    names = await readdir(groupDir);
+  } catch (error) {
+    if (isMissing(error)) {
+      return [];
     }
-    names.sort();
-    for (const name of names) {
-      if (name.startsWith(".")) {
-        continue;
-      }
-      const dir = join(groupDir, name);
-      const loaded = await loadCaseDir(dir);
-      if (loaded) {
-        cases.push(loaded);
-      }
-    }
+    throw error;
   }
-  return cases;
+  const cases = await Promise.all(
+    names
+      .sort()
+      .filter((name) => !name.startsWith("."))
+      .map((name) => loadCaseDir(join(groupDir, name)))
+  );
+  return cases.filter((loaded): loaded is EvalCase => loaded !== null);
 }
 
 export async function loadCaseDir(dir: string): Promise<EvalCase | null> {
@@ -125,7 +125,7 @@ export function parseFrontmatter(content: string): {
   date?: string;
   title?: string;
 } {
-  const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const lines = content.replace(leadingBomPattern, "").split(lineBreakPattern);
   if (lines[0] !== "---") {
     return { body: content };
   }
@@ -243,9 +243,14 @@ async function loadEntryFiles(dir: string): Promise<JournalEntryFixture[]> {
   const names = (await readdir(dir))
     .filter((name) => name.endsWith(".md"))
     .sort();
+  const files = await Promise.all(
+    names.map(async (fileName) => ({
+      fileName,
+      raw: await readFile(join(dir, fileName), "utf8"),
+    }))
+  );
   const entries: JournalEntryFixture[] = [];
-  for (const [offset, fileName] of names.entries()) {
-    const raw = await readFile(join(dir, fileName), "utf8");
+  for (const [offset, { fileName, raw }] of files.entries()) {
     const parsed = parseFrontmatter(raw);
     const body = parsed.body.trim();
     const date = parsed.date?.trim() ?? "";
@@ -316,7 +321,11 @@ function parseFacts(value: unknown, id: string): FactRef[] {
     }
     const row = item as Record<string, unknown>;
     const subject = requiredString(row, "subject", `${id} fact ${index + 1}`);
-    const reference = requiredString(row, "reference", `${id} fact ${index + 1}`);
+    const reference = requiredString(
+      row,
+      "reference",
+      `${id} fact ${index + 1}`
+    );
     const stale =
       typeof row.stale === "string" && row.stale.length > 0
         ? row.stale
@@ -416,11 +425,7 @@ function parseChat(value: unknown, id: string, _entryCount: number): ChatRef[] {
       throw new Error(`${id} chat ${index + 1} must be a mapping.`);
     }
     const row = item as Record<string, unknown>;
-    const question = requiredString(
-      row,
-      "question",
-      `${id} chat ${index + 1}`
-    );
+    const question = requiredString(row, "question", `${id} chat ${index + 1}`);
     const reference = requiredString(
       row,
       "reference",
@@ -479,7 +484,9 @@ function stringList(value: unknown): string[] {
   if (value === undefined) {
     return [];
   }
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+  if (
+    !(Array.isArray(value) && value.every((item) => typeof item === "string"))
+  ) {
     throw new Error("tags must be a list of strings.");
   }
   return value.map((item) => item.trim()).filter((item) => item.length > 0);

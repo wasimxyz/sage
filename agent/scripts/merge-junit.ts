@@ -3,8 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { mergeJunit } from "../evals/lib/junit.ts";
 import { loadRecordedResults } from "../evals/lib/recorder.ts";
 
-const outPath = process.argv[2];
-const inputs = process.argv.slice(3);
+const [, , outPath, ...inputs] = process.argv;
 
 if (outPath === undefined || outPath.length === 0 || inputs.length === 0) {
   console.error(

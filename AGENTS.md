@@ -17,7 +17,7 @@ npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-
 | `agent/` AI SDK / Ollama provider | [`ai-sdk`](https://skills.sh/vercel/ai/ai-sdk) and the Ollama docs below | `docs/agent/eve-app.md` |
 | TipTap editor | [`tiptap`](https://skills.sh/ueberdosis/tiptap/tiptap) | `frontend/src/components/editor.tsx` |
 | `frontend/` or `eval-viewer/` UI | [`shadcn`](https://skills.sh/shadcn/ui/shadcn), [`vercel-react-best-practices`](https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices) | existing components |
-| JS/TS lint and format | [`ultracite`](https://skills.sh/haydenbleasel/ultracite/ultracite) | `frontend/biome.jsonc`, `eval-viewer/biome.jsonc` |
+| JS/TS lint and format | [`ultracite`](https://skills.sh/haydenbleasel/ultracite/ultracite) | `frontend/biome.jsonc`, `agent/biome.jsonc`, `eval-viewer/biome.jsonc` |
 | `eval-viewer/` Next.js | [`next-best-practices`](https://skills.sh/vercel-labs/openreview/next-best-practices); [`next-dev-loop`](https://skills.sh/vercel/next.js/next-dev-loop) after a user-visible change | `eval-viewer/` |
 | `docs/` | [`writing-guidelines`](https://skills.sh/vercel-labs/agent-skills/writing-guidelines) | match existing `docs/` voice |
 | UI review | [`web-design-guidelines`](https://skills.sh/vercel-labs/agent-skills/web-design-guidelines) | only when asked |
@@ -45,10 +45,7 @@ Zig client: `src/ollama.zig`. Node Chat path: `ollama-ai-provider-v2` in `agent/
 
 Before committing and pushing, run `make check` and `make test` and fix failures before you finish. Docs-only changes skip `make test`. If a target cannot run, say so.
 
-When that tree changed, also run:
-
-- `npm --prefix agent run typecheck` for agent TypeScript
-- `npm --prefix eval-viewer run check` and `npm --prefix eval-viewer run typecheck` for eval-viewer
+`make check` runs the lint and type checks for `frontend/`, `agent/`, and `eval-viewer/`.
 
 Do not run `make eval` unless asked.
 

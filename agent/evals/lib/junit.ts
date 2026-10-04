@@ -1,7 +1,4 @@
-import type {
-  RecordedAssertion,
-  RecordedEvalResult,
-} from "./recorder.ts";
+import type { RecordedAssertion, RecordedEvalResult } from "./recorder.ts";
 
 const suiteTagPattern = /<testsuite\b([^>]*)>/;
 const testCasePattern =
@@ -37,7 +34,7 @@ export function mergeJunit(
   }
   const otherCases = [...first.cases, ...second.cases].filter((xml) => {
     const name = caseName(xml);
-    return !isChatGenerateId(name) && !isChatJudgeId(name);
+    return !(isChatGenerateId(name) || isChatJudgeId(name));
   });
   const cases = [...buildChatCases(results), ...otherCases];
   return renderSuite(recount(cases, first.name || second.name || "eve evals"));
@@ -68,13 +65,14 @@ function renderChatCase(
   judge: RecordedEvalResult | undefined
 ): string {
   const assertions = attachJudgeAssertions(chat, judge);
-  const time = durationSeconds(chat) + (judge === undefined ? 0 : durationSeconds(judge));
+  const time =
+    durationSeconds(chat) + (judge === undefined ? 0 : durationSeconds(judge));
   const attrs = `classname="eve.eval" name="${escapeXml(chat.id)}" time="${formatSeconds(time)}"`;
   if (chat.verdict === "skipped") {
     return [
       `  <testcase ${attrs}>`,
       `    <skipped message="${escapeXml(chat.skipReason ?? "skipped")}"/>`,
-      `  </testcase>`,
+      "  </testcase>",
     ].join("\n");
   }
   const detail = {
@@ -87,13 +85,13 @@ function renderChatCase(
     return [
       `  <testcase ${attrs}>`,
       `    <failure message="${escapeXml(failureMessage(chat, assertions))}">${json}</failure>`,
-      `  </testcase>`,
+      "  </testcase>",
     ].join("\n");
   }
   return [
     `  <testcase ${attrs}>`,
     `    <system-out>${json}</system-out>`,
-    `  </testcase>`,
+    "  </testcase>",
   ].join("\n");
 }
 
@@ -115,7 +113,7 @@ function attachJudgeAssertions(
     }
     const metadata = { ...(assertion.metadata ?? {}) };
     metadata.input = question;
-    const output = metadata.output;
+    const { output } = metadata;
     if (typeof output !== "string" || output.length === 0) {
       metadata.output = reply;
     }
@@ -146,8 +144,7 @@ function failureMessage(
 }
 
 function pairKey(metadata: Record<string, unknown>): string | undefined {
-  const caseId = metadata.caseId;
-  const index = metadata.index;
+  const { caseId, index } = metadata;
   if (typeof caseId !== "string" || caseId.length === 0) {
     return undefined;
   }
@@ -168,7 +165,7 @@ function stringField(
 function durationSeconds(row: RecordedEvalResult): number {
   const started = Date.parse(row.startedAt);
   const completed = Date.parse(row.completedAt);
-  if (!Number.isFinite(started) || !Number.isFinite(completed)) {
+  if (!(Number.isFinite(started) && Number.isFinite(completed))) {
     return 0;
   }
   return Math.max(0, (completed - started) / 1000);
@@ -244,8 +241,7 @@ function emptySuite(): Suite {
 }
 
 function renderSuite(suite: Suite): string {
-  const cases =
-    suite.cases.length === 0 ? "" : `\n${suite.cases.join("\n")}\n`;
+  const cases = suite.cases.length === 0 ? "" : `\n${suite.cases.join("\n")}\n`;
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<testsuite name="${escapeXml(suite.name)}" tests="${suite.tests}" failures="${suite.failures}" skipped="${suite.skipped}" time="${formatSeconds(suite.time)}">${cases}</testsuite>`,
@@ -253,8 +249,8 @@ function renderSuite(suite: Suite): string {
   ].join("\n");
 }
 
-function parseAttributes(source: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
+function parseAttributes(source: string): Record<string, string | undefined> {
+  const attrs: Record<string, string | undefined> = {};
   attributePattern.lastIndex = 0;
   let match = attributePattern.exec(source);
   while (match !== null) {
@@ -264,7 +260,10 @@ function parseAttributes(source: string): Record<string, string> {
   return attrs;
 }
 
-function readNumber(attrs: Record<string, string>, key: string): number {
+function readNumber(
+  attrs: Record<string, string | undefined>,
+  key: string
+): number {
   const raw = attrs[key];
   if (raw === undefined || raw.length === 0) {
     return 0;

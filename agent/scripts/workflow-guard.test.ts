@@ -22,6 +22,16 @@ import {
   workflowRouteAllowed,
 } from "../agent/lib/workflow-guard.ts";
 
+const portPattern = /port (\d+)/;
+const unauthorizedStatusPattern = /^HTTP\/1\.1 401 /;
+const wwwAuthenticateBearerPattern = /www-authenticate: Bearer/;
+const status101Pattern = /101/;
+const switchingProtocolsStatusPattern = /^HTTP\/1\.1 101 /;
+const okStatusPattern = /^HTTP\/1\.1 200 /;
+const checkContinuePattern = /checkContinue/;
+const resultPattern = /result {"other":401,"own":200}/;
+const workflowNodeHttpPattern = /WORKFLOW_NODE_HTTP/;
+
 const token = "sage-token";
 const flow = "/.well-known/workflow/v1/flow";
 
@@ -101,7 +111,10 @@ test("isWorkflowUrl signs only the port the runner posts to", () => {
   assert.equal(isWorkflowUrl(`http://127.0.0.1:2002${flow}`, runnerEnv), false);
   assert.equal(isWorkflowUrl(`http://127.0.0.1${flow}`, runnerEnv), false);
   // world-local reads WORKFLOW_LOCAL_BASE_URL before PORT.
-  const both = { PORT: "2001", WORKFLOW_LOCAL_BASE_URL: "http://localhost:3333" };
+  const both = {
+    PORT: "2001",
+    WORKFLOW_LOCAL_BASE_URL: "http://localhost:3333",
+  };
   assert.equal(isWorkflowUrl(`http://127.0.0.1:3333${flow}`, both), true);
   assert.equal(isWorkflowUrl(`http://127.0.0.1:2001${flow}`, both), false);
   const bare = { WORKFLOW_LOCAL_BASE_URL: "http://localhost" };
@@ -150,16 +163,23 @@ test("the fetch wrapper leaves other URLs and a missing token alone", async () =
     seen.push(new Headers(init?.headers).get("authorization"));
     return await new Response("{}");
   };
-  await createWorkflowAuthFetch(inner, async () => token, runnerEnv)(
-    "http://127.0.0.1:11434/api/chat",
-    { headers: { authorization: "Bearer ollama" } }
-  );
-  await createWorkflowAuthFetch(inner, async () => null, runnerEnv)(
-    `http://127.0.0.1:2001${flow}`
-  );
-  await createWorkflowAuthFetch(inner, async () => token, runnerEnv)(
-    `http://127.0.0.1:9999${flow}`
-  );
+  await createWorkflowAuthFetch(
+    inner,
+    async () => token,
+    runnerEnv
+  )("http://127.0.0.1:11434/api/chat", {
+    headers: { authorization: "Bearer ollama" },
+  });
+  await createWorkflowAuthFetch(
+    inner,
+    async () => null,
+    runnerEnv
+  )(`http://127.0.0.1:2001${flow}`);
+  await createWorkflowAuthFetch(
+    inner,
+    async () => token,
+    runnerEnv
+  )(`http://127.0.0.1:9999${flow}`);
   assert.deepEqual(seen, ["Bearer ollama", null, null]);
 });
 
@@ -235,7 +255,7 @@ async function withGuardedServer(
       child.once("exit", () => reject(new Error("server exited")));
       child.stdout.on("data", (chunk: Buffer) => {
         output += chunk.toString();
-        const match = /port (\d+)/.exec(output);
+        const match = portPattern.exec(output);
         if (match?.[1] !== undefined) {
           resolve(match[1]);
         }
@@ -285,6 +305,7 @@ test("the preload answers 401 on workflow routes without the token", async () =>
       "/%2e%77ell-known/workflow/v1/flow",
     ]) {
       for (const method of ["GET", "HEAD", "POST"]) {
+        // biome-ignore lint/performance/noAwaitInLoops: requests run in order so a failure names the first route that leaks.
         const bare = await fetch(`${base}${path}`, { method });
         assert.equal(bare.status, 401, `${method} ${path}`);
         assert.equal(bare.headers.get("www-authenticate"), "Bearer");
@@ -328,7 +349,7 @@ test("the preload refuses workflow routes while Sage has written no token", asyn
       "Connection: Upgrade",
       "Upgrade: websocket",
     ]);
-    assert.match(upgrade, /^HTTP\/1\.1 401 /);
+    assert.match(upgrade, unauthorizedStatusPattern);
   });
 });
 
@@ -343,21 +364,24 @@ test("the preload guards upgrade requests", async () => {
         ...extra,
       ]);
     const bare = await upgrade(flow);
-    assert.match(bare, /^HTTP\/1\.1 401 /);
-    assert.match(bare, /www-authenticate: Bearer/);
-    assert.doesNotMatch(bare, /101/);
+    assert.match(bare, unauthorizedStatusPattern);
+    assert.match(bare, wwwAuthenticateBearerPattern);
+    assert.doesNotMatch(bare, status101Pattern);
     assert.match(
       await upgrade(flow, ["Authorization: Bearer wrong"]),
-      /^HTTP\/1\.1 401 /
+      unauthorizedStatusPattern
     );
     assert.match(
       await upgrade("//.WELL-KNOWN/workflow/v1/flow"),
-      /^HTTP\/1\.1 401 /
+      unauthorizedStatusPattern
     );
     const allowed = await upgrade(flow, [`Authorization: Bearer ${token}`]);
-    assert.match(allowed, /^HTTP\/1\.1 101 /);
+    assert.match(allowed, switchingProtocolsStatusPattern);
     assert.match(allowed, new RegExp(`upgrade ${flow}`));
-    assert.match(await upgrade("/eve/v1/stream"), /^HTTP\/1\.1 101 /);
+    assert.match(
+      await upgrade("/eve/v1/stream"),
+      switchingProtocolsStatusPattern
+    );
   });
 });
 
@@ -370,10 +394,10 @@ test("the preload guards absolute-form targets and Expect requests", async () =>
         "Connection: close",
         ...extra,
       ]);
-    assert.match(await absolute(), /^HTTP\/1\.1 401 /);
+    assert.match(await absolute(), unauthorizedStatusPattern);
     assert.match(
       await absolute([`Authorization: Bearer ${token}`]),
-      /^HTTP\/1\.1 200 /
+      okStatusPattern
     );
     const expect = (extra: string[] = []) =>
       rawRequest(base, [
@@ -385,10 +409,10 @@ test("the preload guards absolute-form targets and Expect requests", async () =>
         ...extra,
       ]);
     const refused = await expect();
-    assert.match(refused, /^HTTP\/1\.1 401 /);
-    assert.doesNotMatch(refused, /checkContinue/);
+    assert.match(refused, unauthorizedStatusPattern);
+    assert.doesNotMatch(refused, checkContinuePattern);
     const admitted = await expect([`Authorization: Bearer ${token}`]);
-    assert.match(admitted, /checkContinue/);
+    assert.match(admitted, checkContinuePattern);
   });
 });
 
@@ -417,7 +441,7 @@ test("the installed fetch signs the runner's port and no other", async () => {
   await withGuardedServer(
     { discovery: discoveryJson, source: fetchProbe },
     ({ output }) => {
-      assert.match(output(), /result {"other":401,"own":200}/);
+      assert.match(output(), resultPattern);
       return Promise.resolve();
     }
   );
@@ -433,7 +457,7 @@ test("the preload refuses to start with the node:http job transport on", () => {
     }
   );
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /WORKFLOW_NODE_HTTP/);
+  assert.match(result.stderr, workflowNodeHttpPattern);
 });
 
 // The packaged app starts Node in ~/Library/Application Support/<id>/eve/,

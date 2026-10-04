@@ -13,7 +13,7 @@ This page explains how the lock and encryption are tested: the unit suite, the s
 - `scripts/eval-env.test.sh`, which checks the order `make eval` loads settings in
 - The security tests in `security-tests/`
 
-`make check` validates `app.json`, checks the pinned Native SDK CLI version, and runs the frontend lint and type checks.
+`make check` validates `app.json`, checks the pinned Native SDK CLI version, and runs the lint and type checks for the frontend, the agent, and the eval viewer.
 
 ## The Zig suite
 

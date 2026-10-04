@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": ["ultracite/biome/core"],
+  "vcs": {
+    "root": ".."
+  },
+  "files": {
+    "includes": ["!!.eve", "!!.output", "!!evals/.cache", "!!evals/reports"]
+  },
+  "overrides": [
+    {
+      // eve exposes a tool under its filename, so renaming a file renames the
+      // tool the model sees.
+      "includes": ["agent/tools/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": "off"
+          }
+        }
+      }
+    }
+  ]
+}

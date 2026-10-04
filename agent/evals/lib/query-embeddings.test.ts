@@ -11,9 +11,12 @@ import {
   embeddingFor,
   loadQueryEmbeddings,
   parseEmbedResponse,
-  writeQueryEmbeddings,
   type QueryEmbedding,
+  writeQueryEmbeddings,
 } from "./query-embeddings.ts";
+
+const notValidJSONPattern = /not valid JSON/;
+const twoQueriesPattern = /2 queries/;
 
 test("embeddingFor returns undefined when SAGE_EVAL_EMBEDDINGS is unset", () => {
   const previous = process.env.SAGE_EVAL_EMBEDDINGS;
@@ -78,7 +81,7 @@ test("loadQueryEmbeddings throws on a malformed line", () => {
   writeFileSync(path, "not-json\n");
   process.env.SAGE_EVAL_EMBEDDINGS = path;
   try {
-    assert.throws(() => loadQueryEmbeddings(), /not valid JSON/);
+    assert.throws(() => loadQueryEmbeddings(), notValidJSONPattern);
   } finally {
     restoreEnv("SAGE_EVAL_EMBEDDINGS", previous);
   }
@@ -152,21 +155,15 @@ test("collectEmbeddingTags unions case tags with extraction, retrieval, and summ
 
 test("parseEmbedResponse pairs vectors with the input texts", () => {
   assert.deepEqual(
-    parseEmbedResponse(
-      { embeddings: [[0.1, 0.2], [0.3]] },
-      ["alpha", "beta"]
-    ),
-    [
-      sampleRow("alpha", [0.1, 0.2]),
-      sampleRow("beta", [0.3]),
-    ]
+    parseEmbedResponse({ embeddings: [[0.1, 0.2], [0.3]] }, ["alpha", "beta"]),
+    [sampleRow("alpha", [0.1, 0.2]), sampleRow("beta", [0.3])]
   );
 });
 
 test("parseEmbedResponse throws when the vector count does not match", () => {
   assert.throws(
     () => parseEmbedResponse({ embeddings: [[0.1]] }, ["a", "b"]),
-    /2 queries/
+    twoQueriesPattern
   );
 });
 

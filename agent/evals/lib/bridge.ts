@@ -1,4 +1,8 @@
-export function parseBridgeJson(raw: string | null): Record<string, unknown> | null {
+const commandFilePattern = /^command-(\d+)\.txt$/;
+
+export function parseBridgeJson(
+  raw: string | null
+): Record<string, unknown> | null {
   if (raw === null) {
     return null;
   }
@@ -16,7 +20,7 @@ export function parseBridgeJson(raw: string | null): Record<string, unknown> | n
 export function nextAutomationSequence(fileNames: string[]): number {
   let highest = 0;
   for (const name of fileNames) {
-    const match = /^command-(\d+)\.txt$/.exec(name);
+    const match = commandFilePattern.exec(name);
     if (match === null) {
       continue;
     }
@@ -84,9 +88,9 @@ export function resultBoolean(
 }
 
 export function errorMessage(response: Record<string, unknown>): string | null {
-  const error = response.error;
+  const { error } = response;
   if (error !== null && typeof error === "object" && "message" in error) {
-    const message = (error as { message: unknown }).message;
+    const { message } = error as { message: unknown };
     if (typeof message === "string") {
       return message;
     }
@@ -145,6 +149,7 @@ export function utf8Chunks(text: string, maxBytes: number): string[] {
   let offset = 0;
   while (offset < bytes.length) {
     let end = Math.min(offset + maxBytes, bytes.length);
+    // biome-ignore lint/suspicious/noBitwiseOperators: UTF-8 continuation bytes are 0b10xxxxxx.
     while (end > offset && (bytes[end] & 0xc0) === 0x80) {
       end -= 1;
     }

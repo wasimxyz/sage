@@ -7,16 +7,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-
 import {
-  loadAllCases,
-  type EvalCase,
-  type EvalManifest,
-  type JournalEntryFixture,
-} from "../evals/lib/dataset.ts";
-import {
-  firstJsonObject,
   dreamPollState,
+  firstJsonObject,
   isDreamStartReady,
   isMatchingId,
   matchingBridgeResponse,
@@ -27,9 +20,19 @@ import {
   resultNumber,
   utf8Chunks,
 } from "../evals/lib/bridge.ts";
+import {
+  type EvalCase,
+  type EvalManifest,
+  type JournalEntryFixture,
+  loadAllCases,
+} from "../evals/lib/dataset.ts";
 
 const automationCwd = process.env.SAGE_AUTOMATION_CWD ?? process.cwd();
-const automationDir = join(automationCwd, ".zig-cache", "native-sdk-automation");
+const automationDir = join(
+  automationCwd,
+  ".zig-cache",
+  "native-sdk-automation"
+);
 const responseFile = join(automationDir, "bridge-response.txt");
 const chunkBytes = 4000;
 const dreamTimeoutMs = 30 * 60 * 1000;
@@ -63,7 +66,12 @@ async function main(): Promise<void> {
   mkdirSync(dirname(manifestPath), { recursive: true });
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-  const started = callBridge("dream.start", {}, "eval-dream-start", isDreamStartReady);
+  const started = callBridge(
+    "dream.start",
+    {},
+    "eval-dream-start",
+    isDreamStartReady
+  );
   requireOk(started, "dream.start");
   console.log(`dream.start ${JSON.stringify(started)}`);
   const startTotal = resultNumber(started, "total");
@@ -103,7 +111,9 @@ function saveEntry(fixture: EvalCase, entry: JournalEntryFixture): number {
     offset += Buffer.byteLength(chunk, "utf8");
   }
   if (savedId === null) {
-    throw new Error(`Save did not return an id for ${fixture.id} entry ${entry.index}.`);
+    throw new Error(
+      `Save did not return an id for ${fixture.id} entry ${entry.index}.`
+    );
   }
   return savedId;
 }
@@ -150,7 +160,10 @@ function callBridge(
   mkdirSync(automationDir, { recursive: true });
   const request = JSON.stringify({ command, id, payload });
   const sequence = nextAutomationSequence(readdirSync(automationDir));
-  writeFileSync(join(automationDir, `command-${sequence}.txt`), `bridge ${request}\n`);
+  writeFileSync(
+    join(automationDir, `command-${sequence}.txt`),
+    `bridge ${request}\n`
+  );
   return waitForBridgeResponse(id, ready);
 }
 

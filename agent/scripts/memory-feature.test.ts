@@ -20,7 +20,9 @@ test("memoryFeatureEnabled fails closed on HTTP, JSON, and transport errors", as
     true
   );
   assert.equal(
-    await memoryFeatureEnabled(async () => new Response('{"memory":true}', { status: 503 })),
+    await memoryFeatureEnabled(
+      async () => new Response('{"memory":true}', { status: 503 })
+    ),
     false
   );
   assert.equal(
@@ -28,18 +30,18 @@ test("memoryFeatureEnabled fails closed on HTTP, JSON, and transport errors", as
     false
   );
   assert.equal(
-    await memoryFeatureEnabled(async () => {
-      throw new Error("server unavailable");
-    }),
+    await memoryFeatureEnabled(() =>
+      Promise.reject(new Error("server unavailable"))
+    ),
     false
   );
 });
 
 test("memoryFeatureEnabled shares nearby requests and expires the result", async () => {
   let calls = 0;
-  const fetchFeature = async () => {
+  const fetchFeature = () => {
     calls += 1;
-    return new Response(JSON.stringify({ memory: calls === 1 }));
+    return Promise.resolve(Response.json({ memory: calls === 1 }));
   };
 
   assert.equal(await memoryFeatureEnabled(fetchFeature, 1000), true);
@@ -51,12 +53,12 @@ test("memoryFeatureEnabled shares nearby requests and expires the result", async
 
 test("memoryFeatureEnabled retries a failed lookup instead of caching off", async () => {
   let calls = 0;
-  const fetchFeature = async () => {
+  const fetchFeature = () => {
     calls += 1;
     if (calls === 1) {
-      throw new Error("bridge unavailable");
+      return Promise.reject(new Error("bridge unavailable"));
     }
-    return new Response('{"memory":true}');
+    return Promise.resolve(new Response('{"memory":true}'));
   };
 
   assert.equal(await memoryFeatureEnabled(fetchFeature, 1000), false);
