@@ -217,7 +217,7 @@ pub fn build(b: *std.Build) void {
         break :pkg built;
     };
 
-    const package_output = b.fmt("zig-out/package/{s}-0.1.0-{s}-{s}{s}", .{ app_exe_name, @tagName(package_target), package_optimize_name, packageSuffix(package_target) });
+    const package_output = b.fmt("zig-out/package/{s}-{s}-{s}-{s}{s}", .{ app_exe_name, app_config.version, @tagName(package_target), package_optimize_name, packageSuffix(package_target) });
     const package = b.addSystemCommand(&.{
         "native",
         "package",
@@ -247,15 +247,14 @@ pub fn build(b: *std.Build) void {
     // exe/package agreement structural.
     package.addArgs(&.{ "--web-layer", if (web_layer) "include" else "exclude" });
     if (cef_auto_install) package.addArg("--cef-auto-install");
-    if (app_config.updates_enabled and package_target == .macos and b.graph.host.result.os.tag == .macos) package.addArg("--update-archive");
     package.step.dependOn(&package_exe.step);
     package.step.dependOn(&frontend_build.step);
     const package_step = b.step("package", "Create a local package artifact");
     package_step.dependOn(&package.step);
     if (package_target == .macos) {
-        // native package --update-archive snapshots the .app before this copy.
-        // If updates are enabled in app.json, move the archive step to after
-        // copy_agent so the shipped zip includes the Chat agent.
+        // native package --update-archive would snapshot the .app before this
+        // copy, so the update zip would ship without the Chat agent. Build the
+        // zip after copy_agent instead.
         const agent_install = b.addSystemCommand(&.{ "npm", "install", "--prefix", "agent" });
         const agent_build = b.addSystemCommand(&.{ "npm", "--prefix", "agent", "run", "build" });
         agent_build.step.dependOn(&agent_install.step);
@@ -263,6 +262,11 @@ pub fn build(b: *std.Build) void {
         copy_agent.step.dependOn(&package.step);
         copy_agent.step.dependOn(&agent_build.step);
         package_step.dependOn(&copy_agent.step);
+        if (app_config.updates_enabled and b.graph.host.result.os.tag == .macos) {
+            const update_archive = b.addSystemCommand(&.{ "sh", "scripts/update-archive-packaged-app.sh", package_output });
+            update_archive.step.dependOn(&copy_agent.step);
+            package_step.dependOn(&update_archive.step);
+        }
     }
 
     // Tests default to the null platform so `native test` / `zig build test`
@@ -828,6 +832,7 @@ const AppManifestBuildConfig = struct {
     sqlite_capability: bool = false,
     relational_capability: bool = false,
     updates_enabled: bool = false,
+    version: []const u8 = "0.0.0",
     /// The first web declaration found (for teaching messages), or
     /// null when app.zon declares no web use. `web_engine = "system"`
     /// alone is NOT web intent — it is the default in many canvas
@@ -850,6 +855,7 @@ const InferenceManifest = struct {
     } = .{},
     frontend: ?struct {} = null,
     updates: ?struct {} = null,
+    version: []const u8 = "0.0.0",
     shell: struct {
         windows: []const struct {
             views: []const struct {
@@ -887,6 +893,7 @@ fn appManifestBuildConfig(b: *std.Build) AppManifestBuildConfig {
         .sqlite_capability = hasManifestCapability(raw.capabilities, "store") or hasManifestCapability(raw.capabilities, "sqlite"),
         .relational_capability = hasManifestCapability(raw.capabilities, "sqlite"),
         .updates_enabled = raw.updates != null,
+        .version = raw.version,
     };
     config.web_declaration = blk: {
         if (raw.frontend != null) break :blk "a .frontend block";

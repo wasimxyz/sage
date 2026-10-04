@@ -16,7 +16,8 @@ if [ -z "$app" ] || [ ! -d "$app" ]; then
   exit 1
 fi
 
-out="$root/zig-out/package/Sage-0.1.0-macos.dmg"
+version="$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")"
+out="$root/zig-out/package/Sage-$version-macos.dmg"
 staging="$(mktemp -d "${TMPDIR:-/tmp}/sage-dmg.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 

@@ -40,7 +40,7 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | `make setup` | Install frontend, agent, and eval-viewer dependencies |
 | `make dev` | Start the Chat agent and the app window for development |
 | `make build` | Build the frontend and the release binary in `zig-out/bin/` |
-| `make check` | Check the pinned CLI version, `app.json`, and the frontend lint and types |
+| `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the frontend lint and types |
 | `make test` | Run the Zig, frontend, agent, eval-viewer, and security tests |
 | `make precommit` | Run `make check`, `make test`, and `make package` |
 | `make eval` | Seed a throwaway journal, run Dream, and grade with eve eval |
@@ -50,7 +50,7 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | `make eval-viewer-build` | Build the eval report viewer for production |
 | `make eval-viewer-start` | Serve the production eval report viewer (run `make eval-viewer-build` first) |
 | `make package` | Build a Mac `.app` bundle with the Chat agent and Node.js inside. The first run downloads Node.js into `third_party/node/` and reuses it after that. |
-| `make package-archive` | Package the `.app` and build a `.dmg` from it |
+| `make package-archive` | Package the `.app`, then build a `.dmg` and the update `.zip` from it |
 
 ## Project structure
 
@@ -62,7 +62,7 @@ The app is a Zig core built on the Vercel Native SDK, a React frontend, and a No
 - `eval-viewer/`: the Next.js app that lists eval reports from Vercel Blob
 - `scripts/`: shell scripts that package the app and run evals
 - `security-tests/`: tests for the token, origin, and packaging rules, run by `make test`
-- `docs/`: how Sage works
+- `docs/`: how Sage works, including [how to release it](docs/release.md)
 - `app.json`: app identity, window size, and bridge allowlists
 
 ## Documentation
