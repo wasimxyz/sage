@@ -1,9 +1,9 @@
-<!-- Lucide leaf (ISC). Native SDK app icons cannot use transform, so the centering offset is baked into the path data. -->
+<!-- Lucide leaf (ISC). Native SDK app icons cannot use transform, so the centering offset is baked into the path data. The viewBox is zoomed 1.15x around the center (48 / 1.15 = 41.74) to make the leaf larger; the background rect still covers it. -->
 <svg
   xmlns="http://www.w3.org/2000/svg"
   width="1024"
   height="1024"
-  viewBox="0 0 48 48"
+  viewBox="3.13 3.13 41.74 41.74"
   fill="none"
   stroke="#171717"
   stroke-width="2.5"
