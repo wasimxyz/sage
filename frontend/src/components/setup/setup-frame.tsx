@@ -105,7 +105,7 @@ export function PlainHeader() {
 export function SetupBody({ children }: { children: ReactNode }) {
   return (
     <main className="flex min-h-0 flex-1 overflow-y-auto px-6">
-      <div className="mx-auto my-auto flex w-full max-w-lg flex-col gap-6 py-10 pb-16">
+      <div className="mx-auto my-auto flex w-full max-w-120 flex-col gap-6 py-10 pb-16">
         {children}
       </div>
     </main>

@@ -13,13 +13,8 @@ import {
   SetupText,
   SetupTitle,
 } from "@/components/setup/setup-frame";
-import { useSetupModels } from "@/components/setup/use-setup-models";
 import { Button } from "@/components/ui/button";
-import {
-  localAiDone,
-  protectionBanner,
-  setupProtectScreen,
-} from "@/lib/onboarding";
+import { protectionBanner, setupProtectScreen } from "@/lib/onboarding";
 
 /** Step 3 of first-launch setup: bring in entries the person already has. */
 export function SetupImport() {
@@ -34,10 +29,9 @@ export function SetupImport() {
     state: { status: lock },
   } = useLock();
 
-  const { readiness } = useSetupModels();
   const banner = lock ? protectionBanner(lock) : null;
-  // Back skips a step that had nothing to do, or it would send the person
-  // forward again.
+  // Back skips Protect when it has nothing left to ask, or it would send the
+  // person forward again.
   const protectDone =
     lock !== null &&
     setupProtectScreen(lock, {
@@ -49,14 +43,10 @@ export function SetupImport() {
     () => pickAndImport(() => goTo("all_set")),
     [goTo, pickAndImport]
   );
-  const skipLocalAi = localAiDone(readiness);
-  const handleBack = useCallback(() => {
-    if (!protectDone) {
-      goTo("protect");
-      return;
-    }
-    goTo(skipLocalAi ? "welcome" : "local_ai");
-  }, [goTo, protectDone, skipLocalAi]);
+  const handleBack = useCallback(
+    () => goTo(protectDone ? "local_ai" : "protect"),
+    [goTo, protectDone]
+  );
   const handleSkip = useCallback(() => goTo("all_set"), [goTo]);
 
   return (

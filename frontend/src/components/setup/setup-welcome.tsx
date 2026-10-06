@@ -51,16 +51,16 @@ export function SetupWelcome() {
     <SetupFrame>
       <SetupHeader onSkip={skipSetup} />
       <SetupBody>
-        <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
-          <LeafIcon className="size-7" />
+        <div className="flex flex-col gap-3">
+          <LeafIcon className="size-8" />
+          <SetupIntro>
+            <SetupTitle>Welcome to Sage</SetupTitle>
+            <SetupText>
+              A private journal with an AI you can talk to. Everything runs on
+              this Mac, so your entries, chats, and memories never leave it.
+            </SetupText>
+          </SetupIntro>
         </div>
-        <SetupIntro>
-          <SetupTitle>Welcome to Sage</SetupTitle>
-          <SetupText>
-            A private journal with an AI you can talk to. Everything runs on
-            this Mac, so your entries, chats, and memories never leave it.
-          </SetupText>
-        </SetupIntro>
         <ul className="flex flex-col gap-3">
           {features.map(({ description, icon: Icon, title }) => (
             <li className="flex items-start gap-3" key={title}>
@@ -76,11 +76,8 @@ export function SetupWelcome() {
             </li>
           ))}
         </ul>
-        <div className="flex flex-wrap items-center gap-3">
+        <div>
           <Button onClick={handleStart}>Get started</Button>
-          <span className="text-muted-foreground text-xs">
-            Setup has 3 short steps. You can skip any of them.
-          </span>
         </div>
       </SetupBody>
     </SetupFrame>

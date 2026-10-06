@@ -59,16 +59,6 @@ export function ollamaScreen(
   return status.installed ? "start" : "install";
 }
 
-/**
- * Step 1 has nothing left to do when Ollama runs and already has both models,
- * so setup skips it. Null means Sage has not looked yet.
- */
-export function localAiDone(
-  readiness: { embed: boolean; running: boolean; summary: boolean } | null
-): boolean {
-  return Boolean(readiness?.running && readiness.embed && readiness.summary);
-}
-
 export type ProtectScreen = "choose" | "done" | "encrypt";
 
 /**

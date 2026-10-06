@@ -35,7 +35,7 @@ The screen depends on `ollama.setupStatus`, which returns `{ installed, running,
 
 Then Sage picks a screen:
 
-- **Ollama is running**: the downloads screen. If Ollama already has both models, Sage skips the step and goes to Protect. Back from Protect then skips it too.
+- **Ollama is running**: the downloads screen.
 - **Installed but not running**: Sage calls `ollama.start`. If it works, the downloads screen shows. If it fails, the “not running” screen shows the reason and a **Start Ollama** button.
 - **Not installed**: the Install Ollama screen has a **Download Ollama** button that opens `https://ollama.com/download` in your browser. Sage checks every 4 seconds and moves on by itself. When Ollama becomes installed but not running, Sage calls `ollama.start` once.
 

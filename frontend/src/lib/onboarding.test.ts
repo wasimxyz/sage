@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   defaultUnlockMethod,
   launchScreen,
-  localAiDone,
   ollamaScreen,
   protectionBanner,
   protectionLine,
@@ -87,15 +86,6 @@ test("an installed Ollama that is not running gets a start first", () => {
 
 test("a missing Ollama gets the install steps", () => {
   assert.equal(ollamaScreen({ installed: false, running: false }), "install");
-});
-
-test("Local AI is done only when Ollama runs and has both models", () => {
-  const ready = { embed: true, running: true, summary: true };
-  assert.equal(localAiDone(ready), true);
-  assert.equal(localAiDone({ ...ready, summary: false }), false);
-  assert.equal(localAiDone({ ...ready, embed: false }), false);
-  assert.equal(localAiDone({ ...ready, running: false }), false);
-  assert.equal(localAiDone(null), false);
 });
 
 // --- the Protect screen ---

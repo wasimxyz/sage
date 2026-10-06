@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { handlerErrorMessage } from "@/lib/handler-errors";
-import { localAiDone, ollamaScreen } from "@/lib/onboarding";
+import { ollamaScreen } from "@/lib/onboarding";
 
 const ollamaDownloadUrl = "https://ollama.com/download";
 // How often the Install and Start screens look for Ollama. The text says "every
@@ -259,10 +259,8 @@ function DownloadsScreen({
       .catch(() => undefined);
   }, []);
 
-  // The first read decides. With Ollama running and both models pulled there
-  // is nothing to set up, so the step is skipped. Otherwise queue what Ollama
-  // lacks, embedding model first. Later reads only update the rows, so
-  // watching the last download finish never throws the person forward. A
+  // Queue what Ollama lacks, embedding model first, once. The screen always
+  // shows, even when both models are ready, and the person clicks through. A
   // model that failed or was cancelled earlier waits for the person to try
   // again.
   const queued = useRef(false as boolean);
@@ -271,10 +269,6 @@ function DownloadsScreen({
       return;
     }
     queued.current = true;
-    if (localAiDone(readiness)) {
-      onNext();
-      return;
-    }
     const missing = [
       readiness.embed ? null : names.embed,
       readiness.summary ? null : names.summary,
@@ -282,7 +276,7 @@ function DownloadsScreen({
     if (missing.length > 0) {
       enqueue(missing);
     }
-  }, [enqueue, names, onNext, problems, readiness]);
+  }, [enqueue, names, problems, readiness]);
 
   const handleCancel = useCallback(() => {
     cancel().catch(() => undefined);

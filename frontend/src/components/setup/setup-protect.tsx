@@ -7,8 +7,6 @@ import {
   type ProtectResult,
 } from "@/components/setup/protect-flow";
 import { ReminderHeader, SetupHeader } from "@/components/setup/setup-frame";
-import { useSetupModels } from "@/components/setup/use-setup-models";
-import { localAiDone } from "@/lib/onboarding";
 
 /** Step 2 of first-launch setup. */
 export function SetupProtect() {
@@ -19,14 +17,7 @@ export function SetupProtect() {
   const encrypt = status?.encrypt ?? false;
   const method = status?.method ?? null;
   const saved = useMemo(() => ({ encrypt, method }), [encrypt, method]);
-  // Back skips Local AI when it had nothing to do, or it would send the person
-  // forward again.
-  const { readiness } = useSetupModels();
-  const skipLocalAi = localAiDone(readiness);
-  const handleBack = useCallback(
-    () => goTo(skipLocalAi ? "welcome" : "local_ai"),
-    [goTo, skipLocalAi]
-  );
+  const handleBack = useCallback(() => goTo("local_ai"), [goTo]);
   const handleNext = useCallback(() => goTo("import"), [goTo]);
 
   return (
