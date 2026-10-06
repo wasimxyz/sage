@@ -722,10 +722,11 @@ test "Dream index and memory work require the right models" {
 
 test "index-only Dream repairs a summary without replacing memories" {
     const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
-    const db = switch (open_result.outcome) {
+    var db = switch (open_result.outcome) {
         .ok => open_result.database.?,
         else => return error.SqliteMigrationFailed,
     };
+    try journal.insertFixtureEntries(&db);
     var store = journal.Store.init(std.testing.allocator, db);
     defer store.deinit();
 

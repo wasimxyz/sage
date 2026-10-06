@@ -46,6 +46,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 14, .name = "agent_instructions", .sql = @embedFile("schema/0014_agent_instructions.sql") },
     .{ .version = 15, .name = "chat_title_locked", .sql = @embedFile("schema/0015_chat_title_locked.sql") },
     .{ .version = 16, .name = "chat_index_skip", .sql = @embedFile("schema/0016_chat_index_skip.sql") },
+    .{ .version = 17, .name = "remove_sample_entries", .sql = @embedFile("schema/0017_remove_sample_entries.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -2120,20 +2121,12 @@ pub const Store = struct {
         return writer.buffered();
     }
 
-    /// Whether the person has written or imported an entry, edited a sample
-    /// entry, or started a chat. First-launch setup uses it to keep people who
-    /// already use Sage out of setup.
-    ///
-    /// Migration 1 puts three sample entries in every new journal, so a plain
-    /// row count could never be zero. Those rows keep the epoch `updated_at`
-    /// that migration 4 gave them until the person edits one: saving and
-    /// importing stamp the real time, and the encryption rewrite leaves it
-    /// alone. Deleting a sample entry leaves no row to count either way.
-    pub fn hasUserContent(self: *Store) !bool {
+    /// Whether the journal holds any entry or chat. First-launch setup uses it
+    /// to keep people who already use Sage out of setup. A new journal is
+    /// empty, as migration 17 explains.
+    pub fn hasEntriesOrChats(self: *Store) !bool {
         const found = try self.countDataRows(
-            \\SELECT EXISTS(SELECT 1 FROM journal_entry WHERE updated_at <> '1970-01-01T00:00:00.000Z')
-            \\  OR EXISTS(SELECT 1 FROM chat_conversation) AS n;
-            ,
+            "SELECT EXISTS(SELECT 1 FROM journal_entry) OR EXISTS(SELECT 1 FROM chat_conversation) AS n;",
         );
         return found != 0;
     }
@@ -6058,7 +6051,37 @@ fn splitJsonArrayElements(allocator: std.mem.Allocator, json: []const u8) ![][]c
     return error.InvalidRequest;
 }
 
+/// Test support. Migration 1 used to put these three entries in every new
+/// journal, and many tests were written against them. Migration 17 removed them
+/// from real journals, so a test that wants them inserts them here. They have
+/// the same ids, text, and epoch `updated_at` that a new journal once had. A rig
+/// that reopens its file to simulate a relaunch can call this again, so a row
+/// that is already there is left alone.
+pub fn insertFixtureEntries(db: *native_sdk.RelationalStore) !void {
+    const outcome = db.exec(&.{.{
+        .sql = "INSERT OR IGNORE INTO journal_entry (id, entry_date, title, body, word_count) VALUES " ++
+            "(1, '2026-08-28', 'Morning walk', ?1, 36), " ++
+            "(2, '2026-08-29', 'On building Sage', ?2, 40), " ++
+            "(3, '2026-08-31', 'Quiet evening', ?3, 26);",
+        .params = &.{
+            .{ .text = "The fog sat low over the trail this morning. I walked without headphones and counted the crows instead. By the time I reached the creek the sun had burned through, and the water looked like glass." },
+            .{ .text = "Sage should keep every page on this machine. I want a journal I can open without sending a sentence to a server. The first version is a table of dates and titles, and a quiet place to read them back." },
+            .{ .text = "The apartment was still after dinner. I sat with the window open and wrote until the streetlights came on. Nothing urgent. Just the day, set down." },
+        },
+    }});
+    if (outcome != .ok) return error.SqliteWriteFailed;
+}
+
+/// A store with the three fixture entries in it.
 fn testStore() !Store {
+    var store = try testEmptyStore();
+    errdefer store.deinit();
+    try insertFixtureEntries(&store.db);
+    return store;
+}
+
+/// A store as a new install finds it: migrated and empty.
+fn testEmptyStore() !Store {
     const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &migrations);
     const db = switch (open_result.outcome) {
         .ok => open_result.database.?,
@@ -6299,43 +6322,124 @@ test "deleteMemories removes user and hidden rows and clears Dream timestamps" {
     );
 }
 
-test "a new journal has no content of its own, only the samples" {
-    var store = try testStore();
+test "a new journal starts with no entries and nothing to find" {
+    var store = try testEmptyStore();
     defer store.deinit();
-    try std.testing.expect(!(try store.hasUserContent()));
+    try std.testing.expect(!(try store.hasEntriesOrChats()));
+    var output: [8192]u8 = undefined;
+    const listed = try store.list(&output);
+    try std.testing.expectEqualStrings("{\"entries\":[]}", listed);
 }
 
 test "a saved or imported entry counts as content" {
-    var store = try testStore();
+    var store = try testEmptyStore();
     defer store.deinit();
     var output: [8192]u8 = undefined;
     _ = try store.save(
         "{\"id\":null,\"title\":\"Mine\",\"date\":\"2026-09-13\",\"wordCount\":1,\"format\":\"plain\",\"offset\":0,\"chunk\":\"Mine.\",\"done\":true}",
         &output,
     );
-    try std.testing.expect(try store.hasUserContent());
-}
-
-test "editing a sample entry counts as content" {
-    var store = try testStore();
-    defer store.deinit();
-    var output: [8192]u8 = undefined;
-    _ = try store.save(
-        "{\"id\":1,\"title\":\"Morning walk, again\",\"date\":\"2026-08-28\",\"wordCount\":1,\"format\":\"plain\",\"offset\":0,\"chunk\":\"Edited.\",\"done\":true}",
-        &output,
-    );
-    try std.testing.expect(try store.hasUserContent());
+    try std.testing.expect(try store.hasEntriesOrChats());
 }
 
 test "a chat counts as content" {
-    var store = try testStore();
+    var store = try testEmptyStore();
     defer store.deinit();
     var output: [8192]u8 = undefined;
     _ = try store.chatSave(
         "{\"id\":null,\"title\":\"A chat\",\"eveSessionId\":\"sess-1\",\"streamIndex\":1,\"model\":\"llama3.2\",\"thinking\":false,\"contextLength\":16384,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[{\\\"type\\\":\\\"x\\\"}]\",\"done\":true}",
         &output,
     );
-    try std.testing.expect(try store.hasUserContent());
+    try std.testing.expect(try store.hasEntriesOrChats());
+}
+
+// Migration 17 runs on journals that already have the sample entries. A new
+// journal never sees them, so this opens one at version 16 and applies the
+// last migration by hand, one statement at a time.
+fn applyRemoveSamples(db: *native_sdk.RelationalStore) !void {
+    var statements = std.mem.splitScalar(u8, migrations[16].sql, ';');
+    while (statements.next()) |statement| {
+        // A chunk with only comments or space has nothing to run.
+        var has_sql = false;
+        var lines = std.mem.splitScalar(u8, statement, '\n');
+        while (lines.next()) |line| {
+            const trimmed = std.mem.trim(u8, line, " \t\r");
+            if (trimmed.len > 0 and !std.mem.startsWith(u8, trimmed, "--")) has_sql = true;
+        }
+        if (!has_sql) continue;
+        if (db.exec(&.{.{ .sql = statement }}) != .ok) return error.SqliteWriteFailed;
+    }
+}
+
+fn countRows(db: *native_sdk.RelationalStore, sql: []const u8) !i64 {
+    var counts = CountRows{};
+    const outcome = db.query(sql, &.{}, &counts, CountRows.collect);
+    if (outcome != .ok or counts.failed or !counts.found) return error.SqliteQueryFailed;
+    return counts.value;
+}
+
+test "migration 17 removes untouched samples and what hangs off them" {
+    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, migrations[0..16]);
+    var db = switch (open_result.outcome) {
+        .ok => open_result.database.?,
+        else => return error.SqliteMigrationFailed,
+    };
+    defer db.deinit();
+    // At version 16 a new journal still has the three samples.
+    try std.testing.expectEqual(@as(i64, 3), try countRows(&db, "SELECT count(*) AS n FROM journal_entry;"));
+
+    // Rows that hang off sample 1, and off sample 2 (which the person edits).
+    const setup = [_][]const u8{
+        "INSERT INTO entry_summary (entry_id, summary, embedding, model, embed_model) VALUES (1, 'a walk', x'00', 'm', 'e');",
+        "INSERT INTO entry_summary (entry_id, summary, embedding, model, embed_model) VALUES (2, 'on sage', x'00', 'm', 'e');",
+        "INSERT INTO entry_embedding (entry_id, chunk_index, chunk_text, embedding, model) VALUES (1, 0, 'a walk', x'00', 'e');",
+        "INSERT INTO entry_embedding (entry_id, chunk_index, chunk_text, embedding, model) VALUES (2, 0, 'on sage', x'00', 'e');",
+        "INSERT INTO semantic_fact (kind, subject, fact, source_type, source_id, model) VALUES ('profile', 'user', 'Likes walks', 'entry', 1, 'm');",
+        "INSERT INTO semantic_fact (kind, subject, fact, source_type, source_id, model) VALUES ('profile', 'user', 'Builds Sage', 'entry', 2, 'm');",
+        "INSERT INTO dream_state (source_type, source_id, dreamed_at) VALUES ('entry', 1, '2026-09-01T00:00:00.000Z');",
+        "INSERT INTO dream_state (source_type, source_id, dreamed_at) VALUES ('entry', 2, '2026-09-01T00:00:00.000Z');",
+        // The person edits sample 2, which stamps a real time.
+        "UPDATE journal_entry SET body = 'My own words.', updated_at = '2026-09-02T10:00:00.000Z' WHERE id = 2;",
+        // And writes an entry of their own.
+        "INSERT INTO journal_entry (id, entry_date, title, body, word_count, updated_at) VALUES (4, '2026-09-03', 'Mine', 'Mine.', 1, '2026-09-03T10:00:00.000Z');",
+    };
+    for (setup) |sql| {
+        try std.testing.expectEqual(native_sdk.relational_store.Outcome.ok, db.exec(&.{.{ .sql = sql }}));
+    }
+
+    try applyRemoveSamples(&db);
+
+    // Samples 1 and 3 are gone, and so is everything that hung off sample 1.
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM journal_entry WHERE id IN (1, 3);"));
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM entry_summary WHERE entry_id = 1;"));
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM entry_embedding WHERE entry_id = 1;"));
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM semantic_fact WHERE source_id = 1;"));
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM dream_state WHERE source_id = 1;"));
+    // The edited sample, its rows, and the person's own entry stay.
+    try std.testing.expectEqual(@as(i64, 2), try countRows(&db, "SELECT count(*) AS n FROM journal_entry;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM journal_entry WHERE id = 2 AND body = 'My own words.';"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM entry_summary WHERE entry_id = 2;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM entry_embedding WHERE entry_id = 2;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM semantic_fact WHERE source_id = 2;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM dream_state WHERE source_id = 2;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM journal_entry WHERE id = 4;"));
+}
+
+test "migration 17 finds an untouched sample even after the encryption rewrite" {
+    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, migrations[0..16]);
+    var db = switch (open_result.outcome) {
+        .ok => open_result.database.?,
+        else => return error.SqliteMigrationFailed,
+    };
+    defer db.deinit();
+    // The encryption rewrite changes the text and leaves updated_at alone, so a
+    // pristine encrypted sample is still found by its epoch timestamp.
+    try std.testing.expectEqual(
+        native_sdk.relational_store.Outcome.ok,
+        db.exec(&.{.{ .sql = "UPDATE journal_entry SET title = 'sage:v1:AAAA', body = 'sage:v1:BBBB' WHERE id = 1;" }}),
+    );
+    try applyRemoveSamples(&db);
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM journal_entry;"));
 }
 
 test "list returns seeded journal entries" {
@@ -6873,10 +6977,11 @@ const EncRig = struct {
     /// store points back at the vault, so the rig must not move afterwards.
     fn init(self: *EncRig, password: []const u8) !void {
         const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &migrations);
-        const db = switch (open_result.outcome) {
+        var db = switch (open_result.outcome) {
             .ok => open_result.database.?,
             else => return error.SqliteMigrationFailed,
         };
+        try insertFixtureEntries(&db);
         self.store = Store.init(std.testing.allocator, db);
         self.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.store.db);
         self.store.vault = &self.vault;
@@ -7180,10 +7285,11 @@ const FileRig = struct {
 
     fn init(self: *FileRig, data_dir: []const u8) !void {
         const open_result = try native_sdk.RelationalStore.openMigrated(std.testing.allocator, data_dir, &migrations);
-        const db = switch (open_result.outcome) {
+        var db = switch (open_result.outcome) {
             .ok => open_result.database.?,
             else => return error.SqliteMigrationFailed,
         };
+        try insertFixtureEntries(&db);
         self.store = Store.init(std.testing.allocator, db);
         self.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.store.db);
         self.store.vault = &self.vault;

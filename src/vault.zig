@@ -722,10 +722,12 @@ fn parseKdf(json: []const u8) !KdfSettings {
 
 fn testDb() !native_sdk.RelationalStore {
     const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
-    return switch (open_result.outcome) {
+    var db = switch (open_result.outcome) {
         .ok => open_result.database.?,
-        else => error.SqliteMigrationFailed,
+        else => return error.SqliteMigrationFailed,
     };
+    try journal.insertFixtureEntries(&db);
+    return db;
 }
 
 test "enable then unlock round-trips the data key" {

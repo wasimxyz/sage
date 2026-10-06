@@ -943,7 +943,7 @@ fn handleOnboardingStatus(context: *anyopaque, invocation: native_sdk.bridge.Inv
     // Only a missing row needs the question, so a launch that already decided
     // never reads the journal.
     if (self.onboarding.state == null) {
-        try self.onboarding.settleExisting(try self.store.hasUserContent());
+        try self.onboarding.settleExisting(try self.store.hasEntriesOrChats());
     }
     return self.onboarding.writeStatus(output);
 }
@@ -2986,11 +2986,23 @@ const EmbedTestRig = struct {
     /// `app.lock` borrows the store's database, so the rig must not move
     /// after init.
     fn init(self: *EmbedTestRig) !void {
+        try self.initWith(true);
+    }
+
+    /// A new install: migrated and empty, with no entries in it.
+    fn initEmpty(self: *EmbedTestRig) !void {
+        try self.initWith(false);
+    }
+
+    fn initWith(self: *EmbedTestRig, fixture_entries: bool) !void {
         const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
-        const db = switch (open_result.outcome) {
+        var db = switch (open_result.outcome) {
             .ok => open_result.database.?,
             else => return error.SqliteMigrationFailed,
         };
+        // Many tests were written against the three entries a new journal once
+        // had, so they get them back as fixtures.
+        if (fixture_entries) try journal.insertFixtureEntries(&db);
         const probe = try std.heap.page_allocator.create(WakeProbe);
         probe.* = .{};
         self.* = .{
@@ -3174,7 +3186,7 @@ test "ollama.setupStatus refuses while locked" {
 
 test "onboarding commands refuse while locked" {
     var rig: EmbedTestRig = undefined;
-    try rig.init();
+    try rig.initEmpty();
     defer rig.deinit();
     rig.app.lock.unlocked = false;
 
@@ -3198,7 +3210,7 @@ test "onboarding commands refuse while locked" {
 
 test "onboarding.status leaves a new user for setup" {
     var rig: EmbedTestRig = undefined;
-    try rig.init();
+    try rig.initEmpty();
     defer rig.deinit();
 
     var output: [1024]u8 = undefined;
@@ -3213,7 +3225,7 @@ test "onboarding.status leaves a new user for setup" {
 
 test "onboarding.status settles an existing user with entries to done" {
     var rig: EmbedTestRig = undefined;
-    try rig.init();
+    try rig.initEmpty();
     defer rig.deinit();
 
     var output: [8192]u8 = undefined;
@@ -3237,7 +3249,7 @@ test "onboarding.status settles an existing user with entries to done" {
 
 test "onboarding.status settles an existing user with only chats to done" {
     var rig: EmbedTestRig = undefined;
-    try rig.init();
+    try rig.initEmpty();
     defer rig.deinit();
 
     var output: [8192]u8 = undefined;
@@ -3255,7 +3267,7 @@ test "onboarding.status settles an existing user with only chats to done" {
 
 test "setup progress and reminder rows survive a relaunch" {
     var rig: EmbedTestRig = undefined;
-    try rig.init();
+    try rig.initEmpty();
     defer rig.deinit();
 
     var output: [1024]u8 = undefined;

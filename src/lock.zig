@@ -634,10 +634,12 @@ fn okJson(output: []u8) ![]const u8 {
 
 fn testDb() !native_sdk.RelationalStore {
     const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
-    return switch (open_result.outcome) {
+    var db = switch (open_result.outcome) {
         .ok => open_result.database.?,
-        else => error.SqliteMigrationFailed,
+        else => return error.SqliteMigrationFailed,
     };
+    try journal.insertFixtureEntries(&db);
+    return db;
 }
 
 fn testLock(db: *native_sdk.RelationalStore) !Lock {
@@ -1108,10 +1110,11 @@ const FileRig = struct {
     /// database, so the rig must not move afterwards.
     fn init(self: *FileRig, data_dir: []const u8) !void {
         const open_result = try native_sdk.RelationalStore.openMigrated(std.testing.allocator, data_dir, &journal.migrations);
-        const db = switch (open_result.outcome) {
+        var db = switch (open_result.outcome) {
             .ok => open_result.database.?,
             else => return error.SqliteMigrationFailed,
         };
+        try journal.insertFixtureEntries(&db);
         self.store = journal.Store.init(std.testing.allocator, db);
         self.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.store.db);
         self.store.vault = &self.vault;

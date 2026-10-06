@@ -10,10 +10,10 @@ Sage reads the `onboarding.state` row once per launch, after any unlock:
 
 1. If the row is `done` or `skipped`, Sage opens Home.
 2. If the row is `active`, setup was left half done, so it opens at the saved step.
-3. If the row is missing and you have written, imported, or edited an entry or started a chat, Sage writes `done` and opens Home. This keeps existing users out of setup.
-4. If the row is missing and you have none of those, Sage shows setup and writes `active`.
+3. If the row is missing and the journal has an entry or a chat, Sage writes `done` and opens Home. This keeps existing users out of setup.
+4. If the row is missing and the journal has neither, Sage shows setup and writes `active`.
 
-Migration 1 puts three sample entries in every new journal, so Sage does not count them. A sample entry keeps the epoch `updated_at` from migration 4 until you edit it, and `Store.hasUserContent` checks for that. Deleting a sample entry changes nothing.
+A new journal is empty. Earlier versions put three sample entries in every new journal, which would have made rule 4 impossible. Migration 17 deletes the samples that nobody edited, with their embeddings, summaries, memories, and Dream state. It finds them by id and by the epoch `updated_at` that migration 4 gave them, so it works on encrypted journals too. An entry you edited stays.
 
 The core makes the decision in `onboarding.status`. If the row cannot be read, Sage opens Home instead of trapping you outside it.
 

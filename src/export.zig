@@ -967,9 +967,10 @@ test "exportData leaves unrelated files in the dated folder" {
 fn testStore() !journal.Store {
     const native_sdk = @import("native_sdk");
     const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
-    const db = switch (open_result.outcome) {
+    var db = switch (open_result.outcome) {
         .ok => open_result.database.?,
         else => return error.SqliteMigrationFailed,
     };
+    try journal.insertFixtureEntries(&db);
     return journal.Store.init(std.testing.allocator, db);
 }
