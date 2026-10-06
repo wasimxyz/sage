@@ -49,7 +49,7 @@ Chat finds entries a different way: it ranks entry summaries by meaning. [The ev
 
 ## The Home screen
 
-Home shows the latest entry, plus entries and conversations from the last 14 days, through `home.feed`. The Continue writing card uses the same date and last-edited line as the editor. Snippets on Home are plain text.
+Sage opens on Home. Home shows the latest entry, plus entries and conversations from the last 14 days, through `home.feed`. The Continue writing card uses the same date and last-edited line as the editor. Snippets on Home are plain text.
 
 Home and the Chat list reload when Dream finishes.
 

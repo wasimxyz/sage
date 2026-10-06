@@ -77,7 +77,7 @@ Updates replace the app in place, so keep Sage in a folder you can write to.
 
 ## How installed copies update
 
-Sage fetches the feed from `https://github.com/wasimxyz/sage/releases/latest/download/native-update.json` when it starts, and stays quiet unless a newer version exists. You can also choose **Check for Updates…** in the Sage menu.
+Sage fetches the feed from `https://github.com/wasimxyz/sage/releases/latest/download/native-update.json` when it starts, and stays quiet unless a newer version exists. You can also choose **Check for updates** in the Sage menu.
 
 When a newer version exists, Sage offers **Install Update**. It checks the feed signature against the public key in the app, downloads the ZIP, and checks the ZIP’s size and SHA-256 against the signed feed. Then it quits, replaces the app, and opens the new one. If the swap fails, it puts the old app back.
 

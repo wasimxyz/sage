@@ -66,11 +66,14 @@ fn installMacos(api: objc.Api) bool {
     const app_menu = appMenu(api) orelse return false;
     const separator_class = api.get_class("NSMenuItem") orelse return false;
     const app_separator = objc.msg(api, separator_class, objc.sel(api, "separatorItem")) orelse return false;
-    // About, separator, Settings, Lock, separator, Hide…
+    // About, separator, Lock, Settings, Check for updates, separator, Hide…
+    // The host puts Check for updates right after About, so inserting
+    // above it leaves it last in this group.
     objc.msgVoidIdInt(api, app_menu, objc.sel(api, "insertItem:atIndex:"), app_separator, 1);
-    objc.msgVoidIdInt(api, app_menu, objc.sel(api, "insertItem:atIndex:"), settings_item, 2);
-    objc.msgVoidIdInt(api, app_menu, objc.sel(api, "insertItem:atIndex:"), app_lock_item, 3);
+    objc.msgVoidIdInt(api, app_menu, objc.sel(api, "insertItem:atIndex:"), app_lock_item, 2);
+    objc.msgVoidIdInt(api, app_menu, objc.sel(api, "insertItem:atIndex:"), settings_item, 3);
     lock_item = app_lock_item;
+    restyleUpdateItem(api, app_menu);
 
     const file_menu = submenuNamed(api, "File") orelse return true;
     const import_item = createItem(
@@ -126,14 +129,30 @@ fn createItem(
     const item = objc.msgIdSelId(api, allocated, objc.sel(api, "initWithTitle:action:keyEquivalent:"), title, objc.sel(api, action), key) orelse return null;
     _ = objc.msg1(api, item, objc.sel(api, "setTarget:"), target);
     objc.msgVoidUInt(api, item, objc.sel(api, "setKeyEquivalentModifierMask:"), modifiers);
-    if (symbol) |name| {
-        const image_class = api.get_class("NSImage") orelse return item;
-        const symbol_name = objc.nsString(api, name) orelse return item;
-        const description = objc.nsString(api, title_text) orelse return item;
-        const image = objc.msg2(api, image_class, objc.sel(api, "imageWithSystemSymbolName:accessibilityDescription:"), symbol_name, description);
-        _ = objc.msg1(api, item, objc.sel(api, "setImage:"), image);
-    }
+    if (symbol) |name| setSymbol(api, item, name, title_text);
     return item;
+}
+
+fn setSymbol(api: objc.Api, item: *anyopaque, symbol: [:0]const u8, description_text: [:0]const u8) void {
+    const image_class = api.get_class("NSImage") orelse return;
+    const symbol_name = objc.nsString(api, symbol) orelse return;
+    const description = objc.nsString(api, description_text) orelse return;
+    const image = objc.msg2(api, image_class, objc.sel(api, "imageWithSystemSymbolName:accessibilityDescription:"), symbol_name, description);
+    _ = objc.msg1(api, item, objc.sel(api, "setImage:"), image);
+}
+
+/// The SDK host builds "Check for Updates…" itself, so Sage cannot declare
+/// it. Match the other items instead: sentence case, no ellipsis, and an
+/// icon. The item keeps the host's target and action, so only its look
+/// changes. If a newer SDK renames the item, this finds nothing and the
+/// host's own item stays as it is.
+fn restyleUpdateItem(api: objc.Api, app_menu: *anyopaque) void {
+    const host_title = objc.nsString(api, "Check for Updates…") orelse return;
+    const item = objc.msg1(api, app_menu, objc.sel(api, "itemWithTitle:"), host_title) orelse return;
+    const title_text = "Check for updates";
+    const title = objc.nsString(api, title_text) orelse return;
+    _ = objc.msg1(api, item, objc.sel(api, "setTitle:"), title);
+    setSymbol(api, item, "arrow.triangle.2.circlepath", title_text);
 }
 
 fn appMenu(api: objc.Api) ?*anyopaque {

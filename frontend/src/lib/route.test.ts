@@ -34,7 +34,7 @@ test("parseHash maps memories hashes onto Facts and Events", () => {
 test("routeForMemoryFeature redirects memory routes only when disabled", () => {
   assert.deepEqual(
     routeForMemoryFeature({ section: "memories", tab: "events" }, false),
-    { entryId: null, section: "journal" }
+    { section: "home" }
   );
   assert.deepEqual(
     routeForMemoryFeature({ section: "memories", tab: "events" }, true),
@@ -47,7 +47,7 @@ test("routeForMemoryFeature redirects memory routes only when disabled", () => {
 });
 
 test("navigation during a delayed memory check overrides the startup hash", () => {
-  const initial = { entryId: null, section: "journal" } as const;
+  const initial = { section: "home" } as const;
   assert.equal(
     navigationOverridesPendingMemoryRoute(
       initial,
@@ -70,13 +70,22 @@ test("navigation during a delayed memory check overrides the startup hash", () =
   );
 });
 
-test("parseHash treats an unknown memories tab as the journal default", () => {
-  assert.deepEqual(parseHash("#/memories/topics"), {
+test("parseHash opens Home for an empty hash and treats bad hashes as Home", () => {
+  assert.deepEqual(parseHash(""), { section: "home" });
+  assert.deepEqual(parseHash("#"), { section: "home" });
+  assert.deepEqual(parseHash("#/"), { section: "home" });
+  assert.deepEqual(parseHash("#/nowhere"), { section: "home" });
+  assert.deepEqual(parseHash("#/memories/topics"), { section: "home" });
+  assert.deepEqual(parseHash("#/memories/facts/extra"), { section: "home" });
+});
+
+test("parseHash still opens the Journal when the hash asks for it", () => {
+  assert.deepEqual(parseHash("#/journal"), {
     entryId: null,
     section: "journal",
   });
-  assert.deepEqual(parseHash("#/memories/facts/extra"), {
-    entryId: null,
+  assert.deepEqual(parseHash("#/journal/7"), {
+    entryId: 7,
     section: "journal",
   });
 });
@@ -126,10 +135,7 @@ test("parseHash maps settings hashes onto their tabs", () => {
     section: "settings",
     tab: "data",
   });
-  assert.deepEqual(parseHash("#/settings/unknown"), {
-    entryId: null,
-    section: "journal",
-  });
+  assert.deepEqual(parseHash("#/settings/unknown"), { section: "home" });
 });
 
 test("toHash leaves the Agent tab off the settings hash", () => {

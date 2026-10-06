@@ -514,7 +514,9 @@ function SearchQueryField() {
         aria-controls={hits.length > 0 ? listId : undefined}
         aria-expanded={trimmedQuery.length > 0}
         aria-label={searchAriaLabel(tab, memoryEnabled)}
+        autoCapitalize="off"
         autoComplete="off"
+        autoCorrect="off"
         autoFocus
         className="h-11 border-0 bg-transparent px-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
         name="app-search"
@@ -522,6 +524,7 @@ function SearchQueryField() {
         onKeyDown={handleQueryKeyDown}
         placeholder={searchPlaceholder(tab, memoryEnabled)}
         role="combobox"
+        spellCheck={false}
         type="search"
         value={query}
       />

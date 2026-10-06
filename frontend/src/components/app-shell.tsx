@@ -49,8 +49,10 @@ export function AppShell() {
         className="relative flex min-h-0 min-w-0 flex-1 flex-col"
         style={
           {
-            // 5.375rem clears traffic lights inset 1rem; 0.5rem is used in fullscreen.
-            "--titlebar-leading": fullscreen ? "0.5rem" : "5.375rem",
+            // 5.375rem clears the traffic lights inset 1rem. In fullscreen the
+            // toggle icon lines up with the sidebar icons, which sit 1rem in:
+            // 0.125rem + 0.5rem padding + 0.375rem inside the 1.75rem button.
+            "--titlebar-leading": fullscreen ? "0.125rem" : "5.375rem",
           } as CSSProperties
         }
       >
