@@ -1,5 +1,5 @@
 import { FileUpIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { openMarkdownFileDialog, readImportFile } from "@/bridge";
@@ -42,11 +42,21 @@ type PreviewRow =
 const pathSeparatorPattern = /[/\\]/;
 
 export function ImportDialog({
+  onImported,
   onOpenChange,
   open,
+  pickFirst = false,
 }: {
+  /** Called with how many entries were saved, once an import finishes. */
+  onImported?: (count: number) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  /**
+   * Show the file picker as soon as the dialog opens. A picker that is
+   * cancelled closes the dialog again, so the person never sees a dialog whose
+   * only button opens the picker they just dismissed.
+   */
+  pickFirst?: boolean;
 }) {
   const {
     actions: { importEntries },
@@ -80,12 +90,12 @@ export function ImportDialog({
     [busy, onOpenChange, picking, reset]
   );
 
-  const chooseFiles = useCallback(async () => {
+  const chooseFiles = useCallback(async (): Promise<boolean> => {
     setPicking(true);
     try {
       const paths = await openMarkdownFileDialog();
       if (paths.length === 0) {
-        return;
+        return false;
       }
       const nextRows = await Promise.all(
         paths.map(async (path): Promise<PreviewRow> => {
@@ -114,10 +124,40 @@ export function ImportDialog({
       );
       setRows(nextRows);
       setStep("preview");
+      return true;
     } finally {
       setPicking(false);
     }
   }, []);
+
+  const handleChooseClick = useCallback(() => {
+    chooseFiles().catch(() => undefined);
+  }, [chooseFiles]);
+
+  // Once per opening: the effect would otherwise show a second picker when
+  // React runs it again.
+  const autoPicked = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      autoPicked.current = false;
+      return;
+    }
+    if (!pickFirst || autoPicked.current) {
+      return;
+    }
+    autoPicked.current = true;
+    chooseFiles()
+      .then((picked) => {
+        if (!picked) {
+          onOpenChange(false);
+          reset();
+        }
+      })
+      .catch(() => {
+        onOpenChange(false);
+        reset();
+      });
+  }, [chooseFiles, onOpenChange, open, pickFirst, reset]);
 
   const confirmImport = useCallback(async () => {
     const entries = rows.flatMap((row) =>
@@ -142,6 +182,7 @@ export function ImportDialog({
           window.setTimeout(resolve, 400);
         });
       }
+      onImported?.(imported);
       onOpenChange(false);
       reset();
     } catch (error) {
@@ -149,7 +190,7 @@ export function ImportDialog({
       setStep("preview");
       toast.error(formatImportError(error));
     }
-  }, [importEntries, onOpenChange, reset, rows]);
+  }, [importEntries, onImported, onOpenChange, reset, rows]);
 
   const validCount = rows.filter((row) => row.kind === "ok").length;
   const showPreview = step !== "pick";
@@ -193,7 +234,7 @@ export function ImportDialog({
               <DialogClose render={<Button variant="outline" />}>
                 Cancel
               </DialogClose>
-              <Button onClick={chooseFiles}>
+              <Button onClick={handleChooseClick}>
                 <FileUpIcon data-icon="inline-start" />
                 Choose files
               </Button>

@@ -19,6 +19,11 @@ interface FileMenuState {
 
 interface FileMenuActions {
   openImport: () => void;
+  /**
+   * Open the file picker at once and show the import preview. `onImported`
+   * runs with the number of entries saved, after an import finishes.
+   */
+  pickAndImport: (onImported: (count: number) => void) => void;
   setImportOpen: (open: boolean) => void;
 }
 
@@ -41,10 +46,26 @@ export function useFileMenu(): FileMenuContextValue {
 
 export function FileMenuProvider({ children }: { children: ReactNode }) {
   const [importOpen, setImportOpen] = useState(false);
+  const [pickFirst, setPickFirst] = useState(false);
+  const onImported = useRef<((count: number) => void) | null>(null);
   const exportBusy = useRef(false as boolean);
 
   const openImport = useCallback(() => {
+    onImported.current = null;
+    setPickFirst(false);
     setImportOpen(true);
+  }, []);
+
+  const pickAndImport = useCallback((done: (count: number) => void) => {
+    onImported.current = done;
+    setPickFirst(true);
+    setImportOpen(true);
+  }, []);
+
+  const handleImported = useCallback((count: number) => {
+    const done = onImported.current;
+    onImported.current = null;
+    done?.(count);
   }, []);
 
   const runExport = useCallback(() => {
@@ -62,8 +83,8 @@ export function FileMenuProvider({ children }: { children: ReactNode }) {
 
   const state = useMemo<FileMenuState>(() => ({ importOpen }), [importOpen]);
   const actions = useMemo<FileMenuActions>(
-    () => ({ openImport, setImportOpen }),
-    [openImport]
+    () => ({ openImport, pickAndImport, setImportOpen }),
+    [openImport, pickAndImport]
   );
   const value = useMemo<FileMenuContextValue>(
     () => ({ actions, meta: emptyMeta, state }),
@@ -73,7 +94,12 @@ export function FileMenuProvider({ children }: { children: ReactNode }) {
   return (
     <FileMenuContext value={value}>
       {children}
-      <ImportDialog onOpenChange={setImportOpen} open={importOpen} />
+      <ImportDialog
+        onImported={handleImported}
+        onOpenChange={setImportOpen}
+        open={importOpen}
+        pickFirst={pickFirst}
+      />
     </FileMenuContext>
   );
 }

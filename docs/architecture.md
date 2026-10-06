@@ -17,7 +17,7 @@ The frontend reaches the Zig core through bridge commands. The frontend calls `w
 
 Large values travel in 32 KiB chunks. The frontend sends one chunk at a time with its byte offset, and the core joins them. Journal entries and imported files read back in slices the same way, while chat transcripts read back by event index, as [Chat storage](agent/storage.md) explains.
 
-Each feature page lists its own commands: [The journal](journal.md), [Dream](dream.md), [Models](models.md), [Chat storage](agent/storage.md), and [Memories](agent/memories.md).
+Each feature page lists its own commands: [The journal](journal.md), [Dream](dream.md), [Models](models.md), [First-launch setup](onboarding.md), [Chat storage](agent/storage.md), and [Memories](agent/memories.md).
 
 ## Storage
 

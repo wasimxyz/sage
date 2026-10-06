@@ -4,7 +4,7 @@ This page explains how the optional lock works: where the password lives, how To
 
 The lock is off by default. Settings > Security shows “Lock is on” or “Lock is off”, depending on whether a password or Touch ID is set. Once the lock is on, Sage asks for your password or Touch ID at every launch, and once Touch ID is on, the password is optional.
 
-With encryption off, the lock only keeps people out of the running app. Anyone with a copy of `app.db` can still read it, as [Encryption at rest](encryption.md) explains.
+With encryption off, the lock only keeps people out of the running app. Anyone with a copy of `app.db` can still read it, as [Encryption at rest](encryption.md) explains. If you skip setup and encryption stays off, Sage reminds you up to 3 times on later launches, as [First-launch setup](../onboarding.md#reminders) explains.
 
 ## The password hash
 

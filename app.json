@@ -81,7 +81,12 @@
             { "name": "ollama.pulls", "origins": ["zero://app"] },
             { "name": "ollama.pullCancel", "origins": ["zero://app"] },
             { "name": "ollama.delete", "origins": ["zero://app"] },
-            { "name": "system.hardware", "origins": ["zero://app"] }
+            { "name": "system.hardware", "origins": ["zero://app"] },
+            { "name": "onboarding.status", "origins": ["zero://app"] },
+            { "name": "onboarding.save", "origins": ["zero://app"] },
+            { "name": "onboarding.reminderShown", "origins": ["zero://app"] },
+            { "name": "onboarding.remindersOff", "origins": ["zero://app"] },
+            { "name": "ollama.setupStatus", "origins": ["zero://app"] }
         ]
     },
     "security": {
@@ -93,7 +98,8 @@
                     "https://canirun.ai",
                     "https://canirun.ai/*",
                     "https://www.canirun.ai",
-                    "https://www.canirun.ai/*"
+                    "https://www.canirun.ai/*",
+                    "https://ollama.com/download"
                 ]
             }
         }

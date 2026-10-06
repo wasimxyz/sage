@@ -15,6 +15,7 @@ import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { useChat } from "@/components/chat-provider";
 import { EntryDateLine } from "@/components/entry-date-line";
 import { useJournal } from "@/components/journal-context";
+import { ProtectReminder } from "@/components/protect-reminder";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -120,6 +121,7 @@ export function HomeScreen() {
           />
         </div>
       </ScrollArea>
+      <ProtectReminder ready={!loading} />
     </div>
   );
 }

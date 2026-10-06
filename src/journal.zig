@@ -2120,6 +2120,24 @@ pub const Store = struct {
         return writer.buffered();
     }
 
+    /// Whether the person has written or imported an entry, edited a sample
+    /// entry, or started a chat. First-launch setup uses it to keep people who
+    /// already use Sage out of setup.
+    ///
+    /// Migration 1 puts three sample entries in every new journal, so a plain
+    /// row count could never be zero. Those rows keep the epoch `updated_at`
+    /// that migration 4 gave them until the person edits one: saving and
+    /// importing stamp the real time, and the encryption rewrite leaves it
+    /// alone. Deleting a sample entry leaves no row to count either way.
+    pub fn hasUserContent(self: *Store) !bool {
+        const found = try self.countDataRows(
+            \\SELECT EXISTS(SELECT 1 FROM journal_entry WHERE updated_at <> '1970-01-01T00:00:00.000Z')
+            \\  OR EXISTS(SELECT 1 FROM chat_conversation) AS n;
+            ,
+        );
+        return found != 0;
+    }
+
     fn countDataRows(self: *Store, sql: []const u8) !i64 {
         var rows = CountRows{};
         const outcome = self.db.query(sql, &.{}, &rows, CountRows.collect);
@@ -6279,6 +6297,45 @@ test "deleteMemories removes user and hidden rows and clears Dream timestamps" {
         "{\"entries\":3,\"conversations\":1,\"embeddings\":4,\"memories\":0}",
         try store.dataCounts(&output),
     );
+}
+
+test "a new journal has no content of its own, only the samples" {
+    var store = try testStore();
+    defer store.deinit();
+    try std.testing.expect(!(try store.hasUserContent()));
+}
+
+test "a saved or imported entry counts as content" {
+    var store = try testStore();
+    defer store.deinit();
+    var output: [8192]u8 = undefined;
+    _ = try store.save(
+        "{\"id\":null,\"title\":\"Mine\",\"date\":\"2026-09-13\",\"wordCount\":1,\"format\":\"plain\",\"offset\":0,\"chunk\":\"Mine.\",\"done\":true}",
+        &output,
+    );
+    try std.testing.expect(try store.hasUserContent());
+}
+
+test "editing a sample entry counts as content" {
+    var store = try testStore();
+    defer store.deinit();
+    var output: [8192]u8 = undefined;
+    _ = try store.save(
+        "{\"id\":1,\"title\":\"Morning walk, again\",\"date\":\"2026-08-28\",\"wordCount\":1,\"format\":\"plain\",\"offset\":0,\"chunk\":\"Edited.\",\"done\":true}",
+        &output,
+    );
+    try std.testing.expect(try store.hasUserContent());
+}
+
+test "a chat counts as content" {
+    var store = try testStore();
+    defer store.deinit();
+    var output: [8192]u8 = undefined;
+    _ = try store.chatSave(
+        "{\"id\":null,\"title\":\"A chat\",\"eveSessionId\":\"sess-1\",\"streamIndex\":1,\"model\":\"llama3.2\",\"thinking\":false,\"contextLength\":16384,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[{\\\"type\\\":\\\"x\\\"}]\",\"done\":true}",
+        &output,
+    );
+    try std.testing.expect(try store.hasUserContent());
 }
 
 test "list returns seeded journal entries" {

@@ -11,6 +11,7 @@ const lock_mod = @import("lock.zig");
 const menu = @import("menu.zig");
 const session_lock = @import("session_lock.zig");
 const ollama = @import("ollama.zig");
+const onboarding_mod = @import("onboarding.zig");
 const touchid = @import("touchid.zig");
 const vault_mod = @import("vault.zig");
 const window_chrome = @import("window.zig");
@@ -41,6 +42,7 @@ const external_link_urls = [_][]const u8{
     "https://canirun.ai/*",
     "https://www.canirun.ai",
     "https://www.canirun.ai/*",
+    "https://ollama.com/download",
 };
 const command_names = [_][]const u8{
     "journal.list",
@@ -103,8 +105,13 @@ const command_names = [_][]const u8{
     "ollama.pullCancel",
     "ollama.delete",
     "system.hardware",
+    "onboarding.status",
+    "onboarding.save",
+    "onboarding.reminderShown",
+    "onboarding.remindersOff",
+    "ollama.setupStatus",
 };
-const async_handler_count = 13;
+const async_handler_count = 14;
 
 fn navigationOrigins(dev_mode: bool) []const []const u8 {
     if (dev_mode) return &navigation_origins_dev;
@@ -217,6 +224,7 @@ const App = struct {
     store: journal.Store,
     lock: lock_mod.Lock,
     vault: vault_mod.Vault,
+    onboarding: onboarding_mod.Onboarding,
     lock_queue: *LockQueue,
     services: ?native_sdk.platform.PlatformServices = null,
     runtime: ?*native_sdk.Runtime = null,
@@ -470,6 +478,10 @@ const App = struct {
             .{ .name = "ollama.pull", .context = self, .invoke_fn = handleOllamaPull },
             .{ .name = "ollama.pulls", .context = self, .invoke_fn = handleOllamaPulls },
             .{ .name = "ollama.pullCancel", .context = self, .invoke_fn = handleOllamaPullCancel },
+            .{ .name = "onboarding.status", .context = self, .invoke_fn = handleOnboardingStatus },
+            .{ .name = "onboarding.save", .context = self, .invoke_fn = handleOnboardingSave },
+            .{ .name = "onboarding.reminderShown", .context = self, .invoke_fn = handleOnboardingReminderShown },
+            .{ .name = "onboarding.remindersOff", .context = self, .invoke_fn = handleOnboardingRemindersOff },
         };
         self.async_handlers = .{
             .{ .name = "embeddings.status", .context = self, .invoke_fn = handleEmbeddingsStatus },
@@ -485,6 +497,7 @@ const App = struct {
             .{ .name = "ollama.models", .context = self, .invoke_fn = handleOllamaModels },
             .{ .name = "ollama.start", .context = self, .invoke_fn = handleOllamaStart },
             .{ .name = "ollama.delete", .context = self, .invoke_fn = handleOllamaDelete },
+            .{ .name = "ollama.setupStatus", .context = self, .invoke_fn = handleOllamaSetupStatus },
         };
         return .{
             .policy = .{
@@ -916,6 +929,43 @@ fn handleSystemHardware(context: *anyopaque, invocation: native_sdk.bridge.Invoc
     try journal.writeJsonStringStreaming(&writer, info.chip_name);
     try writer.print(",\"ramGb\":{d},\"cpuCores\":{d}}}", .{ info.ram_gb, info.cpu_cores });
     return writer.buffered();
+}
+
+// --- first-launch setup ---
+//
+// The page asks, the core decides. Every command below waits for an unlocked,
+// ready journal, because setup runs inside the app and never before unlock.
+
+fn handleOnboardingStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireReady(self);
+    // Only a missing row needs the question, so a launch that already decided
+    // never reads the journal.
+    if (self.onboarding.state == null) {
+        try self.onboarding.settleExisting(try self.store.hasUserContent());
+    }
+    return self.onboarding.writeStatus(output);
+}
+
+fn handleOnboardingSave(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireReady(self);
+    return self.onboarding.save(invocation.request.payload, output);
+}
+
+fn handleOnboardingReminderShown(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireReady(self);
+    return self.onboarding.markReminderShown(output);
+}
+
+fn handleOnboardingRemindersOff(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireReady(self);
+    return self.onboarding.turnRemindersOff(output);
 }
 
 fn handleOllamaPull(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
@@ -1709,6 +1759,9 @@ const EmbedJob = struct {
     delete_name: []const u8 = "",
     /// The parent PATH, so a worker can find an `ollama` CLI install.
     start_path: []const u8 = "",
+    /// Written by the setup status worker.
+    setup_installed: bool = false,
+    setup_running: bool = false,
     err: ?anyerror = null,
     /// Snapshot of `Store.data_generation` when the job started.
     generation: u64 = 0,
@@ -1718,7 +1771,7 @@ const EmbedJob = struct {
     memory_subject: []u8 = &.{},
     memory_text: []u8 = &.{},
 
-    const Kind = enum { status, generate, models, start, delete, memory_save };
+    const Kind = enum { status, generate, models, start, delete, memory_save, setup_status };
 };
 
 fn handleEmbeddingsStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) anyerror!void {
@@ -1771,6 +1824,20 @@ fn handleOllamaStart(context: *anyopaque, invocation: native_sdk.bridge.Invocati
     };
     startOllamaStartJob(self, invocation, responder) catch {
         respondFail(responder, invocation.request.id, "Could not start Ollama.");
+    };
+}
+
+/// Whether Ollama is installed and running, and the two model names Sage
+/// looks for. Setup picks its screen from this. The probe touches the network
+/// and the disk, so it runs on a worker thread.
+fn handleOllamaSetupStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) anyerror!void {
+    const self: *App = @ptrCast(@alignCast(context));
+    requireUnlocked(self) catch {
+        respondFail(responder, invocation.request.id, "Sage is locked.");
+        return;
+    };
+    startSetupStatusJob(self, invocation, responder) catch {
+        respondFail(responder, invocation.request.id, "Could not check Ollama.");
     };
 }
 
@@ -1968,6 +2035,24 @@ fn startOllamaStartJob(self: *App, invocation: native_sdk.bridge.Invocation, res
     thread.detach();
 }
 
+fn startSetupStatusJob(self: *App, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) !void {
+    const services = self.services orelse return error.RuntimeUnavailable;
+    const allocator = self.store.allocator;
+    const path_env = self.env_map.get("PATH");
+    const job = try allocator.create(EmbedJob);
+    errdefer allocator.destroy(job);
+    job.* = .{
+        .kind = .setup_status,
+        .responder = responder,
+        .request_id = try allocator.dupe(u8, invocation.request.id),
+        .start_path = try allocator.dupe(u8, path_env orelse ""),
+    };
+    errdefer allocator.free(job.request_id);
+    errdefer allocator.free(job.start_path);
+    const thread = try std.Thread.spawn(.{}, runSetupStatusJob, .{ self.io, allocator, self.embed_queue, services, job });
+    thread.detach();
+}
+
 fn startDeleteJob(self: *App, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder, name: []const u8) !void {
     const services = self.services orelse return error.RuntimeUnavailable;
     const allocator = self.store.allocator;
@@ -2075,6 +2160,14 @@ fn runStartJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, ser
     services.wake() catch {};
 }
 
+fn runSetupStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob) void {
+    const status = ollama.setupStatus(io, allocator, job.start_path);
+    job.setup_installed = status.installed;
+    job.setup_running = status.running;
+    queue.push(io, job);
+    services.wake() catch {};
+}
+
 fn runDeleteJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob) void {
     var abort: ollama.Abort = .{ .io = io };
     const watchdog = ollama.startWatchdog(&abort, status_timeout_ms);
@@ -2094,6 +2187,17 @@ fn runPullJob(self: *App, name: []u8) void {
     ollama.finishWatchdog(&self.pull_abort, watchdog);
     self.pull_state.finish(self.io, result);
     if (self.services) |services| services.wake() catch {};
+}
+
+/// `{ installed, running, embedModel, summaryModel }`. The names are the ones
+/// Sage looks for: the default, or the one `SAGE_EMBED_MODEL` and
+/// `SAGE_SUMMARY_MODEL` set.
+fn writeSetupStatus(writer: *std.Io.Writer, status: ollama.SetupStatus, models: ollama.ModelPrefixes) !void {
+    try writer.print("{{\"installed\":{},\"running\":{},\"embedModel\":", .{ status.installed, status.running });
+    try journal.writeJsonStringStreaming(writer, models.embed);
+    try writer.writeAll(",\"summaryModel\":");
+    try journal.writeJsonStringStreaming(writer, models.summary);
+    try writer.writeByte('}');
 }
 
 fn drainEmbedJobs(self: *App) void {
@@ -2180,6 +2284,12 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
                 return;
             }
             job.responder.success(job.request_id, "{\"ok\":true}") catch {};
+        },
+        .setup_status => {
+            var body = std.Io.Writer.Allocating.init(allocator);
+            defer body.deinit();
+            writeSetupStatus(&body.writer, .{ .installed = job.setup_installed, .running = job.setup_running }, self.models) catch return;
+            job.responder.success(job.request_id, body.written()) catch {};
         },
         .start => {
             if (job.err) |err| {
@@ -2729,6 +2839,7 @@ pub fn main(init: std.process.Init) !void {
         .store = journal.Store.init(std.heap.page_allocator, db),
         .lock = undefined,
         .vault = undefined,
+        .onboarding = undefined,
         .lock_queue = lock_queue,
         .embed_queue = embed_queue,
         .dream_queue = dream_queue,
@@ -2743,6 +2854,7 @@ pub fn main(init: std.process.Init) !void {
     app.vault = try vault_mod.Vault.init(std.heap.page_allocator, init.io, &app.store.db);
     app.store.vault = &app.vault;
     app.lock = try lock_mod.Lock.init(std.heap.page_allocator, init.io, &app.store.db);
+    app.onboarding = try onboarding_mod.Onboarding.init(std.heap.page_allocator, init.io, &app.store.db);
     try app.store.setSecureDelete(true);
     syncPendingFlags(&app);
     try markRewriteForPlaintext(&app);
@@ -2753,6 +2865,7 @@ pub fn main(init: std.process.Init) !void {
         }
         eve_sidecar.sweepOrphanedSessions(init.io, data_dir, session_ids);
     } else |_| {}
+    defer app.onboarding.deinit();
     defer app.lock.deinit();
     defer app.vault.deinit();
     defer app.store.deinit();
@@ -2795,6 +2908,7 @@ test {
     _ = journal;
     _ = keychain;
     _ = lock_mod;
+    _ = onboarding_mod;
     _ = menu;
     _ = session_lock;
     _ = touchid;
@@ -2887,6 +3001,7 @@ const EmbedTestRig = struct {
                 .store = journal.Store.init(std.testing.allocator, db),
                 .lock = undefined,
                 .vault = undefined,
+                .onboarding = undefined,
                 .lock_queue = undefined,
                 .embed_queue = undefined,
                 .dream_queue = undefined,
@@ -2909,6 +3024,7 @@ const EmbedTestRig = struct {
         self.app.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.app.store.db);
         self.app.store.vault = &self.app.vault;
         self.app.lock = try lock_mod.Lock.init(std.testing.allocator, std.testing.io, &self.app.store.db);
+        self.app.onboarding = try onboarding_mod.Onboarding.init(std.testing.allocator, std.testing.io, &self.app.store.db);
         self.app.services = .{ .context = probe, .wake_fn = WakeProbe.wake };
         self.app.pull_abort = .{ .io = std.testing.io };
         syncPendingFlags(&self.app);
@@ -2925,6 +3041,8 @@ const EmbedTestRig = struct {
         self.app.vault.deinit();
         self.app.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.app.store.db);
         self.app.store.vault = &self.app.vault;
+        self.app.onboarding.deinit();
+        self.app.onboarding = try onboarding_mod.Onboarding.init(std.testing.allocator, std.testing.io, &self.app.store.db);
         syncPendingFlags(&self.app);
     }
 
@@ -2934,6 +3052,7 @@ const EmbedTestRig = struct {
         self.dream_queue.jobs.deinit(std.heap.page_allocator);
         self.lock_queue.jobs.deinit(std.heap.page_allocator);
         self.agent_queue.jobs.deinit(std.heap.page_allocator);
+        self.app.onboarding.deinit();
         self.app.lock.deinit();
         self.app.vault.deinit();
         self.app.store.deinit();
@@ -3004,6 +3123,190 @@ test "system.hardware reports chip and memory" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"chipName\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"ramGb\":") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"cpuCores\":") != null);
+}
+
+test "ollama.setupStatus answers through the worker queue" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    const invocation = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-setup", .command = "ollama.setupStatus", .payload = "{}" },
+        .source = .{},
+    };
+    try handleOllamaSetupStatus(@ptrCast(&rig.app), invocation, rig.responder());
+    try rig.pump();
+
+    // Ollama may or may not be on the machine running the tests, so only the
+    // shape is checked: all four keys, with the default model names.
+    const response = rig.capture.body();
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"id\":\"t-setup\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"installed\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"running\":") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"embedModel\":\"nomic-embed-text\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"summaryModel\":\"qwen3.5:9b\"") != null);
+    try std.testing.expect(rig.probe.wakes.load(.acquire) >= 1);
+}
+
+test "ollama.setupStatus names the models from the environment" {
+    var buffer: [256]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    try writeSetupStatus(&writer, .{ .installed = true, .running = false }, .{ .embed = "custom-embed", .summary = "qwen3:4b" });
+    try std.testing.expectEqualStrings(
+        "{\"installed\":true,\"running\":false,\"embedModel\":\"custom-embed\",\"summaryModel\":\"qwen3:4b\"}",
+        writer.buffered(),
+    );
+}
+
+test "ollama.setupStatus refuses while locked" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.app.lock.unlocked = false;
+
+    const invocation = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-setup-locked", .command = "ollama.setupStatus", .payload = "{}" },
+        .source = .{},
+    };
+    const response = try rig.callNow(handleOllamaSetupStatus, invocation);
+    try expectFailedResponse(response, "Sage is locked.");
+}
+
+test "onboarding commands refuse while locked" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.app.lock.unlocked = false;
+
+    var output: [1024]u8 = undefined;
+    const context: *anyopaque = @ptrCast(&rig.app);
+    const status = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-status", .command = "onboarding.status", .payload = "{}" },
+        .source = .{},
+    };
+    const save = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-save", .command = "onboarding.save", .payload = "{\"state\":\"active\"}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.Locked, handleOnboardingStatus(context, status, &output));
+    try std.testing.expectError(error.Locked, handleOnboardingSave(context, save, &output));
+    try std.testing.expectError(error.Locked, handleOnboardingReminderShown(context, status, &output));
+    try std.testing.expectError(error.Locked, handleOnboardingRemindersOff(context, status, &output));
+    // Nothing was written behind the refusal.
+    try std.testing.expect(rig.app.onboarding.state == null);
+}
+
+test "onboarding.status leaves a new user for setup" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    var output: [1024]u8 = undefined;
+    const invocation = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-new", .command = "onboarding.status", .payload = "{}" },
+        .source = .{},
+    };
+    const json = try handleOnboardingStatus(@ptrCast(&rig.app), invocation, &output);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"state\":null") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"step\":\"welcome\"") != null);
+}
+
+test "onboarding.status settles an existing user with entries to done" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    var output: [8192]u8 = undefined;
+    _ = try rig.app.store.save(
+        "{\"id\":null,\"title\":\"Before setup\",\"date\":\"2026-09-13\",\"wordCount\":2,\"format\":\"plain\",\"offset\":0,\"chunk\":\"Old entry.\",\"done\":true}",
+        &output,
+    );
+    const invocation = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-entries", .command = "onboarding.status", .payload = "{}" },
+        .source = .{},
+    };
+    const json = try handleOnboardingStatus(@ptrCast(&rig.app), invocation, &output);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"state\":\"done\"") != null);
+    // Settling is not running setup, so this launch may still show a reminder.
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"ranSetupThisLaunch\":false") != null);
+
+    // The decision is stored, so the next launch does not decide again.
+    try rig.relaunch();
+    try std.testing.expectEqual(onboarding_mod.State.done, rig.app.onboarding.state.?);
+}
+
+test "onboarding.status settles an existing user with only chats to done" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    var output: [8192]u8 = undefined;
+    _ = try rig.app.store.chatSave(
+        "{\"id\":null,\"title\":\"A chat\",\"eveSessionId\":\"sess-1\",\"streamIndex\":1,\"model\":\"llama3.2\",\"thinking\":false,\"contextLength\":16384,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[{\\\"type\\\":\\\"x\\\"}]\",\"done\":true}",
+        &output,
+    );
+    const invocation = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-chats", .command = "onboarding.status", .payload = "{}" },
+        .source = .{},
+    };
+    const json = try handleOnboardingStatus(@ptrCast(&rig.app), invocation, &output);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"state\":\"done\"") != null);
+}
+
+test "setup progress and reminder rows survive a relaunch" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    var output: [1024]u8 = undefined;
+    const context: *anyopaque = @ptrCast(&rig.app);
+    const save = native_sdk.bridge.Invocation{
+        .request = .{
+            .id = "t-ob-progress",
+            .command = "onboarding.save",
+            .payload = "{\"state\":\"active\",\"step\":\"local_ai\",\"downloads\":[\"qwen3.5:9b\"]}",
+        },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"ok\":true}", try handleOnboardingSave(context, save, &output));
+
+    try rig.relaunch();
+    const status = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-after", .command = "onboarding.status", .payload = "{}" },
+        .source = .{},
+    };
+    const resumed = try handleOnboardingStatus(context, status, &output);
+    try std.testing.expect(std.mem.indexOf(u8, resumed, "\"state\":\"active\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, resumed, "\"step\":\"local_ai\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, resumed, "\"downloads\":[\"qwen3.5:9b\"]") != null);
+    // A new process has not run setup and has shown no reminder yet.
+    try std.testing.expect(std.mem.indexOf(u8, resumed, "\"ranSetupThisLaunch\":false") != null);
+
+    const done = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-done", .command = "onboarding.save", .payload = "{\"state\":\"skipped\"}" },
+        .source = .{},
+    };
+    _ = try handleOnboardingSave(context, done, &output);
+    const reminder = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-reminder", .command = "onboarding.reminderShown", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"ok\":true}", try handleOnboardingReminderShown(context, reminder, &output));
+    try std.testing.expectError(error.ReminderAlreadyShown, handleOnboardingReminderShown(context, reminder, &output));
+
+    try rig.relaunch();
+    const after = try handleOnboardingStatus(context, status, &output);
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"state\":\"skipped\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"remindersShown\":1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"reminderShownThisLaunch\":false") != null);
+
+    const off = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-ob-off", .command = "onboarding.remindersOff", .payload = "{}" },
+        .source = .{},
+    };
+    _ = try handleOnboardingRemindersOff(context, off, &output);
+    try rig.relaunch();
+    try std.testing.expect(rig.app.onboarding.reminders_off);
 }
 
 test "ollama.pulls is idle with no pull" {
