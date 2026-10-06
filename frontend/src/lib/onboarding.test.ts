@@ -12,6 +12,7 @@ import {
   reminderDue,
   remindersLeftLine,
   setupProtectScreen,
+  shownUnlockMethod,
   touchIdChoiceAvailable,
   touchIdReady,
 } from "./onboarding.ts";
@@ -144,6 +145,26 @@ test("a sensor that cannot be used right now still offers Touch ID", () => {
   assert.equal(
     touchIdReady({ touchIdBiometrics: true, touchIdHardware: true }),
     true
+  );
+});
+
+test("Continue uses the method on screen, not a hidden Touch ID pick", () => {
+  // A Touch ID choice saved earlier, on a Mac that shows no Touch ID choice now.
+  assert.equal(
+    shownUnlockMethod({ touchIdHardware: false }, "touch_id"),
+    "password"
+  );
+  assert.equal(
+    shownUnlockMethod({ touchIdHardware: false }, "password"),
+    "password"
+  );
+  assert.equal(
+    shownUnlockMethod({ touchIdHardware: true }, "touch_id"),
+    "touch_id"
+  );
+  assert.equal(
+    shownUnlockMethod({ touchIdHardware: true }, "password"),
+    "password"
   );
 });
 

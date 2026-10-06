@@ -52,10 +52,14 @@ function HeaderBar({ children }: { children?: ReactNode }) {
 
 const stepNumbers = [1, 2, 3] as const;
 
-/** "Step N of 3" with one segment per step. The steps so far are filled in. */
+/**
+ * "Step N of 3" with one segment per step. The steps so far are filled in. It
+ * spans the whole header to stay centered and sits on top of Skip setup, so it
+ * lets clicks through to the button and the draggable strip below.
+ */
 function StepIndicator({ step }: { step: number }) {
   return (
-    <div className="absolute inset-x-0 flex items-center justify-center gap-3 text-muted-foreground text-xs">
+    <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-3 text-muted-foreground text-xs">
       <span>
         Step {step} of {stepCount}
       </span>

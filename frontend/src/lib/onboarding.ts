@@ -116,6 +116,19 @@ export function touchIdChoiceAvailable(
   return lock.touchIdHardware;
 }
 
+/**
+ * The unlock method the Protect screen shows and turns on. With no Touch ID
+ * choice on screen, it is Password, even when Touch ID was picked before, such
+ * as a choice saved on a launch when the sensor was there. What the person
+ * sees picked is always what Continue uses.
+ */
+export function shownUnlockMethod(
+  lock: Pick<LockStatus, "touchIdHardware">,
+  picked: UnlockMethod
+): UnlockMethod {
+  return touchIdChoiceAvailable(lock) ? picked : "password";
+}
+
 /** Touch ID works at this moment, so the first unlock will use the sensor. */
 export function touchIdReady(
   lock: Pick<LockStatus, "touchIdBiometrics">

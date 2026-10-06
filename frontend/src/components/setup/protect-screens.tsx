@@ -549,7 +549,6 @@ export function KeyScreen({
 
 export function ConfirmScreen({
   busy,
-  confirmLabel,
   error,
   onBack,
   onSubmit,
@@ -557,7 +556,6 @@ export function ConfirmScreen({
   typed,
 }: {
   busy: boolean;
-  confirmLabel: string;
   error: string | null;
   onBack: () => void;
   onSubmit: () => void;
@@ -606,15 +604,14 @@ export function ConfirmScreen({
         <FieldError>{error}</FieldError>
       </Field>
       <SetupText className="text-xs">
-        When you continue, Sage turns on the lock and encrypts your journal.
-        This takes a moment.
+        When you continue, Sage encrypts your journal. This takes a moment.
       </SetupText>
       <SetupFooter>
         <Button disabled={busy} onClick={onBack} type="button" variant="ghost">
           Show the key again
         </Button>
         <SubmitButton busy={busy} disabled={typed.length === 0}>
-          {confirmLabel}
+          Turn on encryption
         </SubmitButton>
       </SetupFooter>
     </form>

@@ -41,7 +41,7 @@ The list is sorted by score, then by size, and capped at 25 models. To refresh t
 
 The Installed table reloads when a download finishes.
 
-`ModelDownloadsProvider` owns the polling and the one-at-a-time rule for Settings > Models and for [First-launch setup](onboarding.md#the-downloads-screen). Setup queues the models it needs in the `onboarding.downloads` row, and the provider keeps downloading them after setup ends, after a restart, and after an unlock, until each model is ready or you cancel it.
+`ModelDownloadsProvider` owns the polling and the one-at-a-time rule for Settings > Models and for [First-launch setup](onboarding.md#the-downloads-screen). Setup queues the models it needs in the `onboarding.downloads` row, and the provider keeps downloading them after setup ends, after a restart, and after an unlock, until each model is ready or you cancel it. A download keeps running while Sage is locked. After an unlock or a refresh, the provider reads it back, so Settings > Models shows its progress again.
 
 ## When Ollama is not running
 

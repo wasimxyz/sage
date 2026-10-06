@@ -33,6 +33,7 @@ import {
   defaultUnlockMethod,
   protectScreen,
   setupProtectScreen,
+  shownUnlockMethod,
   touchIdChoiceAvailable,
   touchIdReady,
 } from "@/lib/onboarding";
@@ -96,12 +97,15 @@ export function ProtectFlow({
   const [method, setMethod] = useState<UnlockMethod>(
     saved?.method ?? defaultUnlockMethod(lock ?? { touchIdHardware: false })
   );
+  // What the choice screen shows picked, which is also what Continue turns on.
+  const shownMethod = shownUnlockMethod(
+    lock ?? { touchIdHardware: false },
+    method
+  );
   const [encrypt, setEncrypt] = useState(saved?.method ? saved.encrypt : true);
   const [idleTimeoutMs, setIdleTimeoutMs] = useState(
     lock?.idleTimeoutMs ?? 300_000
   );
-  // With the lock already on, turning on encryption is all this flow does.
-  const [lockWasOn] = useState(() => lock?.enabled ?? false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [typed, setTyped] = useState("");
@@ -125,9 +129,9 @@ export function ProtectFlow({
   }, []);
 
   const handleChooseContinue = useCallback(() => {
-    onChoose?.({ encrypt, method });
-    go({ encrypt, kind: method });
-  }, [encrypt, go, method, onChoose]);
+    onChoose?.({ encrypt, method: shownMethod });
+    go({ encrypt, kind: shownMethod });
+  }, [encrypt, go, onChoose, shownMethod]);
 
   const handleBackToChoice = useCallback(() => {
     setPassword("");
@@ -286,7 +290,7 @@ export function ProtectFlow({
     content = (
       <ChooseScreen
         encrypt={encrypt}
-        method={touchIdChoiceAvailable(lock) ? method : "password"}
+        method={shownMethod}
         onBack={onBack}
         onContinue={handleChooseContinue}
         onEncryptChange={setEncrypt}
@@ -349,9 +353,6 @@ export function ProtectFlow({
     content = (
       <ConfirmScreen
         busy={busy}
-        confirmLabel={
-          lockWasOn ? "Turn on encryption" : "Turn on lock and encryption"
-        }
         error={error}
         onBack={handleBackToKey}
         onSubmit={handleSubmitConfirm}

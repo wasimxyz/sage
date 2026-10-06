@@ -94,14 +94,27 @@ export function ModelDownloadsProvider({ children }: { children: ReactNode }) {
     saveOnboarding({ downloads: [...next] }).catch(() => undefined);
   }, []);
 
+  // The core keeps downloading through a lock or a refresh, which remount this
+  // provider. Read the download back with the queue, or one started from
+  // Settings would vanish from the page until it ended.
   useEffect(() => {
     let cancelled = false;
-    getOnboardingStatus()
-      .then((status) => {
-        if (!cancelled) {
+    Promise.all([
+      getOnboardingStatus().catch(() => null),
+      getOllamaPull().catch(() => null),
+    ])
+      .then(([status, current]) => {
+        if (cancelled) {
+          return;
+        }
+        if (status) {
           queueRef.current = status.downloads;
           setQueue(status.downloads);
         }
+        if (current?.active) {
+          watchedRef.current = current.model;
+        }
+        setPull(current);
       })
       .catch(() => undefined)
       .finally(() => {
