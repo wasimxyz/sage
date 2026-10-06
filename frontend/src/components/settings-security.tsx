@@ -20,6 +20,7 @@ import {
   setLockPassword,
   setTouchIdEnabled,
 } from "@/bridge";
+import { IdleTimeoutSelect } from "@/components/idle-timeout-select";
 import { useLock } from "@/components/lock-provider";
 import { RecoveryKeyDialog } from "@/components/recovery-key-dialog";
 import { SettingsRow } from "@/components/settings-row";
@@ -36,14 +37,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import {
   lastUnlockMethodMessage,
@@ -58,17 +51,6 @@ const encryptedOffDisk =
   "Titles, bodies, summaries, embedding text, chat transcripts, dreamed memories, and Chat instructions are not encrypted.";
 const fileVaultOffMessage =
   "FileVault is off. Without it, your Mac password is the only thing protecting the journal key. Turn it on in System Settings > Privacy & Security.";
-const idleTimeoutOptions = [
-  { label: "Never", value: 0 },
-  { label: "1 min", value: 60_000 },
-  { label: "5 min", value: 300_000 },
-  { label: "15 min", value: 900_000 },
-  { label: "30 min", value: 1_800_000 },
-] as const;
-const idleTimeoutSelectItems = idleTimeoutOptions.map(({ label, value }) => ({
-  label,
-  value: String(value),
-}));
 
 export function SecuritySettings() {
   const {
@@ -156,12 +138,8 @@ function IdleTimeoutGroup({
   const [busy, setBusy] = useState(false);
 
   const handleValueChange = useCallback(
-    (value: string | null) => {
-      if (value === null || busy) {
-        return;
-      }
-      const idleTimeoutMs = Number(value);
-      if (idleTimeoutMs === status.idleTimeoutMs) {
+    (idleTimeoutMs: number) => {
+      if (busy || idleTimeoutMs === status.idleTimeoutMs) {
         return;
       }
       setBusy(true);
@@ -180,29 +158,12 @@ function IdleTimeoutGroup({
       description="Sage locks when its window receives no input. Using another app still counts as idle."
       title="Lock after inactivity"
     >
-      <Select
+      <IdleTimeoutSelect
         disabled={busy}
-        items={idleTimeoutSelectItems}
-        onValueChange={handleValueChange}
-        value={String(status.idleTimeoutMs)}
-      >
-        <SelectTrigger
-          aria-label="Lock after inactivity"
-          className="bg-card"
-          size="sm"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {idleTimeoutOptions.map((option) => (
-              <SelectItem key={option.value} value={String(option.value)}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+        label="Lock after inactivity"
+        onChange={handleValueChange}
+        value={status.idleTimeoutMs}
+      />
     </SettingsRow>
   );
 }

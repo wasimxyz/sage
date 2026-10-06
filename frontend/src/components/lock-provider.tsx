@@ -77,6 +77,7 @@ const unlockedFallback: LockStatus = {
   touchIdAvailable: false,
   touchIdBiometrics: false,
   touchIdEnabled: false,
+  touchIdHardware: false,
   unlocked: true,
   waitRemainingMs: 0,
 };

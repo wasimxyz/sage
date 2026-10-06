@@ -152,6 +152,8 @@ pub const Lock = struct {
         try writer.writeAll(boolStr(touch.prompt));
         try writer.writeAll(",\"touchIdBiometrics\":");
         try writer.writeAll(boolStr(touch.biometrics));
+        try writer.writeAll(",\"touchIdHardware\":");
+        try writer.writeAll(boolStr(touch.hardware or touch.biometrics));
         try writer.writeAll(",\"unlocked\":");
         try writer.writeAll(boolStr(self.unlocked));
         try writer.writeAll(",\"securing\":");
@@ -634,10 +636,12 @@ fn okJson(output: []u8) ![]const u8 {
 
 fn testDb() !native_sdk.RelationalStore {
     const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
-    return switch (open_result.outcome) {
+    var db = switch (open_result.outcome) {
         .ok => open_result.database.?,
-        else => error.SqliteMigrationFailed,
+        else => return error.SqliteMigrationFailed,
     };
+    try journal.insertFixtureEntries(&db);
+    return db;
 }
 
 fn testLock(db: *native_sdk.RelationalStore) !Lock {
@@ -668,7 +672,7 @@ test "lock starts unlocked and disabled with no rows" {
 
     var output: [512]u8 = undefined;
     const json = try lock.status(.{ .prompt = false, .biometrics = false }, false, false, false, .{}, &output);
-    try std.testing.expectEqualStrings("{\"enabled\":false,\"encrypted\":false,\"recoveryKeySet\":false,\"recoveryKeyRotate\":false,\"recoveredSession\":false,\"fileVault\":\"unknown\",\"passwordSet\":false,\"touchIdEnabled\":false,\"touchIdAvailable\":false,\"touchIdBiometrics\":false,\"unlocked\":true,\"securing\":false,\"scrubbing\":false,\"idleTimeoutMs\":300000,\"waitRemainingMs\":0}", json);
+    try std.testing.expectEqualStrings("{\"enabled\":false,\"encrypted\":false,\"recoveryKeySet\":false,\"recoveryKeyRotate\":false,\"recoveredSession\":false,\"fileVault\":\"unknown\",\"passwordSet\":false,\"touchIdEnabled\":false,\"touchIdAvailable\":false,\"touchIdBiometrics\":false,\"touchIdHardware\":false,\"unlocked\":true,\"securing\":false,\"scrubbing\":false,\"idleTimeoutMs\":300000,\"waitRemainingMs\":0}", json);
 }
 
 test "lockSession only changes an enabled unlocked session" {
@@ -1108,10 +1112,11 @@ const FileRig = struct {
     /// database, so the rig must not move afterwards.
     fn init(self: *FileRig, data_dir: []const u8) !void {
         const open_result = try native_sdk.RelationalStore.openMigrated(std.testing.allocator, data_dir, &journal.migrations);
-        const db = switch (open_result.outcome) {
+        var db = switch (open_result.outcome) {
             .ok => open_result.database.?,
             else => return error.SqliteMigrationFailed,
         };
+        try journal.insertFixtureEntries(&db);
         self.store = journal.Store.init(std.testing.allocator, db);
         self.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.store.db);
         self.store.vault = &self.vault;
@@ -1191,6 +1196,29 @@ test "status reports the recovery key and FileVault" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"recoveryKeyRotate\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"recoveredSession\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"fileVault\":\"off\"") != null);
+}
+
+test "status tells a Touch ID sensor that is unusable right now from no sensor" {
+    var db = try testDb();
+    defer db.deinit();
+    var lock = try testLock(&db);
+    defer lock.deinit();
+    var output: [512]u8 = undefined;
+
+    // A sensor the Mac cannot reach at the moment, such as a closed lid over an
+    // external display: no biometrics now, but the Mac has the hardware.
+    const unusable = try lock.status(.{ .prompt = true, .biometrics = false, .hardware = true }, false, false, false, .{}, &output);
+    try std.testing.expect(std.mem.indexOf(u8, unusable, "\"touchIdBiometrics\":false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, unusable, "\"touchIdHardware\":true") != null);
+
+    // No sensor, or no finger enrolled: neither.
+    const none = try lock.status(.{ .prompt = true, .biometrics = false }, false, false, false, .{}, &output);
+    try std.testing.expect(std.mem.indexOf(u8, none, "\"touchIdBiometrics\":false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, none, "\"touchIdHardware\":false") != null);
+
+    // Working biometrics always means the hardware is there.
+    const working = try lock.status(.{ .prompt = true, .biometrics = true }, false, false, false, .{}, &output);
+    try std.testing.expect(std.mem.indexOf(u8, working, "\"touchIdHardware\":true") != null);
 }
 
 test "a first password on an encrypted journal owes a fresh prompt" {

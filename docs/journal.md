@@ -31,7 +31,7 @@ For each file, Sage takes the title and date from the first place that has one:
 - **Title**: the `title` in frontmatter, then the first `#` heading, then the file name
 - **Date**: the `date` in frontmatter, then a `date:` line in the body, then the date the file was created
 
-After you confirm, Sage saves the entries and embeds them.
+After you confirm, Sage saves the entries and embeds them. The Import step of [First-launch setup](onboarding.md#step-3-import) opens the same picker and preview.
 
 ## Exporting
 

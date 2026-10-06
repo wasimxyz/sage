@@ -1,4 +1,4 @@
-.PHONY: setup check check-native-sdk-version test fe-build build dev eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
+.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
 
 # `native build` / `native test` drive this repo's ejected build.zig.
 # Pass the global CLI only when it is actually installed; otherwise
@@ -51,6 +51,7 @@ test:
 	npm --prefix eval-viewer test
 	sh scripts/eval-env.test.sh
 	sh scripts/release-version.test.sh
+	sh scripts/reset-dev.test.sh
 	node --test --experimental-strip-types security-tests/*.test.ts
 	sh security-tests/eval-leftover-automation.sh
 	sh security-tests/eval-server-token.sh
@@ -98,6 +99,11 @@ dev:
 	fi; \
 	trap 'if [ -n "$$agent_pid" ]; then kill $$agent_pid 2>/dev/null; pkill -P $$agent_pid 2>/dev/null; fi' EXIT INT TERM; \
 	SAGE_DEV_EVE_WORKFLOW_DIR="$(CURDIR)/agent/.eve/.workflow-data" native dev $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)
+
+# Delete the dev app's data so the next `make dev` opens first-launch setup.
+# Never touches the packaged app. YES=1 skips the prompt.
+reset-dev:
+	@YES="$(YES)" sh scripts/reset-dev.sh
 
 package:
 	npm --prefix frontend run build

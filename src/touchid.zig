@@ -10,12 +10,23 @@ const objc = @import("objc.zig");
 /// biometrics only, used to label the settings toggle honestly.
 const la_policy_biometrics: i64 = 1;
 const la_policy_device_owner: i64 = 2;
+/// `LABiometryTypeNone`: the Mac has no biometric sensor.
+const la_biometry_type_none: i64 = 0;
+/// `LAErrorBiometryNotEnrolled`: a sensor, but no finger added.
+const la_error_biometry_not_enrolled: i64 = -7;
 
 pub const Availability = struct {
     /// The system prompt can run at all (any Mac: Touch ID or login password).
     prompt: bool,
-    /// Real Touch ID hardware is present and enrolled.
+    /// Touch ID works right now: the sensor is there, a finger is enrolled, and
+    /// the sensor can be reached.
     biometrics: bool,
+    /// This Mac has a Touch ID sensor with a finger enrolled, even when it
+    /// cannot be used at this moment. A MacBook with its lid closed over an
+    /// external display is the common case: macOS reports biometrics as
+    /// unavailable. A Touch ID lock still works then, because the prompt falls
+    /// back to the Mac login password.
+    hardware: bool = false,
 };
 
 pub const CompleteFn = *const fn (context: *anyopaque, success: bool) void;
@@ -30,10 +41,25 @@ pub fn availability() Availability {
     if (builtin.os.tag != .macos) return .{ .prompt = false, .biometrics = false };
     const api = objc.load() orelse return .{ .prompt = false, .biometrics = false };
     const context = sharedContext(api) orelse return .{ .prompt = false, .biometrics = false };
+    const can_evaluate = objc.sel(api, "canEvaluatePolicy:error:");
+    var biometrics_error: ?*anyopaque = null;
+    const biometrics = objc.msgBoolIntPtr(api, context, can_evaluate, la_policy_biometrics, @ptrCast(&biometrics_error));
     return .{
-        .prompt = objc.msgBoolIntPtr(api, context, objc.sel(api, "canEvaluatePolicy:error:"), la_policy_device_owner, null),
-        .biometrics = objc.msgBoolIntPtr(api, context, objc.sel(api, "canEvaluatePolicy:error:"), la_policy_biometrics, null),
+        .prompt = objc.msgBoolIntPtr(api, context, can_evaluate, la_policy_device_owner, null),
+        .biometrics = biometrics,
+        .hardware = biometrics or sensorPresentButUnusable(api, context, biometrics_error),
     };
+}
+
+/// The biometrics check failed. Say whether that is because the sensor cannot
+/// be reached right now (lid closed, locked out) rather than because the Mac
+/// has no sensor or no finger enrolled. `biometryType` is set by the check that
+/// just ran, and the error says whether a finger is enrolled.
+fn sensorPresentButUnusable(api: objc.Api, context: ?*anyopaque, failure: ?*anyopaque) bool {
+    const kind = objc.msgInt(api, context, objc.sel(api, "biometryType"));
+    if (kind == la_biometry_type_none) return false;
+    const code = if (failure) |error_object| objc.msgInt(api, error_object, objc.sel(api, "code")) else 0;
+    return code != la_error_biometry_not_enrolled;
 }
 
 /// Show the system prompt. The reply block runs on a private Apple queue

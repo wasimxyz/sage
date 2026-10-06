@@ -1,79 +1,12 @@
-import { type PointerEvent, useEffect, useRef } from "react";
-import {
-  alignTitlebarButtons,
-  startWindowDrag,
-  waitForNativeBridge,
-} from "@/bridge";
+import type { PointerEvent } from "react";
+import { startWindowDrag } from "@/bridge";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { useTitlebarAlignment } from "@/hooks/use-titlebar-alignment";
 import { cn } from "@/lib/utils";
 
 export function AppTitlebar() {
   const { isMobile, open } = useSidebar();
-  const rowRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let frame = 0;
-    function sync() {
-      if (cancelled) {
-        return;
-      }
-      const height = rowRef.current?.getBoundingClientRect().height ?? 0;
-      if (height > 0) {
-        // 1rem matches the sidebar icon inset (header/group + button padding).
-        const rem = Number.parseFloat(
-          getComputedStyle(document.documentElement).fontSize
-        );
-        alignTitlebarButtons(height, rem).then((nativeFullscreen) => {
-          if (cancelled) {
-            return;
-          }
-          document.documentElement.toggleAttribute(
-            "data-fullscreen",
-            nativeFullscreen
-          );
-        });
-      }
-    }
-    function requestSync() {
-      if (frame !== 0) {
-        return;
-      }
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        sync();
-      });
-    }
-    waitForNativeBridge().then((ready) => {
-      if (ready) {
-        sync();
-      }
-    });
-    // macOS resets traffic-light frames when appearance changes.
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    let appearanceTimer = 0;
-    function onAppearanceChange() {
-      requestSync();
-      window.clearTimeout(appearanceTimer);
-      appearanceTimer = window.setTimeout(() => {
-        appearanceTimer = 0;
-        if (!cancelled) {
-          sync();
-        }
-      }, 80);
-    }
-    window.addEventListener("resize", requestSync);
-    media.addEventListener("change", onAppearanceChange);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("resize", requestSync);
-      media.removeEventListener("change", onAppearanceChange);
-      window.clearTimeout(appearanceTimer);
-      if (frame !== 0) {
-        window.cancelAnimationFrame(frame);
-      }
-    };
-  }, []);
+  const rowRef = useTitlebarAlignment<HTMLElement>();
 
   return (
     <header

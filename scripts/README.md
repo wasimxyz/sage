@@ -1,6 +1,6 @@
 # Scripts
 
-These shell scripts package the Mac app and run the eval suite. Each section names the `make` command that runs them.
+These shell scripts package the Mac app, run the eval suite, and reset the dev app. Each section names the `make` command that runs them.
 
 The seeding and grading steps live in `agent/scripts/`. The canirun catalog refresh lives in `frontend/scripts/`, as [Models](../docs/models.md#how-recommendations-work) explains.
 
@@ -35,3 +35,23 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 `make eval-upload` runs `eval-upload.sh` on its own, to upload reports from an earlier run. On a terminal it asks first, and the default is no. When input is not a terminal, it skips the upload.
 
 `make test` runs `eval-env.test.sh`. That check confirms the load order above.
+
+## Resetting the dev app
+
+`make reset-dev` runs `reset-dev.sh`. It deletes what the dev app keeps, so the next `make dev` opens [first-launch setup](../docs/onboarding.md) the way a new user sees it. It never touches the packaged app’s data in `com.wasimxyz.sage`, and Ollama keeps its app and models.
+
+The script deletes these:
+
+- `~/Library/Application Support/com.wasimxyz.sage-dev`: `app.db`, the memory build marker, and window positions
+- `agent/.eve/.workflow-data`: the Chat session files `make dev` writes
+- `~/Library/WebKit/Sage`, `~/Library/Caches/Sage`, and `~/Library/HTTPStorages/Sage.binarycookies`: the web view’s local storage and caches
+- The `journal-data-key` Keychain item for `com.wasimxyz.sage-dev`: the Touch ID copy of the data key. A dev build is ad hoc signed, so the item lives in the login keychain, as [The Touch ID Keychain mirror](../docs/security/keychain.md#unsigned-builds) explains
+
+The script refuses to start in these cases:
+
+- A process has the dev `app.db` open, or the Chat agent answers on port 2000. Quit Sage and stop `make dev` first.
+- Input is not a terminal and `YES=1` is not set.
+
+Otherwise it lists what it found and asks first, and the default is no. `make reset-dev YES=1` skips the question. The script ignores `SAGE_DATA_DIR`, so it never deletes a folder the environment names. It keeps no backup, so copy the data folder first if you want to keep a dev journal.
+
+`make test` runs `reset-dev.test.sh`. It runs the script against a temporary home folder, with stand-ins for `lsof`, `curl`, and `security`.

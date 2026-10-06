@@ -877,8 +877,14 @@ export interface LockStatus {
   scrubbing: boolean;
   securing: boolean;
   touchIdAvailable: boolean;
+  /** Touch ID works right now: the sensor is there, enrolled, and reachable. */
   touchIdBiometrics: boolean;
   touchIdEnabled: boolean;
+  /**
+   * This Mac has a Touch ID sensor with a finger enrolled, even when it cannot
+   * be used at the moment, such as with the lid closed over an external display.
+   */
+  touchIdHardware: boolean;
   unlocked: boolean;
   /** Milliseconds left before Zig accepts another guess; 0 when there is no wait. */
   waitRemainingMs: number;
@@ -904,6 +910,7 @@ export async function getLockStatus(): Promise<LockStatus> {
     touchIdAvailable: asBoolean(response.touchIdAvailable),
     touchIdBiometrics: asBoolean(response.touchIdBiometrics),
     touchIdEnabled: asBoolean(response.touchIdEnabled),
+    touchIdHardware: asBoolean(response.touchIdHardware),
     unlocked: asBoolean(response.unlocked),
     waitRemainingMs: asNumber(response.waitRemainingMs),
   };
@@ -1082,6 +1089,139 @@ export async function cancelOllamaPull(): Promise<void> {
 
 export async function deleteOllamaModel(name: string): Promise<void> {
   await invoke("ollama.delete", { name });
+}
+
+// --- first-launch setup ---
+
+export interface OllamaSetupStatus {
+  /** The embedding model name Sage looks for, from `SAGE_EMBED_MODEL` or the default. */
+  embedModel: string;
+  /** The Ollama app or an `ollama` command is on this Mac, running or not. */
+  installed: boolean;
+  /** Ollama answers `/api/tags`. */
+  running: boolean;
+  /** The summary and chat model name Sage looks for, from `SAGE_SUMMARY_MODEL` or the default. */
+  summaryModel: string;
+}
+
+export async function getOllamaSetupStatus(): Promise<OllamaSetupStatus> {
+  const response = asRecord(await invoke("ollama.setupStatus", {}));
+  return {
+    embedModel: asString(response.embedModel),
+    installed: asBoolean(response.installed),
+    running: asBoolean(response.running),
+    summaryModel: asString(response.summaryModel),
+  };
+}
+
+/** Where setup stands. Missing means Sage has not decided yet. */
+export type OnboardingState = "active" | "done" | "skipped";
+
+/** The screen setup was on, so a restart or a refresh opens it again. */
+export type OnboardingStep =
+  | "all_set"
+  | "import"
+  | "local_ai"
+  | "protect"
+  | "welcome";
+
+/** How the person chose to unlock Sage on the Protect screen. */
+export type UnlockMethod = "password" | "touch_id";
+
+export interface OnboardingStatus {
+  /** Model names still to download, in order. */
+  downloads: string[];
+  encrypt: boolean;
+  method: UnlockMethod | null;
+  /** Setup was finished or skipped in this launch, so no reminder shows yet. */
+  ranSetupThisLaunch: boolean;
+  /** When the last reminder showed, in milliseconds since the epoch; 0 for none. */
+  reminderLastAtMs: number;
+  /** A reminder already showed in this launch. */
+  reminderShownThisLaunch: boolean;
+  remindersOff: boolean;
+  remindersShown: number;
+  state: OnboardingState | null;
+  step: OnboardingStep;
+}
+
+const onboardingStates: readonly OnboardingState[] = [
+  "active",
+  "done",
+  "skipped",
+];
+const onboardingSteps: readonly OnboardingStep[] = [
+  "all_set",
+  "import",
+  "local_ai",
+  "protect",
+  "welcome",
+];
+const unlockMethods: readonly UnlockMethod[] = ["password", "touch_id"];
+
+function oneOf<T extends string>(
+  options: readonly T[],
+  value: NativeSdkJson | undefined
+): T | null {
+  return options.find((option) => option === value) ?? null;
+}
+
+export async function getOnboardingStatus(): Promise<OnboardingStatus> {
+  const response = asRecord(await invoke("onboarding.status", {}));
+  const downloads = Array.isArray(response.downloads)
+    ? response.downloads.map((item) => asString(item))
+    : [];
+  return {
+    downloads,
+    encrypt: asBoolean(response.encrypt),
+    method: oneOf(unlockMethods, response.method),
+    ranSetupThisLaunch: asBoolean(response.ranSetupThisLaunch),
+    reminderLastAtMs: asNumber(response.reminderLastAtMs),
+    reminderShownThisLaunch: asBoolean(response.reminderShownThisLaunch),
+    remindersOff: asBoolean(response.remindersOff),
+    remindersShown: asNumber(response.remindersShown),
+    state: oneOf(onboardingStates, response.state),
+    step: oneOf(onboardingSteps, response.step) ?? "welcome",
+  };
+}
+
+export interface OnboardingUpdate {
+  downloads?: string[];
+  encrypt?: boolean;
+  method?: UnlockMethod;
+  state?: OnboardingState;
+  step?: OnboardingStep;
+}
+
+/** Save part of the setup state. The core checks every value and refuses a bad one. */
+export async function saveOnboarding(update: OnboardingUpdate): Promise<void> {
+  const payload: { [key: string]: NativeSdkJson } = {};
+  if (update.downloads !== undefined) {
+    payload.downloads = update.downloads;
+  }
+  if (update.encrypt !== undefined) {
+    payload.encrypt = update.encrypt;
+  }
+  if (update.method !== undefined) {
+    payload.method = update.method;
+  }
+  if (update.state !== undefined) {
+    payload.state = update.state;
+  }
+  if (update.step !== undefined) {
+    payload.step = update.step;
+  }
+  await invoke("onboarding.save", payload);
+}
+
+/** Count a reminder at the moment its dialog opens. */
+export async function markReminderShown(): Promise<void> {
+  await invoke("onboarding.reminderShown", {});
+}
+
+/** Don't ask again. */
+export async function turnRemindersOff(): Promise<void> {
+  await invoke("onboarding.remindersOff", {});
 }
 
 export interface ChatConversationMeta {

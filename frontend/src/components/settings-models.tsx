@@ -11,17 +11,15 @@ import {
 import { toast } from "sonner";
 
 import {
-  cancelOllamaPull,
   deleteOllamaModel,
-  getOllamaPull,
   getOllamaStatus,
   getSystemHardware,
   listOllamaModels,
   type OllamaPullProgress,
-  pullOllamaModel,
   type SystemHardware,
 } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
+import { useModelDownloads } from "@/components/model-downloads-provider";
 import { OllamaStartNotice } from "@/components/ollama-notice";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
@@ -56,7 +54,6 @@ import {
 const canirunUrl = "https://www.canirun.ai";
 const canirunLinkClassName =
   "underline underline-offset-2 hover:text-foreground";
-const pollMs = 1000;
 const nameCellClassName = "whitespace-normal py-3 pl-4 font-medium";
 const actionCellClassName = "w-px py-3 pr-4 text-right";
 const metricCellClassName =
@@ -83,7 +80,6 @@ interface ModelsOpenState {
   installed: string[];
   installedStats: RecommendedModel[];
   ollamaRunning: boolean;
-  pull: OllamaPullProgress | null;
   recommendations: RecommendedModel[];
 }
 
@@ -164,10 +160,12 @@ function ModelsSettingsBody({
   // Chat polls Ollama's status, so a start from here or from Chat lands live.
   const ollamaRunning =
     models.kind === "loading" ? initial.ollamaRunning : models.kind !== "down";
+  const {
+    actions: { cancel, start },
+    state: { completed, pull },
+  } = useModelDownloads();
   const [installed, setInstalled] = useState(initial.installed);
-  const [pull, setPull] = useState(initial.pull);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const toastedKey = useRef<string | null>(null);
 
   const refreshInstalled = useCallback(async () => {
     const names = await listOllamaModels();
@@ -184,28 +182,16 @@ function ModelsSettingsBody({
     wasRunning.current = ollamaRunning;
   }, [ollamaRunning, refreshInstalled]);
 
+  // The provider polls the download and reports how it ended. A finished
+  // download means a new model to list.
+  const seenCompleted = useRef(completed);
   useEffect(() => {
-    if (!pull?.active) {
+    if (completed === seenCompleted.current) {
       return;
     }
-    let cancelled = false;
-    const tick = async () => {
-      const next = await getOllamaPull();
-      if (cancelled) {
-        return;
-      }
-      setPull(next);
-      await announcePullOutcome(next, toastedKey, refreshInstalled);
-    };
-    tick().catch(() => undefined);
-    const timer = window.setInterval(() => {
-      tick().catch(() => undefined);
-    }, pollMs);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [pull?.active, refreshInstalled]);
+    seenCompleted.current = completed;
+    refreshInstalled().catch(() => undefined);
+  }, [completed, refreshInstalled]);
 
   const catalogRows = useMemo(
     () => [...installedStats, ...recommendations],
@@ -228,23 +214,24 @@ function ModelsSettingsBody({
     [installed, pull, recommendations]
   );
 
-  const handleDownload = useCallback(async (tag: string) => {
-    toastedKey.current = null;
-    try {
-      await pullOllamaModel(tag);
-      setPull(await getOllamaPull());
-    } catch (error: unknown) {
-      toast.error(ollamaActionError(error, "Could not start the download."));
-    }
-  }, []);
+  const handleDownload = useCallback(
+    async (tag: string) => {
+      try {
+        await start(tag);
+      } catch (error: unknown) {
+        toast.error(ollamaActionError(error, "Could not start the download."));
+      }
+    },
+    [start]
+  );
 
   const handleCancel = useCallback(async () => {
     try {
-      await cancelOllamaPull();
+      await cancel();
     } catch (error: unknown) {
       toast.error(ollamaActionError(error, "Could not cancel the download."));
     }
-  }, []);
+  }, [cancel]);
 
   const handleDeleteClick = useCallback((name: string) => {
     setPendingDelete(name);
@@ -621,11 +608,10 @@ function ollamaActionError(error: unknown, fallback: string): string {
 
 async function loadModelsOpenState(): Promise<ModelsOpenState> {
   try {
-    const [status, hardware, names, pull] = await Promise.all([
+    const [status, hardware, names] = await Promise.all([
       getOllamaStatus(),
       getSystemHardware(),
       listOllamaModels().catch((): string[] => []),
-      getOllamaPull().catch(() => null),
     ]);
     const { installed, recommendations } = recommendModels(hardware, names);
     return {
@@ -633,7 +619,6 @@ async function loadModelsOpenState(): Promise<ModelsOpenState> {
       installed: names,
       installedStats: installed,
       ollamaRunning: status.running,
-      pull,
       recommendations,
     };
   } catch {
@@ -642,45 +627,9 @@ async function loadModelsOpenState(): Promise<ModelsOpenState> {
       installed: [],
       installedStats: [],
       ollamaRunning: false,
-      pull: null,
       recommendations: [],
     };
   }
-}
-
-function pullOutcomeKey(pull: OllamaPullProgress): string {
-  if (pull.done) {
-    return `${pull.model}:done`;
-  }
-  if (pull.cancelled) {
-    return `${pull.model}:cancelled`;
-  }
-  return `${pull.model}:failed`;
-}
-
-async function announcePullOutcome(
-  next: OllamaPullProgress | null,
-  toastedKey: { current: string | null },
-  refreshInstalled: () => Promise<void>
-): Promise<void> {
-  if (!next || next.active) {
-    return;
-  }
-  const key = pullOutcomeKey(next);
-  if (toastedKey.current === key) {
-    return;
-  }
-  toastedKey.current = key;
-  if (next.done) {
-    toast.success(`Downloaded ${next.model}.`);
-    await refreshInstalled();
-    return;
-  }
-  if (next.cancelled) {
-    toast("Download cancelled.");
-    return;
-  }
-  toast.error("Could not download the model.");
 }
 
 function downloadStatusLabel(progress: OllamaPullProgress | null): string {

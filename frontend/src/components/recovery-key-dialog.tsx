@@ -1,15 +1,15 @@
-import { CheckIcon, CopyIcon } from "lucide-react";
 import {
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
-
+import {
+  RecoveryKeyGrid,
+  useRecoveryKeyClipboard,
+} from "@/components/recovery-key-display";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -75,34 +75,26 @@ export function RecoveryKeyDialog({
   const [password, setPassword] = useState("");
   const [recoveryKey, setRecoveryKey] = useState("");
   const [typed, setTyped] = useState("");
-  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const copiedKey = useRef<string | null>(null);
-
   // The key is on the clipboard only because the person asked for a copy.
   // Replace it once they say they saved it, or when the dialog goes away, so
   // it does not sit there for other apps and Universal Clipboard to read.
-  const clearClipboard = useCallback(() => {
-    if (copiedKey.current === null) {
-      return;
-    }
-    copiedKey.current = null;
-    navigator.clipboard.writeText("").catch(() => undefined);
-  }, []);
-
-  useEffect(() => clearClipboard, [clearClipboard]);
+  const {
+    clear: clearClipboard,
+    copied,
+    copy: handleCopy,
+  } = useRecoveryKeyClipboard(recoveryKey);
 
   // Start over every time the dialog opens, and let go of the key and the
   // password when it closes so they do not sit in page state.
   useEffect(() => {
     setStep("intro");
     setTyped("");
-    setCopied(false);
+    clearClipboard();
     setBusy(false);
     setError(null);
     if (!open) {
-      clearClipboard();
       setPassword("");
       setRecoveryKey("");
     }
@@ -140,19 +132,8 @@ export function RecoveryKeyDialog({
     [busy, getKey, needsPassword, password]
   );
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard
-      .writeText(recoveryKey)
-      .then(() => {
-        copiedKey.current = recoveryKey;
-        setCopied(true);
-      })
-      .catch(() => toast.error("Could not copy the recovery key."));
-  }, [recoveryKey]);
-
   const handleSaved = useCallback(() => {
     clearClipboard();
-    setCopied(false);
     setTyped("");
     setError(null);
     setStep("confirm");
@@ -253,38 +234,11 @@ export function RecoveryKeyDialog({
                   : "It opens your journal if you forget your password or Touch ID can no longer open it."}
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-4 py-3">
-              <div className="grid select-all grid-cols-3 gap-x-4 gap-y-1 font-mono text-base tracking-wider">
-                {recoveryKey
-                  .split("-")
-                  .map((text, position) => ({
-                    position,
-                    text,
-                  }))
-                  .map((group) => (
-                    <span key={group.position}>{group.text}</span>
-                  ))}
-              </div>
-              <Button
-                aria-label="Copy recovery key"
-                onClick={handleCopy}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {copied ? (
-                  <CheckIcon data-icon="inline-start" />
-                ) : (
-                  <CopyIcon data-icon="inline-start" />
-                )}
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </div>
-            {copied ? (
-              <p className="text-muted-foreground text-sm">
-                Sage clears your clipboard when you continue.
-              </p>
-            ) : null}
+            <RecoveryKeyGrid
+              copied={copied}
+              onCopy={handleCopy}
+              recoveryKey={recoveryKey}
+            />
             <DialogActions>
               <DialogClose render={<Button type="button" variant="outline" />}>
                 Cancel

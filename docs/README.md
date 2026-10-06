@@ -8,6 +8,7 @@ These pages explain how Sage works once you are past the [README](../README.md).
 - [The journal](journal.md): writing, saving, importing, exporting, and searching entries, and the Home screen
 - [Dream](dream.md): the job that summarizes entries, titles chats, and extracts memories
 - [Models](models.md): Settings > Models, recommended models, and starting Ollama
+- [First-launch setup](onboarding.md): the setup screens, the rows they save, and the reminders to protect your journal
 
 ## Chat and memory
 

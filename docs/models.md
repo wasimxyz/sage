@@ -41,6 +41,8 @@ The list is sorted by score, then by size, and capped at 25 models. To refresh t
 
 The Installed table reloads when a download finishes.
 
+`ModelDownloadsProvider` owns the polling and the one-at-a-time rule for Settings > Models and for [First-launch setup](onboarding.md#the-downloads-screen). Setup queues the models it needs in the `onboarding.downloads` row, and the provider keeps downloading them after setup ends, after a restart, and after an unlock, until each model is ready or you cancel it. A download keeps running while Sage is locked. After an unlock or a refresh, the provider reads it back, so Settings > Models shows its progress again.
+
 ## When Ollama is not running
 
 Chat and Settings > Models show a notice with a Start Ollama button. Settings > Models also says to start Ollama before you download or delete models. The sidebar Dream button turns off, as [Dream](dream.md#when-dream-cannot-run) explains.
@@ -63,4 +65,5 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `ollama.pull`, `ollama.pulls`, and `ollama.pullCancel`: start a download, report its progress, and cancel it
 - `ollama.delete`: removes one model
 - `ollama.start`: starts Ollama and answers once it replies
+- `ollama.setupStatus`: whether Ollama is installed and running, and the embedding and summary model names, for [First-launch setup](onboarding.md#step-1-local-ai)
 - `system.hardware`: the chip name, memory size, and CPU core count

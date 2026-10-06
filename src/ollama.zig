@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const objc = @import("objc.zig");
 
 pub const host = "127.0.0.1";
 pub const port: u16 = 11434;
@@ -554,6 +555,58 @@ fn waitUntilRunning(io: std.Io, allocator: std.mem.Allocator) !void {
         std.Io.sleep(io, .fromMilliseconds(start_poll_ms), .awake) catch
             return StartError.OllamaStartTimeout;
     }
+}
+
+/// What setup needs to know before it picks a screen.
+pub const SetupStatus = struct {
+    /// Ollama is on this Mac, running or not.
+    installed: bool,
+    /// Ollama answers `/api/tags`.
+    running: bool,
+};
+
+/// The Ollama Mac app's bundle id. LaunchServices knows the app by it wherever
+/// it is installed, the way `open -a Ollama` finds it.
+const macos_bundle_id = "com.electron.ollama";
+const macos_app_path = "/Applications/Ollama.app";
+
+/// Check without starting anything. A running server counts as installed. So
+/// does the app, which LaunchServices finds by bundle id with the usual folder
+/// as a fallback, and an `ollama` file in the usual command line folders. A
+/// packaged app has no shell PATH, so `findCli` checks those folders directly.
+pub fn setupStatus(io: std.Io, allocator: std.mem.Allocator, path_env: ?[]const u8) SetupStatus {
+    const running = isRunning(io, allocator);
+    if (running) return .{ .installed = true, .running = true };
+    if (appInstalled(io)) return .{ .installed = true, .running = false };
+    if (findCli(io, allocator, path_env)) |cli| {
+        allocator.free(cli);
+        return .{ .installed = true, .running = false };
+    }
+    return .{ .installed = false, .running = false };
+}
+
+fn appInstalled(io: std.Io) bool {
+    if (builtin.os.tag != .macos) return false;
+    if (launchServicesKnowsApp()) return true;
+    const stat = std.Io.Dir.cwd().statFile(io, macos_app_path, .{}) catch return false;
+    return stat.kind == .directory;
+}
+
+/// `[NSWorkspace URLForApplicationWithBundleIdentifier:]` answers nil when no
+/// app has that id. It never launches the app, which is why this is not
+/// `launchApp`. A worker thread has no autorelease pool of its own, so this
+/// makes one for the objects the call hands back.
+fn launchServicesKnowsApp() bool {
+    const api = objc.load() orelse return false;
+    const pool_class = api.get_class("NSAutoreleasePool") orelse return false;
+    const pool_memory = objc.msg(api, pool_class, objc.sel(api, "alloc"));
+    const pool = objc.msg(api, pool_memory, objc.sel(api, "init"));
+    defer if (pool) |made| objc.msgVoid(api, made, objc.sel(api, "drain"));
+    const workspace_class = api.get_class("NSWorkspace") orelse return false;
+    const workspace = objc.msg(api, workspace_class, objc.sel(api, "sharedWorkspace")) orelse return false;
+    const bundle_id = objc.nsString(api, macos_bundle_id) orelse return false;
+    defer objc.msgVoid(api, bundle_id, objc.sel(api, "release"));
+    return objc.msg1(api, workspace, objc.sel(api, "URLForApplicationWithBundleIdentifier:"), bundle_id) != null;
 }
 
 /// True when Ollama answers `/api/tags`.
