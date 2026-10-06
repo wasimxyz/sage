@@ -90,7 +90,7 @@ async function saveImportedEntries(
 
 export function JournalProvider({ children }: { children: ReactNode }) {
   const { memoryEnabled } = useMemoryFeature();
-  const [section, setSection] = useState<Section>("journal");
+  const [section, setSection] = useState<Section>("home");
   const [sidebarMenu, setSidebarMenu] = useState<SidebarMenu>("nav");
   const [entries, setEntries] = useState<JournalEntryMeta[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -108,7 +108,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const [editorGeneration, setEditorGeneration] = useState(0);
 
   const selectionRef = useRef(selection);
-  const returnSectionRef = useRef<Exclude<Section, "settings">>("journal");
+  const returnSectionRef = useRef<Exclude<Section, "settings">>("home");
   const titleRef = useRef(title);
   const dateRef = useRef(date);
   const idRef = useRef<number | null>(null);
