@@ -239,7 +239,9 @@ function readManifestSync(path: string): EvalManifest {
   return { cases };
 }
 
-async function loadEntryFiles(dir: string): Promise<JournalEntryFixture[]> {
+export async function loadEntryFiles(
+  dir: string
+): Promise<JournalEntryFixture[]> {
   const names = (await readdir(dir))
     .filter((name) => name.endsWith(".md"))
     .sort();
