@@ -1,4 +1,4 @@
-import { CheckIcon, FileUpIcon } from "lucide-react";
+import { CheckIcon, FileIcon } from "lucide-react";
 import { useCallback } from "react";
 
 import { useFileMenu } from "@/components/file-menu-provider";
@@ -69,16 +69,19 @@ export function SetupImport() {
             other app. This step is optional.
           </SetupText>
         </SetupIntro>
-        <div className="flex flex-col items-start gap-2">
-          <Button onClick={handleChoose}>
-            <FileUpIcon data-icon="inline-start" />
-            Choose files…
-          </Button>
-          <SetupText className="text-xs">
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed bg-card px-6 py-8 text-center">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
+            <FileIcon className="size-4" />
+          </span>
+          <Button onClick={handleChoose}>Choose files…</Button>
+          <p className="max-w-72 text-pretty text-muted-foreground text-xs">
             Pick .md, .markdown, or .txt files, up to 1 MB each. You&apos;ll see
             a preview before anything is saved.
-          </SetupText>
+          </p>
         </div>
+        <SetupText className="-mt-2 text-xs">
+          Sage takes each entry&apos;s title and date from the file.
+        </SetupText>
         <SetupFooter>
           <Button onClick={handleBack} variant="ghost">
             Back

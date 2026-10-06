@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import {
-  RecoveryKeyDisplay,
+  RecoveryKeyGrid,
   useRecoveryKeyClipboard,
 } from "@/components/recovery-key-display";
 import { Button } from "@/components/ui/button";
@@ -234,7 +234,7 @@ export function RecoveryKeyDialog({
                   : "It opens your journal if you forget your password or Touch ID can no longer open it."}
               </DialogDescription>
             </DialogHeader>
-            <RecoveryKeyDisplay
+            <RecoveryKeyGrid
               copied={copied}
               onCopy={handleCopy}
               recoveryKey={recoveryKey}

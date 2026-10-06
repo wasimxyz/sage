@@ -74,7 +74,7 @@ Both lock screens have **Lock Sage after I'm away for**. It uses the idle times 
 
 With encryption on, two more screens follow:
 
-- **Save your recovery key** shows the key once, in groups, with **Copy key**. Only the core generates the key, and the screen only shows it. Sage clears the clipboard when you continue.
+- **Save your recovery key** shows the key once, on one line, with **Copy key**. Only the core generates the key, and the screen only shows it. Sage clears the clipboard when you continue.
 - **Type your recovery key** checks what you typed against the key the core made. Capital letters, dashes, and spaces do not matter. A key that does not match shows an error and stays on the screen.
 
 Encryption turns on only at the second screen, after you type the key back. With Touch ID, `encryption.enable` gets the recovery key. With a password, it gets the password, and `encryption.saveRecoveryKey` then stores the key. Leaving earlier never leaves an encrypted journal with no recovery key. If encryption has to rewrite rows or rebuild the file, the existing “Securing your journal” screen shows until it finishes.

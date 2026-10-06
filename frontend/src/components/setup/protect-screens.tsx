@@ -1,4 +1,4 @@
-import { InfoIcon, TriangleAlertIcon } from "lucide-react";
+import { FingerprintIcon, InfoIcon } from "lucide-react";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -9,7 +9,7 @@ import {
 import type { UnlockMethod } from "@/bridge";
 import { IdleTimeoutSelect } from "@/components/idle-timeout-select";
 import {
-  RecoveryKeyDisplay,
+  RecoveryKeyCard,
   useRecoveryKeyClipboard,
 } from "@/components/recovery-key-display";
 import {
@@ -42,6 +42,21 @@ import { Spinner } from "@/components/ui/spinner";
 
 const noReset =
   "If Touch ID stops working or you forget your password, and you've also lost your recovery key, Sage can't open your journal. There is no reset.";
+
+/**
+ * The no-reset warning as small grey text across the full column, with an info
+ * icon, not a boxed alert. `text-wrap` turns off the balanced wrapping that
+ * would narrow it. The negative top margin pulls it closer to the block above
+ * than the column's usual gap.
+ */
+function NoResetNote() {
+  return (
+    <p className="-mt-2 flex items-start gap-2 text-wrap text-muted-foreground text-xs">
+      <InfoIcon className="mt-px size-3.5 shrink-0" />
+      {noReset}
+    </p>
+  );
+}
 
 function SubmitButton({
   busy,
@@ -143,29 +158,30 @@ export function ChooseScreen({
           </FieldLabel>
         </RadioGroup>
       </FieldSet>
-      <FieldLabel htmlFor="encrypt-journal">
-        <Field orientation="horizontal">
-          <Checkbox
-            checked={encrypt}
-            id="encrypt-journal"
-            onCheckedChange={handleEncrypt}
-          />
-          <FieldContent>
-            <FieldTitle>
-              Encrypt my journal <Badge variant="secondary">Recommended</Badge>
-            </FieldTitle>
-            <FieldDescription>
-              Entries, chats, and memories are saved in a form other apps
-              can&apos;t read until you unlock Sage.
-              {encrypt ? " You'll save a recovery key next." : null}
-            </FieldDescription>
-          </FieldContent>
-        </Field>
-      </FieldLabel>
-      <Alert variant="warning">
-        <InfoIcon />
-        <AlertDescription>{noReset}</AlertDescription>
-      </Alert>
+      <FieldSet>
+        <FieldLegend variant="label">Enable encryption?</FieldLegend>
+        <FieldLabel htmlFor="encrypt-journal">
+          <Field orientation="horizontal">
+            <Checkbox
+              checked={encrypt}
+              id="encrypt-journal"
+              onCheckedChange={handleEncrypt}
+            />
+            <FieldContent>
+              <FieldTitle>
+                Encrypt my journal{" "}
+                <Badge variant="secondary">Recommended</Badge>
+              </FieldTitle>
+              <FieldDescription>
+                Entries, chats, and memories are saved in a form other apps
+                can&apos;t read until you unlock Sage.
+                {encrypt ? " You'll save a recovery key next." : null}
+              </FieldDescription>
+            </FieldContent>
+          </Field>
+        </FieldLabel>
+      </FieldSet>
+      <NoResetNote />
       <SetupFooter>
         {onBack ? (
           <Button onClick={onBack} variant="ghost">
@@ -197,7 +213,10 @@ function IdleTimeoutField({
   value: number;
 }) {
   return (
-    <Field orientation="horizontal">
+    <Field
+      className="items-center justify-between rounded-xl border bg-card px-4 py-3"
+      orientation="horizontal"
+    >
       <FieldLabel htmlFor="setup-idle-timeout">
         Lock Sage after I&apos;m away for
       </FieldLabel>
@@ -238,10 +257,15 @@ export function TouchIdScreen({
         </SetupText>
       </SetupIntro>
       {encrypt ? (
-        <SetupText>
-          When you continue, macOS asks you to touch the sensor once to confirm
-          it&apos;s you.
-        </SetupText>
+        <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-8 text-center">
+          <span className="flex size-14 items-center justify-center rounded-full bg-muted">
+            <FingerprintIcon className="size-6" />
+          </span>
+          <p className="max-w-72 text-pretty text-sm">
+            When you continue, macOS asks you to touch the sensor once to
+            confirm it&apos;s you.
+          </p>
+        </div>
       ) : null}
       <IdleTimeoutField
         disabled={busy}
@@ -249,7 +273,7 @@ export function TouchIdScreen({
         value={idleTimeoutMs}
       />
       {encrypt ? (
-        <SetupText>
+        <SetupText className="-mt-2 text-xs">
           Next, you&apos;ll save a recovery key. It&apos;s how you get in if
           Touch ID ever stops working.
         </SetupText>
@@ -328,6 +352,7 @@ export function PasswordScreen({
           disabled={busy}
           id="setup-password"
           onChange={handlePassword}
+          placeholder="At least 8 characters"
           type="password"
           value={password}
         />
@@ -349,10 +374,13 @@ export function PasswordScreen({
         onChange={onIdleChange}
         value={idleTimeoutMs}
       />
-      <SetupText>
-        Keep this password somewhere safe, like a password manager.
-        {encrypt ? " Next, you'll get a recovery key as a backup." : null}
-      </SetupText>
+      <Alert variant="warning">
+        <InfoIcon />
+        <AlertDescription>
+          Keep this password somewhere safe, like a password manager.
+          {encrypt ? " Next, you'll get a recovery key as a backup." : null}
+        </AlertDescription>
+      </Alert>
       <SetupFooter>
         <Button disabled={busy} onClick={onBack} type="button" variant="ghost">
           Back
@@ -438,10 +466,7 @@ export function EncryptScreen({
           {error ? <FieldError>{error}</FieldError> : null}
         </>
       )}
-      <Alert variant="warning">
-        <TriangleAlertIcon />
-        <AlertDescription>{noReset}</AlertDescription>
-      </Alert>
+      <NoResetNote />
       <SetupFooter>
         {onBack ? (
           <Button
@@ -502,13 +527,12 @@ export function KeyScreen({
           stops working. Sage shows it only once.
         </SetupText>
       </SetupIntro>
-      <RecoveryKeyDisplay
+      <RecoveryKeyCard
         copied={copied}
-        copyLabel="Copy key"
         onCopy={copy}
         recoveryKey={recoveryKey}
       />
-      <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+      <ul className="flex list-disc flex-col gap-1.5 pl-5 text-xs">
         <li>Save it in a password manager, or write it on paper.</li>
         <li>Don&apos;t keep it only on this Mac.</li>
         <li>You can make a new key any time in Settings › Security.</li>
@@ -576,12 +600,12 @@ export function ConfirmScreen({
           spellCheck={false}
           value={typed}
         />
-        <FieldDescription>
+        <FieldDescription className="text-xs">
           Capital letters, dashes, and spaces don&apos;t matter.
         </FieldDescription>
         <FieldError>{error}</FieldError>
       </Field>
-      <SetupText>
+      <SetupText className="text-xs">
         When you continue, Sage turns on the lock and encrypts your journal.
         This takes a moment.
       </SetupText>

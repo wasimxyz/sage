@@ -37,22 +37,62 @@ export function useRecoveryKeyClipboard(recoveryKey: string) {
   return { clear, copied, copy };
 }
 
-/**
- * A recovery key in its groups, with a Copy button. Sage generates the key
- * and the page only shows it.
- */
-export function RecoveryKeyDisplay({
+/** The Copy button. It says Copied for as long as the key is on the clipboard. */
+function RecoveryKeyCopyButton({
   copied,
-  copyLabel = "Copy",
+  label,
+  onCopy,
+}: {
+  copied: boolean;
+  /** What the button says before the key is copied, like "Copy". */
+  label: string;
+  onCopy: () => void;
+}) {
+  const text = copied ? "Copied" : label;
+  return (
+    <Button
+      aria-label="Copy recovery key"
+      onClick={onCopy}
+      size="sm"
+      type="button"
+      variant="outline"
+    >
+      {copied ? (
+        <CheckIcon data-icon="inline-start" />
+      ) : (
+        <CopyIcon data-icon="inline-start" />
+      )}
+      {text}
+    </Button>
+  );
+}
+
+/** Says the clipboard is cleared once the person moves on. Shown after a copy. */
+function RecoveryKeyClipboardNote({ copied }: { copied: boolean }) {
+  if (!copied) {
+    return null;
+  }
+  return (
+    <p className="text-muted-foreground text-sm">
+      Sage clears your clipboard when you continue.
+    </p>
+  );
+}
+
+/**
+ * The key in its six groups, one per column, three to a row. Used by the
+ * Settings dialogs, where the Copy button sits beside it. Sage generates the
+ * key and the page only shows it.
+ */
+export function RecoveryKeyGrid({
+  copied,
   onCopy,
   recoveryKey,
 }: {
   copied: boolean;
-  copyLabel?: string;
   onCopy: () => void;
   recoveryKey: string;
 }) {
-  const buttonLabel = copied ? "Copied" : copyLabel;
   return (
     <>
       <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-4 py-3">
@@ -67,26 +107,33 @@ export function RecoveryKeyDisplay({
               <span key={group.position}>{group.text}</span>
             ))}
         </div>
-        <Button
-          aria-label="Copy recovery key"
-          onClick={onCopy}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {copied ? (
-            <CheckIcon data-icon="inline-start" />
-          ) : (
-            <CopyIcon data-icon="inline-start" />
-          )}
-          {buttonLabel}
-        </Button>
+        <RecoveryKeyCopyButton copied={copied} label="Copy" onCopy={onCopy} />
       </div>
-      {copied ? (
-        <p className="text-muted-foreground text-sm">
-          Sage clears your clipboard when you continue.
-        </p>
-      ) : null}
+      <RecoveryKeyClipboardNote copied={copied} />
     </>
+  );
+}
+
+/**
+ * The key on one line in a card, with the Copy button centered under it. Used
+ * by first-launch setup, where the key is the whole screen.
+ */
+export function RecoveryKeyCard({
+  copied,
+  onCopy,
+  recoveryKey,
+}: {
+  copied: boolean;
+  onCopy: () => void;
+  recoveryKey: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-6 text-center">
+      <p className="select-all font-mono text-xl tracking-wider">
+        {recoveryKey}
+      </p>
+      <RecoveryKeyCopyButton copied={copied} label="Copy key" onCopy={onCopy} />
+      <RecoveryKeyClipboardNote copied={copied} />
+    </div>
   );
 }

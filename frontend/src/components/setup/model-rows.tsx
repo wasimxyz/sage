@@ -45,7 +45,7 @@ export function ModelDownloadRow({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col">
           <span className="truncate font-medium font-mono text-sm">{name}</span>
-          <span className="text-muted-foreground text-sm">{purpose}</span>
+          <span className="text-muted-foreground text-xs">{purpose}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-sm">
           {state.kind === "ready" ? (

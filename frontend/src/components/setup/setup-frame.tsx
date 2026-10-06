@@ -3,7 +3,6 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { useTitlebarAlignment } from "@/hooks/use-titlebar-alignment";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
 import { cn } from "@/lib/utils";
@@ -51,17 +50,26 @@ function HeaderBar({ children }: { children?: ReactNode }) {
   );
 }
 
+const stepNumbers = [1, 2, 3] as const;
+
+/** "Step N of 3" with one segment per step. The steps so far are filled in. */
 function StepIndicator({ step }: { step: number }) {
   return (
     <div className="absolute inset-x-0 flex items-center justify-center gap-3 text-muted-foreground text-xs">
       <span>
         Step {step} of {stepCount}
       </span>
-      <Progress
-        aria-label={`Step ${step} of ${stepCount}`}
-        className="w-24"
-        value={(step / stepCount) * 100}
-      />
+      <span aria-hidden className="flex gap-1.5">
+        {stepNumbers.map((number) => (
+          <span
+            className={cn(
+              "h-0.5 w-6 rounded-full",
+              number <= step ? "bg-foreground" : "bg-muted"
+            )}
+            key={number}
+          />
+        ))}
+      </span>
     </div>
   );
 }
