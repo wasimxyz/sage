@@ -87,6 +87,12 @@ A banner names what is on, such as “Lock and encryption are on.” It is hidde
 
 All set writes `onboarding.state = done`. Its rows show the real state: whether the lock and encryption are on, and each model as ready or as a live progress bar. A tip names the idle time you chose. **Write your first entry** opens a new entry in the editor, and **Go to Home** opens Home.
 
+## Testing setup
+
+To see setup as a new user does, quit the dev app and run `make reset-dev`, then `make dev`. The script deletes the dev journal, its Keychain item, and the web view’s local storage, and leaves the packaged app and Ollama alone. [Scripts](../scripts/README.md#resetting-the-dev-app) lists every path it deletes.
+
+Ollama keeps its models, so if Ollama is running and has both, the Local AI step goes straight to Protect.
+
 ## Resuming setup
 
 Sage saves the screen you are on in `onboarding.step`, and your Protect choices in `onboarding.method` and `onboarding.encrypt`. A refresh, a restart, or a lock opens setup at that step again.
