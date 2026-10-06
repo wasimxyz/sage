@@ -25,6 +25,7 @@ import { useChat } from "@/components/chat-provider";
 import { OllamaStartNotice } from "@/components/ollama-notice";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogActions,
@@ -56,8 +57,8 @@ const canirunUrl = "https://www.canirun.ai";
 const canirunLinkClassName =
   "underline underline-offset-2 hover:text-foreground";
 const pollMs = 1000;
-const nameCellClassName = "whitespace-normal py-3 pl-0 font-medium";
-const actionCellClassName = "w-px py-3 pr-0 text-right";
+const nameCellClassName = "whitespace-normal py-3 pl-4 font-medium";
+const actionCellClassName = "w-px py-3 pr-4 text-right";
 const metricCellClassName =
   "w-px py-3 text-right text-muted-foreground tabular-nums";
 const sectionHeadingClassName =
@@ -100,30 +101,37 @@ function ModelsSettingsFallback() {
 
 function ModelsSkeletonTable() {
   return (
-    <Table className="mt-2">
-      <TableBody>
-        {skeletonRows.map((row) => (
-          <TableRow className="hover:bg-transparent" key={row}>
-            <TableCell className="py-3 pl-0">
-              <Skeleton className="h-4 w-44" />
-            </TableCell>
-            <TableCell className={metricCellClassName}>
-              <Skeleton className="ml-auto h-4 w-12" />
-            </TableCell>
-            <TableCell className={metricCellClassName}>
-              <Skeleton className="ml-auto h-4 w-20" />
-            </TableCell>
-            <TableCell className={metricCellClassName}>
-              <Skeleton className="ml-auto h-4 w-16" />
-            </TableCell>
-            <TableCell className={actionCellClassName}>
-              <Skeleton className="ml-auto h-8 w-20" />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <ModelsCard>
+      <Table>
+        <TableBody>
+          {skeletonRows.map((row) => (
+            <TableRow className="hover:bg-transparent" key={row}>
+              <TableCell className="py-3 pl-4">
+                <Skeleton className="h-4 w-44" />
+              </TableCell>
+              <TableCell className={metricCellClassName}>
+                <Skeleton className="ml-auto h-4 w-12" />
+              </TableCell>
+              <TableCell className={metricCellClassName}>
+                <Skeleton className="ml-auto h-4 w-20" />
+              </TableCell>
+              <TableCell className={metricCellClassName}>
+                <Skeleton className="ml-auto h-4 w-16" />
+              </TableCell>
+              <TableCell className={actionCellClassName}>
+                <Skeleton className="ml-auto h-8 w-20" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ModelsCard>
   );
+}
+
+/** One rounded card per model list. The rows carry their own padding. */
+function ModelsCard({ children }: { children: ReactNode }) {
+  return <Card className="mt-3 gap-0 py-0">{children}</Card>;
 }
 
 const modelsSettingsFallback = <ModelsSettingsFallback />;
@@ -336,10 +344,12 @@ function ModelsTable({
   children: ReactNode;
 }) {
   return (
-    <Table className="mt-2">
-      <TableCaption className="sr-only">{caption}</TableCaption>
-      <TableBody>{children}</TableBody>
-    </Table>
+    <ModelsCard>
+      <Table>
+        <TableCaption className="sr-only">{caption}</TableCaption>
+        <TableBody>{children}</TableBody>
+      </Table>
+    </ModelsCard>
   );
 }
 
