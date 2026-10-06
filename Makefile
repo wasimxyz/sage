@@ -1,4 +1,4 @@
-.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
+.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
 
 # `native build` / `native test` drive this repo's ejected build.zig.
 # Pass the global CLI only when it is actually installed; otherwise
@@ -56,6 +56,7 @@ test:
 	sh security-tests/eval-leftover-automation.sh
 	sh security-tests/eval-server-token.sh
 	sh security-tests/eval-ignores-data-dir.sh
+	sh security-tests/seed-dev-dev-only.sh
 	sh security-tests/agent-dev-modules.sh
 
 eval:
@@ -104,6 +105,12 @@ dev:
 # Never touches the packaged app. YES=1 skips the prompt.
 reset-dev:
 	@YES="$(YES)" sh scripts/reset-dev.sh
+
+# Reset the dev app, then fill its journal with the entries in SEED and run
+# Dream. Never touches the packaged app. YES=1 skips the reset prompt.
+SEED ?= $(CURDIR)/scripts/seed
+seed-dev:
+	@YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" sh scripts/seed-dev.sh
 
 package:
 	npm --prefix frontend run build
