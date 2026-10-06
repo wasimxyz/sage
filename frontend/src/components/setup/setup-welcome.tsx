@@ -10,6 +10,7 @@ import {
   SetupBody,
   SetupFrame,
   SetupHeader,
+  SetupIntro,
   SetupText,
   SetupTitle,
 } from "@/components/setup/setup-frame";
@@ -50,18 +51,20 @@ export function SetupWelcome() {
     <SetupFrame>
       <SetupHeader onSkip={skipSetup} />
       <SetupBody>
-        <div className="flex size-12 items-center justify-center rounded-xl bg-muted">
-          <LeafIcon className="size-6" />
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+          <LeafIcon className="size-7" />
         </div>
-        <SetupTitle>Welcome to Sage</SetupTitle>
-        <SetupText>
-          A private journal with an AI you can talk to. Everything runs on this
-          Mac, so your entries, chats, and memories never leave it.
-        </SetupText>
+        <SetupIntro>
+          <SetupTitle>Welcome to Sage</SetupTitle>
+          <SetupText>
+            A private journal with an AI you can talk to. Everything runs on
+            this Mac, so your entries, chats, and memories never leave it.
+          </SetupText>
+        </SetupIntro>
         <ul className="flex flex-col gap-3">
           {features.map(({ description, icon: Icon, title }) => (
             <li className="flex items-start gap-3" key={title}>
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card [&_svg]:size-4">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card [&_svg]:size-4.5">
                 <Icon />
               </span>
               <div className="flex flex-col">

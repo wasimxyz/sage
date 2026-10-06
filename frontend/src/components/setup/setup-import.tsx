@@ -9,6 +9,7 @@ import {
   SetupFooter,
   SetupFrame,
   SetupHeader,
+  SetupIntro,
   SetupText,
   SetupTitle,
 } from "@/components/setup/setup-frame";
@@ -71,11 +72,13 @@ export function SetupImport() {
             {banner}
           </p>
         ) : null}
-        <SetupTitle>Bring in your writing</SetupTitle>
-        <SetupText>
-          Already keep a journal? Import Markdown files from Notion or any other
-          app. This step is optional.
-        </SetupText>
+        <SetupIntro>
+          <SetupTitle>Bring in your writing</SetupTitle>
+          <SetupText>
+            Already keep a journal? Import Markdown files from Notion or any
+            other app. This step is optional.
+          </SetupText>
+        </SetupIntro>
         <div className="flex flex-col items-start gap-2">
           <Button onClick={handleChoose}>
             <FileUpIcon data-icon="inline-start" />

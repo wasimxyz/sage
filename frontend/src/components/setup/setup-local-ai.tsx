@@ -15,6 +15,7 @@ import {
   SetupFooterEnd,
   SetupFrame,
   SetupHeader,
+  SetupIntro,
   SetupList,
   SetupNote,
   SetupText,
@@ -198,13 +199,13 @@ function LocalAiScreenView({
 
 function LocalAiIntro() {
   return (
-    <>
+    <SetupIntro>
       <SetupTitle>Set up local AI</SetupTitle>
       <SetupText>
         Sage runs AI models on this Mac with Ollama. Your writing is never sent
         anywhere.
       </SetupText>
-    </>
+    </SetupIntro>
   );
 }
 
@@ -404,11 +405,13 @@ function InstallScreen({
 }) {
   return (
     <>
-      <SetupTitle>Install Ollama</SetupTitle>
-      <SetupText>
-        Sage uses the free Ollama app to run AI on this Mac. It isn&apos;t
-        installed yet.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Install Ollama</SetupTitle>
+        <SetupText>
+          Sage uses the free Ollama app to run AI on this Mac. It isn&apos;t
+          installed yet.
+        </SetupText>
+      </SetupIntro>
       <SetupList>
         <ol className="contents">
           <li className="flex items-center justify-between gap-3 p-3 text-sm">

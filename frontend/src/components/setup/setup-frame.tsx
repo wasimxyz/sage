@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useTitlebarAlignment } from "@/hooks/use-titlebar-alignment";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
 import { cn } from "@/lib/utils";
 
@@ -31,11 +32,15 @@ export function SetupFrame({ children }: { children: ReactNode }) {
 }
 
 function HeaderBar({ children }: { children?: ReactNode }) {
+  // The native traffic lights line up with this row, the way they do with the
+  // app's own title bar.
+  const rowRef = useTitlebarAlignment<HTMLElement>();
   return (
     <header
       className="relative flex h-(--titlebar-height) shrink-0 items-center justify-between pr-6 pl-[calc(var(--titlebar-leading)+0.5rem)]"
       data-slot="window-titlebar"
       onPointerDown={onTitlebarPointerDown}
+      ref={rowRef}
     >
       <div className="flex items-center gap-2 font-medium text-sm">
         <LeafIcon className="size-4" />
@@ -100,11 +105,19 @@ export function PlainHeader() {
 export function SetupBody({ children }: { children: ReactNode }) {
   return (
     <main className="flex min-h-0 flex-1 overflow-y-auto px-6">
-      <div className="mx-auto my-auto flex w-full max-w-md flex-col gap-6 py-10 pb-16">
+      <div className="mx-auto my-auto flex w-full max-w-lg flex-col gap-6 py-10 pb-16">
         {children}
       </div>
     </main>
   );
+}
+
+/**
+ * A title and the paragraph that explains it. They sit closer together than the
+ * other blocks on the screen, so the two read as one heading.
+ */
+export function SetupIntro({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col gap-2">{children}</div>;
 }
 
 export function SetupTitle({ children }: { children: ReactNode }) {

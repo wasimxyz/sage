@@ -15,6 +15,7 @@ import {
 import {
   SetupFooter,
   SetupFooterEnd,
+  SetupIntro,
   SetupText,
   SetupTitle,
 } from "@/components/setup/setup-frame";
@@ -93,12 +94,14 @@ export function ChooseScreen({
 
   return (
     <>
-      <SetupTitle>Protect your journal</SetupTitle>
-      <SetupText>
-        Other apps on this Mac, including AI agents, can open files. A lock
-        keeps people out of Sage. Encryption stops other apps from reading your
-        journal file.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Protect your journal</SetupTitle>
+        <SetupText>
+          Other apps on this Mac, including AI agents, can open files. A lock
+          keeps people out of Sage. Encryption stops other apps from reading
+          your journal file.
+        </SetupText>
+      </SetupIntro>
       <FieldSet>
         <FieldLegend variant="label">
           How do you want to unlock Sage?
@@ -220,11 +223,13 @@ export function TouchIdScreen({
 }) {
   return (
     <>
-      <SetupTitle>Turn on Touch ID</SetupTitle>
-      <SetupText>
-        Sage will ask for your fingerprint when it opens, after your Mac sleeps,
-        and after you&apos;ve been away.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Turn on Touch ID</SetupTitle>
+        <SetupText>
+          Sage will ask for your fingerprint when it opens, after your Mac
+          sleeps, and after you&apos;ve been away.
+        </SetupText>
+      </SetupIntro>
       {encrypt ? (
         <SetupText>
           When you continue, macOS asks you to touch the sensor once to confirm
@@ -301,11 +306,13 @@ export function PasswordScreen({
 
   return (
     <form className="contents" onSubmit={handleSubmit}>
-      <SetupTitle>Create a password</SetupTitle>
-      <SetupText>
-        You&apos;ll unlock Sage when it opens, after your Mac sleeps, and after
-        you&apos;ve been away.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Create a password</SetupTitle>
+        <SetupText>
+          You&apos;ll unlock Sage when it opens, after your Mac sleeps, and
+          after you&apos;ve been away.
+        </SetupText>
+      </SetupIntro>
       <Field>
         <FieldLabel htmlFor="setup-password">Password</FieldLabel>
         <Input
@@ -389,11 +396,13 @@ export function EncryptScreen({
 
   return (
     <form className="contents" onSubmit={handleSubmit}>
-      <SetupTitle>Encrypt your journal</SetupTitle>
-      <SetupText>
-        Your lock is on. Encryption stops other apps from reading your journal
-        file. You&apos;ll save a recovery key next.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Encrypt your journal</SetupTitle>
+        <SetupText>
+          Your lock is on. Encryption stops other apps from reading your journal
+          file. You&apos;ll save a recovery key next.
+        </SetupText>
+      </SetupIntro>
       {needsPassword ? (
         <Field>
           <FieldLabel htmlFor="setup-encrypt-password">
@@ -479,11 +488,13 @@ export function KeyScreen({
 
   return (
     <>
-      <SetupTitle>Save your recovery key</SetupTitle>
-      <SetupText>
-        This key opens your journal if you forget your password or Touch ID
-        stops working. Sage shows it only once.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Save your recovery key</SetupTitle>
+        <SetupText>
+          This key opens your journal if you forget your password or Touch ID
+          stops working. Sage shows it only once.
+        </SetupText>
+      </SetupIntro>
       <RecoveryKeyDisplay
         copied={copied}
         copyLabel="Copy key"
@@ -536,11 +547,13 @@ export function ConfirmScreen({
 
   return (
     <form className="contents" onSubmit={handleSubmit}>
-      <SetupTitle>Type your recovery key</SetupTitle>
-      <SetupText>
-        This checks that you saved it correctly. Type it from where you saved
-        it, not from memory.
-      </SetupText>
+      <SetupIntro>
+        <SetupTitle>Type your recovery key</SetupTitle>
+        <SetupText>
+          This checks that you saved it correctly. Type it from where you saved
+          it, not from memory.
+        </SetupText>
+      </SetupIntro>
       <Field>
         <FieldLabel htmlFor="setup-recovery-key">Recovery key</FieldLabel>
         <Input

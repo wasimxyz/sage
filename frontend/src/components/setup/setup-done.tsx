@@ -10,6 +10,7 @@ import {
   SetupFooter,
   SetupFooterEnd,
   SetupFrame,
+  SetupIntro,
   SetupList,
   SetupText,
   SetupTitle,
@@ -52,8 +53,10 @@ export function SetupDone() {
     <SetupFrame>
       <PlainHeader />
       <SetupBody>
-        <SetupTitle>You&apos;re all set</SetupTitle>
-        <SetupText>{intro}</SetupText>
+        <SetupIntro>
+          <SetupTitle>You&apos;re all set</SetupTitle>
+          <SetupText>{intro}</SetupText>
+        </SetupIntro>
         <SetupList>
           {protection ? (
             <div className="flex items-center gap-2 p-3 text-sm">
