@@ -57,7 +57,7 @@ Settings > Models uses the same provider, so a download started there and one st
 
 ### Step 2: Protect your journal
 
-Protect offers a lock and encryption. **Touch ID** is picked by default and **Encrypt my journal** is on by default. A Mac without a fingerprint sensor hides the Touch ID choice and picks Password. **Set up later** goes to Import.
+Protect offers a lock and encryption. **Touch ID** is picked by default and **Encrypt my journal** is on by default. A Mac without a fingerprint sensor hides the Touch ID choice and picks Password. A Mac with the sensor shows the choice even when macOS can't use the sensor at that moment, such as a MacBook with its lid closed over an external display. The card then says macOS asks for your Mac password until Touch ID is available, which is also how a Touch ID lock unlocks in that state. **Set up later** goes to Import.
 
 If the lock is already on, Sage skips the choice and offers only encryption. If the lock and encryption are both on, or you chose a lock and no encryption earlier, Sage skips the step.
 

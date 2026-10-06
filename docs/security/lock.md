@@ -44,7 +44,7 @@ Idle time counts from the last keyboard, mouse, scroll, or gesture input Sage re
 
 ## Touch ID
 
-Touch ID uses Apple’s LocalAuthentication framework, the same system prompt other Mac apps use. The `lock.touch_id` row in `app_setting` records whether you turned it on. With encryption on, Touch ID also needs the data key, which lives in the Keychain, as [The Touch ID Keychain mirror](keychain.md) explains.
+Touch ID uses Apple’s LocalAuthentication framework, the same system prompt other Mac apps use. `lock.status` reports two things: `touchIdBiometrics` is true when Touch ID works right now, and `touchIdHardware` is true when the Mac has a sensor with a finger enrolled, even if macOS can’t use it at the moment, as with a closed lid over an external display. The prompt falls back to the Mac login password in that case, so a Touch ID lock still opens. The `lock.touch_id` row in `app_setting` records whether you turned it on. With encryption on, Touch ID also needs the data key, which lives in the Keychain, as [The Touch ID Keychain mirror](keychain.md) explains.
 
 Turning Touch ID off weakens the lock, so it needs proof. With a password set, the proof is the password. With Touch ID as the only way in, it is a fresh system prompt that names the action, separate from the unlock you finished.
 

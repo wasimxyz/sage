@@ -94,17 +94,30 @@ export function setupProtectScreen(
 }
 
 /**
- * The unlock method that starts picked. Touch ID needs a fingerprint sensor:
- * a Mac that only offers its login password gets Password.
+ * The unlock method that starts picked. Touch ID needs a fingerprint sensor: a
+ * Mac without one gets Password. A sensor that cannot be used at the moment
+ * still counts, because a Touch ID lock then asks for the Mac login password.
  */
 export function defaultUnlockMethod(
-  lock: Pick<LockStatus, "touchIdBiometrics">
+  lock: Pick<LockStatus, "touchIdHardware">
 ): UnlockMethod {
-  return lock.touchIdBiometrics ? "touch_id" : "password";
+  return lock.touchIdHardware ? "touch_id" : "password";
 }
 
-/** The Touch ID choice only shows on a Mac with a fingerprint sensor. */
+/**
+ * The Touch ID choice shows on a Mac that has a fingerprint sensor, whether or
+ * not the sensor works right now. With the lid closed over an external display,
+ * macOS reports biometrics as unavailable, and hiding the choice would hide it
+ * from someone who has Touch ID.
+ */
 export function touchIdChoiceAvailable(
+  lock: Pick<LockStatus, "touchIdHardware">
+): boolean {
+  return lock.touchIdHardware;
+}
+
+/** Touch ID works at this moment, so the first unlock will use the sensor. */
+export function touchIdReady(
   lock: Pick<LockStatus, "touchIdBiometrics">
 ): boolean {
   return lock.touchIdBiometrics;

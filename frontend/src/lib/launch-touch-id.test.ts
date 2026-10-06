@@ -18,6 +18,7 @@ function makeStatus(overrides: Partial<LockStatus> = {}): LockStatus {
     touchIdAvailable: true,
     touchIdBiometrics: true,
     touchIdEnabled: true,
+    touchIdHardware: true,
     unlocked: false,
     waitRemainingMs: 0,
     ...overrides,

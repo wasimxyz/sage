@@ -69,6 +69,7 @@ export function ChooseScreen({
   onMethodChange,
   onSkip,
   touchIdAvailable,
+  touchIdReady,
 }: {
   encrypt: boolean;
   method: UnlockMethod;
@@ -77,7 +78,10 @@ export function ChooseScreen({
   onEncryptChange: (encrypt: boolean) => void;
   onMethodChange: (method: UnlockMethod) => void;
   onSkip?: () => void;
+  /** This Mac has a Touch ID sensor. */
   touchIdAvailable: boolean;
+  /** The sensor works right now. False with the lid closed, for example. */
+  touchIdReady: boolean;
 }) {
   const handleMethod = useCallback(
     (value: unknown) => {
@@ -118,6 +122,9 @@ export function ChooseScreen({
                   <FieldDescription>
                     Unlock with your fingerprint. There&apos;s no password to
                     remember.
+                    {touchIdReady
+                      ? null
+                      : " Touch ID isn't available right now, so macOS asks for your Mac password until it is."}
                   </FieldDescription>
                 </FieldContent>
               </Field>

@@ -34,6 +34,7 @@ import {
   protectScreen,
   setupProtectScreen,
   touchIdChoiceAvailable,
+  touchIdReady,
 } from "@/lib/onboarding";
 import { recoveryKeysMatch } from "@/lib/recovery-key";
 
@@ -93,7 +94,7 @@ export function ProtectFlow({
     screen === "encrypt" ? { kind: "encrypt" } : { kind: "choose" }
   );
   const [method, setMethod] = useState<UnlockMethod>(
-    saved?.method ?? defaultUnlockMethod(lock ?? { touchIdBiometrics: false })
+    saved?.method ?? defaultUnlockMethod(lock ?? { touchIdHardware: false })
   );
   const [encrypt, setEncrypt] = useState(saved?.method ? saved.encrypt : true);
   const [idleTimeoutMs, setIdleTimeoutMs] = useState(
@@ -292,6 +293,7 @@ export function ProtectFlow({
         onMethodChange={setMethod}
         onSkip={onSkip}
         touchIdAvailable={touchIdChoiceAvailable(lock)}
+        touchIdReady={touchIdReady(lock)}
       />
     );
   } else if (stage.kind === "touch_id") {

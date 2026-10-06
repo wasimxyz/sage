@@ -877,8 +877,14 @@ export interface LockStatus {
   scrubbing: boolean;
   securing: boolean;
   touchIdAvailable: boolean;
+  /** Touch ID works right now: the sensor is there, enrolled, and reachable. */
   touchIdBiometrics: boolean;
   touchIdEnabled: boolean;
+  /**
+   * This Mac has a Touch ID sensor with a finger enrolled, even when it cannot
+   * be used at the moment, such as with the lid closed over an external display.
+   */
+  touchIdHardware: boolean;
   unlocked: boolean;
   /** Milliseconds left before Zig accepts another guess; 0 when there is no wait. */
   waitRemainingMs: number;
@@ -904,6 +910,7 @@ export async function getLockStatus(): Promise<LockStatus> {
     touchIdAvailable: asBoolean(response.touchIdAvailable),
     touchIdBiometrics: asBoolean(response.touchIdBiometrics),
     touchIdEnabled: asBoolean(response.touchIdEnabled),
+    touchIdHardware: asBoolean(response.touchIdHardware),
     unlocked: asBoolean(response.unlocked),
     waitRemainingMs: asNumber(response.waitRemainingMs),
   };

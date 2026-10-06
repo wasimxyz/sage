@@ -13,6 +13,7 @@ import {
   remindersLeftLine,
   setupProtectScreen,
   touchIdChoiceAvailable,
+  touchIdReady,
 } from "./onboarding.ts";
 
 const dayMs = 86_400_000;
@@ -127,10 +128,23 @@ test("setup does not ask again after the person chose no encryption", () => {
 });
 
 test("Touch ID starts picked only on a Mac with a fingerprint sensor", () => {
-  assert.equal(defaultUnlockMethod({ touchIdBiometrics: true }), "touch_id");
-  assert.equal(defaultUnlockMethod({ touchIdBiometrics: false }), "password");
-  assert.equal(touchIdChoiceAvailable({ touchIdBiometrics: true }), true);
-  assert.equal(touchIdChoiceAvailable({ touchIdBiometrics: false }), false);
+  assert.equal(defaultUnlockMethod({ touchIdHardware: true }), "touch_id");
+  assert.equal(defaultUnlockMethod({ touchIdHardware: false }), "password");
+  assert.equal(touchIdChoiceAvailable({ touchIdHardware: true }), true);
+  assert.equal(touchIdChoiceAvailable({ touchIdHardware: false }), false);
+});
+
+test("a sensor that cannot be used right now still offers Touch ID", () => {
+  // A MacBook with its lid closed over an external display reports biometrics
+  // as unavailable, but it has the sensor and a Touch ID lock still works.
+  const closedLid = { touchIdBiometrics: false, touchIdHardware: true };
+  assert.equal(touchIdChoiceAvailable(closedLid), true);
+  assert.equal(defaultUnlockMethod(closedLid), "touch_id");
+  assert.equal(touchIdReady(closedLid), false);
+  assert.equal(
+    touchIdReady({ touchIdBiometrics: true, touchIdHardware: true }),
+    true
+  );
 });
 
 // --- the reminder schedule ---
