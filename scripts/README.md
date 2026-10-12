@@ -1,6 +1,6 @@
 # Scripts
 
-These shell scripts package the Mac app, run the eval suite, and reset the dev app. Each section names the `make` command that runs them.
+These shell scripts package the Mac app, run the eval suite, and reset and seed the dev app. Each section names the `make` command that runs them.
 
 The seeding and grading steps live in `agent/scripts/`. The canirun catalog refresh lives in `frontend/scripts/`, as [Models](../docs/models.md#how-recommendations-work) explains.
 
@@ -54,4 +54,27 @@ The script refuses to start in these cases:
 
 Otherwise it lists what it found and asks first, and the default is no. `make reset-dev YES=1` skips the question. The script ignores `SAGE_DATA_DIR`, so it never deletes a folder the environment names. It keeps no backup, so copy the data folder first if you want to keep a dev journal.
 
+When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change that status, so `seed-dev.sh` can tell a declined reset from one that ran.
+
 `make test` runs `reset-dev.test.sh`. It runs the script against a temporary home folder, with stand-ins for `lsof`, `curl`, and `security`.
+
+## Seeding the dev app
+
+`make seed-dev` runs `seed-dev.sh`. It resets the dev app, fills its journal with sample entries, and runs Dream, so the next `make dev` opens Home with entries and summaries. It never touches the packaged app's data, and Ollama keeps its app and models.
+
+The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format.
+
+The script runs these steps in order and stops at the first failure:
+
+1. It checks that Ollama is running and has both models, which [First-launch setup](../docs/onboarding.md#step-1-local-ai) names. If not, it stops before it deletes anything.
+2. It reads every seed file. A file with no title, a bad date, or an empty body stops the script before it builds or deletes anything.
+3. It builds an automation binary under `zig-out/seed`, so `zig-out/bin/Sage` stays a normal build. `SAGE_MEMORY=true make seed-dev` builds it with memory on, to match `SAGE_MEMORY=true make dev`.
+4. It runs `reset-dev.sh`, which asks first and refuses while the dev app or the Chat agent is running. `make seed-dev YES=1` skips the question. If you say no, the script stops and nothing is deleted.
+5. It starts the binary as the dev app, from a scratch folder with a blank page. It gives the app the Chat sessions folder `make dev` uses, so the app can finish switching memory off. It saves each entry through `journal.save`, as `make eval` does, then runs Dream and waits for it to finish. It then asks Dream to start once more. Any item that run lists did not finish, and the script exits with the count.
+6. It stops Sage, then deletes the scratch folder and `zig-out/seed`.
+
+The new journal has no lock and no encryption. It has entries, so the next `make dev` skips setup, as [First-launch setup](../docs/onboarding.md#when-setup-shows) explains. Run `make reset-dev` to see setup again.
+
+If Dream cannot start, or leaves an entry unfinished, the entries stay saved and the script exits with the reason. Start Dream from the sidebar later.
+
+`make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files parse and that `--check` names a bad file.

@@ -93,6 +93,8 @@ To see setup as a new user does, quit the dev app and run `make reset-dev`, then
 
 Ollama keeps its models, so if Ollama is running and has both, the Local AI step goes straight to Protect.
 
+To start with sample entries instead, run `make seed-dev`. It resets the dev app, saves the entries in `scripts/seed/`, and runs Dream. The journal is no longer empty, so the next `make dev` skips setup. [Scripts](../scripts/README.md#seeding-the-dev-app) has the steps.
+
 ## Resuming setup
 
 Sage saves the screen you are on in `onboarding.step`, and your Protect choices in `onboarding.method` and `onboarding.encrypt`. A refresh, a restart, or a lock opens setup at that step again.
