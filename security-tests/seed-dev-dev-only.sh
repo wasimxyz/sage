@@ -28,13 +28,21 @@ grep -Fq 'NATIVE_SDK_MODE=dev' "$runner" ||
   fail "scripts/seed-dev.sh does not launch Sage with NATIVE_SDK_MODE=dev."
 grep -Fq -- '-u SAGE_DATA_DIR' "$runner" ||
   fail "scripts/seed-dev.sh does not unset SAGE_DATA_DIR, so a leftover value could point it at another journal."
+# Without the dev Chat sessions folder, a dev app that starts with memory off
+# stops partway through switching memory off.
+grep -Fq 'SAGE_DEV_EVE_WORKFLOW_DIR="$root/agent/.eve/.workflow-data"' "$runner" ||
+  fail "scripts/seed-dev.sh does not give the app the dev Chat sessions folder, as make dev does."
 
-# The reset runs before Sage starts, and the build runs before the reset.
+# The reset runs before Sage starts, and the seed files are read and the build
+# runs before the reset.
+check_line=$(grep -n -- 'seed-dev.ts" --check' "$runner" | head -n 1 | cut -d: -f1)
 build_line=$(grep -n 'native build' "$runner" | head -n 1 | cut -d: -f1)
 reset_line=$(grep -n 'scripts/reset-dev.sh' "$runner" | head -n 1 | cut -d: -f1)
 launch_line=$(grep -n 'NATIVE_SDK_MODE=dev' "$runner" | head -n 1 | cut -d: -f1)
-[ -n "$build_line" ] && [ -n "$reset_line" ] && [ -n "$launch_line" ] ||
-  fail "scripts/seed-dev.sh is missing the build, the reset, or the launch."
+[ -n "$check_line" ] && [ -n "$build_line" ] && [ -n "$reset_line" ] && [ -n "$launch_line" ] ||
+  fail "scripts/seed-dev.sh is missing the seed check, the build, the reset, or the launch."
+[ "$check_line" -lt "$reset_line" ] ||
+  fail "scripts/seed-dev.sh resets before it reads the seed files, so a bad file leaves a wiped dev app."
 [ "$build_line" -lt "$reset_line" ] ||
   fail "scripts/seed-dev.sh resets before it builds, so a failed build leaves a wiped dev app."
 [ "$reset_line" -lt "$launch_line" ] ||

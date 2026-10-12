@@ -94,7 +94,8 @@ if [ "$keychain" = true ]; then
 fi
 
 if ! confirm_reset; then
-  exit 0
+  # make seed-dev sets this to tell a "no" from a reset that ran.
+  exit "${RESET_DEV_DECLINED_STATUS:-0}"
 fi
 
 printf '%s\n' "$existing" | while IFS= read -r path; do

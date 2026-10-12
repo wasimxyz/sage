@@ -49,6 +49,14 @@ for model in "$summary_model" "$embed_model"; do
   esac
 done
 
+# Read the seed files before anything is built or deleted, so a bad file never
+# leaves a wiped dev app. The parser lives in the agent's node_modules.
+if [ ! -d "$agent/node_modules" ]; then
+  npm --prefix "$agent" install
+fi
+SAGE_SEED_DIR="$seed_dir" node --experimental-strip-types "$agent/scripts/seed-dev.ts" --check ||
+  fail "Fix the seed files, then run make seed-dev again. Nothing was deleted."
+
 work=""
 sage_pid=""
 seed_prefix="$root/zig-out/seed"
@@ -87,22 +95,26 @@ native build -Dinstall-prefix="$seed_prefix" -Dautomation=true -Dmemory="${SAGE_
 binary="$seed_prefix/bin/Sage"
 [ -x "$binary" ] || fail "Sage was not built at $binary."
 
-if [ ! -d "$agent/node_modules" ]; then
-  npm --prefix "$agent" install
-fi
-
 # reset-dev.sh refuses while the dev app or the Chat agent is running, and asks
-# first. If it asked and you said no, the data folder is still there.
-YES="${YES:-}" sh "$root/scripts/reset-dev.sh"
-if [ -e "$data_dir" ]; then
-  echo "Nothing seeded."
-  exit 0
-fi
+# first. It exits with status 3 when you say no.
+reset_status=0
+RESET_DEV_DECLINED_STATUS=3 YES="${YES:-}" sh "$root/scripts/reset-dev.sh" || reset_status=$?
+case $reset_status in
+  0) ;;
+  3)
+    echo "Nothing seeded."
+    exit 0
+    ;;
+  *) exit "$reset_status" ;;
+esac
 echo "Seeding the fresh dev app."
 
 # The scratch folder is the app's working directory. It holds a blank page for
 # the window and the automation files. With SAGE_DATA_DIR unset, the dev app
 # opens its own data folder, so the next `make dev` finds the entries.
+# SAGE_DEV_EVE_WORKFLOW_DIR is what `make dev` sets. Without it, a dev app that
+# starts with memory off cannot finish switching memory off, and it leaves the
+# memory marker half done.
 work=$(mktemp -d "${TMPDIR:-/tmp}/sage-seed.XXXXXX")
 mkdir -p "$work/frontend/dist"
 printf '%s\n' '<!doctype html><html><head><meta charset="utf-8"><title>Sage seed</title></head><body></body></html>' >"$work/frontend/dist/index.html"
@@ -112,6 +124,7 @@ echo "Starting Sage"
 (
   cd "$work"
   exec env -u SAGE_DATA_DIR -u NATIVE_SDK_FRONTEND_URL \
+    SAGE_DEV_EVE_WORKFLOW_DIR="$root/agent/.eve/.workflow-data" \
     NATIVE_SDK_MODE=dev "$binary" >"$work/sage.log" 2>&1
 ) &
 sage_pid=$!

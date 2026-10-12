@@ -57,7 +57,7 @@ The Zig tests cover:
 - **Context length**: a request cannot raise the context length above the picker maximum (`context-length-uncapped.test.ts`).
 - **Web view**: the page allows no inline script, and export writes only to the folder you picked (`csp.test.ts`, `export-dest.test.ts`).
 - **Packaging**: the copy targets `Sage.app`, and the bundle ships no dev modules (`copy-agent-target.test.ts`, `agent-dev-modules.sh`).
-- **Seeding**: `make seed-dev` builds its automation binary under `zig-out/seed`, names only the dev app, and builds before it resets (`seed-dev-dev-only.sh`).
+- **Seeding**: `make seed-dev` builds its automation binary under `zig-out/seed`, names only the dev app, and reads the seed files and builds before it resets (`seed-dev-dev-only.sh`).
 - **Evals**: `make eval` sends the token to a URL target, leaves no automation binary in `zig-out/bin/`, and opens only the throwaway `app.db` (`eval-server-token.sh`, `eval-leftover-automation.sh`, `eval-ignores-data-dir.sh`).
 
 To run the TypeScript ones alone, use `node --test --experimental-strip-types security-tests/*.test.ts`.
