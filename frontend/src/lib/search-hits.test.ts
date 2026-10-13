@@ -1,44 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { searchHitsReady, visibleHits } from "./search-hits.ts";
+import { settledSearchQuery, visibleHits } from "./search-hits.ts";
 
-test("searchHitsReady is false for an empty query", () => {
-  assert.equal(searchHitsReady("all", "", "fog", "fog", "fog"), false);
-  assert.equal(searchHitsReady("journal", "", "fog", "", ""), false);
-  assert.equal(searchHitsReady("memories", "", "", "", "fog"), false);
+test("settledSearchQuery on Journal is the journal stamp", () => {
+  assert.equal(settledSearchQuery("journal", "fog", "", ""), "fog");
+  assert.equal(settledSearchQuery("journal", "", "fog", "fog"), "");
 });
 
-test("searchHitsReady on Journal only needs the journal stamp", () => {
-  assert.equal(searchHitsReady("journal", "fog", "fog", "", ""), true);
-  assert.equal(searchHitsReady("journal", "fog", "mist", "", ""), false);
+test("settledSearchQuery on Conversations is the chat stamp", () => {
+  assert.equal(settledSearchQuery("conversations", "mist", "fog", ""), "fog");
 });
 
-test("searchHitsReady on Conversations only needs the chat stamp", () => {
-  assert.equal(searchHitsReady("conversations", "fog", "", "fog", ""), true);
-  assert.equal(
-    searchHitsReady("conversations", "fog", "fog", "mist", ""),
-    false
-  );
+test("settledSearchQuery on Memories is the memory stamp", () => {
+  assert.equal(settledSearchQuery("memories", "fog", "fog", "mist"), "mist");
+  assert.equal(settledSearchQuery("memories", "", "", "fog", false), "");
 });
 
-test("searchHitsReady on Memories only needs the memory stamp", () => {
-  assert.equal(searchHitsReady("memories", "fog", "", "", "fog"), true);
-  assert.equal(searchHitsReady("memories", "fog", "fog", "fog", "mist"), false);
+test("settledSearchQuery on All needs every stamp to agree", () => {
+  assert.equal(settledSearchQuery("all", "fog", "fog", "fog"), "fog");
+  assert.equal(settledSearchQuery("all", "fog", "fog", ""), "");
+  assert.equal(settledSearchQuery("all", "fog", "", "fog"), "");
+  assert.equal(settledSearchQuery("all", "", "fog", "fog"), "");
+  assert.equal(settledSearchQuery("all", "fo", "fo", "fo"), "fo");
 });
 
-test("searchHitsReady on All needs every stamp", () => {
-  assert.equal(searchHitsReady("all", "fog", "fog", "fog", "fog"), true);
-  assert.equal(searchHitsReady("all", "fog", "fog", "fog", ""), false);
-  assert.equal(searchHitsReady("all", "fog", "fog", "", "fog"), false);
-  assert.equal(searchHitsReady("all", "fog", "", "fog", "fog"), false);
-  assert.equal(searchHitsReady("all", "world", "fog", "fog", "fog"), false);
-});
-
-test("searchHitsReady on All does not wait for memory when memory is disabled", () => {
-  assert.equal(searchHitsReady("all", "fog", "fog", "fog", "", false), true);
-  assert.equal(searchHitsReady("all", "fog", "fog", "", "", false), false);
-  assert.equal(searchHitsReady("memories", "fog", "", "", "", false), false);
+test("settledSearchQuery on All ignores memory when memory is disabled", () => {
+  assert.equal(settledSearchQuery("all", "fog", "fog", "", false), "fog");
+  assert.equal(settledSearchQuery("all", "fog", "", "", false), "");
 });
 
 test("visibleHits follows the selected tab", () => {

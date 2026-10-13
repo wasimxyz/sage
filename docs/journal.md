@@ -45,6 +45,8 @@ The folder picker runs in the core through `journal.exportDialog`, and `journal.
 
 ⌘K opens the search dialog. Its Journal tab calls `journal.search`, which matches the query against titles and bodies. Results are newest first and capped at 25.
 
+Search runs once you stop typing for 300 ms. The last results stay up until the new ones arrive, so the list does not blank out while you type.
+
 With encryption on, SQL cannot match text inside ciphertext. Sage decrypts each entry in memory and matches there instead, as [Encryption at rest](security/encryption.md#searching-encrypted-entries) explains.
 
 Chat finds entries a different way: it ranks entry summaries by meaning. [The eve app](agent/eve-app.md#tools) covers that tool.
