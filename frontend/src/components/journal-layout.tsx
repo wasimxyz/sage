@@ -1,5 +1,5 @@
 import { BookOpenIcon, ImportIcon, PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { usePanelRef } from "react-resizable-panels";
 
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
@@ -44,8 +44,6 @@ export function JournalLayout() {
   );
 }
 
-const defaultDetailPercent = 60;
-
 function JournalWorkspace() {
   const {
     actions: { setDetailOpen },
@@ -53,27 +51,6 @@ function JournalWorkspace() {
   } = useJournal();
   const isMobile = useIsMobile();
   const entriesPanelRef = usePanelRef();
-  const detailPanelRef = usePanelRef();
-  // The group stays mounted whether or not an entry is open, so the list
-  // keeps its scroll position. Closing the entry collapses the detail panel.
-  const [startedOpen] = useState(detailOpen);
-  const detailPercentRef = useRef(defaultDetailPercent);
-  const expandedRef = useRef(expanded);
-
-  useEffect(() => {
-    expandedRef.current = expanded;
-  }, [expanded]);
-
-  // Remember where the owner dragged the divider, but not the size that focus
-  // mode gives the detail.
-  const rememberDetailSize = useCallback(
-    (size: { asPercentage: number; inPixels: number }) => {
-      if (size.asPercentage > 0 && !expandedRef.current) {
-        detailPercentRef.current = size.asPercentage;
-      }
-    },
-    []
-  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -93,31 +70,25 @@ function JournalWorkspace() {
   }, [detailOpen, setDetailOpen]);
 
   useEffect(() => {
-    const entriesPanel = entriesPanelRef.current;
-    const detailPanel = detailPanelRef.current;
-    if (!(entriesPanel && detailPanel)) {
-      return;
-    }
-    // Order matters: the group needs some panel to take the space a collapse
-    // gives up, so open a panel first and collapse the other second.
     if (!detailOpen) {
-      if (entriesPanel.isCollapsed()) {
-        entriesPanel.expand();
-      }
-      if (!detailPanel.isCollapsed()) {
-        detailPanel.collapse();
-      }
       return;
     }
-    if (detailPanel.isCollapsed()) {
-      detailPanel.resize(`${detailPercentRef.current}%`);
+    const panel = entriesPanelRef.current;
+    if (!panel) {
+      return;
     }
     if (expanded) {
-      entriesPanel.collapse();
-    } else if (entriesPanel.isCollapsed()) {
-      entriesPanel.expand();
+      panel.collapse();
+      return;
     }
-  }, [detailOpen, detailPanelRef, entriesPanelRef, expanded]);
+    if (panel.isCollapsed()) {
+      panel.expand();
+    }
+  }, [detailOpen, entriesPanelRef, expanded]);
+
+  if (!detailOpen) {
+    return <EntriesColumn />;
+  }
 
   return (
     <ResizablePanelGroup
@@ -127,7 +98,7 @@ function JournalWorkspace() {
       <ResizablePanel
         collapsedSize="0%"
         collapsible
-        defaultSize={startedOpen ? "40%" : "100%"}
+        defaultSize="40%"
         id="journal-entries"
         minSize="20%"
         panelRef={entriesPanelRef}
@@ -136,17 +107,9 @@ function JournalWorkspace() {
           <EntriesColumn />
         </div>
       </ResizablePanel>
-      <ResizableHandle className={cn((expanded || !detailOpen) && "hidden")} />
-      <ResizablePanel
-        collapsedSize="0%"
-        collapsible
-        defaultSize={startedOpen ? "60%" : "0%"}
-        id="journal-detail"
-        minSize="20%"
-        onResize={rememberDetailSize}
-        panelRef={detailPanelRef}
-      >
-        {detailOpen ? <JournalDetail /> : null}
+      <ResizableHandle className={cn(expanded && "hidden")} />
+      <ResizablePanel defaultSize="60%" id="journal-detail" minSize="20%">
+        <JournalDetail />
       </ResizablePanel>
     </ResizablePanelGroup>
   );
