@@ -65,7 +65,8 @@ export interface EntryState {
 export interface EntryActions {
   changeTitle: (title: string) => void;
   confirmDelete: () => Promise<void>;
-  flush: () => Promise<void>;
+  /** Save now. Resolves true when nothing is left unsaved. */
+  flush: () => Promise<boolean>;
   openDelete: () => void;
   openDeleteEntry: (id: number) => void;
   registerEditor: (adapter: EditorAdapter | null) => void;

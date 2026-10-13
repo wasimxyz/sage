@@ -354,7 +354,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return;
     }
     dirtyRef.current = true;
-    setSaveLabel("Unsaved");
+    setSaveLabel("");
     clearEmbedTimer();
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
@@ -382,6 +382,8 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     if (id !== null) {
       enqueueEmbed(id, false);
     }
+    // A failed save leaves the entry dirty.
+    return !dirtyRef.current;
   }, [clearEmbedTimer, enqueueEmbed]);
 
   const registerEditor = useCallback((adapter: EditorAdapter | null) => {
@@ -487,7 +489,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       setDate(todayDate());
       setUpdatedAt("");
       setEntryLoading(false);
-      setSaveLabel("Unsaved");
+      setSaveLabel("");
       adapter.resetDraft();
       return;
     }

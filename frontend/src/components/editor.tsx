@@ -19,6 +19,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { toast } from "sonner";
 import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
@@ -437,10 +438,45 @@ export const Editor = {
   Title: EditorTitle,
 };
 
+// Cmd+S saves at once, then says Sage saves on its own. The toast id keeps
+// repeated presses to one toast.
+function useSaveShortcut() {
+  const {
+    actions: { flush },
+  } = useEntry();
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (
+        event.code !== "KeyS" ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      flush()
+        .then((saved) => {
+          if (saved) {
+            toast("Sage saves your entry automatically.", {
+              id: "entry-autosave",
+            });
+          }
+        })
+        .catch(() => undefined);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [flush]);
+}
+
 export default function EditorPane() {
   const {
     state: { expanded },
   } = useJournal();
+  useSaveShortcut();
   return (
     <Editor.Frame>
       <Editor.Header />
