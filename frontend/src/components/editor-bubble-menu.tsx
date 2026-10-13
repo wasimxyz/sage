@@ -13,9 +13,11 @@ import {
   TextQuoteIcon,
   UnderlineIcon,
 } from "lucide-react";
-import { useCallback } from "react";
+import { type ComponentProps, useCallback } from "react";
+import { panelIconHoverClass } from "@/components/panel-icon-button";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { cn } from "@/lib/utils";
 
 const markNames = ["bold", "italic", "strike", "underline"] as const;
 const idleFormatting: FormattingState = {
@@ -155,6 +157,24 @@ function applyMark(editor: Editor, mark: MarkName) {
   chain.toggleUnderline().run();
 }
 
+// Same hover as the editor's header buttons. A toggle that is on sits a
+// step darker, hovered or not.
+function FormatToggle({
+  className,
+  ...props
+}: ComponentProps<typeof ToggleGroupItem>) {
+  return (
+    <ToggleGroupItem
+      className={cn(
+        panelIconHoverClass,
+        "aria-pressed:bg-foreground/15 aria-pressed:hover:bg-foreground/15",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
 function MarkToggles({ formatting }: { formatting: FormattingState }) {
   const { editor } = useTiptap();
   const value = markNames.filter((mark) => formatting[mark]);
@@ -178,18 +198,18 @@ function MarkToggles({ formatting }: { formatting: FormattingState }) {
       size="sm"
       value={value}
     >
-      <ToggleGroupItem aria-label="Bold" value="bold">
+      <FormatToggle aria-label="Bold" value="bold">
         <BoldIcon />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Italic" value="italic">
+      </FormatToggle>
+      <FormatToggle aria-label="Italic" value="italic">
         <ItalicIcon />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Underline" value="underline">
+      </FormatToggle>
+      <FormatToggle aria-label="Underline" value="underline">
         <UnderlineIcon />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Strikethrough" value="strike">
+      </FormatToggle>
+      <FormatToggle aria-label="Strikethrough" value="strike">
         <StrikethroughIcon />
-      </ToggleGroupItem>
+      </FormatToggle>
     </ToggleGroup>
   );
 }
@@ -211,27 +231,27 @@ function BlockToggles({ formatting }: { formatting: FormattingState }) {
       size="sm"
       value={[formatting.block]}
     >
-      <ToggleGroupItem aria-label="Paragraph" value="paragraph">
+      <FormatToggle aria-label="Paragraph" value="paragraph">
         <PilcrowIcon />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Heading 1" value="h1">
+      </FormatToggle>
+      <FormatToggle aria-label="Heading 1" value="h1">
         <Heading1Icon className="size-4" />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Heading 2" value="h2">
+      </FormatToggle>
+      <FormatToggle aria-label="Heading 2" value="h2">
         <Heading2Icon className="size-4" />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Heading 3" value="h3">
+      </FormatToggle>
+      <FormatToggle aria-label="Heading 3" value="h3">
         <Heading3Icon className="size-4" />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Quote" value="quote">
+      </FormatToggle>
+      <FormatToggle aria-label="Quote" value="quote">
         <TextQuoteIcon />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Bullet list" value="bullet">
+      </FormatToggle>
+      <FormatToggle aria-label="Bullet list" value="bullet">
         <ListIcon />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label="Numbered list" value="ordered">
+      </FormatToggle>
+      <FormatToggle aria-label="Numbered list" value="ordered">
         <ListOrderedIcon />
-      </ToggleGroupItem>
+      </FormatToggle>
     </ToggleGroup>
   );
 }
