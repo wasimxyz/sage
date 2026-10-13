@@ -136,6 +136,7 @@ export function ChatScreen() {
   } = useChat();
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
+      <h1 className="sr-only">Chat</h1>
       <ChatDraftProvider key={paneKey}>
         <Suspense fallback={<ChatSessionFallback />}>
           <ChatSession />

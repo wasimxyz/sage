@@ -42,15 +42,18 @@ export function DreamNav() {
             </SidebarMenuItem>
           </SidebarMenu>
           <DreamStatusLine />
-          <DreamStartAnnouncement />
         </SidebarGroupContent>
       </SidebarGroup>
     </>
   );
 }
 
-/** Dream's end and failures already toast. This covers the silent start. */
-function DreamStartAnnouncement() {
+/**
+ * Dream's end and failures already toast. This covers the silent start. It
+ * lives at the top of the app, because the sidebar can be closed or showing
+ * another menu when Dream starts.
+ */
+export function DreamStartAnnouncement() {
   const {
     state: { running },
   } = useDream();

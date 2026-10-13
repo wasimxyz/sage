@@ -12,7 +12,11 @@ import { onOpenSettings } from "@/bridge";
 import { AppTitlebar, onTitlebarPointerDown } from "@/components/app-titlebar";
 import { ConversationsMenu } from "@/components/chat/conversations-menu";
 import { ChatScreen } from "@/components/chat-screen";
-import { DreamConfirmDialog, DreamNav } from "@/components/dream-nav";
+import {
+  DreamConfirmDialog,
+  DreamNav,
+  DreamStartAnnouncement,
+} from "@/components/dream-nav";
 import { HomeScreen } from "@/components/home-screen";
 import {
   type SidebarMenu as SidebarMenuName,
@@ -60,6 +64,7 @@ export function AppShell() {
         <SettingsMenuListener />
         <AppTitlebar />
         <DreamConfirmDialog />
+        <DreamStartAnnouncement />
         <SearchDialog />
         <div className="flex min-h-0 min-w-0 flex-1">
           <AppSidebar />
