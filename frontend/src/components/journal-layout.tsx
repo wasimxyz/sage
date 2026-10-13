@@ -22,18 +22,21 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useSidebar } from "@/components/ui/sidebar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { usePanelSpring } from "@/hooks/use-panel-spring";
 import { useRememberedScroll } from "@/hooks/use-remembered-scroll";
 import { pageColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
-const collapsedLeadingClass = "pl-[calc(var(--titlebar-leading)+2.75rem)]";
+// Focus mode puts the editor under the titlebar toggle. The padding follows
+// the sidebar's slide, full when it is closed and none when it is open.
+const collapsedLeadingClass =
+  "pl-[calc((var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
 export function JournalLayout() {
   return (
@@ -53,26 +56,57 @@ function JournalWorkspace() {
   } = useJournal();
   const isMobile = useIsMobile();
   const entriesPanelRef = usePanelRef();
-  const detailPanelRef = usePanelRef();
   // The group stays mounted whether or not an entry is open, so the list
-  // keeps its scroll position. Closing the entry collapses the detail panel.
+  // keeps its scroll position. Opening, closing, and focus mode all move one
+  // number: how much of the group the list takes. The list is the one to drive
+  // because the panel library will not shrink the last panel while every panel
+  // before it is collapsed, which is where focus mode leaves the list.
   const [startedOpen] = useState(detailOpen);
   const detailPercentRef = useRef(defaultDetailPercent);
   const expandedRef = useRef(expanded);
+  const detailOpenRef = useRef(detailOpen);
+  // The detail stays on screen while it shrinks away.
+  const [detailMounted, setDetailMounted] = useState(detailOpen);
 
   useEffect(() => {
     expandedRef.current = expanded;
-  }, [expanded]);
+    detailOpenRef.current = detailOpen;
+    if (detailOpen) {
+      setDetailMounted(true);
+    }
+  }, [detailOpen, expanded]);
 
-  // Remember where the owner dragged the divider, but not the size that focus
-  // mode gives the detail.
+  const handleSettled = useCallback(() => {
+    if (!detailOpenRef.current) {
+      setDetailMounted(false);
+    }
+  }, []);
+
+  let entriesTarget = 100;
+  if (detailOpen) {
+    // Read at render so the detail opens to where the owner last left it.
+    entriesTarget = expanded ? 0 : 100 - detailPercentRef.current;
+  }
+  const { moving, movingRef, stop } = usePanelSpring(
+    entriesPanelRef,
+    entriesTarget,
+    handleSettled
+  );
+
+  // Remember where the owner dragged the divider, but not the sizes that a
+  // move or focus mode passes through.
   const rememberDetailSize = useCallback(
     (size: { asPercentage: number; inPixels: number }) => {
-      if (size.asPercentage > 0 && !expandedRef.current) {
+      if (
+        size.asPercentage > 0 &&
+        !expandedRef.current &&
+        !movingRef.current &&
+        detailOpenRef.current
+      ) {
         detailPercentRef.current = size.asPercentage;
       }
     },
-    []
+    [movingRef]
   );
 
   useEffect(() => {
@@ -92,32 +126,9 @@ function JournalWorkspace() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [detailOpen, setDetailOpen]);
 
-  useEffect(() => {
-    const entriesPanel = entriesPanelRef.current;
-    const detailPanel = detailPanelRef.current;
-    if (!(entriesPanel && detailPanel)) {
-      return;
-    }
-    // Order matters: the group needs some panel to take the space a collapse
-    // gives up, so open a panel first and collapse the other second.
-    if (!detailOpen) {
-      if (entriesPanel.isCollapsed()) {
-        entriesPanel.expand();
-      }
-      if (!detailPanel.isCollapsed()) {
-        detailPanel.collapse();
-      }
-      return;
-    }
-    if (detailPanel.isCollapsed()) {
-      detailPanel.resize(`${detailPercentRef.current}%`);
-    }
-    if (expanded) {
-      entriesPanel.collapse();
-    } else if (entriesPanel.isCollapsed()) {
-      entriesPanel.expand();
-    }
-  }, [detailOpen, detailPanelRef, entriesPanelRef, expanded]);
+  // Panels with a minimum snap to it, or to collapsed, on any size below it.
+  // A move passes through those sizes, so the minimum is off while it runs.
+  const minSize = moving ? "0%" : "20%";
 
   return (
     <ResizablePanelGroup
@@ -129,31 +140,34 @@ function JournalWorkspace() {
         collapsible
         defaultSize={startedOpen ? "40%" : "100%"}
         id="journal-entries"
-        minSize="20%"
+        minSize={minSize}
         panelRef={entriesPanelRef}
       >
         <div aria-hidden={expanded} className="h-full min-h-0" inert={expanded}>
           <EntriesColumn />
         </div>
       </ResizablePanel>
-      <ResizableHandle className={cn((expanded || !detailOpen) && "hidden")} />
+      <ResizableHandle
+        className={cn((expanded || !detailOpen) && "hidden")}
+        onKeyDown={stop}
+        onPointerDown={stop}
+      />
       <ResizablePanel
+        className="overflow-hidden"
         collapsedSize="0%"
         collapsible
         defaultSize={startedOpen ? "60%" : "0%"}
         id="journal-detail"
-        minSize="20%"
+        minSize={minSize}
         onResize={rememberDetailSize}
-        panelRef={detailPanelRef}
       >
-        {detailOpen ? <JournalDetail /> : null}
+        {detailOpen || detailMounted ? <JournalDetail /> : null}
       </ResizablePanel>
     </ResizablePanelGroup>
   );
 }
 
 function JournalDetail() {
-  const { open } = useSidebar();
   const {
     state: { expanded, selection },
   } = useJournal();
@@ -161,7 +175,7 @@ function JournalDetail() {
     <div
       className={cn(
         "flex h-full min-h-0 flex-col",
-        !open && expanded && collapsedLeadingClass
+        expanded && collapsedLeadingClass
       )}
     >
       {selection ? <EditorPane /> : <SelectEntryEmpty />}

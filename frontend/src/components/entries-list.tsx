@@ -1,5 +1,6 @@
 import { BookOpenIcon, Trash2Icon } from "lucide-react";
-import { memo, useCallback } from "react";
+import { AnimatePresence, m } from "motion/react";
+import { memo, useCallback, useMemo } from "react";
 import type { JournalEntryMeta } from "@/bridge";
 import {
   ContextMenu,
@@ -16,10 +17,21 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { formatJournalListDate } from "@/lib/format-date";
+import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 const skeletonRows = [0, 1, 2, 3, 4];
+// Rows clip while they grow or shrink, and not at rest, so the focus ring
+// that sits outside a row is not cut off.
+const rowClosed = { height: 0, opacity: 0, overflow: "hidden" } as const;
+const rowOpen = {
+  height: "auto",
+  opacity: 1,
+  overflow: "hidden",
+  transitionEnd: { overflow: "visible" },
+} as const;
 const rowClassName =
   "flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
 
@@ -36,6 +48,8 @@ export function EntriesList({
   onDelete: (id: number) => void;
   onSelect: (id: number) => void;
 }) {
+  const ids = useMemo(() => entries.map((entry) => entry.id), [entries]);
+  const appearing = useAppearingIds(ids);
   if (loading) {
     return (
       <div role="status">
@@ -68,26 +82,31 @@ export function EntriesList({
   }
 
   return (
-    <ul aria-label="Journal entries" className="flex flex-col gap-0.5">
-      {entries.map((entry) => (
-        <EntryRow
-          entry={entry}
-          key={entry.id}
-          onDelete={onDelete}
-          onSelect={onSelect}
-          selected={entry.id === selectedId}
-        />
-      ))}
+    <ul aria-label="Journal entries" className="flex flex-col">
+      <AnimatePresence initial={false}>
+        {entries.map((entry) => (
+          <EntryRow
+            animateIn={appearing.has(entry.id)}
+            entry={entry}
+            key={entry.id}
+            onDelete={onDelete}
+            onSelect={onSelect}
+            selected={entry.id === selectedId}
+          />
+        ))}
+      </AnimatePresence>
     </ul>
   );
 }
 
 function EntryRowView({
+  animateIn,
   entry,
   selected,
   onDelete,
   onSelect,
 }: {
+  animateIn: boolean;
   entry: JournalEntryMeta;
   selected: boolean;
   onDelete: (id: number) => void;
@@ -102,39 +121,47 @@ function EntryRowView({
   }, [entry.id, onDelete]);
 
   return (
-    <li>
-      <ContextMenu>
-        <ContextMenuTrigger
-          render={
-            <button
-              aria-current={selected ? "true" : undefined}
-              className={cn(
-                rowClassName,
-                selected && "bg-foreground/10 hover:bg-foreground/10"
-              )}
-              onClick={handleClick}
-              type="button"
-            />
-          }
-        >
-          <span className="min-w-0 truncate font-medium">{entry.title}</span>
-          <time
-            className="shrink-0 text-muted-foreground"
-            dateTime={entry.date}
+    <m.li
+      animate={rowOpen}
+      exit={rowClosed}
+      initial={animateIn ? rowClosed : false}
+      transition={spring}
+    >
+      {/* The gap between rows lives inside, so the row can shrink to nothing. */}
+      <div className="pb-0.5">
+        <ContextMenu>
+          <ContextMenuTrigger
+            render={
+              <button
+                aria-current={selected ? "true" : undefined}
+                className={cn(
+                  rowClassName,
+                  selected && "bg-foreground/10 hover:bg-foreground/10"
+                )}
+                onClick={handleClick}
+                type="button"
+              />
+            }
           >
-            {formatJournalListDate(entry.date)}
-          </time>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuGroup>
-            <ContextMenuItem onClick={handleDelete} variant="destructive">
-              <Trash2Icon />
-              Delete
-            </ContextMenuItem>
-          </ContextMenuGroup>
-        </ContextMenuContent>
-      </ContextMenu>
-    </li>
+            <span className="min-w-0 truncate font-medium">{entry.title}</span>
+            <time
+              className="shrink-0 text-muted-foreground"
+              dateTime={entry.date}
+            >
+              {formatJournalListDate(entry.date)}
+            </time>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuGroup>
+              <ContextMenuItem onClick={handleDelete} variant="destructive">
+                <Trash2Icon />
+                Delete
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </ContextMenuContent>
+        </ContextMenu>
+      </div>
+    </m.li>
   );
 }
 

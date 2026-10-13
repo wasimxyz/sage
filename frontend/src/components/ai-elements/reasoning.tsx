@@ -18,6 +18,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  collapsibleHeightMotion,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -196,15 +197,15 @@ export type ReasoningContentProps = Omit<
 
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        "mt-3 mb-3 overflow-hidden border-muted-foreground/20 border-l-2 pl-3 text-muted-foreground text-sm",
-        "data-closed:fade-out-0 data-closed:slide-out-to-top-1 data-open:slide-in-from-top-1 outline-none data-closed:animate-out data-open:animate-in",
-        className
-      )}
-      {...props}
-    >
-      <MessageResponse className="grid gap-2">{children}</MessageResponse>
+    <CollapsibleContent className={collapsibleHeightMotion} {...props}>
+      <div
+        className={cn(
+          "my-3 border-muted-foreground/20 border-l-2 pl-3 text-muted-foreground text-sm",
+          className
+        )}
+      >
+        <MessageResponse className="grid gap-2">{children}</MessageResponse>
+      </div>
     </CollapsibleContent>
   )
 );

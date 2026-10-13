@@ -2,10 +2,12 @@
 
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback } from "react";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import { Button } from "@/components/ui/button";
+import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
@@ -71,6 +73,9 @@ export const ConversationEmptyState = ({
   </div>
 );
 
+const scrollButtonShown = { opacity: 1, scale: 1 } as const;
+const scrollButtonHidden = { opacity: 0, scale: 0.85 } as const;
+
 export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
 
 export const ConversationScrollButton = ({
@@ -83,23 +88,34 @@ export const ConversationScrollButton = ({
     scrollToBottom();
   }, [scrollToBottom]);
 
+  // The wrapper moves, so the button's own color transitions do not fight it.
   return (
-    !isAtBottom && (
-      <Button
-        aria-label="Scroll to latest message"
-        className={cn(
-          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full border bg-surface hover:bg-accent dark:hover:bg-muted",
-          className
-        )}
-        onClick={handleScrollToBottom}
-        size="icon"
-        type="button"
-        variant="outline"
-        {...props}
-      >
-        <ArrowDownIcon className="size-4" />
-      </Button>
-    )
+    <AnimatePresence>
+      {isAtBottom ? null : (
+        <m.div
+          animate={scrollButtonShown}
+          className="absolute bottom-4 left-[50%] translate-x-[-50%]"
+          exit={scrollButtonHidden}
+          initial={scrollButtonHidden}
+          transition={spring}
+        >
+          <Button
+            aria-label="Scroll to latest message"
+            className={cn(
+              "rounded-full border bg-surface hover:bg-accent dark:hover:bg-muted",
+              className
+            )}
+            onClick={handleScrollToBottom}
+            size="icon"
+            type="button"
+            variant="outline"
+            {...props}
+          >
+            <ArrowDownIcon className="size-4" />
+          </Button>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 };
 

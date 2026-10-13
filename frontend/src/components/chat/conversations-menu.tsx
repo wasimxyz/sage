@@ -1,9 +1,11 @@
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { AnimatePresence, m } from "motion/react";
 import {
   type ChangeEvent,
   type FormEvent,
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -45,10 +47,26 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { formatRelativeAge } from "@/lib/format-relative-age";
+import { spring } from "@/lib/motion";
 
 const ageTickMs = 60_000;
 const titleLimit = 60;
+// Rows clip while they grow or shrink, and not at rest, so the focus ring is
+// not cut off.
+const rowClosed = { height: 0, opacity: 0, overflow: "hidden" } as const;
+const rowOpen = {
+  height: "auto",
+  opacity: 1,
+  overflow: "hidden",
+  transitionEnd: { overflow: "visible" },
+} as const;
+/** A row that arrives on its own grows in. Rows that arrive in a batch do not. */
+function initialRow(animateIn: boolean) {
+  return animateIn ? rowClosed : false;
+}
+
 const conversationItemClass =
   "justify-between [&>span:last-child]:overflow-visible [content-visibility:auto] [contain-intrinsic-size:auto_1.75rem]";
 
@@ -65,6 +83,11 @@ export function ConversationsMenu() {
   const now = useRelativeNow();
   const activeId = selection.kind === "saved" ? selection.id : null;
   const [dialog, setDialog] = useState<ConversationDialog>(null);
+  const ids = useMemo(
+    () => conversations.map((row) => row.id),
+    [conversations]
+  );
+  const appearing = useAppearingIds(ids);
 
   useEffect(() => {
     refreshList().catch(() => undefined);
@@ -90,24 +113,26 @@ export function ConversationsMenu() {
       <SidebarGroup className="pt-0">
         <SidebarGroupLabel>Conversations</SidebarGroupLabel>
         <SidebarGroupContent>
-          <SidebarMenu>
+          <SidebarMenu className="gap-0">
             {conversations.length === 0 ? (
               <SidebarMenuItem>
                 <span className="px-2 py-1.5 text-muted-foreground text-sm">
                   No saved chats
                 </span>
               </SidebarMenuItem>
-            ) : (
-              conversations.map((row) => (
+            ) : null}
+            <AnimatePresence initial={false}>
+              {conversations.map((row) => (
                 <ConversationItem
                   active={row.id === activeId}
+                  animateIn={appearing.has(row.id)}
                   key={row.id}
                   now={now}
                   row={row}
                   setDialog={setDialog}
                 />
-              ))
-            )}
+              ))}
+            </AnimatePresence>
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>
@@ -157,11 +182,13 @@ function ConversationsBackButton() {
 
 function ConversationItem({
   active,
+  animateIn,
   now,
   row,
   setDialog,
 }: {
   active: boolean;
+  animateIn: boolean;
   now: number;
   row: ChatConversationMeta;
   setDialog: (dialog: ConversationDialog) => void;
@@ -179,43 +206,55 @@ function ConversationItem({
     setDialog({ kind: "delete", row });
   }, [row, setDialog]);
   return (
-    <SidebarMenuItem>
-      <Tooltip>
-        <ContextMenu>
-          <ContextMenuTrigger
-            render={
-              <TooltipTrigger
-                render={
-                  <SidebarMenuButton
-                    className={conversationItemClass}
-                    isActive={active}
-                    onClick={onClick}
-                  />
-                }
-              />
-            }
-          >
-            <span className="min-w-0 flex-1 truncate">{row.title}</span>
-            <span className="shrink-0 text-muted-foreground tabular-nums">
-              {formatRelativeAge(row.updatedAt, now)}
-            </span>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuGroup>
-              <ContextMenuItem onClick={onRename}>
-                <PencilIcon />
-                Rename
-              </ContextMenuItem>
-              <ContextMenuItem onClick={onDelete} variant="destructive">
-                <Trash2Icon />
-                Delete
-              </ContextMenuItem>
-            </ContextMenuGroup>
-          </ContextMenuContent>
-        </ContextMenu>
-        <TooltipContent side="right">{row.title}</TooltipContent>
-      </Tooltip>
-    </SidebarMenuItem>
+    // The same markers as SidebarMenuItem, as a motion element. The gap between
+    // rows lives inside, so a row can shrink to nothing as it leaves.
+    <m.li
+      animate={rowOpen}
+      className="group/menu-item relative"
+      data-sidebar="menu-item"
+      data-slot="sidebar-menu-item"
+      exit={rowClosed}
+      initial={initialRow(animateIn)}
+      transition={spring}
+    >
+      <div className="pb-1">
+        <Tooltip>
+          <ContextMenu>
+            <ContextMenuTrigger
+              render={
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      className={conversationItemClass}
+                      isActive={active}
+                      onClick={onClick}
+                    />
+                  }
+                />
+              }
+            >
+              <span className="min-w-0 flex-1 truncate">{row.title}</span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {formatRelativeAge(row.updatedAt, now)}
+              </span>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuGroup>
+                <ContextMenuItem onClick={onRename}>
+                  <PencilIcon />
+                  Rename
+                </ContextMenuItem>
+                <ContextMenuItem onClick={onDelete} variant="destructive">
+                  <Trash2Icon />
+                  Delete
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </ContextMenuContent>
+          </ContextMenu>
+          <TooltipContent side="right">{row.title}</TooltipContent>
+        </Tooltip>
+      </div>
+    </m.li>
   );
 }
 

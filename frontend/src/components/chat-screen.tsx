@@ -6,6 +6,7 @@ import type {
 } from "eve/client";
 import { type EveMessage, useEveAgent } from "eve/react";
 import { MessageCircleIcon } from "lucide-react";
+import { m } from "motion/react";
 import {
   type ChangeEvent,
   type ComponentProps,
@@ -79,6 +80,7 @@ import {
   projectedMessageIdAtSeq,
   sessionNamespacingReducer,
 } from "@/lib/chat/session-recovery";
+import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface PersistPatch {
@@ -592,7 +594,9 @@ function ChatTurnSession({
         {hasMessages ? (
           <div className="flex flex-col gap-6">
             {agent.data.messages.map((item) => (
-              <MessageBubble key={item.id} message={item} />
+              <MessageArrival arriving={busy} key={item.id}>
+                <MessageBubble message={item} />
+              </MessageArrival>
             ))}
             {shouldShowAssistantPending(agent.data.messages, agent.status) ? (
               <AssistantPending />
@@ -625,6 +629,31 @@ function ChatTurnSession({
         />
       </ChatComposerBar>
     </ChatPane>
+  );
+}
+
+/**
+ * A message that arrives during a turn rises into place. Messages that are
+ * already there when a saved chat opens do not move. Only opacity and
+ * position change, because a height change would fight the scroll to the
+ * bottom.
+ */
+function MessageArrival({
+  arriving,
+  children,
+}: {
+  arriving: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <m.div
+      animate={{ opacity: 1, y: 0 }}
+      className="empty:hidden"
+      initial={arriving ? { opacity: 0, y: 16 } : false}
+      transition={spring}
+    >
+      {children}
+    </m.div>
   );
 }
 

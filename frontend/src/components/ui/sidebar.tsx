@@ -2,6 +2,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
+import { useReducedMotion, useSpring } from "motion/react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { unitSpring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
@@ -112,6 +114,33 @@ function SidebarProvider({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSidebar]);
 
+  // A spring runs from 0 (closed) to 1 (open) and writes --sidebar-progress on
+  // the wrapper. The gap and the slide are CSS expressions of that variable,
+  // so a frame costs no React render, and pressing the shortcut again
+  // mid-slide turns the spring around at its current speed.
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+  const progress = useSpring(open ? 1 : 0, unitSpring);
+  const reduceMotion = useReducedMotion();
+  React.useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) {
+      return;
+    }
+    const write = (value: number) => {
+      wrapper.style.setProperty("--sidebar-progress", String(value));
+    };
+    write(progress.get());
+    return progress.on("change", write);
+  }, [progress]);
+  React.useEffect(() => {
+    const target = open ? 1 : 0;
+    if (reduceMotion) {
+      progress.jump(target);
+    } else {
+      progress.set(target);
+    }
+  }, [open, progress, reduceMotion]);
+
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? "expanded" : "collapsed";
@@ -137,6 +166,7 @@ function SidebarProvider({
           className
         )}
         data-slot="sidebar-wrapper"
+        ref={wrapperRef}
         style={
           {
             "--sidebar-width": SIDEBAR_WIDTH,
@@ -220,8 +250,10 @@ function Sidebar({
       {/* This is what handles the sidebar gap on desktop */}
       <div
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
-          "group-data-[collapsible=offcanvas]:w-0",
+          "relative bg-transparent",
+          collapsible === "offcanvas"
+            ? "w-[calc(var(--sidebar-width)*var(--sidebar-progress,1))]"
+            : "w-(--sidebar-width) transition-[width] duration-200 ease-linear",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
             ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
@@ -231,7 +263,13 @@ function Sidebar({
       />
       <div
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) data-[side=right]:right-0 data-[side=left]:left-0 md:flex",
+          collapsible === "offcanvas"
+            ? [
+                "data-[side=left]:translate-x-[calc((var(--sidebar-progress,1)-1)*var(--sidebar-width))]",
+                "data-[side=right]:translate-x-[calc((1-var(--sidebar-progress,1))*var(--sidebar-width))]",
+              ]
+            : "transition-[left,right,width] duration-200 ease-linear",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -240,6 +278,7 @@ function Sidebar({
         )}
         data-side={side}
         data-slot="sidebar-container"
+        inert={collapsible === "offcanvas" && state === "collapsed"}
         {...props}
       >
         <div
