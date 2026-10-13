@@ -40,13 +40,14 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { formatRelativeAge } from "@/lib/format-relative-age";
 import {
   type SearchTab,
-  searchHitsReady,
+  settledSearchQuery,
   visibleHits,
 } from "@/lib/search-hits";
 import { eventDateKey } from "@/lib/sort-events";
 import { cn } from "@/lib/utils";
 
-const searchDebounceMs = 150;
+// Search runs once typing pauses this long.
+const searchDebounceMs = 300;
 const whitespacePattern = /\s+/;
 const emptyMeta = {};
 const searchResultRowClassName =
@@ -609,16 +610,16 @@ function SearchResults() {
   if (trimmedQuery.length === 0) {
     return <SearchStatus>{searchEmptyHint(tab, memoryEnabled)}</SearchStatus>;
   }
-  if (
-    !searchHitsReady(
-      tab,
-      trimmedQuery,
-      journalQuery,
-      conversationQuery,
-      memoryQuery,
-      memoryEnabled
-    )
-  ) {
+  // The last results stay up while the next query runs. Searching… shows
+  // only when there are none for this tab yet.
+  const settled = settledSearchQuery(
+    tab,
+    journalQuery,
+    conversationQuery,
+    memoryQuery,
+    memoryEnabled
+  );
+  if (settled.length === 0) {
     return <SearchStatus>Searching…</SearchStatus>;
   }
   if (hits.length === 0) {
@@ -934,17 +935,14 @@ function useVisibleHits(): SearchHit[] {
   } = useSearchForm();
   const { memoryEnabled } = useMemoryFeature();
   return useMemo(() => {
-    const trimmedQuery = query.trim();
-    if (
-      !searchHitsReady(
-        tab,
-        trimmedQuery,
-        journalQuery,
-        conversationQuery,
-        memoryQuery,
-        memoryEnabled
-      )
-    ) {
+    const settled = settledSearchQuery(
+      tab,
+      journalQuery,
+      conversationQuery,
+      memoryQuery,
+      memoryEnabled
+    );
+    if (query.trim().length === 0 || settled.length === 0) {
       return emptyHits;
     }
     return visibleHits(tab, journalHits, conversationHits, memoryHits);

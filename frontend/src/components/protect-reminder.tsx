@@ -82,11 +82,9 @@ export function ProtectReminder({ ready }: { ready: boolean }) {
   const last = reminder === 3;
   return (
     <Dialog onOpenChange={handleOpenChange} open={open}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <span className="flex size-8 items-center justify-center rounded-lg bg-muted">
-            <LockIcon className="size-4" />
-          </span>
+          <LockIcon className="size-4" />
           <DialogTitle>
             {last
               ? "Last reminder: protect your journal"
@@ -99,6 +97,11 @@ export function ProtectReminder({ ready }: { ready: boolean }) {
           </DialogDescription>
         </DialogHeader>
         <DialogActions>
+          {reminder === null || last ? null : (
+            <p className="text-muted-foreground text-xs sm:me-auto sm:self-center">
+              {remindersLeftLine(reminder)}
+            </p>
+          )}
           {last ? (
             <Button onClick={handleStop} variant="outline">
               Don&apos;t ask again
@@ -110,11 +113,6 @@ export function ProtectReminder({ ready }: { ready: boolean }) {
           )}
           <Button onClick={handleSetUp}>Set up now</Button>
         </DialogActions>
-        {reminder === null || last ? null : (
-          <p className="text-muted-foreground text-xs">
-            {remindersLeftLine(reminder)}
-          </p>
-        )}
       </DialogContent>
     </Dialog>
   );

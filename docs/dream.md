@@ -41,11 +41,11 @@ The summary model is `qwen3.5:9b` unless `SAGE_SUMMARY_MODEL` names another one.
 
 ## When Dream cannot run
 
-- **Ollama is down**: the Dream button is off, with a tooltip that says “Start Ollama so Sage can Dream.”
+- **Ollama is down**: clicking Dream opens a dialog that says Ollama isn’t running, with a Start Ollama button. Once Ollama answers, the dialog asks you to confirm the Dream.
 - **A model is missing**: Dream stops with a message such as “The summary model is not pulled. Run: ollama pull qwen3.5:9b”.
 - **Sage is locked**: `dream.start` and `dream.status` answer “Sage is locked.”
 
-The Chat screen and Settings > Models can start Ollama for you, as [Models](models.md#when-ollama-is-not-running) explains.
+The Dream dialog, the Chat screen, and Settings > Models can start Ollama for you, as [Models](models.md#when-ollama-is-not-running) explains.
 
 ## When data is deleted
 

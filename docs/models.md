@@ -45,7 +45,7 @@ The Installed table reloads when a download finishes.
 
 ## When Ollama is not running
 
-Chat and Settings > Models show a notice with a Start Ollama button. Settings > Models also says to start Ollama before you download or delete models. The sidebar Dream button turns off, as [Dream](dream.md#when-dream-cannot-run) explains.
+Chat and Settings > Models show a notice with a Start Ollama button. Settings > Models also says to start Ollama before you download or delete models. Clicking Dream in the sidebar opens a dialog with the same button, as [Dream](dream.md#when-dream-cannot-run) explains.
 
 Start Ollama calls `ollama.start`:
 

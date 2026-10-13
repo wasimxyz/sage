@@ -19,9 +19,11 @@ import {
   onDreamProgress,
   onDreamStarted,
   startDream,
+  startOllamaServer,
   waitForNativeBridge,
 } from "@/bridge";
 import { formatDreamError, ollamaDownDreamMessage } from "@/lib/dream-errors";
+import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 
 const ollamaPollMs = 4000;
 
@@ -30,6 +32,7 @@ interface DreamState {
   done: number;
   lastDreamedAt: string | null;
   ollamaRunning: boolean;
+  ollamaStart: OllamaStartLoad;
   running: boolean;
   total: number;
 }
@@ -38,6 +41,7 @@ interface DreamActions {
   dismiss: () => void;
   prompt: () => void;
   start: () => Promise<void>;
+  startOllama: () => Promise<void>;
 }
 
 interface DreamContextValue {
@@ -80,18 +84,40 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   const [lastDreamedAt, setLastDreamedAt] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [ollamaRunning, setOllamaRunning] = useState(true);
+  const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
+    kind: "idle",
+  });
   const totalRef = useRef(0);
   totalRef.current = total;
 
+  // The dialog asks to start Ollama first when it is down. Each open drops
+  // the reason an earlier start failed.
   const prompt = useCallback(() => {
-    if (running || !ollamaRunning) {
+    if (running) {
       return;
     }
+    setOllamaStart((current) =>
+      current.kind === "failed" ? { kind: "idle" } : current
+    );
     setConfirmOpen(true);
-  }, [ollamaRunning, running]);
+  }, [running]);
 
   const dismiss = useCallback(() => {
     setConfirmOpen(false);
+  }, []);
+
+  // The core answers once Ollama replies, so the dialog moves on to the
+  // Dream confirmation when this lands.
+  const startOllama = useCallback(async () => {
+    setOllamaStart({ kind: "starting" });
+    try {
+      await startOllamaServer();
+      const status = await getOllamaStatus();
+      setOllamaRunning(status.running);
+      setOllamaStart({ kind: "idle" });
+    } catch (caught) {
+      setOllamaStart(ollamaStartFailed(caught));
+    }
   }, []);
 
   const start = useCallback(async () => {
@@ -226,12 +252,28 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   );
 
   const state = useMemo<DreamState>(
-    () => ({ confirmOpen, done, lastDreamedAt, ollamaRunning, running, total }),
-    [confirmOpen, done, lastDreamedAt, ollamaRunning, running, total]
+    () => ({
+      confirmOpen,
+      done,
+      lastDreamedAt,
+      ollamaRunning,
+      ollamaStart,
+      running,
+      total,
+    }),
+    [
+      confirmOpen,
+      done,
+      lastDreamedAt,
+      ollamaRunning,
+      ollamaStart,
+      running,
+      total,
+    ]
   );
   const actions = useMemo<DreamActions>(
-    () => ({ dismiss, prompt, start }),
-    [dismiss, prompt, start]
+    () => ({ dismiss, prompt, start, startOllama }),
+    [dismiss, prompt, start, startOllama]
   );
   const value = useMemo<DreamContextValue>(
     () => ({ actions, meta: emptyMeta, state }),

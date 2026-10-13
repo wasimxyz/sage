@@ -1,5 +1,6 @@
 import { Markdown } from "@tiptap/markdown";
-import { Tiptap, useEditor } from "@tiptap/react";
+import { Selection } from "@tiptap/pm/state";
+import { Tiptap, useEditor, useTiptap } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeftIcon,
@@ -18,6 +19,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { toast } from "sonner";
 import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
@@ -344,10 +346,57 @@ function EditorTitle() {
   );
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function EditorBody() {
+  const { editor } = useTiptap();
   const {
     state: { loading },
   } = useEntry();
+
+  // The text ends well before the pane does. A click on the empty page around
+  // it would land on the scroll area, take focus from the editor, and hide the
+  // caret. Put the caret at the nearest text instead, like a click in the text.
+  const pageRef = useCallback(
+    (page: HTMLDivElement | null) => {
+      if (page === null) {
+        return;
+      }
+      const onMouseDown = (event: MouseEvent) => {
+        const { target } = event;
+        if (
+          event.button !== 0 ||
+          !(target instanceof Node) ||
+          editor.view.dom.contains(target)
+        ) {
+          return;
+        }
+        event.preventDefault();
+        const { state, view } = editor;
+        const box = view.dom.getBoundingClientRect();
+        const found = view.posAtCoords({
+          left: clamp(event.clientX, box.left + 1, box.right - 1),
+          top: clamp(event.clientY, box.top + 1, box.bottom - 1),
+        });
+        if (found === null) {
+          editor.commands.focus("end");
+          return;
+        }
+        view.dispatch(
+          state.tr.setSelection(Selection.near(state.doc.resolve(found.pos)))
+        );
+        view.focus();
+      };
+      page.addEventListener("mousedown", onMouseDown);
+      return () => {
+        page.removeEventListener("mousedown", onMouseDown);
+      };
+    },
+    [editor]
+  );
+
   if (loading) {
     return (
       <EditorColumn className="flex flex-col gap-3 py-3">
@@ -358,10 +407,12 @@ function EditorBody() {
     );
   }
   return (
-    <EditorColumn className="py-3">
-      <Tiptap.Content />
-      <EditorBubbleMenu />
-    </EditorColumn>
+    <div className="flex-1 cursor-text" ref={pageRef}>
+      <EditorColumn className="py-3">
+        <Tiptap.Content />
+        <EditorBubbleMenu />
+      </EditorColumn>
+    </div>
   );
 }
 
@@ -387,15 +438,50 @@ export const Editor = {
   Title: EditorTitle,
 };
 
+// Cmd+S saves at once, then says Sage saves on its own. The toast id keeps
+// repeated presses to one toast.
+function useSaveShortcut() {
+  const {
+    actions: { flush },
+  } = useEntry();
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (
+        event.code !== "KeyS" ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      flush()
+        .then((saved) => {
+          if (saved) {
+            toast("Sage saves your entry automatically.", {
+              id: "entry-autosave",
+            });
+          }
+        })
+        .catch(() => undefined);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [flush]);
+}
+
 export default function EditorPane() {
   const {
     state: { expanded },
   } = useJournal();
+  useSaveShortcut();
   return (
     <Editor.Frame>
       <Editor.Header />
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn(expanded && "py-8.5")}>
+        <div className={cn("flex min-h-full flex-col", expanded && "py-8.5")}>
           <Editor.Title />
           <Editor.Body />
         </div>

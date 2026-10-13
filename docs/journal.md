@@ -16,6 +16,8 @@ Each entry is one row in `journal_entry`:
 
 The editor is TipTap with Markdown support. Sage saves one second after you stop typing, through `journal.save`, and stores the body as Markdown. Older `plain` entries open as plain text.
 
+Cmd+S saves at once and shows a message that Sage saves your entry automatically.
+
 A body over 1 MiB is refused. Long bodies travel to the core in 32 KiB chunks, as [Architecture](architecture.md#the-bridge) explains.
 
 After you stop typing for 30 seconds, Sage embeds the entry through `embeddings.generate`. When Sage loads your entries, it also embeds any entry saved since its last embedding. If Ollama is down, Sage tries that pass again every 15 seconds.
@@ -42,6 +44,8 @@ The folder picker runs in the core through `journal.exportDialog`, and `journal.
 ## Searching entries
 
 ⌘K opens the search dialog. Its Journal tab calls `journal.search`, which matches the query against titles and bodies. Results are newest first and capped at 25.
+
+Search runs once you stop typing for 300 ms. The last results stay up until the new ones arrive, so the list does not blank out while you type.
 
 With encryption on, SQL cannot match text inside ciphertext. Sage decrypts each entry in memory and matches there instead, as [Encryption at rest](security/encryption.md#searching-encrypted-entries) explains.
 

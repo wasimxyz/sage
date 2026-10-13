@@ -1,30 +1,33 @@
 export type SearchTab = "all" | "conversations" | "journal" | "memories";
 
-export function searchHitsReady(
+/**
+ * The query the stored hits for this tab answer, or "" when the sources the
+ * tab needs answer different queries. The dialog keeps these hits on screen
+ * while the next query runs, so typing does not blank the list.
+ */
+export function settledSearchQuery(
   tab: SearchTab,
-  trimmedQuery: string,
   journalQuery: string,
   conversationQuery: string,
   memoryQuery: string,
   memoryEnabled = true
-): boolean {
-  if (trimmedQuery.length === 0) {
-    return false;
-  }
+): string {
   if (tab === "journal") {
-    return journalQuery === trimmedQuery;
+    return journalQuery;
   }
   if (tab === "conversations") {
-    return conversationQuery === trimmedQuery;
+    return conversationQuery;
   }
   if (tab === "memories") {
-    return memoryEnabled && memoryQuery === trimmedQuery;
+    return memoryEnabled ? memoryQuery : "";
   }
-  return (
-    journalQuery === trimmedQuery &&
-    conversationQuery === trimmedQuery &&
-    (!memoryEnabled || memoryQuery === trimmedQuery)
-  );
+  if (journalQuery !== conversationQuery) {
+    return "";
+  }
+  if (memoryEnabled && memoryQuery !== journalQuery) {
+    return "";
+  }
+  return journalQuery;
 }
 
 export function visibleHits<J, C, M>(

@@ -28,8 +28,10 @@ function LastEdited({ at }: { at: string }) {
   }
   return (
     <>
-      {" · "}
-      <time dateTime={at}>{label}</time>
+      {" "}
+      <time className="ms-2" dateTime={at}>
+        {label}
+      </time>
     </>
   );
 }

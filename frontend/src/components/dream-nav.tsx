@@ -22,12 +22,8 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { ollamaDownDreamTooltip } from "@/lib/dream-errors";
+import { Spinner } from "@/components/ui/spinner";
+import { ollamaDownDreamPrompt } from "@/lib/dream-errors";
 import { formatDreamProgress } from "@/lib/dream-progress";
 import { formatLastDreamed } from "@/lib/format-relative-age";
 
@@ -54,13 +50,10 @@ export function DreamNav() {
 
 function DreamMenu() {
   const {
-    state: { ollamaRunning, running },
+    state: { running },
   } = useDream();
   if (running) {
     return <DreamingMenuButton />;
-  }
-  if (!ollamaRunning) {
-    return <OllamaDownDreamMenuButton />;
   }
   return <IdleDreamMenuButton />;
 }
@@ -84,33 +77,6 @@ function DreamingMenuButton() {
   );
 }
 
-function OllamaDownDreamMenuButton() {
-  return (
-    <DisabledDreamTooltip label={ollamaDownDreamTooltip}>
-      <SidebarMenuButton disabled>
-        <DreamMenuLabel>Dream</DreamMenuLabel>
-      </SidebarMenuButton>
-    </DisabledDreamTooltip>
-  );
-}
-
-function DisabledDreamTooltip({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="flex w-full" />}>
-        {children}
-      </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 function DreamMenuLabel({ children }: { children: ReactNode }) {
   return (
     <>
@@ -121,9 +87,8 @@ function DreamMenuLabel({ children }: { children: ReactNode }) {
 }
 
 export function DreamConfirmDialog() {
-  const { memoryEnabled } = useMemoryFeature();
   const {
-    actions: { dismiss, start },
+    actions: { dismiss },
     state: { confirmOpen, ollamaRunning },
   } = useDream();
   const onOpenChange = useCallback(
@@ -134,30 +99,66 @@ export function DreamConfirmDialog() {
     },
     [dismiss]
   );
+  return (
+    <Dialog onOpenChange={onOpenChange} open={confirmOpen}>
+      <DialogContent>
+        {ollamaRunning ? <ConfirmDreamContent /> : <StartOllamaContent />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmDreamContent() {
+  const { memoryEnabled } = useMemoryFeature();
+  const {
+    actions: { start },
+  } = useDream();
   const onConfirm = useCallback(() => {
     start().catch(() => undefined);
   }, [start]);
   return (
-    <Dialog onOpenChange={onOpenChange} open={confirmOpen}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Start dreaming?</DialogTitle>
-          <DialogDescription>
-            {memoryEnabled
-              ? "Sage will read new and changed journal entries and chats, then remember facts and events. Chat pauses until this finishes."
-              : "Sage will index journal entries, update their summaries, and title chats. Chat pauses until this finishes."}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogActions>
-          <DialogClose render={<Button variant="outline" />}>
-            Cancel
-          </DialogClose>
-          <Button disabled={!ollamaRunning} onClick={onConfirm}>
-            Dream
-          </Button>
-        </DialogActions>
-      </DialogContent>
-    </Dialog>
+    <>
+      <DialogHeader>
+        <DialogTitle>Start dreaming?</DialogTitle>
+        <DialogDescription>
+          {memoryEnabled
+            ? "Sage will read new and changed journal entries and chats, then remember facts and events. Chat pauses until this finishes."
+            : "Sage will index journal entries, update their summaries, and title chats. Chat pauses until this finishes."}
+        </DialogDescription>
+      </DialogHeader>
+      <DialogActions>
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+        <Button onClick={onConfirm}>Dream</Button>
+      </DialogActions>
+    </>
+  );
+}
+
+function StartOllamaContent() {
+  const {
+    actions: { startOllama },
+    state: { ollamaStart },
+  } = useDream();
+  const starting = ollamaStart.kind === "starting";
+  const description =
+    ollamaStart.kind === "failed" ? ollamaStart.message : ollamaDownDreamPrompt;
+  const onStart = useCallback(() => {
+    startOllama().catch(() => undefined);
+  }, [startOllama]);
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Ollama isn't running</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+      </DialogHeader>
+      <DialogActions>
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+        <Button disabled={starting} onClick={onStart}>
+          {starting ? <Spinner data-icon="inline-start" /> : null}
+          {starting ? "Starting…" : "Start Ollama"}
+        </Button>
+      </DialogActions>
+    </>
   );
 }
 

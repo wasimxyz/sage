@@ -51,11 +51,9 @@ import {
   prefsFromConversation,
   saveChatModelPrefs,
 } from "@/lib/chat/model-prefs";
-import { handlerErrorMessage } from "@/lib/handler-errors.ts";
+import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 
 const emptyMeta = {};
-
-const ollamaStartFailedMessage = "Could not start Ollama.";
 
 type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
@@ -66,13 +64,6 @@ type ModelsLoad =
   | { kind: "down" }
   | { kind: "empty" }
   | { kind: "ready"; names: string[] };
-
-/// The Ollama notice's Start button: `starting` keeps that notice up until a
-/// status read reports the server, and `failed` carries the reason it did not.
-export type OllamaStartLoad =
-  | { kind: "failed"; message: string }
-  | { kind: "idle" }
-  | { kind: "starting" };
 
 interface ChatState {
   agent: AgentHealth;
@@ -367,10 +358,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       await startOllamaServer();
       await refreshModels();
     } catch (caught) {
-      setOllamaStart({
-        kind: "failed",
-        message: handlerErrorMessage(caught) || ollamaStartFailedMessage,
-      });
+      setOllamaStart(ollamaStartFailed(caught));
     }
   }, [refreshModels]);
 

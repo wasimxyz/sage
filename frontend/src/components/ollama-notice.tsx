@@ -1,9 +1,9 @@
 import { PauseIcon, TriangleAlertIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
-import type { OllamaStartLoad } from "@/components/chat-provider";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import type { OllamaStartLoad } from "@/lib/ollama-start";
 import { cn } from "@/lib/utils";
 
 const ollamaStartButtonClass = "min-w-28";
