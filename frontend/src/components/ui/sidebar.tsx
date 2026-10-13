@@ -2,7 +2,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
-import { useReducedMotion, useSpring } from "motion/react";
+import { useSpring } from "motion/react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { unitSpring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +67,7 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -74,6 +76,18 @@ function SidebarProvider({
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value;
+      // A closed sidebar is inert, which would drop focus to the page. Hand
+      // focus to the toggle first.
+      if (!openState) {
+        const sidebar = wrapperRef.current?.querySelector(
+          '[data-slot="sidebar-container"]'
+        );
+        if (sidebar?.contains(document.activeElement)) {
+          document
+            .querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')
+            ?.focus();
+        }
+      }
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
@@ -118,9 +132,8 @@ function SidebarProvider({
   // the wrapper. The gap and the slide are CSS expressions of that variable,
   // so a frame costs no React render, and pressing the shortcut again
   // mid-slide turns the spring around at its current speed.
-  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
   const progress = useSpring(open ? 1 : 0, unitSpring);
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = usePrefersReducedMotion();
   React.useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) {

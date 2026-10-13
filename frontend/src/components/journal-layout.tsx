@@ -1,5 +1,11 @@
 import { BookOpenIcon, ImportIcon, PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { usePanelRef } from "react-resizable-panels";
 
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
@@ -48,6 +54,22 @@ export function JournalLayout() {
 }
 
 const defaultDetailPercent = 60;
+// The detail never remembers a size outside this range. Dragging the divider
+// to an edge would otherwise reopen the next entry with the list hidden.
+const minRememberedPercent = 20;
+const maxRememberedPercent = 80;
+// The keys that move the divider. Tab passing over it must not stop a move.
+const dividerKeys = new Set([
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "End",
+  "Enter",
+  "Home",
+]);
+
+type LayoutStep = "closed" | "focus" | "open";
 
 function JournalWorkspace() {
   const {
@@ -57,39 +79,45 @@ function JournalWorkspace() {
   const isMobile = useIsMobile();
   const entriesPanelRef = usePanelRef();
   // The group stays mounted whether or not an entry is open, so the list
-  // keeps its scroll position. Opening, closing, and focus mode all move one
-  // number: how much of the group the list takes. The list is the one to drive
+  // keeps its place. Opening, closing, and focus mode all move one number:
+  // how much of the group the list takes. The list is the one to drive
   // because the panel library will not shrink the last panel while every panel
   // before it is collapsed, which is where focus mode leaves the list.
-  const [startedOpen] = useState(detailOpen);
+  const step: LayoutStep = layoutStep(detailOpen, expanded);
+  const [startedAt] = useState<LayoutStep>(step);
+  const [settledStep, setSettledStep] = useState<LayoutStep>(step);
   const detailPercentRef = useRef(defaultDetailPercent);
   const expandedRef = useRef(expanded);
   const detailOpenRef = useRef(detailOpen);
   // The detail stays on screen while it shrinks away.
   const [detailMounted, setDetailMounted] = useState(detailOpen);
+  if (detailOpen && !detailMounted) {
+    setDetailMounted(true);
+  }
 
   useEffect(() => {
     expandedRef.current = expanded;
     detailOpenRef.current = detailOpen;
-    if (detailOpen) {
-      setDetailMounted(true);
-    }
   }, [detailOpen, expanded]);
 
-  const handleSettled = useCallback(() => {
-    if (!detailOpenRef.current) {
+  const handleSettled = useCallback((reached: string) => {
+    setSettledStep(reached as LayoutStep);
+    if (reached === "closed") {
       setDetailMounted(false);
     }
   }, []);
 
-  let entriesTarget = 100;
-  if (detailOpen) {
-    // Read at render so the detail opens to where the owner last left it.
-    entriesTarget = expanded ? 0 : 100 - detailPercentRef.current;
-  }
   const { moving, movingRef, stop } = usePanelSpring(
     entriesPanelRef,
-    entriesTarget,
+    step,
+    () => {
+      if (step === "closed") {
+        return 100;
+      }
+      // Read when the move starts, so the detail opens to where the owner
+      // last left it.
+      return step === "focus" ? 0 : 100 - detailPercentRef.current;
+    },
     handleSettled
   );
 
@@ -98,7 +126,8 @@ function JournalWorkspace() {
   const rememberDetailSize = useCallback(
     (size: { asPercentage: number; inPixels: number }) => {
       if (
-        size.asPercentage > 0 &&
+        size.asPercentage >= minRememberedPercent &&
+        size.asPercentage <= maxRememberedPercent &&
         !expandedRef.current &&
         !movingRef.current &&
         detailOpenRef.current
@@ -107,6 +136,24 @@ function JournalWorkspace() {
       }
     },
     [movingRef]
+  );
+
+  // Double-clicking the divider puts the split back to its usual size. The
+  // library's own reset goes to the first panel's default, which is the whole
+  // group when the Journal opened with no entry.
+  const resetSplit = useCallback(() => {
+    if (step === "open" && !moving) {
+      entriesPanelRef.current?.resize(`${100 - defaultDetailPercent}%`);
+    }
+  }, [entriesPanelRef, moving, step]);
+
+  const handleDividerKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (dividerKeys.has(event.key)) {
+        stop();
+      }
+    },
+    [stop]
   );
 
   useEffect(() => {
@@ -128,7 +175,12 @@ function JournalWorkspace() {
 
   // Panels with a minimum snap to it, or to collapsed, on any size below it.
   // A move passes through those sizes, so the minimum is off while it runs.
-  const minSize = moving ? "0%" : "20%";
+  // The detail is not collapsible, so an open one cannot be dragged away and
+  // the divider keeps working from the keyboard. It has a minimum only once
+  // it has settled open, and none while closed.
+  const entriesMinSize = moving ? "0%" : "20%";
+  const detailMinSize =
+    !moving && step === "open" && settledStep === "open" ? "20%" : "0%";
 
   return (
     <ResizablePanelGroup
@@ -138,9 +190,9 @@ function JournalWorkspace() {
       <ResizablePanel
         collapsedSize="0%"
         collapsible
-        defaultSize={startedOpen ? "40%" : "100%"}
+        defaultSize={startedAt === "open" ? "40%" : "100%"}
         id="journal-entries"
-        minSize={minSize}
+        minSize={entriesMinSize}
         panelRef={entriesPanelRef}
       >
         <div aria-hidden={expanded} className="h-full min-h-0" inert={expanded}>
@@ -149,22 +201,29 @@ function JournalWorkspace() {
       </ResizablePanel>
       <ResizableHandle
         className={cn((expanded || !detailOpen) && "hidden")}
-        onKeyDown={stop}
+        disableDoubleClick
+        onDoubleClick={resetSplit}
+        onKeyDown={handleDividerKeyDown}
         onPointerDown={stop}
       />
       <ResizablePanel
         className="overflow-hidden"
-        collapsedSize="0%"
-        collapsible
-        defaultSize={startedOpen ? "60%" : "0%"}
+        defaultSize={startedAt === "open" ? "60%" : "0%"}
         id="journal-detail"
-        minSize={minSize}
+        minSize={detailMinSize}
         onResize={rememberDetailSize}
       >
         {detailOpen || detailMounted ? <JournalDetail /> : null}
       </ResizablePanel>
     </ResizablePanelGroup>
   );
+}
+
+function layoutStep(detailOpen: boolean, expanded: boolean): LayoutStep {
+  if (!detailOpen) {
+    return "closed";
+  }
+  return expanded ? "focus" : "open";
 }
 
 function JournalDetail() {

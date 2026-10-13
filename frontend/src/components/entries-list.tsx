@@ -67,35 +67,38 @@ export function EntriesList({
     );
   }
 
-  if (entries.length === 0) {
-    return (
-      <Empty className="min-h-64">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <BookOpenIcon />
-          </EmptyMedia>
-          <EmptyTitle>No journal entries</EmptyTitle>
-          <EmptyDescription>Write a new entry to get started.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-
+  // The list stays mounted when the last row goes, so that row can finish
+  // leaving. The empty state shows beside it.
   return (
-    <ul aria-label="Journal entries" className="flex flex-col">
-      <AnimatePresence initial={false}>
-        {entries.map((entry) => (
-          <EntryRow
-            animateIn={appearing.has(entry.id)}
-            entry={entry}
-            key={entry.id}
-            onDelete={onDelete}
-            onSelect={onSelect}
-            selected={entry.id === selectedId}
-          />
-        ))}
-      </AnimatePresence>
-    </ul>
+    <>
+      <ul aria-label="Journal entries" className="flex flex-col">
+        <AnimatePresence initial={false}>
+          {entries.map((entry) => (
+            <EntryRow
+              animateIn={appearing.has(entry.id)}
+              entry={entry}
+              key={entry.id}
+              onDelete={onDelete}
+              onSelect={onSelect}
+              selected={entry.id === selectedId}
+            />
+          ))}
+        </AnimatePresence>
+      </ul>
+      {entries.length === 0 ? (
+        <Empty className="min-h-64">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <BookOpenIcon />
+            </EmptyMedia>
+            <EmptyTitle>No journal entries</EmptyTitle>
+            <EmptyDescription>
+              Write a new entry to get started.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+    </>
   );
 }
 
