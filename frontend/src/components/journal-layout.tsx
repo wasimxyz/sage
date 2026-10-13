@@ -43,10 +43,6 @@ import { cn } from "@/lib/utils";
 const collapsedLeadingClass =
   "pl-[calc((var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
-export function JournalLayout() {
-  return <JournalWorkspace />;
-}
-
 const defaultDetailPercent = 60;
 // The detail never remembers a size outside this range. Dragging the divider
 // to an edge would otherwise reopen the next entry with the list hidden.
@@ -65,7 +61,7 @@ const dividerKeys = new Set([
 
 type LayoutStep = "closed" | "focus" | "open";
 
-function JournalWorkspace() {
+export function JournalLayout() {
   const {
     actions: { setDetailOpen },
     state: { detailOpen, expanded },

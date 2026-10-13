@@ -6,8 +6,12 @@ import { rawHandlerError } from "./handler-errors.ts";
  */
 export type DeleteFailure = "locked" | "missing" | "other";
 
-const lockedPattern = /Locked|Securing|is locked|is securing/i;
-const missingPattern = /NotFound|not found/i;
+// The error names the native side reports, and the sentences it sends. The
+// names are matched whole and in their own case, so SQLite's "database is
+// locked" and the word "unlocked" do not count as the app lock.
+const lockedPattern =
+  /\b(?:Locked|Securing)\b|Sage is (?:locked|securing)|journal is locked/;
+const missingPattern = /\bNotFound\b|(?:Entry|Chat) not found/;
 
 export function deleteFailure(error: unknown): DeleteFailure {
   const message = rawHandlerError(error);

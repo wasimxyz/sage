@@ -1,5 +1,5 @@
 import { BookOpenIcon, Trash2Icon } from "lucide-react";
-import { AnimatePresence, m } from "motion/react";
+import { AnimatePresence, m, useIsPresent } from "motion/react";
 import { type KeyboardEvent, memo, useCallback, useMemo } from "react";
 import type { JournalEntryMeta } from "@/bridge";
 import {
@@ -117,6 +117,8 @@ function EntryRowView({
   onDelete: (id: number) => void;
   onSelect: (id: number) => void;
 }) {
+  // A row that is leaving cannot take focus, and neighbors skip it.
+  const isPresent = useIsPresent();
   const handleClick = useCallback(() => {
     onSelect(entry.id);
   }, [entry.id, onSelect]);
@@ -141,6 +143,7 @@ function EntryRowView({
     <m.li
       animate={rowOpen}
       exit={rowClosed}
+      inert={!isPresent}
       initial={animateIn ? rowClosed : false}
       transition={spring}
     >
@@ -151,6 +154,7 @@ function EntryRowView({
             render={
               <button
                 aria-current={selected ? "true" : undefined}
+                aria-keyshortcuts="Meta+Backspace"
                 className={cn(
                   rowClassName,
                   selected && "bg-foreground/10 hover:bg-foreground/10"

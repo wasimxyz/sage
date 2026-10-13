@@ -1,5 +1,5 @@
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { AnimatePresence, m } from "motion/react";
+import { AnimatePresence, m, useIsPresent } from "motion/react";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -73,8 +73,6 @@ function initialRow(animateIn: boolean) {
 const conversationItemClass =
   "justify-between [&>span:last-child]:overflow-visible [content-visibility:auto] [contain-intrinsic-size:auto_1.75rem]";
 
-type ConversationDialog = { kind: "rename"; row: ChatConversationMeta } | null;
-
 export function ConversationsMenu() {
   const {
     actions: { refreshList },
@@ -82,7 +80,7 @@ export function ConversationsMenu() {
   } = useChat();
   const now = useRelativeNow();
   const activeId = selection.kind === "saved" ? selection.id : null;
-  const [dialog, setDialog] = useState<ConversationDialog>(null);
+  const [renaming, setRenaming] = useState<ChatConversationMeta | null>(null);
   const ids = useMemo(
     () => conversations.map((row) => row.id),
     [conversations]
@@ -95,7 +93,7 @@ export function ConversationsMenu() {
 
   const handleDialogOpenChange = useCallback((open: boolean) => {
     if (!open) {
-      setDialog(null);
+      setRenaming(null);
     }
   }, []);
 
@@ -128,19 +126,19 @@ export function ConversationsMenu() {
                   animateIn={appearing.has(row.id)}
                   key={row.id}
                   now={now}
+                  onRename={setRenaming}
                   row={row}
-                  setDialog={setDialog}
                 />
               ))}
             </AnimatePresence>
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>
-      {dialog?.kind === "rename" ? (
+      {renaming ? (
         <RenameConversationDialog
-          key={dialog.row.id}
+          key={renaming.id}
           onOpenChange={handleDialogOpenChange}
-          row={dialog.row}
+          row={renaming}
         />
       ) : null}
     </>
@@ -178,23 +176,25 @@ function ConversationItem({
   animateIn,
   now,
   row,
-  setDialog,
+  onRename: onRenameRow,
 }: {
   active: boolean;
   animateIn: boolean;
   now: number;
   row: ChatConversationMeta;
-  setDialog: (dialog: ConversationDialog) => void;
+  onRename: (row: ChatConversationMeta) => void;
 }) {
   const {
     actions: { deleteConversation, openConversation },
   } = useChat();
+  // A row that is leaving cannot take focus, and neighbors skip it.
+  const isPresent = useIsPresent();
   const onClick = useCallback(() => {
     openConversation(row.id);
   }, [openConversation, row.id]);
   const onRename = useCallback(() => {
-    setDialog({ kind: "rename", row });
-  }, [row, setDialog]);
+    onRenameRow(row);
+  }, [onRenameRow, row]);
   const onDelete = useCallback(() => {
     deleteConversation(row.id);
   }, [deleteConversation, row.id]);
@@ -221,6 +221,7 @@ function ConversationItem({
       data-sidebar="menu-item"
       data-slot="sidebar-menu-item"
       exit={rowClosed}
+      inert={!isPresent}
       initial={initialRow(animateIn)}
       transition={spring}
     >
@@ -232,6 +233,7 @@ function ConversationItem({
                 <TooltipTrigger
                   render={
                     <SidebarMenuButton
+                      aria-keyshortcuts="Meta+Backspace"
                       className={conversationItemClass}
                       isActive={active}
                       onClick={onClick}

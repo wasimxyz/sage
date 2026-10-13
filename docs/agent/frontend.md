@@ -16,7 +16,7 @@ These paths are under `frontend/src/components/`:
 Right-click a saved chat for Rename and Delete. With a chat focused, Return renames it and ⌘⌫ deletes it:
 
 - **Rename** opens a dialog and calls `chat.rename`. The row stays where it is, and later Dream runs keep that title.
-- **Delete** hides the chat and shows a toast with Undo for 5 seconds. When the toast closes, Sage calls `chat.delete`. That removes the SQLite rows, the memories Dream took from the chat, and the chat’s eve session files.
+- **Delete** hides the chat and shows a toast with its title and Undo for 5 seconds. When the toast closes, Sage calls `chat.delete`. If Sage locks or quits first, it saves the delete and runs it after the next unlock. That removes the SQLite rows, the memories Dream took from the chat, and the chat’s eve session files.
 
 Deleting the open chat returns the pane to New chat at once. Undo brings the chat back and reopens it.
 

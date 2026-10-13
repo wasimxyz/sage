@@ -20,6 +20,9 @@ test("a missing row counts as already deleted", () => {
 
 test("anything else is a real failure", () => {
   assert.equal(deleteFailure(new Error("disk is full")), "other");
+  assert.equal(deleteFailure(new Error("database is locked")), "other");
+  assert.equal(deleteFailure(new Error("The journal is unlocked.")), "other");
+  assert.equal(deleteFailure(new Error("SqliteLocked")), "other");
   assert.equal(deleteFailure(undefined), "other");
   assert.equal(deleteFailure({}), "other");
 });

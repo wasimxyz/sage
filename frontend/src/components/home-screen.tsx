@@ -95,10 +95,22 @@ export function HomeScreen() {
     [refresh]
   );
 
-  // A delete that finishes can change which entry is latest.
+  // A delete that finishes drops its row from the feed at once, so it does not
+  // show again while the feed reloads. The reload can change which entry is
+  // latest.
   useEffect(
     () =>
-      onCommitted(() => {
+      onCommitted((kind, id) => {
+        const gone = kind === "entry" ? "entry" : "conversation";
+        setFeed((current) => ({
+          items: current.items.filter(
+            (item) => !(item.kind === gone && item.id === id)
+          ),
+          latest:
+            kind === "entry" && current.latest?.id === id
+              ? null
+              : current.latest,
+        }));
         refresh().catch(() => undefined);
       }),
     [refresh]

@@ -101,6 +101,9 @@ function AppToaster() {
         onChat ? { top: "calc(var(--titlebar-height) + 1rem)" } : undefined
       }
       position={onChat ? "top-right" : "bottom-right"}
+      // Sonner shows three toasts by default. A toast it hides keeps counting
+      // down, so an older delete could run with no way to undo it.
+      visibleToasts={8}
     />
   );
 }

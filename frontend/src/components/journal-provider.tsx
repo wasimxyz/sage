@@ -37,19 +37,40 @@ import {
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import { deleteFailure } from "@/lib/delete-errors";
+import { handlerErrorMessage } from "@/lib/handler-errors";
 import type { ParsedImport } from "@/lib/parse-markdown";
 import {
   type CommitResult,
   commitAll,
+  discardAll,
   isHidden,
   onCommitted,
+  restore,
 } from "@/lib/pending-deletes";
-import { deleteWithUndo } from "@/lib/undoable-delete";
+import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 
 const autosaveMs = 1000;
 const embedDelayMs = 30_000;
 const staleEmbeddingRetryMs = 15_000;
 const emptyMeta = {};
+
+/** The real delete for one entry. The pending-delete store also runs it after a relaunch. */
+async function commitEntryDelete(id: number): Promise<CommitResult> {
+  try {
+    await deleteEntry(id);
+    return "done";
+  } catch (error) {
+    const failure = deleteFailure(error);
+    if (failure === "locked") {
+      return "retry";
+    }
+    if (failure === "missing") {
+      return "done";
+    }
+    toast.error(handlerErrorMessage(error) || "Could not delete this entry.");
+    return "failed";
+  }
+}
 
 function isDataWipePaused(ref: { current: boolean }): boolean {
   return ref.current;
@@ -562,7 +583,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // A delete that was waiting when the app locked runs before the list loads.
+    // A delete that was waiting when the app locked or quit runs before the
+    // list loads.
+    restore("entry", commitEntryDelete);
     commitAll("entry")
       .then(() => loadEntries())
       .then(() => embedStaleEntries())
@@ -592,6 +615,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshAfterDataWipe = useCallback(async () => {
+    // Ids can start over after a wipe, so a delete left waiting could hit a
+    // new row. Forget any that remain.
+    discardAll();
     await loadEntries();
     if (selectionRef.current?.kind !== "id") {
       return;
@@ -674,8 +700,11 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const select = useCallback(
     async (id: number) => {
-      // A row that is waiting out its undo window cannot be opened.
+      // A row that is waiting out its undo window cannot be opened. Go to
+      // the Journal instead, so a link to it does not leave the screen behind.
       if (isHidden("entry", id)) {
+        setSection("journal");
+        setSidebarMenu("nav");
         return;
       }
       const { current } = selectionRef;
@@ -718,58 +747,59 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       const selected = selectionRef.current;
       const wasOpen =
         idRef.current === id || (selected?.kind === "id" && selected.id === id);
+      const rowTitle = wasOpen
+        ? titleRef.current
+        : (entriesRef.current.find((entry) => entry.id === id)?.title ?? "");
       if (wasOpen) {
         closeOpenEntry();
       }
-      pendingEmbedIdsRef.current.delete(id);
+      // Undo puts a queued embedding back, so the entry is not left stale.
+      const hadEmbedQueued = pendingEmbedIdsRef.current.delete(id);
       deleteWithUndo({
-        commit: async (): Promise<CommitResult> => {
-          try {
-            await deleteEntry(id);
-            return "done";
-          } catch (error) {
-            const failure = deleteFailure(error);
-            if (failure === "locked") {
-              return "retry";
-            }
-            if (failure === "missing") {
-              return "done";
-            }
-            toast.error(
-              error instanceof Error
-                ? error.message
-                : "Could not delete this entry."
-            );
-            return "failed";
-          }
-        },
+        commit: () => commitEntryDelete(id),
         id,
         kind: "entry",
-        message: "Entry deleted.",
+        message: `“${toastTitle(rowTitle, "Untitled")}” deleted.`,
         onUndo: () => {
+          if (hadEmbedQueued) {
+            enqueueEmbed(id, false);
+          }
           if (wasOpen) {
             select(id).catch(() => undefined);
           }
         },
       });
     },
-    [closeOpenEntry, select]
+    [closeOpenEntry, enqueueEmbed, select]
   );
 
-  // From the list. An open entry saves first, so Undo brings back its latest text.
+  // From the list. An open entry saves first, so Undo brings back its latest
+  // text. If that save fails, nothing is deleted.
   const deleteEntryById = useCallback(
     (id: number) => {
       const ready = idRef.current === id ? flush() : Promise.resolve(true);
-      ready.then(() => startDelete(id)).catch(() => undefined);
+      ready
+        .then((saved) => {
+          if (saved) {
+            startDelete(id);
+          } else {
+            toast.error("This entry did not save, so it was not deleted.");
+          }
+        })
+        .catch(() => undefined);
     },
     [flush, startDelete]
   );
 
   // From the editor menu. A draft that never saved has nothing to undo, so it
-  // just closes.
+  // just closes. If saving what you typed fails, nothing is deleted.
   const deleteOpenEntry = useCallback(() => {
     flush()
-      .then(() => {
+      .then((saved) => {
+        if (!saved) {
+          toast.error("This entry did not save, so it was not deleted.");
+          return;
+        }
         const id = idRef.current;
         if (id === null) {
           closeOpenEntry();

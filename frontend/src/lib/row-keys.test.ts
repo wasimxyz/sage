@@ -8,6 +8,7 @@ const plain = {
   ctrlKey: false,
   key: "a",
   metaKey: false,
+  repeat: false,
   shiftKey: false,
 };
 
@@ -30,6 +31,14 @@ test("backspace alone, or with another modifier, does not delete", () => {
     false
   );
   assert.equal(isDeleteKey({ ...plain, key: "x", metaKey: true }), false);
+});
+
+test("a held key does not repeat a delete or a rename", () => {
+  assert.equal(
+    isDeleteKey({ ...plain, key: "Backspace", metaKey: true, repeat: true }),
+    false
+  );
+  assert.equal(isReturnKey({ ...plain, key: "Enter", repeat: true }), false);
 });
 
 test("return renames only on its own", () => {

@@ -54,14 +54,16 @@ import {
 } from "@/lib/chat/model-prefs";
 import { type ModelsLoad, sameModelsLoad } from "@/lib/chat/models-load";
 import { deleteFailure } from "@/lib/delete-errors";
+import { handlerErrorMessage } from "@/lib/handler-errors";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 import {
   type CommitResult,
   commitAll,
   isHidden,
   onCommitted,
+  restore,
 } from "@/lib/pending-deletes";
-import { deleteWithUndo } from "@/lib/undoable-delete";
+import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 
 const emptyMeta = {};
 
@@ -109,6 +111,24 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+
+/** The real delete for one chat. The pending-delete store also runs it after a relaunch. */
+async function commitChatDelete(id: number): Promise<CommitResult> {
+  try {
+    await chatDelete(id);
+    return "done";
+  } catch (caught) {
+    const failure = deleteFailure(caught);
+    if (failure === "locked") {
+      return "retry";
+    }
+    if (failure === "missing") {
+      return "done";
+    }
+    toast.error(handlerErrorMessage(caught) || "Could not delete this chat.");
+    return "failed";
+  }
+}
 
 async function packagedStartupState(): Promise<{
   downMessage: string;
@@ -233,7 +253,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // A delete that was waiting when the app locked runs before the list loads.
+    // A delete that was waiting when the app locked or quit runs before the
+    // list loads.
+    restore("chat", commitChatDelete);
     commitAll("chat")
       .then(() => refreshList())
       .catch(() => undefined);
@@ -470,33 +492,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const deleteConversation = useCallback(
     (id: number) => {
       const wasOpen = selection.kind === "saved" && selection.id === id;
+      const title = allConversations.find((row) => row.id === id)?.title ?? "";
       if (wasOpen) {
         newChat();
       }
       deleteWithUndo({
-        commit: async (): Promise<CommitResult> => {
-          try {
-            await chatDelete(id);
-            return "done";
-          } catch (caught) {
-            const failure = deleteFailure(caught);
-            if (failure === "locked") {
-              return "retry";
-            }
-            if (failure === "missing") {
-              return "done";
-            }
-            toast.error(
-              caught instanceof Error
-                ? caught.message
-                : "Could not delete this chat."
-            );
-            return "failed";
-          }
-        },
+        commit: () => commitChatDelete(id),
         id,
         kind: "chat",
-        message: "Chat deleted.",
+        message: `“${toastTitle(title, "Untitled chat")}” deleted.`,
         onUndo: () => {
           if (wasOpen) {
             openConversation(id);
@@ -504,7 +508,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [newChat, openConversation, selection]
+    [allConversations, newChat, openConversation, selection]
   );
 
   const recordCreated = useCallback(

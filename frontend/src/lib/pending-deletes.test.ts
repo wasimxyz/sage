@@ -10,12 +10,46 @@ import {
   hide,
   isHidden,
   onCommitted,
+  restore,
   subscribe,
   undo,
 } from "./pending-deletes.ts";
 
+const storageKey = "sage-pending-deletes:v1";
+
+// Node has no localStorage. This stands in for it, and a test can read it.
+const fakeStorage = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => fakeStorage.get(key) ?? null,
+    removeItem: (key: string) => {
+      fakeStorage.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      fakeStorage.set(key, value);
+    },
+  },
+});
+
+// Pretend the last launch left these deletes waiting. Forgetting what earlier
+// tests did makes the module read the store afresh.
+function seedStorage(items: unknown) {
+  discardAll();
+  fakeStorage.set(
+    storageKey,
+    typeof items === "string" ? items : JSON.stringify(items)
+  );
+}
+
+function stored(): unknown {
+  const raw = fakeStorage.get(storageKey);
+  return raw === undefined ? null : JSON.parse(raw);
+}
+
 afterEach(() => {
   discardAll();
+  fakeStorage.clear();
 });
 
 function runner(...results: CommitResult[]) {
@@ -150,4 +184,67 @@ test("subscribers are told on every change and can stop listening", () => {
   stop();
   hide("entry", 2, runner("done").run);
   assert.equal(told, 2);
+});
+
+test("waiting deletes are saved, and undo or a finished delete clears them", async () => {
+  const keep = hide("entry", 1, runner("done").run);
+  hide("chat", 2, runner("done").run);
+  assert.deepEqual(stored(), [
+    { id: 1, kind: "entry" },
+    { id: 2, kind: "chat" },
+  ]);
+  undo(keep);
+  assert.deepEqual(stored(), [{ id: 2, kind: "chat" }]);
+  await commitAll();
+  assert.equal(stored(), null);
+});
+
+test("a delete that must retry stays saved", async () => {
+  hide("entry", 7, runner("retry").run);
+  await commitAll();
+  assert.deepEqual(stored(), [{ id: 7, kind: "entry" }]);
+});
+
+test("restore hides rows saved by an earlier launch and runs their delete", async () => {
+  seedStorage([{ id: 5, kind: "entry" }]);
+  const ran: number[] = [];
+  restore("entry", (id) => {
+    ran.push(id);
+    return Promise.resolve("done");
+  });
+  assert.equal(isHidden("entry", 5), true);
+  await commitAll("entry");
+  assert.deepEqual(ran, [5]);
+  assert.equal(isHidden("entry", 5), false);
+  assert.equal(stored(), null);
+});
+
+test("restoring one kind keeps the other kind's saved deletes", () => {
+  seedStorage([
+    { id: 5, kind: "entry" },
+    { id: 8, kind: "chat" },
+  ]);
+  restore("entry", () => Promise.resolve("done"));
+  assert.deepEqual(stored(), [
+    { id: 5, kind: "entry" },
+    { id: 8, kind: "chat" },
+  ]);
+  restore("chat", () => Promise.resolve("done"));
+  assert.equal(isHidden("chat", 8), true);
+});
+
+test("restore ignores a row that is already waiting and unreadable storage", () => {
+  const key = hide("entry", 5, runner("done").run);
+  restore("entry", () => Promise.resolve("done"));
+  assert.equal(undo(key), true);
+  assert.equal(isHidden("entry", 5), false);
+  seedStorage("not json");
+  restore("entry", () => Promise.resolve("done"));
+  assert.equal(isHidden("entry", 5), false);
+});
+
+test("discardAll also forgets saved deletes", () => {
+  hide("entry", 1, runner("done").run);
+  discardAll();
+  assert.equal(stored(), null);
 });

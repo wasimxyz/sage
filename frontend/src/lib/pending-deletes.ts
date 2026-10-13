@@ -2,6 +2,9 @@
 // once, and the real delete runs when the window to undo closes. This module
 // holds the hidden rows. It knows nothing about the bridge or toasts, and it
 // lives outside React, so it survives the app locking and unmounting.
+//
+// Waiting deletes are also kept in local storage. If Sage quits while it is
+// locked, the delete cannot run, so the next launch runs it after the unlock.
 
 export type DeleteKind = "chat" | "entry";
 
@@ -20,6 +23,12 @@ interface Pending {
   running: boolean;
 }
 
+interface Stored {
+  id: number;
+  kind: DeleteKind;
+}
+
+const storageKey = "sage-pending-deletes:v1";
 const none: ReadonlySet<number> = new Set();
 const pending = new Map<string, Pending>();
 const listeners = new Set<() => void>();
@@ -30,6 +39,64 @@ let snapshots: Record<DeleteKind, ReadonlySet<number>> = {
 };
 let counter = 0;
 let watchingPageHide = false;
+// Deletes found in storage that no provider has taken back yet. Writing the
+// current ones must not drop these.
+let carried: Stored[] | null = null;
+
+function storage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isStored(value: unknown): value is Stored {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const { id, kind } = value as { id?: unknown; kind?: unknown };
+  return (
+    (kind === "chat" || kind === "entry") &&
+    typeof id === "number" &&
+    Number.isInteger(id)
+  );
+}
+
+function readStored(): Stored[] {
+  try {
+    const raw = storage()?.getItem(storageKey);
+    if (!raw) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(isStored) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadCarried(): Stored[] {
+  carried ??= readStored();
+  return carried;
+}
+
+function writeStored() {
+  const items: Stored[] = [
+    ...[...pending.values()].map(({ id, kind }) => ({ id, kind })),
+    ...loadCarried(),
+  ];
+  try {
+    const store = storage();
+    if (items.length === 0) {
+      store?.removeItem(storageKey);
+    } else {
+      store?.setItem(storageKey, JSON.stringify(items));
+    }
+  } catch {
+    // A full or blocked store only means a delete will not survive a quit.
+  }
+}
 
 function sameSet(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
   return a.size === b.size && [...a].every((id) => b.has(id));
@@ -49,6 +116,7 @@ function emit() {
     chat: sameSet(snapshots.chat, next.chat) ? snapshots.chat : next.chat,
     entry: sameSet(snapshots.entry, next.entry) ? snapshots.entry : next.entry,
   };
+  writeStored();
   for (const listener of listeners) {
     listener();
   }
@@ -122,9 +190,34 @@ export async function commitAll(kind?: DeleteKind): Promise<void> {
   await Promise.all(keys.map((key) => commit(key)));
 }
 
-/** Forget every waiting delete without running it, for a data wipe. */
+/**
+ * Forget every waiting delete without running it, including those saved from
+ * an earlier launch. After a data wipe their ids could belong to new rows.
+ */
 export function discardAll(): void {
   pending.clear();
+  carried = [];
+  emit();
+  carried = null;
+}
+
+/**
+ * Take back the deletes of one kind that were waiting when Sage last ran, and
+ * hide those rows again. The caller supplies the real delete, because that
+ * lives in a provider. Run `commitAll` for the kind afterward.
+ */
+export function restore(
+  kind: DeleteKind,
+  run: (id: number) => Promise<CommitResult>
+): void {
+  const stored = loadCarried();
+  const mine = stored.filter((item) => item.kind === kind);
+  carried = stored.filter((item) => item.kind !== kind);
+  for (const { id } of mine) {
+    if (!isHidden(kind, id)) {
+      hide(kind, id, () => run(id));
+    }
+  }
   emit();
 }
 
