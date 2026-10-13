@@ -45,7 +45,7 @@ import { cn } from "@/lib/utils";
 const emptyFeed: HomeFeed = { items: [], latest: null };
 
 const feedRowClassName =
-  "flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring/50";
+  "flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
 
 async function loadHomeFeed(): Promise<HomeFeed> {
   const ready = (await waitForNativeBridge()) && hasNativeBridge();
@@ -102,9 +102,9 @@ export function HomeScreen() {
             "flex h-8 items-center justify-between gap-2"
           )}
         >
-          <h2 className="ml-3 min-w-0 truncate font-medium text-base">
+          <h1 className="ml-3 min-w-0 truncate font-medium text-base">
             {formatHomeHeadingDate()}
-          </h2>
+          </h1>
           <Button onClick={startDraft} size="sm">
             <PlusIcon data-icon="inline-start" />
             New entry
@@ -265,9 +265,9 @@ function HomeFeedSection({
 }) {
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+      <h2 className="px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide">
         {title}
-      </h3>
+      </h2>
       <ul className="flex flex-col gap-0.5">{children}</ul>
     </section>
   );

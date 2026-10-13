@@ -583,6 +583,7 @@ function ChatTurnSession({
   return (
     <ChatPane>
       <ChatTranscriptShell
+        busy={busy}
         contentClassName={hasMessages ? "py-6" : "h-full"}
         initial={focusSeq === undefined ? "instant" : false}
         resize={focusSeq === undefined ? "smooth" : false}
@@ -726,11 +727,14 @@ function SearchMessageFocus({
 }
 
 function ChatTranscriptShell({
+  busy = false,
   children,
   contentClassName,
   initial = "instant",
   resize = "smooth",
 }: {
+  /** True while a reply streams, so a screen reader reads it once when done. */
+  busy?: boolean;
   children: ReactNode;
   contentClassName?: string;
   initial?: ComponentProps<typeof Conversation>["initial"];
@@ -738,6 +742,7 @@ function ChatTranscriptShell({
 }) {
   return (
     <Conversation
+      aria-busy={busy}
       className={cn(
         "min-h-0 w-full",
         TRANSCRIPT_GUTTER_CLASS,
@@ -763,6 +768,7 @@ function ChatComposerBar({ children }: { children: ReactNode }) {
         TRANSCRIPT_GUTTER_CLASS,
         "shrink-0 bg-background/80 pt-3 pb-5 backdrop-blur"
       )}
+      data-slot="chat-composer-bar"
     >
       <div className={cn(TRANSCRIPT_COLUMN_CLASS, "flex flex-col gap-2")}>
         <ChatErrorAlert />
@@ -810,6 +816,7 @@ function ChatPromptForm({
     <PromptInput className="w-full" onSubmit={onSubmit}>
       <PromptInputBody>
         <PromptInputTextarea
+          aria-label="Message"
           className="shrink-0"
           disabled={locked}
           onChange={onPromptChange}

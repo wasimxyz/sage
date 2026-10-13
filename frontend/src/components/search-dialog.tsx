@@ -51,7 +51,7 @@ const searchDebounceMs = 300;
 const whitespacePattern = /\s+/;
 const emptyMeta = {};
 const searchResultRowClassName =
-  "flex w-full cursor-pointer flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring/50";
+  "flex w-full cursor-pointer flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
 const searchResultActiveClassName = "bg-foreground/10 hover:bg-foreground/10";
 const emptyHits: SearchHit[] = [];
 const emptyJournalHits: JournalSearchResult[] = [];

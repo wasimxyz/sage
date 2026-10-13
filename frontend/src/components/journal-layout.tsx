@@ -149,9 +149,9 @@ function EntriesColumn() {
             "flex h-8 items-center justify-between gap-2"
           )}
         >
-          <h2 className="ml-3 min-w-0 truncate font-medium text-base">
+          <h1 className="ml-3 min-w-0 truncate font-medium text-base">
             Journal
-          </h2>
+          </h1>
           <div className="flex shrink-0 items-center gap-2">
             <ImportButton />
             <Button onClick={startDraft} size="sm">

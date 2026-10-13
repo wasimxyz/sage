@@ -42,10 +42,19 @@ export function DreamNav() {
             </SidebarMenuItem>
           </SidebarMenu>
           <DreamStatusLine />
+          <DreamStartAnnouncement />
         </SidebarGroupContent>
       </SidebarGroup>
     </>
   );
+}
+
+/** Dream's end and failures already toast. This covers the silent start. */
+function DreamStartAnnouncement() {
+  const {
+    state: { running },
+  } = useDream();
+  return <output className="sr-only">{running ? "Dream started" : ""}</output>;
 }
 
 function DreamMenu() {

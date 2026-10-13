@@ -232,7 +232,7 @@ export function DataSettings() {
 
   return (
     <SettingsSection description="Manage your data and storage." title="Data">
-      <h3 className={sectionHeadingClassName}>Export</h3>
+      <h2 className={sectionHeadingClassName}>Export</h2>
       <div className="flex flex-col divide-y">
         <SettingsRow
           description="Export journal entries and conversations as Markdown and JSON files."
@@ -249,7 +249,7 @@ export function DataSettings() {
           </Button>
         </SettingsRow>
       </div>
-      <h3 className={sectionHeadingClassName}>Danger Zone</h3>
+      <h2 className={sectionHeadingClassName}>Danger Zone</h2>
       <div className="flex flex-col divide-y">
         <JournalEntriesRow
           count={counts?.entries ?? null}

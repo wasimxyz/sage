@@ -47,6 +47,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";
+import { readingColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
 const extensions = [
@@ -257,7 +258,7 @@ function SaveStatus() {
   } = useEntry();
   let icon: ReactNode = null;
   if (saveLabel === "Saving" || saveLabel === generatingLabel) {
-    icon = <Spinner />;
+    icon = <Spinner aria-hidden role="presentation" />;
   } else if (saveLabel === "Saved") {
     icon = <CheckIcon />;
   }
@@ -326,7 +327,7 @@ function EditorTitle() {
               Title
             </FieldLabel>
             <textarea
-              className="field-sizing-content w-full resize-none overflow-hidden break-words bg-transparent font-semibold text-2xl outline-none placeholder:text-muted-foreground"
+              className="field-sizing-content w-full resize-none overflow-hidden break-words bg-transparent font-semibold text-[1.75rem] leading-tight outline-none placeholder:text-muted-foreground"
               data-slot="entry-title"
               id="entry-title"
               onChange={handleTitleChange}
@@ -423,11 +424,7 @@ function EditorColumn({
   children: ReactNode;
   className?: string;
 }) {
-  return (
-    <div className={cn("mx-auto w-full max-w-3xl px-6", className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn(readingColumnClass, className)}>{children}</div>;
 }
 
 export const Editor = {
