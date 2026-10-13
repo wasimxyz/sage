@@ -464,7 +464,16 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     if (loadedKeyRef.current === key) {
       return;
     }
+    // A draft's first save selects its new id. The editor already shows that
+    // entry, and reloading it would drop the caret and any newer typing.
+    const draftJustSaved =
+      selection.kind === "id" &&
+      selection.id === idRef.current &&
+      loadedKeyRef.current === `${editorGeneration}:draft`;
     loadedKeyRef.current = key;
+    if (draftJustSaved) {
+      return;
+    }
 
     dirtyRef.current = false;
     if (timerRef.current !== null) {
