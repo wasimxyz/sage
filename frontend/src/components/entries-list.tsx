@@ -1,7 +1,6 @@
 import { BookOpenIcon, Trash2Icon } from "lucide-react";
-import { useCallback } from "react";
+import { memo, useCallback } from "react";
 import type { JournalEntryMeta } from "@/bridge";
-import { useEntry } from "@/components/journal-context";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -28,11 +27,13 @@ export function EntriesList({
   entries,
   selectedId,
   loading,
+  onDelete,
   onSelect,
 }: {
   entries: JournalEntryMeta[];
   selectedId: number | null;
   loading: boolean;
+  onDelete: (id: number) => void;
   onSelect: (id: number) => void;
 }) {
   if (loading) {
@@ -72,6 +73,7 @@ export function EntriesList({
         <EntryRow
           entry={entry}
           key={entry.id}
+          onDelete={onDelete}
           onSelect={onSelect}
           selected={entry.id === selectedId}
         />
@@ -80,25 +82,24 @@ export function EntriesList({
   );
 }
 
-function EntryRow({
+function EntryRowView({
   entry,
   selected,
+  onDelete,
   onSelect,
 }: {
   entry: JournalEntryMeta;
   selected: boolean;
+  onDelete: (id: number) => void;
   onSelect: (id: number) => void;
 }) {
-  const {
-    actions: { openDeleteEntry },
-  } = useEntry();
   const handleClick = useCallback(() => {
     onSelect(entry.id);
   }, [entry.id, onSelect]);
 
   const handleDelete = useCallback(() => {
-    openDeleteEntry(entry.id);
-  }, [entry.id, openDeleteEntry]);
+    onDelete(entry.id);
+  }, [entry.id, onDelete]);
 
   return (
     <li>
@@ -136,3 +137,7 @@ function EntryRow({
     </li>
   );
 }
+
+// Memoized: typing in the open entry changes the title and save label many
+// times a second, and none of that should touch the rest of the list.
+const EntryRow = memo(EntryRowView);

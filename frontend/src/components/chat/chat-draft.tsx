@@ -1,4 +1,13 @@
-import { createContext, type ReactNode, use, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  use,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
+
+import { useChat } from "@/components/chat-provider";
 
 interface ChatDraftState {
   text: string;
@@ -26,9 +35,24 @@ export function useChatDraft(): ChatDraftContextValue {
   return value;
 }
 
+/**
+ * Holds the text in the message box. It sits above the screens, so the draft
+ * survives a visit to Home or Journal. A new chat or an opened chat starts
+ * with an empty box, because the draft belongs to the pane it was typed in.
+ */
 export function ChatDraftProvider({ children }: { children: ReactNode }) {
-  const [text, setText] = useState("");
-  const actions = useMemo<ChatDraftActions>(() => ({ setText }), []);
+  const {
+    state: { paneKey },
+  } = useChat();
+  const [draft, setDraft] = useState({ paneKey, text: "" });
+  const text = draft.paneKey === paneKey ? draft.text : "";
+  const setText = useCallback(
+    (next: string) => {
+      setDraft({ paneKey, text: next });
+    },
+    [paneKey]
+  );
+  const actions = useMemo<ChatDraftActions>(() => ({ setText }), [setText]);
   const value = useMemo<ChatDraftContextValue>(
     () => ({
       actions,

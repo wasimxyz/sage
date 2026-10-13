@@ -9,6 +9,7 @@ import { MessageCircleIcon } from "lucide-react";
 import {
   type ChangeEvent,
   type ComponentProps,
+  Fragment,
   type MutableRefObject,
   type ReactNode,
   Suspense,
@@ -39,7 +40,7 @@ import {
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
 import { AssistantPending } from "@/components/chat/assistant-pending";
-import { ChatDraftProvider, useChatDraft } from "@/components/chat/chat-draft";
+import { useChatDraft } from "@/components/chat/chat-draft";
 import {
   ChatAgentAlert,
   ChatErrorAlert,
@@ -136,11 +137,11 @@ export function ChatScreen() {
   } = useChat();
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <ChatDraftProvider key={paneKey}>
+      <Fragment key={paneKey}>
         <Suspense fallback={<ChatSessionFallback />}>
           <ChatSession />
         </Suspense>
-      </ChatDraftProvider>
+      </Fragment>
     </div>
   );
 }

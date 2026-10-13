@@ -108,6 +108,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const [editorGeneration, setEditorGeneration] = useState(0);
 
   const selectionRef = useRef(selection);
+  const entriesRef = useRef(entries);
   const returnSectionRef = useRef<Exclude<Section, "settings">>("home");
   const titleRef = useRef(title);
   const dateRef = useRef(date);
@@ -141,6 +142,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     selectionRef.current = selection;
   }, [selection]);
+
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
 
   // Back in Settings returns to the section the owner opened it from.
   useEffect(() => {
@@ -412,15 +417,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setDeleteOpen(true);
   }, []);
 
-  const openDeleteEntry = useCallback(
-    (id: number) => {
-      pendingDeleteIdRef.current = id;
-      const entry = entries.find((item) => item.id === id);
-      setDeleteTitle(entryDeleteTitle(entry?.title ?? ""));
-      setDeleteOpen(true);
-    },
-    [entries]
-  );
+  const openDeleteEntry = useCallback((id: number) => {
+    pendingDeleteIdRef.current = id;
+    const entry = entriesRef.current.find((item) => item.id === id);
+    setDeleteTitle(entryDeleteTitle(entry?.title ?? ""));
+    setDeleteOpen(true);
+  }, []);
 
   const confirmDelete = useCallback(async () => {
     const id = pendingDeleteIdRef.current;
@@ -791,6 +793,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       closeSettings,
       endDataWipe,
       importEntries,
+      openDeleteEntry,
       refreshAfterDataWipe,
       runStaleEmbeddingPass: embedStaleEntries,
       select,
@@ -810,6 +813,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       embedStaleEntries,
       endDataWipe,
       importEntries,
+      openDeleteEntry,
       refreshAfterDataWipe,
       select,
       setDetailOpen,
@@ -829,7 +833,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       confirmDelete,
       flush,
       openDelete,
-      openDeleteEntry,
       registerEditor,
       scheduleSave,
       setDeleteOpen,
@@ -839,7 +842,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       confirmDelete,
       flush,
       openDelete,
-      openDeleteEntry,
       registerEditor,
       scheduleSave,
     ]
