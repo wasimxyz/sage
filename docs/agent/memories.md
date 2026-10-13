@@ -95,7 +95,7 @@ Editing does not change memories right away. Saving marks the entry or chat for 
 
 ## When you delete a journal entry or a chat
 
-Deleting an entry or a chat also deletes every memory Dream wrote from it, including rows you pinned or hid. Rows you added yourself on the Memories screen stay. A Dream item that started before the delete does not write those rows back.
+Deleting an entry or a chat also deletes every memory Dream wrote from it, including rows you pinned or hid. That happens when the undo toast closes. Rows you added yourself on the Memories screen stay. A Dream item that started before the delete does not write those rows back.
 
 ## Deleting all memories
 

@@ -13,9 +13,13 @@ export function useAppearingIds(ids: readonly number[]): ReadonlySet<number> {
   const [seen, setSeen] = useState<ReadonlySet<number>>(() => new Set(ids));
   const added = ids.filter((id) => !seen.has(id));
 
+  // Track the ids on screen exactly, so a row that leaves and comes back,
+  // as with Undo, counts as new again.
   useEffect(() => {
     setSeen((current) =>
-      ids.every((id) => current.has(id)) ? current : new Set(ids)
+      current.size === ids.length && ids.every((id) => current.has(id))
+        ? current
+        : new Set(ids)
     );
   }, [ids]);
 

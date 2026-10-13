@@ -59,6 +59,10 @@ Home and the Chat list reload when Dream finishes.
 
 ## Deleting entries
 
+Delete an entry from its row (right-click, or press ⌘⌫ with the row focused) or from the ⋯ menu in the editor. The entry leaves the list at once, and a toast offers Undo for 5 seconds. Undo brings the entry back with the text you had typed.
+
+Sage deletes the entry when the toast closes or when you close the window. Until then, Home, search, and the list leave it out. Starting Dream or an export finishes the delete first. If Sage locks during the wait, the delete runs after you unlock.
+
 `journal.delete` removes one entry, its embeddings and summary, and every memory Dream wrote from it. Settings > Data can delete every entry at once, as [Chat storage](agent/storage.md#deleting-data) explains.
 
 ## Bridge commands

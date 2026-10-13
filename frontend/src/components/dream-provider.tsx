@@ -24,6 +24,7 @@ import {
 } from "@/bridge";
 import { formatDreamError, ollamaDownDreamMessage } from "@/lib/dream-errors";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
+import { commitAll } from "@/lib/pending-deletes";
 
 const ollamaPollMs = 4000;
 
@@ -130,6 +131,8 @@ export function DreamProvider({ children }: { children: ReactNode }) {
     totalRef.current = 0;
     setRunning(true);
     try {
+      // Deletes still in their undo window run first, so Dream skips those rows.
+      await commitAll();
       const result = await startDream();
       setTotal(result.total);
       totalRef.current = result.total;

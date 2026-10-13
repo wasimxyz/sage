@@ -1,12 +1,13 @@
 import { BookOpenIcon, Trash2Icon } from "lucide-react";
 import { AnimatePresence, m } from "motion/react";
-import { memo, useCallback, useMemo } from "react";
+import { type KeyboardEvent, memo, useCallback, useMemo } from "react";
 import type { JournalEntryMeta } from "@/bridge";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -20,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { formatJournalListDate } from "@/lib/format-date";
 import { spring } from "@/lib/motion";
+import { focusNeighborRow, isDeleteKey } from "@/lib/row-keys";
 import { cn } from "@/lib/utils";
 
 const skeletonRows = [0, 1, 2, 3, 4];
@@ -120,6 +122,18 @@ function EntryRowView({
     onDelete(entry.id);
   }, [entry.id, onDelete]);
 
+  // ⌘⌫ deletes, as in Finder. Focus moves to a neighboring row first.
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      if (isDeleteKey(event)) {
+        event.preventDefault();
+        focusNeighborRow(event.currentTarget);
+        onDelete(entry.id);
+      }
+    },
+    [entry.id, onDelete]
+  );
+
   return (
     <m.li
       animate={rowOpen}
@@ -139,6 +153,7 @@ function EntryRowView({
                   selected && "bg-foreground/10 hover:bg-foreground/10"
                 )}
                 onClick={handleClick}
+                onKeyDown={handleKeyDown}
                 type="button"
               />
             }
@@ -156,6 +171,7 @@ function EntryRowView({
               <ContextMenuItem onClick={handleDelete} variant="destructive">
                 <Trash2Icon />
                 Delete
+                <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
               </ContextMenuItem>
             </ContextMenuGroup>
           </ContextMenuContent>

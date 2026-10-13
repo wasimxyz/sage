@@ -229,7 +229,7 @@ function ExpandToggle() {
 
 function EntryMenu() {
   const {
-    actions: { openDelete },
+    actions: { deleteOpenEntry },
   } = useEntry();
   return (
     <DropdownMenu>
@@ -242,7 +242,7 @@ function EntryMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-36">
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={openDelete} variant="destructive">
+          <DropdownMenuItem onClick={deleteOpenEntry} variant="destructive">
             <Trash2Icon />
             Delete
           </DropdownMenuItem>

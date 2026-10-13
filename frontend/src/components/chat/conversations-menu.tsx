@@ -3,6 +3,7 @@ import { AnimatePresence, m } from "motion/react";
 import {
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -20,6 +21,7 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -50,6 +52,7 @@ import {
 import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { formatRelativeAge } from "@/lib/format-relative-age";
 import { spring } from "@/lib/motion";
+import { focusNeighborRow, isDeleteKey, isReturnKey } from "@/lib/row-keys";
 
 const ageTickMs = 60_000;
 const titleLimit = 60;
@@ -70,10 +73,7 @@ function initialRow(animateIn: boolean) {
 const conversationItemClass =
   "justify-between [&>span:last-child]:overflow-visible [content-visibility:auto] [contain-intrinsic-size:auto_1.75rem]";
 
-type ConversationDialog =
-  | { kind: "delete"; row: ChatConversationMeta }
-  | { kind: "rename"; row: ChatConversationMeta }
-  | null;
+type ConversationDialog = { kind: "rename"; row: ChatConversationMeta } | null;
 
 export function ConversationsMenu() {
   const {
@@ -143,13 +143,6 @@ export function ConversationsMenu() {
           row={dialog.row}
         />
       ) : null}
-      {dialog?.kind === "delete" ? (
-        <DeleteConversationDialog
-          key={dialog.row.id}
-          onOpenChange={handleDialogOpenChange}
-          row={dialog.row}
-        />
-      ) : null}
     </>
   );
 }
@@ -194,7 +187,7 @@ function ConversationItem({
   setDialog: (dialog: ConversationDialog) => void;
 }) {
   const {
-    actions: { openConversation },
+    actions: { deleteConversation, openConversation },
   } = useChat();
   const onClick = useCallback(() => {
     openConversation(row.id);
@@ -203,8 +196,22 @@ function ConversationItem({
     setDialog({ kind: "rename", row });
   }, [row, setDialog]);
   const onDelete = useCallback(() => {
-    setDialog({ kind: "delete", row });
-  }, [row, setDialog]);
+    deleteConversation(row.id);
+  }, [deleteConversation, row.id]);
+  // Return renames and ⌘⌫ deletes, as in Finder. Space still opens the chat.
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      if (isReturnKey(event)) {
+        event.preventDefault();
+        onRename();
+      } else if (isDeleteKey(event)) {
+        event.preventDefault();
+        focusNeighborRow(event.currentTarget);
+        onDelete();
+      }
+    },
+    [onDelete, onRename]
+  );
   return (
     // The same markers as SidebarMenuItem, as a motion element. The gap between
     // rows lives inside, so a row can shrink to nothing as it leaves.
@@ -228,6 +235,7 @@ function ConversationItem({
                       className={conversationItemClass}
                       isActive={active}
                       onClick={onClick}
+                      onKeyDown={onKeyDown}
                     />
                   }
                 />
@@ -243,10 +251,12 @@ function ConversationItem({
                 <ContextMenuItem onClick={onRename}>
                   <PencilIcon />
                   Rename
+                  <ContextMenuShortcut>↩</ContextMenuShortcut>
                 </ContextMenuItem>
                 <ContextMenuItem onClick={onDelete} variant="destructive">
                   <Trash2Icon />
                   Delete
+                  <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
                 </ContextMenuItem>
               </ContextMenuGroup>
             </ContextMenuContent>
@@ -345,71 +355,6 @@ function RenameConversationDialog({
             </Button>
           </DialogActions>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeleteConversationDialog({
-  onOpenChange,
-  row,
-}: {
-  onOpenChange: (open: boolean) => void;
-  row: ChatConversationMeta;
-}) {
-  const {
-    actions: { deleteConversation },
-  } = useChat();
-  const [busy, setBusy] = useState(false);
-
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (busy && !open) {
-        return;
-      }
-      onOpenChange(open);
-    },
-    [busy, onOpenChange]
-  );
-
-  const handleConfirmClick = useCallback(() => {
-    if (busy) {
-      return;
-    }
-    setBusy(true);
-    deleteConversation(row.id)
-      .then(() => {
-        setBusy(false);
-        onOpenChange(false);
-      })
-      .catch(() => {
-        setBusy(false);
-      });
-  }, [busy, deleteConversation, onOpenChange, row.id]);
-
-  return (
-    <Dialog onOpenChange={handleOpenChange} open>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete this chat?</DialogTitle>
-          <DialogDescription>
-            This removes "{row.title}" from Sage on this machine. Memories Dream
-            took from this chat go too. You cannot undo it.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogActions>
-          <DialogClose disabled={busy} render={<Button variant="outline" />}>
-            Cancel
-          </DialogClose>
-          <Button
-            disabled={busy}
-            onClick={handleConfirmClick}
-            variant="destructive"
-          >
-            {busy ? <Spinner data-icon="inline-start" /> : null}
-            Delete
-          </Button>
-        </DialogActions>
       </DialogContent>
     </Dialog>
   );

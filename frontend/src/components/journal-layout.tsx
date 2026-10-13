@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePanelRef } from "react-resizable-panels";
 
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
-import { DeleteEntryDialog } from "@/components/delete-entry-dialog";
 import EditorPane from "@/components/editor";
 import { EntriesList } from "@/components/entries-list";
 import { useFileMenu } from "@/components/file-menu-provider";
@@ -39,12 +38,7 @@ const collapsedLeadingClass =
   "pl-[calc((var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
 export function JournalLayout() {
-  return (
-    <>
-      <JournalWorkspace />
-      <DeleteEntryDialog />
-    </>
-  );
+  return <JournalWorkspace />;
 }
 
 const defaultDetailPercent = 60;
@@ -186,7 +180,7 @@ function JournalDetail() {
 function EntriesColumn() {
   const listRef = useRememberedScroll<HTMLDivElement>("journal-list");
   const {
-    actions: { openDeleteEntry, select, startDraft },
+    actions: { deleteEntry, select, startDraft },
     state: { entries, loadingList, selectedId },
   } = useJournal();
   return (
@@ -219,7 +213,7 @@ function EntriesColumn() {
           <EntriesList
             entries={entries}
             loading={loadingList}
-            onDelete={openDeleteEntry}
+            onDelete={deleteEntry}
             onSelect={select}
             selectedId={selectedId}
           />

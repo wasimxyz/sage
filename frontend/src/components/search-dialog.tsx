@@ -37,6 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import { formatRelativeAge } from "@/lib/format-relative-age";
 import {
   type SearchTab,
@@ -934,6 +935,9 @@ function useVisibleHits(): SearchHit[] {
     },
   } = useSearchForm();
   const { memoryEnabled } = useMemoryFeature();
+  // Rows waiting out their undo window do not show up in results.
+  const hiddenEntries = useHiddenIds("entry");
+  const hiddenChats = useHiddenIds("chat");
   return useMemo(() => {
     const settled = settledSearchQuery(
       tab,
@@ -945,10 +949,17 @@ function useVisibleHits(): SearchHit[] {
     if (query.trim().length === 0 || settled.length === 0) {
       return emptyHits;
     }
-    return visibleHits(tab, journalHits, conversationHits, memoryHits);
+    return visibleHits(
+      tab,
+      journalHits.filter((hit) => !hiddenEntries.has(hit.id)),
+      conversationHits.filter((hit) => !hiddenChats.has(hit.conversationId)),
+      memoryHits
+    );
   }, [
     conversationHits,
     conversationQuery,
+    hiddenChats,
+    hiddenEntries,
     journalHits,
     journalQuery,
     memoryHits,
