@@ -139,6 +139,7 @@ export function ChatScreen() {
   } = useChat();
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
+      <h1 className="sr-only">Chat</h1>
       <Fragment key={paneKey}>
         <Suspense fallback={<ChatSessionFallback />}>
           <ChatSession />
@@ -527,6 +528,11 @@ function ChatTurnSession({
   ]);
 
   const busy = agent.status === "submitted" || agent.status === "streaming";
+  // Messages already here when this pane opens do not animate, even if the
+  // chat is still streaming. Only ones that arrive after do.
+  const [openingMessageIds] = useState(
+    () => new Set(agent.data.messages.map((item) => item.id))
+  );
   // eve reports "resuming" while a reattached session catches up; submission
   // would fail against the open resume stream, so block it until ready.
   const resuming = agent.status === "resuming";
@@ -594,7 +600,10 @@ function ChatTurnSession({
         {hasMessages ? (
           <div className="flex flex-col gap-6">
             {agent.data.messages.map((item) => (
-              <MessageArrival arriving={busy} key={item.id}>
+              <MessageArrival
+                arriving={busy && !openingMessageIds.has(item.id)}
+                key={item.id}
+              >
                 <MessageBubble message={item} />
               </MessageArrival>
             ))}
