@@ -21,7 +21,6 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
-  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -253,12 +252,10 @@ function ConversationItem({
                 <ContextMenuItem onClick={onRename}>
                   <PencilIcon />
                   Rename
-                  <ContextMenuShortcut>↩</ContextMenuShortcut>
                 </ContextMenuItem>
                 <ContextMenuItem onClick={onDelete} variant="destructive">
                   <Trash2Icon />
                   Delete
-                  <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
                 </ContextMenuItem>
               </ContextMenuGroup>
             </ContextMenuContent>

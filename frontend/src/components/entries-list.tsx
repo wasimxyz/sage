@@ -7,7 +7,6 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
-  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -178,7 +177,6 @@ function EntryRowView({
               <ContextMenuItem onClick={handleDelete} variant="destructive">
                 <Trash2Icon />
                 Delete
-                <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
               </ContextMenuItem>
             </ContextMenuGroup>
           </ContextMenuContent>
