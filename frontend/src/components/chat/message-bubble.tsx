@@ -40,7 +40,7 @@ export interface MessageBubbleProps {
 const BUBBLE_CONTAINMENT =
   "[content-visibility:auto] [contain-intrinsic-size:auto_240px]";
 const SEARCH_FOCUS_RING =
-  "data-[search-focus]:ring-2 data-[search-focus]:ring-ring/70 data-[search-focus]:[content-visibility:visible]";
+  "transition-shadow duration-500 data-[search-focus]:ring-2 data-[search-focus]:ring-ring/70 data-[search-focus]:[content-visibility:visible]";
 
 function ChatMessageBubble({ message }: MessageBubbleProps) {
   if (message.role === "user") {

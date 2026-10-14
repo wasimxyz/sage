@@ -1,3 +1,4 @@
+import { domAnimation, LazyMotion, MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
 
 import { AppShell } from "@/components/app-shell";
@@ -32,32 +33,37 @@ export default function App() {
       enableColorScheme={false}
       enableSystem
     >
-      <TooltipProvider>
-        <SidebarProvider className="flex h-svh flex-col overflow-hidden">
-          <LockProvider>
-            <ModelDownloadsProvider>
-              <MemoryFeatureProvider>
-                <DreamProvider>
-                  <SettingsProvider>
-                    <JournalProvider>
-                      <FileMenuProvider>
-                        <ChatProvider>
-                          <MemoriesProvider>
-                            <OnboardingProvider>
-                              <OnboardingGate />
-                              <AppToaster />
-                            </OnboardingProvider>
-                          </MemoriesProvider>
-                        </ChatProvider>
-                      </FileMenuProvider>
-                    </JournalProvider>
-                  </SettingsProvider>
-                </DreamProvider>
-              </MemoryFeatureProvider>
-            </ModelDownloadsProvider>
-          </LockProvider>
-        </SidebarProvider>
-      </TooltipProvider>
+      {/* Only the small `m` components load: no layout or drag code. */}
+      <LazyMotion features={domAnimation} strict>
+        <MotionConfig reducedMotion="user">
+          <TooltipProvider>
+            <SidebarProvider className="flex h-svh flex-col overflow-hidden">
+              <LockProvider>
+                <ModelDownloadsProvider>
+                  <MemoryFeatureProvider>
+                    <DreamProvider>
+                      <SettingsProvider>
+                        <JournalProvider>
+                          <FileMenuProvider>
+                            <ChatProvider>
+                              <MemoriesProvider>
+                                <OnboardingProvider>
+                                  <OnboardingGate />
+                                  <AppToaster />
+                                </OnboardingProvider>
+                              </MemoriesProvider>
+                            </ChatProvider>
+                          </FileMenuProvider>
+                        </JournalProvider>
+                      </SettingsProvider>
+                    </DreamProvider>
+                  </MemoryFeatureProvider>
+                </ModelDownloadsProvider>
+              </LockProvider>
+            </SidebarProvider>
+          </TooltipProvider>
+        </MotionConfig>
+      </LazyMotion>
     </ThemeProvider>
   );
 }

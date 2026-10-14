@@ -23,6 +23,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  collapsibleHeightMotion,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -125,14 +126,21 @@ export const ToolHeader = ({
 
 export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 
-export const ToolContent = ({ className, ...props }: ToolContentProps) => (
-  <CollapsibleContent
-    className={cn(
-      "data-closed:fade-out-0 data-closed:slide-out-to-top-2 data-open:slide-in-from-top-2 mt-1 overflow-hidden rounded-2xl border border-input bg-surface px-4 py-3 text-popover-foreground outline-none data-closed:animate-out data-open:animate-in",
-      className
-    )}
-    {...props}
-  />
+export const ToolContent = ({
+  className,
+  children,
+  ...props
+}: ToolContentProps) => (
+  <CollapsibleContent className={collapsibleHeightMotion} {...props}>
+    <div
+      className={cn(
+        "mt-1 rounded-2xl border border-input bg-surface px-4 py-3 text-popover-foreground",
+        className
+      )}
+    >
+      {children}
+    </div>
+  </CollapsibleContent>
 );
 
 interface McpTextEnvelope {
