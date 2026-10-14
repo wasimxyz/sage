@@ -299,7 +299,7 @@ function SubjectHeaderFrame({
           "flex h-8 items-center justify-between gap-2 pb-1"
         )}
       >
-        <h1 className="min-w-0 truncate font-medium text-base">{title}</h1>
+        <h2 className="min-w-0 truncate font-medium text-base">{title}</h2>
         {children}
       </div>
     </div>
@@ -616,7 +616,7 @@ function SubjectRow({
       <button
         aria-current={selected ? "true" : undefined}
         className={cn(
-          "flex w-full cursor-pointer items-center gap-4 rounded-xl px-3 py-2.5 text-left hover:bg-foreground/5",
+          "flex w-full cursor-pointer items-center gap-4 rounded-xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0",
           selected && "bg-foreground/10 hover:bg-foreground/10"
         )}
         onClick={onOpen}
@@ -657,7 +657,7 @@ function EventRow({
   return (
     <li>
       <button
-        className="flex w-full cursor-pointer flex-col rounded-xl px-3 py-2.5 text-left hover:bg-foreground/5"
+        className="flex w-full cursor-pointer flex-col rounded-xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0"
         onClick={handleEdit}
         type="button"
       >

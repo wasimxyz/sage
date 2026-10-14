@@ -86,9 +86,9 @@ interface ModelsOpenState {
 function ModelsSettingsFallback() {
   return (
     <div aria-busy="true" role="status">
-      <h3 className={sectionHeadingClassName}>Installed</h3>
+      <h2 className={sectionHeadingClassName}>Installed</h2>
       <ModelsSkeletonTable />
-      <h3 className={sectionHeadingClassName}>Recommended</h3>
+      <h2 className={sectionHeadingClassName}>Recommended</h2>
       <Skeleton className="mt-0.5 h-3 w-80" />
       <ModelsSkeletonTable />
     </div>
@@ -276,7 +276,7 @@ function ModelsSettingsBody({
       )}
       {installedRows.length > 0 ? (
         <>
-          <h3 className={sectionHeadingClassName}>Installed</h3>
+          <h2 className={sectionHeadingClassName}>Installed</h2>
           <ModelsTable caption="Installed models">
             {installedRows.map((row) => (
               <ModelTableRow key={row.installedName ?? row.ollamaTag} row={row}>
@@ -290,7 +290,7 @@ function ModelsSettingsBody({
           </ModelsTable>
         </>
       ) : null}
-      <h3 className={sectionHeadingClassName}>Recommended</h3>
+      <h2 className={sectionHeadingClassName}>Recommended</h2>
       <p className="mt-0.5 text-muted-foreground text-xs">{subtitle}</p>
       {recommendedRows.length === 0 &&
       recommendations.length === 0 &&

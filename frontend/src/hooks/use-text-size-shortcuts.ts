@@ -15,16 +15,19 @@ export function useTextSizeShortcuts() {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) {
         return;
       }
-      const direction = textSizeDirection(event);
+      const reset = event.code === "Digit0" || event.code === "Numpad0";
+      const direction = reset ? 0 : textSizeDirection(event);
       if (direction === null) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
-      percent = Math.max(
-        minPercent,
-        Math.min(maxPercent, percent + direction * stepPercent)
-      );
+      percent = reset
+        ? defaultPercent
+        : Math.max(
+            minPercent,
+            Math.min(maxPercent, percent + direction * stepPercent)
+          );
       applyPercent(percent);
       savePercent(percent);
     }

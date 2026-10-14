@@ -26,7 +26,7 @@ export function SettingsSection({
         onPointerDown={onTitlebarPointerDown}
       >
         <div className={cn(pageColumnClass, "flex h-8 items-center")}>
-          <h2 className="min-w-0 truncate font-medium text-base">{title}</h2>
+          <h1 className="min-w-0 truncate font-medium text-base">{title}</h1>
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
