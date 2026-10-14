@@ -16,8 +16,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useLayoutEffect,
-  useRef,
 } from "react";
 import { toast } from "sonner";
 import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
@@ -202,10 +200,17 @@ function ClosePanelButton() {
   );
 }
 
+// Back leaves full screen and keeps the entry open. The list slides back in
+// beside it, to the split the owner last chose.
 function BackToJournalButton() {
-  const closeEntry = useCloseEntry();
+  const {
+    actions: { setExpanded },
+  } = useJournal();
+  const showList = useCallback(() => {
+    setExpanded(false);
+  }, [setExpanded]);
   return (
-    <PanelIconButton aria-label="Back to journal" onClick={closeEntry}>
+    <PanelIconButton aria-label="Back to journal" onClick={showList}>
       <ArrowLeftIcon />
     </PanelIconButton>
   );
@@ -274,33 +279,11 @@ function SaveStatus() {
   );
 }
 
-function fitTitleField(field: HTMLTextAreaElement, value: string) {
-  field.value = value;
-  field.style.height = "auto";
-  field.style.height = `${field.scrollHeight}px`;
-}
-
 function EditorTitle() {
-  const titleRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     actions: { changeTitle },
     state: { date, title, updatedAt },
   } = useEntry();
-
-  useLayoutEffect(() => {
-    const field = titleRef.current;
-    if (field === null) {
-      return;
-    }
-    fitTitleField(field, title);
-    const onResize = () => {
-      fitTitleField(field, title);
-    };
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-    };
-  }, [title]);
 
   const handleTitleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -326,17 +309,22 @@ function EditorTitle() {
             <FieldLabel className="sr-only" htmlFor="entry-title">
               Title
             </FieldLabel>
-            <textarea
-              className="field-sizing-content w-full resize-none overflow-hidden break-words bg-transparent font-semibold text-[1.75rem] leading-tight outline-none placeholder:text-muted-foreground"
-              data-slot="entry-title"
-              id="entry-title"
-              onChange={handleTitleChange}
-              onKeyDown={handleTitleKeyDown}
-              placeholder="Untitled"
-              ref={titleRef}
-              rows={1}
-              value={title}
-            />
+            <div
+              className="font-semibold text-2xl leading-tight"
+              data-slot="entry-title-sizer"
+              data-value={title}
+            >
+              <textarea
+                className="resize-none overflow-hidden placeholder:text-muted-foreground"
+                data-slot="entry-title"
+                id="entry-title"
+                onChange={handleTitleChange}
+                onKeyDown={handleTitleKeyDown}
+                placeholder="Untitled"
+                rows={1}
+                value={title}
+              />
+            </div>
           </Field>
           <p className="text-muted-foreground text-sm">
             <EntryDateLine date={date} updatedAt={updatedAt} />
@@ -409,7 +397,7 @@ function EditorBody() {
   }
   return (
     <div className="flex-1 cursor-text" ref={pageRef}>
-      <EditorColumn className="py-3">
+      <EditorColumn className="pt-3 pb-32">
         <Tiptap.Content />
         <EditorBubbleMenu />
       </EditorColumn>
