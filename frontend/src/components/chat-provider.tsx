@@ -51,6 +51,7 @@ import {
   prefsFromConversation,
   saveChatModelPrefs,
 } from "@/lib/chat/model-prefs";
+import { type ModelsLoad, sameModelsLoad } from "@/lib/chat/models-load";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 
 const emptyMeta = {};
@@ -58,12 +59,6 @@ const emptyMeta = {};
 type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
   | { focusSeq?: number; id: number; kind: "saved"; load: ChatLoadPromise };
-
-type ModelsLoad =
-  | { kind: "loading" }
-  | { kind: "down" }
-  | { kind: "empty" }
-  | { kind: "ready"; names: string[] };
 
 interface ChatState {
   agent: AgentHealth;
@@ -309,10 +304,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Reads the Ollama status and, when it answers, the chat model list. The
   // warning and the model picker both render what this lands.
   const refreshModels = useCallback(async () => {
+    // Keep the old value when the check says the same thing, so the poll does
+    // not re-render every screen that reads Chat.
+    const land = (next: ModelsLoad) => {
+      setModels((current) => (sameModelsLoad(current, next) ? current : next));
+    };
     try {
       const status = await getOllamaStatus();
       if (!status.running) {
-        setModels({ kind: "down" });
+        land({ kind: "down" });
         return;
       }
       const names = await listOllamaModels();
@@ -322,10 +322,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         current.kind === "idle" ? current : { kind: "idle" }
       );
       if (names.length === 0) {
-        setModels({ kind: "empty" });
+        land({ kind: "empty" });
         return;
       }
-      setModels({ kind: "ready", names });
+      land({ kind: "ready", names });
       setPrefs((current) => {
         if (current.model.length > 0) {
           return current;
@@ -338,7 +338,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return next;
       });
     } catch {
-      setModels({ kind: "down" });
+      land({ kind: "down" });
     }
   }, []);
 

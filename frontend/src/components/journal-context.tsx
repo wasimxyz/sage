@@ -38,6 +38,8 @@ export interface JournalActions {
     entries: ParsedImport[],
     onEmbedProgress?: (done: number, total: number) => void
   ) => Promise<number>;
+  /** Ask before deleting a row of the list. Stable, so list rows can be memoized. */
+  openDeleteEntry: (id: number) => void;
   refreshAfterDataWipe: () => Promise<void>;
   runStaleEmbeddingPass: () => Promise<boolean>;
   select: (id: number) => Promise<void>;
@@ -68,7 +70,6 @@ export interface EntryActions {
   /** Save now. Resolves true when nothing is left unsaved. */
   flush: () => Promise<boolean>;
   openDelete: () => void;
-  openDeleteEntry: (id: number) => void;
   registerEditor: (adapter: EditorAdapter | null) => void;
   scheduleSave: () => void;
   setDeleteOpen: (open: boolean) => void;

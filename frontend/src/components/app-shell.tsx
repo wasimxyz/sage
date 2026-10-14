@@ -10,6 +10,7 @@ import { type CSSProperties, useEffect } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar, onTitlebarPointerDown } from "@/components/app-titlebar";
+import { ChatDraftProvider } from "@/components/chat/chat-draft";
 import { ConversationsMenu } from "@/components/chat/conversations-menu";
 import { ChatScreen } from "@/components/chat-screen";
 import {
@@ -76,7 +77,10 @@ export function AppShell() {
                 onPointerDown={onTitlebarPointerDown}
               />
             ) : null}
-            <AppMain />
+            {/* Above AppMain so a half-typed message survives other screens. */}
+            <ChatDraftProvider>
+              <AppMain />
+            </ChatDraftProvider>
           </SidebarInset>
         </div>
       </div>

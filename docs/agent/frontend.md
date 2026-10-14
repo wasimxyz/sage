@@ -7,6 +7,7 @@ This page explains the React side of Chat: how the screen streams a turn, when i
 These paths are under `frontend/src/components/`:
 
 - **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`
+- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. It sits above the screens, so a half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
 - **The sidebar list** (`chat/conversations-menu.tsx`): the conversation picker, New chat, and Search
 - **ChatTurn** (`chat-screen.tsx`): one conversation, connected to the agent through eve’s `useEveAgent` hook
 

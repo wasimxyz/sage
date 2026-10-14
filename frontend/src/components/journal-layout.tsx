@@ -29,6 +29,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useRememberedScroll } from "@/hooks/use-remembered-scroll";
 import { pageColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
@@ -132,8 +133,9 @@ function JournalDetail() {
 }
 
 function EntriesColumn() {
+  const listRef = useRememberedScroll<HTMLDivElement>("journal-list");
   const {
-    actions: { select, startDraft },
+    actions: { openDeleteEntry, select, startDraft },
     state: { entries, loadingList, selectedId },
   } = useJournal();
   return (
@@ -162,10 +164,11 @@ function EntriesColumn() {
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn(pageColumnClass, "pt-2 pb-4")}>
+        <div className={cn(pageColumnClass, "pt-2 pb-4")} ref={listRef}>
           <EntriesList
             entries={entries}
             loading={loadingList}
+            onDelete={openDeleteEntry}
             onSelect={select}
             selectedId={selectedId}
           />
