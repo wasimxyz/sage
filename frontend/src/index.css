@@ -276,12 +276,31 @@ html:has(
   app-region: no-drag;
 }
 
+/* The title grows with its text. The sizer repeats the text out of sight in
+   the same grid cell, so the textarea takes its height from layout at any
+   width. The pane opens, drags, and goes full screen with no window resize,
+   so a height set from script would go stale. */
+[data-slot="entry-title-sizer"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-slot="entry-title-sizer"]::after {
+  visibility: hidden;
+  content: attr(data-value) " ";
+}
+
+[data-slot="entry-title-sizer"]::after,
+[data-slot="entry-title"] {
+  grid-area: 1 / 1;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 [data-slot="entry-title"] {
   width: 100%;
   min-width: 0;
   color: var(--foreground);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
   outline: none;
   background: transparent;
 }

@@ -12,6 +12,8 @@ Sage uses three kinds of model, all served by Ollama on this Mac:
 
 Sage skips any model Ollama marks as cloud-hosted, and the Chat agent refuses one even if a request names it. The Chat picker also leaves out the embedding model.
 
+Sage also skips the `llamacpp:` entries that Ollama’s llama.cpp runner lists beside a model. You did not pull them. If Ollama lists a name twice, Sage shows it once.
+
 ## Settings > Models
 
 Settings > Models has two tables:
@@ -61,7 +63,7 @@ Chat checks `embeddings.status` every 4 seconds to see whether Ollama is running
 
 While Sage is locked, every command below answers “Sage is locked.”
 
-- `ollama.models`: pulled chat models, without the embedding model or cloud models
+- `ollama.models`: pulled chat models, each name once, without the embedding model, cloud models, or `llamacpp:` runner entries
 - `ollama.pull`, `ollama.pulls`, and `ollama.pullCancel`: start a download, report its progress, and cancel it
 - `ollama.delete`: removes one model
 - `ollama.start`: starts Ollama and answers once it replies

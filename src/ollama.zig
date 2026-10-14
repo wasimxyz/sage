@@ -1510,8 +1510,20 @@ fn isRemoteModel(item: std.json.ObjectMap) bool {
     return false;
 }
 
+/// Ollama's llama.cpp runner lists an entry named `llamacpp:<digest>` next to
+/// the model it serves. Nobody pulled it, and it is not a tag to chat with.
+const runner_entry_prefix = "llamacpp:";
+
+fn containsName(names: []const []const u8, name: []const u8) bool {
+    for (names) |existing| {
+        if (std.mem.eql(u8, existing, name)) return true;
+    }
+    return false;
+}
+
 /// Parse a `/api/tags` body into the names of models that run on this Mac.
 /// Cloud models are skipped so Chat, Dream, and embeddings never pick one.
+/// So are runner entries, and a name Ollama lists twice comes back once.
 fn pulledNamesFromTags(a: std.mem.Allocator, body: []const u8) []const []const u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, a, body, .{ .allocate = .alloc_always }) catch
         return &.{};
@@ -1526,6 +1538,8 @@ fn pulledNamesFromTags(a: std.mem.Allocator, body: []const u8) []const []const u
         if (isRemoteModel(item.object)) continue;
         const name = item.object.get("name") orelse continue;
         if (name != .string) continue;
+        if (std.mem.startsWith(u8, name.string, runner_entry_prefix)) continue;
+        if (containsName(names.items, name.string)) continue;
         names.append(a, name.string) catch continue;
     }
     return names.toOwnedSlice(a) catch &.{};
@@ -1969,6 +1983,32 @@ test "pulledNamesFromTags skips cloud models" {
     try std.testing.expectEqual(@as(usize, 2), names.len);
     try std.testing.expectEqualStrings("qwen3.5:9b", names[0]);
     try std.testing.expectEqualStrings("nomic-embed-text:latest", names[1]);
+}
+
+test "pulledNamesFromTags skips llamacpp runner entries" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body =
+        \\{"models":[
+        \\{"name":"qwen3.5:9b","details":{"runner":"llamacpp"}},
+        \\{"name":"llamacpp:c97eb11d70b1acdc88af01eef566c1fe4f7fbe93eb1afc06871132f293ff425a","details":{"runner":"llamacpp"}},
+        \\{"name":"gemma3:12b"}
+        \\]}
+    ;
+    const names = pulledNamesFromTags(arena.allocator(), body);
+    try std.testing.expectEqual(@as(usize, 2), names.len);
+    try std.testing.expectEqualStrings("qwen3.5:9b", names[0]);
+    try std.testing.expectEqualStrings("gemma3:12b", names[1]);
+}
+
+test "pulledNamesFromTags lists a repeated name once" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body = "{\"models\":[{\"name\":\"qwen3.5:9b\"},{\"name\":\"qwen3.5:9b\"},{\"name\":\"qwen3.5:9b-mlx\"}]}";
+    const names = pulledNamesFromTags(arena.allocator(), body);
+    try std.testing.expectEqual(@as(usize, 2), names.len);
+    try std.testing.expectEqualStrings("qwen3.5:9b", names[0]);
+    try std.testing.expectEqualStrings("qwen3.5:9b-mlx", names[1]);
 }
 
 test "pulledNamesFromTags skips an entry with only remote_model set" {

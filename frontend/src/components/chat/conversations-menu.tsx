@@ -1,8 +1,9 @@
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { AnimatePresence, m } from "motion/react";
+import { AnimatePresence, m, useIsPresent } from "motion/react";
 import {
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -50,6 +51,7 @@ import {
 import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { formatRelativeAge } from "@/lib/format-relative-age";
 import { spring } from "@/lib/motion";
+import { focusNeighborRow, isDeleteKey, isReturnKey } from "@/lib/row-keys";
 
 const ageTickMs = 60_000;
 const titleLimit = 60;
@@ -70,11 +72,6 @@ function initialRow(animateIn: boolean) {
 const conversationItemClass =
   "justify-between [&>span:last-child]:overflow-visible [content-visibility:auto] [contain-intrinsic-size:auto_1.75rem]";
 
-type ConversationDialog =
-  | { kind: "delete"; row: ChatConversationMeta }
-  | { kind: "rename"; row: ChatConversationMeta }
-  | null;
-
 export function ConversationsMenu() {
   const {
     actions: { refreshList },
@@ -82,7 +79,7 @@ export function ConversationsMenu() {
   } = useChat();
   const now = useRelativeNow();
   const activeId = selection.kind === "saved" ? selection.id : null;
-  const [dialog, setDialog] = useState<ConversationDialog>(null);
+  const [renaming, setRenaming] = useState<ChatConversationMeta | null>(null);
   const ids = useMemo(
     () => conversations.map((row) => row.id),
     [conversations]
@@ -95,7 +92,7 @@ export function ConversationsMenu() {
 
   const handleDialogOpenChange = useCallback((open: boolean) => {
     if (!open) {
-      setDialog(null);
+      setRenaming(null);
     }
   }, []);
 
@@ -128,26 +125,19 @@ export function ConversationsMenu() {
                   animateIn={appearing.has(row.id)}
                   key={row.id}
                   now={now}
+                  onRename={setRenaming}
                   row={row}
-                  setDialog={setDialog}
                 />
               ))}
             </AnimatePresence>
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>
-      {dialog?.kind === "rename" ? (
+      {renaming ? (
         <RenameConversationDialog
-          key={dialog.row.id}
+          key={renaming.id}
           onOpenChange={handleDialogOpenChange}
-          row={dialog.row}
-        />
-      ) : null}
-      {dialog?.kind === "delete" ? (
-        <DeleteConversationDialog
-          key={dialog.row.id}
-          onOpenChange={handleDialogOpenChange}
-          row={dialog.row}
+          row={renaming}
         />
       ) : null}
     </>
@@ -185,26 +175,42 @@ function ConversationItem({
   animateIn,
   now,
   row,
-  setDialog,
+  onRename: onRenameRow,
 }: {
   active: boolean;
   animateIn: boolean;
   now: number;
   row: ChatConversationMeta;
-  setDialog: (dialog: ConversationDialog) => void;
+  onRename: (row: ChatConversationMeta) => void;
 }) {
   const {
-    actions: { openConversation },
+    actions: { deleteConversation, openConversation },
   } = useChat();
+  // A row that is leaving cannot take focus, and neighbors skip it.
+  const isPresent = useIsPresent();
   const onClick = useCallback(() => {
     openConversation(row.id);
   }, [openConversation, row.id]);
   const onRename = useCallback(() => {
-    setDialog({ kind: "rename", row });
-  }, [row, setDialog]);
+    onRenameRow(row);
+  }, [onRenameRow, row]);
   const onDelete = useCallback(() => {
-    setDialog({ kind: "delete", row });
-  }, [row, setDialog]);
+    deleteConversation(row.id);
+  }, [deleteConversation, row.id]);
+  // Return renames and ⌘⌫ deletes, as in Finder. Space still opens the chat.
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      if (isReturnKey(event)) {
+        event.preventDefault();
+        onRename();
+      } else if (isDeleteKey(event)) {
+        event.preventDefault();
+        focusNeighborRow(event.currentTarget);
+        onDelete();
+      }
+    },
+    [onDelete, onRename]
+  );
   return (
     // The same markers as SidebarMenuItem, as a motion element. The gap between
     // rows lives inside, so a row can shrink to nothing as it leaves.
@@ -214,6 +220,7 @@ function ConversationItem({
       data-sidebar="menu-item"
       data-slot="sidebar-menu-item"
       exit={rowClosed}
+      inert={!isPresent}
       initial={initialRow(animateIn)}
       transition={spring}
     >
@@ -225,9 +232,11 @@ function ConversationItem({
                 <TooltipTrigger
                   render={
                     <SidebarMenuButton
+                      aria-keyshortcuts="Meta+Backspace"
                       className={conversationItemClass}
                       isActive={active}
                       onClick={onClick}
+                      onKeyDown={onKeyDown}
                     />
                   }
                 />
@@ -345,71 +354,6 @@ function RenameConversationDialog({
             </Button>
           </DialogActions>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeleteConversationDialog({
-  onOpenChange,
-  row,
-}: {
-  onOpenChange: (open: boolean) => void;
-  row: ChatConversationMeta;
-}) {
-  const {
-    actions: { deleteConversation },
-  } = useChat();
-  const [busy, setBusy] = useState(false);
-
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (busy && !open) {
-        return;
-      }
-      onOpenChange(open);
-    },
-    [busy, onOpenChange]
-  );
-
-  const handleConfirmClick = useCallback(() => {
-    if (busy) {
-      return;
-    }
-    setBusy(true);
-    deleteConversation(row.id)
-      .then(() => {
-        setBusy(false);
-        onOpenChange(false);
-      })
-      .catch(() => {
-        setBusy(false);
-      });
-  }, [busy, deleteConversation, onOpenChange, row.id]);
-
-  return (
-    <Dialog onOpenChange={handleOpenChange} open>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete this chat?</DialogTitle>
-          <DialogDescription>
-            This removes "{row.title}" from Sage on this machine. Memories Dream
-            took from this chat go too. You cannot undo it.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogActions>
-          <DialogClose disabled={busy} render={<Button variant="outline" />}>
-            Cancel
-          </DialogClose>
-          <Button
-            disabled={busy}
-            onClick={handleConfirmClick}
-            variant="destructive"
-          >
-            {busy ? <Spinner data-icon="inline-start" /> : null}
-            Delete
-          </Button>
-        </DialogActions>
       </DialogContent>
     </Dialog>
   );

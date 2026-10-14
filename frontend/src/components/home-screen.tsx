@@ -1,5 +1,11 @@
 import { MessageCircleIcon, NotebookTextIcon, PlusIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import {
@@ -33,6 +39,7 @@ import {
 } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import {
   formatHomeHeadingDate,
   formatJournalListDate,
@@ -40,6 +47,7 @@ import {
 import { groupHomeFeed, homeSinceDate } from "@/lib/home-feed";
 import { oneLinePlainText, stripMarkdown } from "@/lib/journal-plain-text";
 import { pageColumnClass } from "@/lib/page-column";
+import { onCommitted } from "@/lib/pending-deletes";
 import { cn } from "@/lib/utils";
 
 const emptyFeed: HomeFeed = { items: [], latest: null };
@@ -87,7 +95,42 @@ export function HomeScreen() {
     [refresh]
   );
 
-  const { older, recent } = groupHomeFeed(feed);
+  // A delete that finishes drops its row from the feed at once, so it does not
+  // show again while the feed reloads. The reload can change which entry is
+  // latest.
+  useEffect(
+    () =>
+      onCommitted((kind, id) => {
+        const gone = kind === "entry" ? "entry" : "conversation";
+        setFeed((current) => ({
+          items: current.items.filter(
+            (item) => !(item.kind === gone && item.id === id)
+          ),
+          latest:
+            kind === "entry" && current.latest?.id === id
+              ? null
+              : current.latest,
+        }));
+        refresh().catch(() => undefined);
+      }),
+    [refresh]
+  );
+
+  // Rows waiting out their undo window stay out of the feed.
+  const hiddenEntries = useHiddenIds("entry");
+  const hiddenChats = useHiddenIds("chat");
+  const visibleFeed = useMemo<HomeFeed>(
+    () => ({
+      items: feed.items.filter(
+        (item) =>
+          !(item.kind === "entry" ? hiddenEntries : hiddenChats).has(item.id)
+      ),
+      latest:
+        feed.latest && hiddenEntries.has(feed.latest.id) ? null : feed.latest,
+    }),
+    [feed, hiddenChats, hiddenEntries]
+  );
+  const { older, recent } = groupHomeFeed(visibleFeed);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -114,7 +157,7 @@ export function HomeScreen() {
       <ScrollArea className="min-h-0 flex-1">
         <div className={cn(pageColumnClass, "flex flex-col gap-8 pt-2 pb-4")}>
           <HomeFeedBody
-            feed={feed}
+            feed={visibleFeed}
             loading={loading}
             older={older}
             recent={recent}

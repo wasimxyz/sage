@@ -26,6 +26,7 @@ import {
   onDreamFinished,
   startOllamaServer,
 } from "@/bridge";
+import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import {
   type AgentHealth,
   agentDownMessage,
@@ -52,7 +53,17 @@ import {
   saveChatModelPrefs,
 } from "@/lib/chat/model-prefs";
 import { type ModelsLoad, sameModelsLoad } from "@/lib/chat/models-load";
+import { deleteFailure } from "@/lib/delete-errors";
+import { handlerErrorMessage } from "@/lib/handler-errors";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
+import {
+  type CommitResult,
+  commitAll,
+  isHidden,
+  onCommitted,
+  restore,
+} from "@/lib/pending-deletes";
+import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 
 const emptyMeta = {};
 
@@ -78,7 +89,8 @@ interface ChatState {
 interface ChatActions {
   applyConversationPrefs: (conversation: ChatConversation) => void;
   clearError: () => void;
-  deleteConversation: (id: number) => Promise<void>;
+  /** Hide a chat now and delete it when the undo toast closes. */
+  deleteConversation: (id: number) => void;
   lockContextLength: () => void;
   newChat: () => void;
   openConversation: (id: number, focus?: { seq: number }) => void;
@@ -99,6 +111,24 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+
+/** The real delete for one chat. The pending-delete store also runs it after a relaunch. */
+async function commitChatDelete(id: number): Promise<CommitResult> {
+  try {
+    await chatDelete(id);
+    return "done";
+  } catch (caught) {
+    const failure = deleteFailure(caught);
+    if (failure === "locked") {
+      return "retry";
+    }
+    if (failure === "missing") {
+      return "done";
+    }
+    toast.error(handlerErrorMessage(caught) || "Could not delete this chat.");
+    return "failed";
+  }
+}
 
 async function packagedStartupState(): Promise<{
   downMessage: string;
@@ -152,7 +182,26 @@ export function isChatComposerLocked(state: {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const [conversations, setConversations] = useState<ChatConversationMeta[]>(
+  const [allConversations, setConversations] = useState<ChatConversationMeta[]>(
+    []
+  );
+  // Chats waiting out their undo window stay out of the list. When a delete
+  // finishes, the list drops its copy too.
+  const hiddenChatIds = useHiddenIds("chat");
+  const conversations = useMemo(
+    () =>
+      hiddenChatIds.size === 0
+        ? allConversations
+        : allConversations.filter((row) => !hiddenChatIds.has(row.id)),
+    [allConversations, hiddenChatIds]
+  );
+  useEffect(
+    () =>
+      onCommitted((kind, id) => {
+        if (kind === "chat") {
+          setConversations((current) => current.filter((row) => row.id !== id));
+        }
+      }),
     []
   );
   const [selection, setSelection] = useState<ChatSelection>({
@@ -204,7 +253,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshList().catch(() => undefined);
+    // A delete that was waiting when the app locked or quit runs before the
+    // list loads.
+    restore("chat", commitChatDelete);
+    commitAll("chat")
+      .then(() => refreshList())
+      .catch(() => undefined);
   }, [refreshList]);
 
   useEffect(
@@ -416,29 +470,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const deleteConversation = useCallback(
-    async (id: number) => {
-      try {
-        await chatDelete(id);
-        setConversations((current) => current.filter((row) => row.id !== id));
-        if (selection.kind === "saved" && selection.id === id) {
-          newChat();
-        }
-        toast("Chat deleted.");
-      } catch (caught) {
-        toast.error(
-          caught instanceof Error
-            ? caught.message
-            : "Could not delete this chat."
-        );
-        throw caught;
-      }
-    },
-    [newChat, selection]
-  );
-
   const openConversation = useCallback(
     (id: number, focus?: { seq: number }) => {
+      // A chat that is waiting out its undo window cannot be opened.
+      if (isHidden("chat", id)) {
+        return;
+      }
       setError(null);
       setSelection({
         focusSeq: focus?.seq,
@@ -450,6 +487,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setPaneKey((current) => current + 1);
     },
     []
+  );
+
+  const deleteConversation = useCallback(
+    (id: number) => {
+      const wasOpen = selection.kind === "saved" && selection.id === id;
+      const title = allConversations.find((row) => row.id === id)?.title ?? "";
+      if (wasOpen) {
+        newChat();
+      }
+      deleteWithUndo({
+        commit: () => commitChatDelete(id),
+        id,
+        kind: "chat",
+        message: `“${toastTitle(title, "Untitled chat")}” deleted.`,
+        onUndo: () => {
+          if (wasOpen) {
+            openConversation(id);
+          }
+        },
+      });
+    },
+    [allConversations, newChat, openConversation, selection]
   );
 
   const recordCreated = useCallback(

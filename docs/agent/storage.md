@@ -117,7 +117,7 @@ eve keeps its own session files outside SQLite:
 
 [Encryption at rest](../security/encryption.md#chat-workflow-files) covers how those files are encrypted. The SQLite rows are the record Sage encrypts and shows in the Chat screen.
 
-Deleting a chat also deletes its session files, found by its `eve_session_id`:
+Deleting a chat also deletes its session files, found by its `eve_session_id`. Sage does this when the undo toast closes, not when you choose Delete. It takes these steps:
 
 - The id is a workflow run id (`wrun_…`). Sage ignores an id that does not have that shape, so a stored value cannot reach outside the workflow folder.
 - If the agent is running, Sage first asks it to cancel the current turn. That request can finish after the files are gone, so the agent may still write.

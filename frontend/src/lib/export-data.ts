@@ -11,11 +11,20 @@ import {
   type DataExportNotifications,
   exportDataWithNotifications,
 } from "./export-data-flow";
+import { commitAll } from "./pending-deletes";
 
+// Deletes that are still in their undo window run first, so the export does
+// not include rows the owner has already deleted.
 const nativeDataExportDependencies: DataExportDependencies = {
-  chatList,
+  chatList: async () => {
+    await commitAll("chat");
+    return chatList();
+  },
   exportData,
-  listEntries,
+  listEntries: async () => {
+    await commitAll("entry");
+    return listEntries();
+  },
   openExportDirectoryDialog,
 };
 

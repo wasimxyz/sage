@@ -33,13 +33,16 @@ export interface JournalState {
 export interface JournalActions {
   beginDataWipe: () => Promise<void>;
   closeSettings: () => Promise<void>;
+  /**
+   * Hide an entry now and delete it when the undo toast closes. Stable, so
+   * list rows can be memoized.
+   */
+  deleteEntry: (id: number) => void;
   endDataWipe: () => void;
   importEntries: (
     entries: ParsedImport[],
     onEmbedProgress?: (done: number, total: number) => void
   ) => Promise<number>;
-  /** Ask before deleting a row of the list. Stable, so list rows can be memoized. */
-  openDeleteEntry: (id: number) => void;
   refreshAfterDataWipe: () => Promise<void>;
   runStaleEmbeddingPass: () => Promise<boolean>;
   select: (id: number) => Promise<void>;
@@ -56,8 +59,6 @@ export interface JournalActions {
 
 export interface EntryState {
   date: string;
-  deleteOpen: boolean;
-  deleteTitle: string;
   loading: boolean;
   saveLabel: string;
   title: string;
@@ -66,13 +67,12 @@ export interface EntryState {
 
 export interface EntryActions {
   changeTitle: (title: string) => void;
-  confirmDelete: () => Promise<void>;
+  /** Delete the open entry with an undo. A draft that never saved just closes. */
+  deleteOpenEntry: () => void;
   /** Save now. Resolves true when nothing is left unsaved. */
   flush: () => Promise<boolean>;
-  openDelete: () => void;
   registerEditor: (adapter: EditorAdapter | null) => void;
   scheduleSave: () => void;
-  setDeleteOpen: (open: boolean) => void;
 }
 
 export interface JournalContextValue {

@@ -9,7 +9,6 @@ import {
 import { usePanelRef } from "react-resizable-panels";
 
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
-import { DeleteEntryDialog } from "@/components/delete-entry-dialog";
 import EditorPane from "@/components/editor";
 import { EntriesList } from "@/components/entries-list";
 import { useFileMenu } from "@/components/file-menu-provider";
@@ -44,14 +43,9 @@ import { cn } from "@/lib/utils";
 const collapsedLeadingClass =
   "pl-[calc((var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
-export function JournalLayout() {
-  return (
-    <>
-      <JournalWorkspace />
-      <DeleteEntryDialog />
-    </>
-  );
-}
+// The entry list sits a little further in than the other pages. The header and
+// the rows share it, so the title stays lined up with the row text.
+const entriesInsetClass = "px-8";
 
 const defaultDetailPercent = 60;
 // The detail never remembers a size outside this range. Dragging the divider
@@ -71,7 +65,7 @@ const dividerKeys = new Set([
 
 type LayoutStep = "closed" | "focus" | "open";
 
-function JournalWorkspace() {
+export function JournalLayout() {
   const {
     actions: { setDetailOpen },
     state: { detailOpen, expanded },
@@ -245,7 +239,7 @@ function JournalDetail() {
 function EntriesColumn() {
   const listRef = useRememberedScroll<HTMLDivElement>("journal-list");
   const {
-    actions: { openDeleteEntry, select, startDraft },
+    actions: { deleteEntry, select, startDraft },
     state: { entries, loadingList, selectedId },
   } = useJournal();
   return (
@@ -258,6 +252,7 @@ function EntriesColumn() {
         <div
           className={cn(
             pageColumnClass,
+            entriesInsetClass,
             "flex h-8 items-center justify-between gap-2"
           )}
         >
@@ -274,11 +269,14 @@ function EntriesColumn() {
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn(pageColumnClass, "pt-2 pb-4")} ref={listRef}>
+        <div
+          className={cn(pageColumnClass, entriesInsetClass, "pt-2 pb-4")}
+          ref={listRef}
+        >
           <EntriesList
             entries={entries}
             loading={loadingList}
-            onDelete={openDeleteEntry}
+            onDelete={deleteEntry}
             onSelect={select}
             selectedId={selectedId}
           />

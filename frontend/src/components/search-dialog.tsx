@@ -37,7 +37,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import { formatRelativeAge } from "@/lib/format-relative-age";
+import { onCommitted } from "@/lib/pending-deletes";
 import {
   type SearchTab,
   settledSearchQuery,
@@ -278,6 +280,28 @@ function SearchForm() {
   const [memoryQuery, setMemoryQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const searchGenRef = useRef(0);
+
+  // Results are kept until the query changes. When a delete finishes, drop its
+  // row from them, so it does not show again once it leaves the hidden set.
+  useEffect(
+    () =>
+      onCommitted((kind, id) => {
+        if (kind === "entry") {
+          setJournalHits((current) =>
+            current.some((hit) => hit.id === id)
+              ? current.filter((hit) => hit.id !== id)
+              : current
+          );
+        } else {
+          setConversationHits((current) =>
+            current.some((hit) => hit.conversationId === id)
+              ? current.filter((hit) => hit.conversationId !== id)
+              : current
+          );
+        }
+      }),
+    []
+  );
 
   const openHit = useCallback(
     async (hit: SearchHit) => {
@@ -934,6 +958,9 @@ function useVisibleHits(): SearchHit[] {
     },
   } = useSearchForm();
   const { memoryEnabled } = useMemoryFeature();
+  // Rows waiting out their undo window do not show up in results.
+  const hiddenEntries = useHiddenIds("entry");
+  const hiddenChats = useHiddenIds("chat");
   return useMemo(() => {
     const settled = settledSearchQuery(
       tab,
@@ -945,10 +972,17 @@ function useVisibleHits(): SearchHit[] {
     if (query.trim().length === 0 || settled.length === 0) {
       return emptyHits;
     }
-    return visibleHits(tab, journalHits, conversationHits, memoryHits);
+    return visibleHits(
+      tab,
+      journalHits.filter((hit) => !hiddenEntries.has(hit.id)),
+      conversationHits.filter((hit) => !hiddenChats.has(hit.conversationId)),
+      memoryHits
+    );
   }, [
     conversationHits,
     conversationQuery,
+    hiddenChats,
+    hiddenEntries,
     journalHits,
     journalQuery,
     memoryHits,
