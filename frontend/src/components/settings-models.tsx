@@ -54,7 +54,10 @@ import {
 const canirunUrl = "https://www.canirun.ai";
 const canirunLinkClassName =
   "underline underline-offset-2 hover:text-foreground";
-const nameCellClassName = "whitespace-normal py-3 pl-4 font-medium";
+// A tag with no spaces, like an `hf.co/…` path, wraps instead of widening the
+// table past its card.
+const nameCellClassName =
+  "wrap-anywhere whitespace-normal py-3 pl-4 font-medium";
 const actionCellClassName = "w-px py-3 pr-4 text-right";
 const metricCellClassName =
   "w-px py-3 text-right text-muted-foreground tabular-nums";
