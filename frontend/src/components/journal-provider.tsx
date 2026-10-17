@@ -27,7 +27,6 @@ import {
   type EditorSelection,
   type EntryActions,
   type EntryContextValue,
-  generatingLabel,
   type JournalActions,
   type JournalContextValue,
   JournalStateProvider,
@@ -126,7 +125,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const [date, setDate] = useState(todayDate());
   const [updatedAt, setUpdatedAt] = useState("");
   const [entryLoading, setEntryLoading] = useState(false);
-  const [saveLabel, setSaveLabel] = useState("Saved");
   const [editorReady, setEditorReady] = useState(false);
   const [editorGeneration, setEditorGeneration] = useState(0);
 
@@ -146,12 +144,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const embedChainRef = useRef(Promise.resolve());
   const adapterRef = useRef<EditorAdapter | null>(null);
   const persistRef = useRef<() => Promise<void>>(async () => undefined);
-  const embedEntryRef = useRef<
-    (id: number, showStatus: boolean) => Promise<void>
-  >(async () => undefined);
-  const enqueueEmbedRef = useRef<(id: number, showStatus: boolean) => void>(
-    () => undefined
+  const embedEntryRef = useRef<(id: number) => Promise<void>>(
+    async () => undefined
   );
+  const enqueueEmbedRef = useRef<(id: number) => void>(() => undefined);
   const scheduleEmbedRef = useRef<() => void>(() => undefined);
   const staleEmbeddingPassRef = useRef<() => Promise<boolean>>(
     async () => false
@@ -227,7 +223,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return;
     }
     dirtyRef.current = false;
-    setSaveLabel("Saving");
     const body = adapter.getBody();
     const wordCount = countWords(adapter.getText());
     const nextTitle = titleRef.current.trim() || "Untitled";
@@ -255,12 +250,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       pendingEmbedIdsRef.current.add(saved.id);
       // biome-ignore lint/suspicious/noUnnecessaryConditions: dirtyRef can be set true by scheduleSave() during the await above
       if (!dirtyRef.current) {
-        setSaveLabel("Saved");
         scheduleEmbedRef.current();
       }
     } catch (error) {
       dirtyRef.current = true;
-      setSaveLabel("Save failed");
       toast.error(
         error instanceof Error ? error.message : "Could not save this entry."
       );
@@ -298,39 +291,31 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => clearStaleEmbeddingRetry(), [clearStaleEmbeddingRetry]);
 
   const embedEntry = useCallback(
-    async (id: number, showStatus: boolean) => {
+    async (id: number) => {
       if (!pendingEmbedIdsRef.current.has(id)) {
         return;
       }
       pendingEmbedIdsRef.current.delete(id);
-      let showedStatus = false;
       try {
         const status = await getOllamaStatus();
         if (!(status.running && status.modelPulled)) {
           scheduleStaleEmbeddingRetry();
           return;
         }
-        if (showStatus && idRef.current === id && !dirtyRef.current) {
-          setSaveLabel(generatingLabel);
-          showedStatus = true;
-        }
         await generateEmbeddings(id);
       } catch {
         scheduleStaleEmbeddingRetry();
-      }
-      if (showedStatus && idRef.current === id && !dirtyRef.current) {
-        setSaveLabel((label) => (label === generatingLabel ? "Saved" : label));
       }
     },
     [scheduleStaleEmbeddingRetry]
   );
 
-  const enqueueEmbed = useCallback((id: number, showStatus: boolean) => {
+  const enqueueEmbed = useCallback((id: number) => {
     if (!pendingEmbedIdsRef.current.has(id)) {
       return;
     }
     embedChainRef.current = embedChainRef.current
-      .then(() => embedEntryRef.current(id, showStatus))
+      .then(() => embedEntryRef.current(id))
       .catch(() => undefined);
   }, []);
 
@@ -363,7 +348,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     clearStaleEmbeddingRetry();
     for (const id of ids) {
       pendingEmbedIdsRef.current.add(id);
-      enqueueEmbed(id, idRef.current === id);
+      enqueueEmbed(id);
     }
     await embedChainRef.current;
     return staleEmbeddingRetryTimerRef.current === null;
@@ -375,7 +360,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       embedTimerRef.current = null;
       const id = idRef.current;
       if (id !== null) {
-        enqueueEmbed(id, true);
+        enqueueEmbed(id);
       }
     }, embedDelayMs);
   }, [clearEmbedTimer, enqueueEmbed]);
@@ -401,7 +386,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return;
     }
     dirtyRef.current = true;
-    setSaveLabel("");
     clearEmbedTimer();
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
@@ -427,7 +411,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     clearEmbedTimer();
     const id = idRef.current;
     if (id !== null) {
-      enqueueEmbed(id, false);
+      enqueueEmbed(id);
     }
     // A failed save leaves the entry dirty.
     return !dirtyRef.current;
@@ -489,7 +473,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       setDate(todayDate());
       setUpdatedAt("");
       setEntryLoading(false);
-      setSaveLabel("");
       adapter.resetDraft();
       return;
     }
@@ -513,7 +496,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         setDate(entry.date);
         setUpdatedAt(entry.updatedAt);
         current.loadDoc(entry);
-        setSaveLabel("Saved");
         setEntryLoading(false);
       })
       .catch((error: unknown) => {
@@ -546,7 +528,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
           }
           const id = idRef.current;
           if (id !== null) {
-            enqueueEmbedRef.current(id, false);
+            enqueueEmbedRef.current(id);
           }
         });
     };
@@ -639,7 +621,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setTitle("");
     setDate(todayDate());
     setUpdatedAt("");
-    setSaveLabel("Saved");
   }, [clearEmbedTimer, loadEntries]);
 
   const showHome = useCallback(async () => {
@@ -762,7 +743,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         message: `“${toastTitle(rowTitle, "Untitled")}” deleted.`,
         onUndo: () => {
           if (hadEmbedQueued) {
-            enqueueEmbed(id, false);
+            enqueueEmbed(id);
           }
           if (wasOpen) {
             select(id).catch(() => undefined);
@@ -962,12 +943,11 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       state: {
         date,
         loading: entryLoading,
-        saveLabel,
         title,
         updatedAt,
       },
     }),
-    [date, entryActions, entryLoading, saveLabel, title, updatedAt]
+    [date, entryActions, entryLoading, title, updatedAt]
   );
 
   return (

@@ -3,8 +3,6 @@ import { createContext, type ReactNode, use } from "react";
 import type { JournalEntry, JournalEntryMeta } from "@/bridge";
 import type { ParsedImport } from "@/lib/parse-markdown";
 
-export const generatingLabel = "Generating embedding...";
-
 export type Section = "chat" | "home" | "journal" | "memories" | "settings";
 
 export type SidebarMenu = "conversations" | "nav" | "settings";
@@ -60,7 +58,6 @@ export interface JournalActions {
 export interface EntryState {
   date: string;
   loading: boolean;
-  saveLabel: string;
   title: string;
   updatedAt: string;
 }

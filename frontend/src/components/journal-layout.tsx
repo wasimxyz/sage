@@ -38,11 +38,6 @@ import { useRememberedScroll } from "@/hooks/use-remembered-scroll";
 import { pageColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
-// Focus mode puts the editor under the titlebar toggle. The padding follows
-// the sidebar's slide, full when it is closed and none when it is open.
-const collapsedLeadingClass =
-  "pl-[calc((var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
-
 // The entry list sits a little further in than the other pages. The header and
 // the rows share it, so the title stays lined up with the row text.
 const entriesInsetClass = "px-8";
@@ -222,15 +217,10 @@ function layoutStep(detailOpen: boolean, expanded: boolean): LayoutStep {
 
 function JournalDetail() {
   const {
-    state: { expanded, selection },
+    state: { selection },
   } = useJournal();
   return (
-    <div
-      className={cn(
-        "flex h-full min-h-0 flex-col",
-        expanded && collapsedLeadingClass
-      )}
-    >
+    <div className="flex h-full min-h-0 flex-col">
       {selection ? <EditorPane /> : <SelectEntryEmpty />}
     </div>
   );

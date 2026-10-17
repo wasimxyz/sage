@@ -4,7 +4,6 @@ import { Tiptap, useEditor, useTiptap } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeftIcon,
-  CheckIcon,
   ChevronsRightIcon,
   Maximize2Icon,
   MoreHorizontalIcon,
@@ -23,11 +22,7 @@ import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
-import {
-  generatingLabel,
-  useEntry,
-  useJournal,
-} from "@/components/journal-context";
+import { useEntry, useJournal } from "@/components/journal-context";
 import {
   PanelIconButton,
   panelIconHoverClass,
@@ -43,7 +38,6 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
 import { Toggle } from "@/components/ui/toggle";
 import { readingColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
@@ -57,6 +51,13 @@ const extensions = [
   Markdown,
 ];
 const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
+
+// Focus mode puts the header buttons under the titlebar toggle. The padding
+// follows the sidebar's slide, full when it is closed and none when it is
+// open. It sits on the header alone, so the text column stays centered in the
+// window.
+const collapsedLeadingClass =
+  "pl-[calc(1.5rem+(var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
 function EditorFrame({ children }: { children: ReactNode }) {
   const {
@@ -158,7 +159,10 @@ function EditorHeader() {
   } = useJournal();
   return (
     <div
-      className="flex h-(--titlebar-height) shrink-0 items-center gap-2 px-6"
+      className={cn(
+        "flex h-(--titlebar-height) shrink-0 items-center gap-2 px-6",
+        expanded && collapsedLeadingClass
+      )}
       data-slot="window-drag"
       onPointerDown={onTitlebarPointerDown}
     >
@@ -172,7 +176,6 @@ function EditorHeader() {
           </>
         )}
       </div>
-      <SaveStatus />
       <EntryMenu />
     </div>
   );
@@ -240,7 +243,12 @@ function EntryMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button aria-label="Entry actions" size="icon-sm" variant="ghost" />
+          <Button
+            aria-label="Entry actions"
+            className="ml-auto"
+            size="icon-sm"
+            variant="ghost"
+          />
         }
       >
         <MoreHorizontalIcon />
@@ -254,28 +262,6 @@ function EntryMenu() {
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function SaveStatus() {
-  const {
-    state: { saveLabel },
-  } = useEntry();
-  let icon: ReactNode = null;
-  if (saveLabel === "Saving" || saveLabel === generatingLabel) {
-    icon = <Spinner aria-hidden role="presentation" />;
-  } else if (saveLabel === "Saved") {
-    icon = <CheckIcon />;
-  }
-  return (
-    <span
-      aria-live="polite"
-      className="ml-auto flex items-center gap-1.5 text-muted-foreground text-sm"
-      data-slot="save-status"
-    >
-      {icon}
-      {saveLabel}
-    </span>
   );
 }
 

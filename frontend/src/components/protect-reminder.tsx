@@ -84,7 +84,7 @@ export function ProtectReminder({ ready }: { ready: boolean }) {
     <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <LockIcon className="size-4" />
+          <LockIcon className="my-1 size-4" />
           <DialogTitle>
             {last
               ? "Last reminder: protect your journal"

@@ -309,11 +309,6 @@ html:has(
   color: var(--muted-foreground);
 }
 
-[data-slot="save-status"] svg {
-  width: 1rem;
-  height: 1rem;
-}
-
 .tiptap {
   min-height: 12rem;
   padding: 0;
