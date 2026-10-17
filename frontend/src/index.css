@@ -325,6 +325,13 @@ html:has(
   margin: 0.8em 0;
 }
 
+/* In the native app, a click in an empty entry body puts the selection in
+   place, but WebKit draws no caret. A zero-width character gives the empty
+   line some text, and the caret shows. See issue 17. */
+.tiptap > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "\200b";
+}
+
 .tiptap h1 {
   margin: 1.1em 0 0.5em;
   font-size: 1.5rem;
