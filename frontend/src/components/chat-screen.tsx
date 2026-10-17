@@ -76,7 +76,7 @@ import {
 } from "@/lib/chat/model-prefs";
 import {
   historyClientContext,
-  isSessionNotActiveError,
+  isEndedSessionError,
   projectedMessageIdAtSeq,
   sessionNamespacingReducer,
 } from "@/lib/chat/session-recovery";
@@ -411,11 +411,10 @@ function ChatTurnSession({
         return;
       }
       const action = pendingActionRef.current;
-      if (
-        isSessionNotActiveError(error) &&
-        action !== null &&
-        recoverDeadSession()
-      ) {
+      // A send, or the resume of a reopened chat, can learn that the session
+      // no longer runs. eve reports a stranded session on resume, so recover
+      // there too instead of showing an error.
+      if (isEndedSessionError(error) && recoverDeadSession()) {
         return;
       }
       if (action === "send" && lastSubmittedRef.current) {

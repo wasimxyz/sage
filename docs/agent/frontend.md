@@ -66,11 +66,20 @@ Opening a row reads it with `chat.get` and remounts `ChatTurn` with the stored e
 
 ## Recovering a session that ended
 
-An eve session can end for good, for example after a model call error or an eve upgrade that cannot replay it. A follow-up message then returns `409 session_not_active`. Chat recovers once per open conversation:
+An eve session can end for good, for example after a model call error or an eve upgrade that cannot replay it. eve then refuses the session, either when a reopened conversation resumes it or when you send a message:
+
+- `409 session_not_active`: the session ended.
+- `409 session_stranded`: an older eve version built it.
+- `410 session_expired`: eve deleted its history after the session ended.
+- `404 Session not found.`: the workflow files are gone. eve's client retries this one for about 38 seconds before it reports it.
+
+Chat recovers once per open conversation:
 
 1. Chat clears the stored session id.
-2. It remounts without resuming and sends the message again.
+2. It remounts without resuming. If you were sending a message, it sends it again.
 3. Each message in the new session includes the saved transcript as eve `clientContext`, so the model can read the earlier conversation.
+
+Moving to eve 0.80 ended every saved session at once: the new workflow storage deletes files that older versions wrote. Migration 18 clears every stored session id, so reopened conversations start fresh without that 38-second wait.
 
 The saved log then holds two sessions, and both number their turns from `turn_0`. Chat renames repeated turn ids on screen (`turn_0#1`) so new turns do not replace old ones, while the stored events keep their original ids. `frontend/src/lib/chat/session-recovery.ts` has the details.
 

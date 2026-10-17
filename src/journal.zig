@@ -47,6 +47,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 15, .name = "chat_title_locked", .sql = @embedFile("schema/0015_chat_title_locked.sql") },
     .{ .version = 16, .name = "chat_index_skip", .sql = @embedFile("schema/0016_chat_index_skip.sql") },
     .{ .version = 17, .name = "remove_sample_entries", .sql = @embedFile("schema/0017_remove_sample_entries.sql") },
+    .{ .version = 18, .name = "clear_eve_sessions", .sql = @embedFile("schema/0018_clear_eve_sessions.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -6353,11 +6354,11 @@ test "a chat counts as content" {
     try std.testing.expect(try store.hasEntriesOrChats());
 }
 
-// Migration 17 runs on journals that already have the sample entries. A new
-// journal never sees them, so this opens one at version 16 and applies the
-// last migration by hand, one statement at a time.
-fn applyRemoveSamples(db: *native_sdk.RelationalStore) !void {
-    var statements = std.mem.splitScalar(u8, migrations[16].sql, ';');
+// Data migrations such as 17 and 18 act on rows a new journal never has. Their
+// tests open a store at the version before, add those rows, and apply the
+// migration by hand, one statement at a time.
+fn applyMigration(db: *native_sdk.RelationalStore, migration: native_sdk.relational_store.Migration) !void {
+    var statements = std.mem.splitScalar(u8, migration.sql, ';');
     while (statements.next()) |statement| {
         // A chunk with only comments or space has nothing to run.
         var has_sql = false;
@@ -6407,7 +6408,7 @@ test "migration 17 removes untouched samples and what hangs off them" {
         try std.testing.expectEqual(native_sdk.relational_store.Outcome.ok, db.exec(&.{.{ .sql = sql }}));
     }
 
-    try applyRemoveSamples(&db);
+    try applyMigration(&db, migrations[16]);
 
     // Samples 1 and 3 are gone, and so is everything that hung off sample 1.
     try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM journal_entry WHERE id IN (1, 3);"));
@@ -6438,8 +6439,34 @@ test "migration 17 finds an untouched sample even after the encryption rewrite" 
         native_sdk.relational_store.Outcome.ok,
         db.exec(&.{.{ .sql = "UPDATE journal_entry SET title = 'sage:v1:AAAA', body = 'sage:v1:BBBB' WHERE id = 1;" }}),
     );
-    try applyRemoveSamples(&db);
+    try applyMigration(&db, migrations[16]);
     try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM journal_entry;"));
+}
+
+test "migration 18 forgets saved eve sessions and keeps the chats" {
+    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, migrations[0..17]);
+    var db = switch (open_result.outcome) {
+        .ok => open_result.database.?,
+        else => return error.SqliteMigrationFailed,
+    };
+    defer db.deinit();
+    const setup = [_][]const u8{
+        "INSERT INTO chat_conversation (id, title, eve_session_id, stream_index, events, updated_at) VALUES (1, 'Old chat', 'wrun_old', 1372, '', '2026-10-14T05:06:57.383Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event) VALUES (1, 0, '{}');",
+        "INSERT INTO chat_conversation (id, title, eve_session_id, stream_index, events, updated_at) VALUES (2, 'Never sent', NULL, 0, '', '2026-10-15T08:00:00.000Z');",
+    };
+    for (setup) |sql| {
+        try std.testing.expectEqual(native_sdk.relational_store.Outcome.ok, db.exec(&.{.{ .sql = sql }}));
+    }
+
+    try applyMigration(&db, migrations[17]);
+
+    try std.testing.expectEqual(@as(i64, 0), try countRows(&db, "SELECT count(*) AS n FROM chat_conversation WHERE eve_session_id IS NOT NULL OR stream_index != 0;"));
+    // The transcript stays, and so does the list order.
+    try std.testing.expectEqual(@as(i64, 2), try countRows(&db, "SELECT count(*) AS n FROM chat_conversation;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM chat_event WHERE conversation_id = 1;"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM chat_conversation WHERE id = 1 AND updated_at = '2026-10-14T05:06:57.383Z';"));
+    try std.testing.expectEqual(@as(i64, 1), try countRows(&db, "SELECT count(*) AS n FROM chat_conversation WHERE id = 2 AND updated_at = '2026-10-15T08:00:00.000Z';"));
 }
 
 test "list returns seeded journal entries" {

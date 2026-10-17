@@ -29,8 +29,8 @@
   "dependencies": {
     "@ai-sdk/provider-utils": "^5.0.44",
     "@sage/world-encrypted-local": "file:./packages/world-encrypted-local",
-    "ai": "^7.0.106",
-    "eve": "^0.66.0",
+    "ai": "^7.0.143",
+    "eve": "^0.80.1",
     "ollama-ai-provider-v2": "^4.0.1",
     "zod": "4.5.4"
   },

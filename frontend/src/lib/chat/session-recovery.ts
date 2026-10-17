@@ -12,12 +12,24 @@ const omittedMarker = "_Earlier messages were omitted._\n\n";
 const transcriptLimitBytes = 12 * 1024;
 const turnSeparator = "\n\n";
 const encoder = new TextEncoder();
+// eve refuses a session that can no longer run: it ended (409
+// session_not_active), an older eve built it (409 session_stranded), its
+// history passed retention (410 session_expired), or the workflow store no
+// longer has it (404 with no code, after the client's retries).
+const endedSessionCodes = new Set([
+  "session_expired",
+  "session_not_active",
+  "session_stranded",
+]);
 
-export function isSessionNotActiveError(error: unknown): boolean {
+export function isEndedSessionError(error: unknown): boolean {
   if (error instanceof ClientError) {
+    if (error.status === 404) {
+      return error.message === "Session not found.";
+    }
     return (
-      error.status === 409 &&
-      (error.code === "session_not_active" ||
+      (error.status === 409 || error.status === 410) &&
+      ((error.code !== undefined && endedSessionCodes.has(error.code)) ||
         error.message === "The session is no longer active.")
     );
   }

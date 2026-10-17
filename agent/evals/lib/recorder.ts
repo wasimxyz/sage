@@ -11,8 +11,10 @@ export interface RecordedAssertion {
   message?: string;
   metadata?: Record<string, unknown>;
   name: string;
-  passed: boolean;
-  score: number;
+  // eve leaves `passed` and `threshold` out when no rule applies, and `score`
+  // out when the scorer threw. Only `passed === false` marks a failure.
+  passed?: boolean;
+  score?: number;
   severity: string;
   threshold?: number;
 }
@@ -141,8 +143,8 @@ function assertionList(value: unknown, label: string): RecordedAssertion[] {
           ? undefined
           : objectRecord(row.metadata, `${label} assertions[${index}]`),
       name,
-      passed: row.passed === true,
-      score: typeof row.score === "number" ? row.score : 0,
+      passed: typeof row.passed === "boolean" ? row.passed : undefined,
+      score: typeof row.score === "number" ? row.score : undefined,
       severity: typeof row.severity === "string" ? row.severity : "soft",
       threshold: typeof row.threshold === "number" ? row.threshold : undefined,
     };
