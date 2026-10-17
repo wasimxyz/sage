@@ -133,7 +133,9 @@ function failureMessage(
   if (chat.error !== undefined && chat.error.length > 0) {
     return chat.error;
   }
-  const failed = assertions.find((assertion) => !assertion.passed);
+  const failed = assertions.find(
+    (assertion) => assertion.passed === false || assertion.errored === true
+  );
   if (failed?.message !== undefined && failed.message.length > 0) {
     return failed.message;
   }

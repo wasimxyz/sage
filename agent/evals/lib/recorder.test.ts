@@ -92,8 +92,10 @@ function sampleResult(overrides: Partial<EveEvalResult> = {}): EveEvalResult {
       derived: {
         inputRequests: [],
         messageCount: 1,
+        models: [],
         parked: false,
         reasoningBlockCount: 0,
+        skillLoads: [],
         subagentCallCount: 0,
         subagentCalls: [],
         toolCallCount: 0,

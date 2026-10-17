@@ -17,7 +17,7 @@ Sage is a native desktop app built with the Vercel Native SDK and eve.
 
 - macOS
 - Node.js 24, for `make setup` and `make dev`
-- Native SDK CLI: `npm install -g @native-sdk/cli@0.10.1`
+- Native SDK CLI: `npm install -g @native-sdk/cli@0.11.0`
 - Ollama with a chat model and the embedding model: `ollama pull qwen3.5:9b` and `ollama pull nomic-embed-text`
 
 The pinned CLI version is in `.native-sdk-version`, and CI installs exactly that version. Keep the two in step when you upgrade. The first build downloads Zig 0.16 if it is not already installed.
