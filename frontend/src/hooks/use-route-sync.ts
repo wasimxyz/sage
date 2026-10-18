@@ -7,6 +7,7 @@ import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useSettings } from "@/components/settings-context";
 import {
   hashMatches,
+  isNewChatSaved,
   navigationOverridesPendingMemoryRoute,
   pushRoute,
   type Route,
@@ -102,7 +103,11 @@ export function useRouteSync() {
   }, [applyFromHash]);
 
   const { detailOpen, section, selection } = journal.state;
-  const { paneKey, selection: chatSelection } = chat.state;
+  const {
+    paneKey,
+    panelOpen: chatPanelOpen,
+    selection: chatSelection,
+  } = chat.state;
   const { tab: memoriesTab } = memories.state;
   const { tab: settingsTab } = settings.state;
   const entryId = selection?.kind === "id" ? selection.id : null;
@@ -111,6 +116,7 @@ export function useRouteSync() {
   useEffect(() => {
     const route = routeFromState({
       chatId,
+      chatPanelOpen,
       detailOpen,
       entryId,
       memoriesTab,
@@ -162,6 +168,7 @@ export function useRouteSync() {
     pushRoute(route);
   }, [
     chatId,
+    chatPanelOpen,
     detailOpen,
     entryId,
     memoryFeatureReady,
@@ -181,6 +188,7 @@ function routeFromProviders(
   return routeFromState({
     chatId:
       chat.state.selection.kind === "saved" ? chat.state.selection.id : null,
+    chatPanelOpen: chat.state.panelOpen,
     detailOpen: journal.state.detailOpen,
     entryId:
       journal.state.selection?.kind === "id"
@@ -296,24 +304,33 @@ async function applyChatHash(
   chat: ChatApi,
   isStale: () => boolean
 ): Promise<void> {
-  const chatId =
-    chat.state.selection.kind === "saved" ? chat.state.selection.id : null;
+  const { selection } = chat.state;
+  if (route.chat === "list") {
+    // Close it before Chat shows, so the panel does not flash open first.
+    chat.actions.setPanelOpen(false);
+  }
   if (current.section !== "chat") {
     await journal.actions.showChat();
     if (isStale()) {
       return;
     }
   }
-  if (route.conversationId === null) {
-    if (chatId !== null) {
+  if (route.chat === "list") {
+    return;
+  }
+  if (route.chat === "new") {
+    if (selection.kind === "new") {
+      chat.actions.setPanelOpen(true);
+    } else {
       chat.actions.newChat();
     }
     return;
   }
-  if (chatId === route.conversationId) {
+  if (selection.kind === "saved" && selection.id === route.chat) {
+    chat.actions.setPanelOpen(true);
     return;
   }
-  chat.actions.openConversation(route.conversationId);
+  chat.actions.openConversation(route.chat);
 }
 
 function shouldReplaceHash(
@@ -324,11 +341,5 @@ function shouldReplaceHash(
   if (window.location.hash.length === 0) {
     return true;
   }
-  return (
-    !paneKeyChanged &&
-    prev?.section === "chat" &&
-    prev.conversationId === null &&
-    route.section === "chat" &&
-    route.conversationId !== null
-  );
+  return !paneKeyChanged && isNewChatSaved(prev, route);
 }

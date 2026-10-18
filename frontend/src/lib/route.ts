@@ -11,10 +11,16 @@ export function isSettingsTab(value: unknown): value is SettingsTab {
   return settingsTabs.some((tab) => tab === value);
 }
 
+/**
+ * What Chat shows: the list alone, the panel on a new chat, or the panel on a
+ * saved chat.
+ */
+export type ChatView = "list" | "new" | number;
+
 export type Route =
   | { section: "home" }
   | { entryId: number | null; section: "journal" }
-  | { conversationId: number | null; section: "chat" }
+  | { chat: ChatView; section: "chat" }
   | { section: "memories"; tab: MemoriesTab }
   | { section: "settings"; tab: SettingsTab };
 
@@ -80,9 +86,24 @@ export function toHash(route: Route): string {
   if (route.section === "settings") {
     return route.tab === "agent" ? "/settings" : `/settings/${route.tab}`;
   }
-  return route.conversationId === null
-    ? "/chat"
-    : `/chat/${route.conversationId}`;
+  if (route.chat === "list") {
+    return "/chat";
+  }
+  return `/chat/${route.chat}`;
+}
+
+/**
+ * True when a new chat has just saved, so `/chat/new` becomes `/chat/:id`.
+ * That replaces the entry in the history, so Back does not return to a new
+ * chat that is gone.
+ */
+export function isNewChatSaved(prev: Route | null, route: Route): boolean {
+  return (
+    prev?.section === "chat" &&
+    prev.chat === "new" &&
+    route.section === "chat" &&
+    typeof route.chat === "number"
+  );
 }
 
 export function readRoute(): Route {
@@ -107,6 +128,7 @@ export function routesEqual(left: Route, right: Route): boolean {
 
 export function routeFromState(input: {
   chatId: number | null;
+  chatPanelOpen: boolean;
   detailOpen: boolean;
   entryId: number | null;
   memoriesTab: MemoriesTab;
@@ -128,7 +150,10 @@ export function routeFromState(input: {
   if (input.section === "memories") {
     return { section: "memories", tab: input.memoriesTab };
   }
-  return { conversationId: input.chatId, section: "chat" };
+  if (!input.chatPanelOpen) {
+    return { chat: "list", section: "chat" };
+  }
+  return { chat: input.chatId ?? "new", section: "chat" };
 }
 
 function parseJournalRoute(idPart: string | undefined): Route {
@@ -141,12 +166,13 @@ function parseJournalRoute(idPart: string | undefined): Route {
 
 function parseChatRoute(idPart: string | undefined): Route {
   if (idPart === undefined) {
-    return { conversationId: null, section: "chat" };
+    return { chat: "list", section: "chat" };
   }
-  const conversationId = parseId(idPart);
-  return conversationId === null
-    ? defaultRoute
-    : { conversationId, section: "chat" };
+  if (idPart === "new") {
+    return { chat: "new", section: "chat" };
+  }
+  const chat = parseId(idPart);
+  return chat === null ? defaultRoute : { chat, section: "chat" };
 }
 
 function parseMemoriesRoute(idPart: string | undefined): Route {

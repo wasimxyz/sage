@@ -67,7 +67,7 @@ import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 
 const emptyMeta = {};
 
-type ChatSelection =
+export type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
   | { focusSeq?: number; id: number; kind: "saved"; load: ChatLoadPromise };
 
@@ -78,9 +78,13 @@ interface ChatState {
   contextLengthLocked: boolean;
   conversations: ChatConversationMeta[];
   error: string | null;
+  /** True once the chat list has loaded, so the list can show rows, not a gap. */
+  listLoaded: boolean;
   models: ModelsLoad;
   ollamaStart: OllamaStartLoad;
   paneKey: number;
+  /** Whether the panel beside the list is open. Closing keeps the selection. */
+  panelOpen: boolean;
   selectedModel: string;
   selection: ChatSelection;
   thinkingEnabled: boolean;
@@ -99,6 +103,7 @@ interface ChatActions {
   renameConversation: (id: number, title: string) => Promise<void>;
   selectModel: (model: string) => void;
   setContextLength: (value: number) => void;
+  setPanelOpen: (open: boolean) => void;
   setThinkingEnabled: (enabled: boolean) => void;
   showError: (message: string) => void;
   startOllama: () => Promise<void>;
@@ -209,6 +214,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     load: emptyChatLoad,
   });
   const [paneKey, setPaneKey] = useState(0);
+  // Chat opens on a new chat, so the first visit shows the panel. After that
+  // the panel stays as it was left.
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [listLoaded, setListLoaded] = useState(false);
   const [models, setModels] = useState<ModelsLoad>({ kind: "loading" });
   const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
     kind: "idle",
@@ -250,6 +259,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         caught instanceof Error ? caught.message : "Could not load chats."
       );
     }
+    setListLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -448,13 +458,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [selection]
   );
 
-  const newChat = useCallback(() => {
+  // Back to an empty chat, with the panel as it is.
+  const resetToNewChat = useCallback(() => {
     setError(null);
     setSelection({ kind: "new", load: emptyChatLoad });
     setPrefs(loadChatModelPrefs());
     setContextLengthLocked(false);
     setPaneKey((current) => current + 1);
   }, []);
+
+  const newChat = useCallback(() => {
+    resetToNewChat();
+    setPanelOpen(true);
+  }, [resetToNewChat]);
 
   const renameConversation = useCallback(async (id: number, title: string) => {
     try {
@@ -485,16 +501,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
       setContextLengthLocked(true);
       setPaneKey((current) => current + 1);
+      setPanelOpen(true);
     },
     []
   );
 
   const deleteConversation = useCallback(
     (id: number) => {
-      const wasOpen = selection.kind === "saved" && selection.id === id;
+      const isSelected = selection.kind === "saved" && selection.id === id;
+      // Undo reopens a chat that was on screen, not one the closed panel
+      // only remembered.
+      const wasOpen = isSelected && panelOpen;
       const title = allConversations.find((row) => row.id === id)?.title ?? "";
-      if (wasOpen) {
-        newChat();
+      if (isSelected) {
+        resetToNewChat();
       }
       deleteWithUndo({
         commit: () => commitChatDelete(id),
@@ -508,7 +528,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [allConversations, newChat, openConversation, selection]
+    [allConversations, openConversation, panelOpen, resetToNewChat, selection]
   );
 
   const recordCreated = useCallback(
@@ -592,6 +612,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       renameConversation,
       selectModel,
       setContextLength,
+      setPanelOpen,
       setThinkingEnabled,
       showError,
       startOllama,
@@ -625,9 +646,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         contextLengthLocked,
         conversations,
         error,
+        listLoaded,
         models,
         ollamaStart,
         paneKey,
+        panelOpen,
         selectedModel: prefs.model,
         selection,
         thinkingEnabled: prefs.thinking,
@@ -640,9 +663,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       contextLengthLocked,
       conversations,
       error,
+      listLoaded,
       models,
       ollamaStart,
       paneKey,
+      panelOpen,
       prefs,
       selection,
     ]

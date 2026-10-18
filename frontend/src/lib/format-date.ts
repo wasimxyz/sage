@@ -26,6 +26,16 @@ export function calendarDateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");
 }
 
+/**
+ * The local calendar day of a UTC instant such as a chat's `updatedAt`, as
+ * `yyyy-MM-dd`. A chat saved at 11pm belongs to that evening, not to the next
+ * day in UTC. A value that is not a date comes back unchanged.
+ */
+export function localDateKey(instant: string): string {
+  const date = new Date(instant);
+  return Number.isNaN(date.getTime()) ? instant : calendarDateKey(date);
+}
+
 function eventAgeUnit(date: Date, now: Date): EventAgeUnit {
   if (Math.abs(differenceInSeconds(date, now)) < secondsInMonth) {
     return "week";

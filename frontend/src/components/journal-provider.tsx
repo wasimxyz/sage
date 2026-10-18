@@ -633,7 +633,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const showChat = useCallback(async () => {
     await flush();
     setSection("chat");
-    setSidebarMenu("conversations");
+    setSidebarMenu("nav");
     setExpanded(false);
   }, [flush]);
 

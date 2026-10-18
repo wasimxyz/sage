@@ -5,7 +5,7 @@ import type { ParsedImport } from "@/lib/parse-markdown";
 
 export type Section = "chat" | "home" | "journal" | "memories" | "settings";
 
-export type SidebarMenu = "conversations" | "nav" | "settings";
+export type SidebarMenu = "nav" | "settings";
 
 export type EditorSelection = { kind: "id"; id: number } | { kind: "draft" };
 
