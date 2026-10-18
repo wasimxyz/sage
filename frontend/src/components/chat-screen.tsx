@@ -56,7 +56,11 @@ import {
   TRANSCRIPT_FADE_CLASS,
   TRANSCRIPT_GUTTER_CLASS,
 } from "@/components/chat/transcript-column";
-import { isChatComposerLocked, useChat } from "@/components/chat-provider";
+import {
+  type ChatSelection,
+  isChatComposerLocked,
+  useChat,
+} from "@/components/chat-provider";
 import { useDream } from "@/components/dream-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { shouldShowAssistantPending } from "@/lib/chat/assistant-pending";
@@ -69,6 +73,10 @@ import {
   eveHost,
   withChatAuthorization,
 } from "@/lib/chat/eve-host";
+import {
+  type ChatLoadPromise,
+  loadConversation,
+} from "@/lib/chat/load-conversation";
 import {
   loadChatModelPrefs,
   normalizeChatModelId,
@@ -133,27 +141,89 @@ const titleLimit = 60;
 const expiredSessionRestoredMessage =
   "The previous session expired. History was restored into a fresh session.";
 
+/**
+ * Loads a pane has already read. A running pane keeps its own copy of the
+ * chat, so a load is out of date once its pane is gone: it has none of the
+ * turns sent since. A pane that mounts on a used load reads the chat again.
+ */
+const usedLoads = new WeakSet<ChatLoadPromise>();
+// The read a mounting pane has started for a used load. Rendering twice, as
+// StrictMode does, finds it instead of starting a second read. Once a pane
+// has shown it, it counts as used, and the next mount reads again.
+const rereads = new WeakMap<ChatLoadPromise, ChatLoadPromise>();
+
+function loadForMount(selection: ChatSelection): {
+  load: ChatLoadPromise;
+  reread: boolean;
+} {
+  if (selection.kind !== "saved" || !usedLoads.has(selection.load)) {
+    return { load: selection.load, reread: false };
+  }
+  const started = rereads.get(selection.load);
+  if (started && !usedLoads.has(started)) {
+    return { load: started, reread: true };
+  }
+  const fresh = loadConversation(selection.id);
+  rereads.set(selection.load, fresh);
+  return { load: fresh, reread: true };
+}
+
+/** The panel beside the chat list. */
 export function ChatScreen() {
   const {
     state: { paneKey },
   } = useChat();
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <h1 className="sr-only">Chat</h1>
       <Fragment key={paneKey}>
-        <Suspense fallback={<ChatSessionFallback />}>
-          <ChatSession />
-        </Suspense>
+        <ChatSessionLoad />
       </Fragment>
     </div>
   );
 }
 
-function ChatSession() {
+function ChatSessionLoad() {
   const {
-    state: { agentToken, selection },
+    state: { selection },
   } = useChat();
-  const result = use(selection.load);
+  // Decided once, when the pane mounts, and above the Suspense boundary: a
+  // component that suspends as it mounts loses its state and would decide
+  // again. A new load from the provider, such as a chat that has just saved,
+  // takes over from this one.
+  const [mounted] = useState(() => ({
+    ...loadForMount(selection),
+    source: selection.load,
+  }));
+  const load =
+    selection.load === mounted.source ? mounted.load : selection.load;
+  useEffect(() => {
+    usedLoads.add(load);
+    usedLoads.add(selection.load);
+  }, [load, selection.load]);
+  // A search hit scrolls the chat to its message when the chat opens. A chat
+  // read again on a later visit opens at its end instead.
+  const focusSeq =
+    selection.kind === "saved" && !mounted.reread
+      ? selection.focusSeq
+      : undefined;
+  return (
+    <Suspense fallback={<ChatSessionFallback />}>
+      <ChatSession focusSeq={focusSeq} load={load} />
+    </Suspense>
+  );
+}
+
+function ChatSession({
+  focusSeq,
+  load,
+}: {
+  focusSeq: number | undefined;
+  load: ChatLoadPromise;
+}) {
+  const {
+    state: { agentToken },
+  } = useChat();
+  const result = use(load);
   if (result.kind === "failed") {
     return <ChatLoadFailed message={result.message} />;
   }
@@ -166,7 +236,7 @@ function ChatSession() {
     <ChatTurn
       agentToken={agentToken}
       conversation={result.conversation}
-      focusSeq={selection.kind === "saved" ? selection.focusSeq : undefined}
+      focusSeq={focusSeq}
     />
   );
 }

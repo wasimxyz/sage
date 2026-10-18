@@ -4,16 +4,7 @@ import { useChat } from "@/components/chat-provider";
 import { useJournal } from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { isNewKey, newTarget } from "@/lib/new-shortcut";
-
-// Dialogs, sheets, popovers, menus, and select lists all mark their open popup
-// with data-open and a role. Tooltips have neither, so they never block.
-const openSurfaceSelector = [
-  '[data-slot="dialog-content"][data-open]',
-  '[data-open][role="dialog"]',
-  '[data-open][role="alertdialog"]',
-  '[data-open][role="menu"]',
-  '[data-open][role="listbox"]',
-].join(",");
+import { hasOpenSurface } from "@/lib/open-surface";
 
 /**
  * ⌘N starts a new chat on Chat and a new entry on the other screens. It waits
@@ -40,7 +31,7 @@ export function useNewShortcut() {
         return;
       }
       const target = newTarget(section, editingMemory);
-      if (target === null || document.querySelector(openSurfaceSelector)) {
+      if (target === null || hasOpenSurface()) {
         return;
       }
       event.preventDefault();
