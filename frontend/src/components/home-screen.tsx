@@ -148,7 +148,7 @@ export function HomeScreen() {
           <h1 className="ml-3 min-w-0 truncate font-medium text-base">
             {formatHomeHeadingDate()}
           </h1>
-          <Button onClick={startDraft} size="sm">
+          <Button aria-keyshortcuts="Meta+N" onClick={startDraft} size="sm">
             <PlusIcon data-icon="inline-start" />
             New entry
           </Button>

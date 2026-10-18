@@ -1,7 +1,9 @@
 import type { PointerEvent } from "react";
 import { startWindowDrag } from "@/bridge";
+import { Hint } from "@/components/hint";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useTitlebarAlignment } from "@/hooks/use-titlebar-alignment";
+import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 export function AppTitlebar() {
@@ -19,7 +21,9 @@ export function AppTitlebar() {
       onPointerDown={onTitlebarPointerDown}
       ref={rowRef}
     >
-      <SidebarTrigger aria-pressed={open} />
+      <Hint label="Toggle sidebar" shortcut={shortcuts.toggleSidebar}>
+        <SidebarTrigger aria-pressed={open} />
+      </Hint>
     </header>
   );
 }

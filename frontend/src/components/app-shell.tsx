@@ -26,6 +26,7 @@ import {
 import { JournalLayout } from "@/components/journal-layout";
 import { MemoriesScreen } from "@/components/memories-screen";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
+import { MenuShortcut } from "@/components/menu-shortcut";
 import { SearchDialog, SearchProvider } from "@/components/search-dialog";
 import { SettingsMenu } from "@/components/settings-menu";
 import { SettingsScreen } from "@/components/settings-screen";
@@ -40,11 +41,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useNewShortcut } from "@/hooks/use-new-shortcut";
 import { useRouteSync } from "@/hooks/use-route-sync";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
+import { shortcuts } from "@/lib/shortcuts";
 
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
+  useNewShortcut();
   const {
     state: { section },
   } = useJournal();
@@ -150,7 +154,6 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "home"}
                 onClick={showHome}
-                tooltip="Home"
               >
                 <HouseIcon />
                 <span>Home</span>
@@ -160,7 +163,6 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "journal"}
                 onClick={showJournal}
-                tooltip="Journal"
               >
                 <NotebookTextIcon />
                 <span>Journal</span>
@@ -170,7 +172,6 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "chat"}
                 onClick={showChat}
-                tooltip="Chat"
               >
                 <MessageCircleIcon />
                 <span>Chat</span>
@@ -182,7 +183,6 @@ function NavMenu() {
                 <SidebarMenuButton
                   isActive={section === "memories"}
                   onClick={showMemories}
-                  tooltip="Memories"
                 >
                   <RotateCcwClockIcon />
                   <span>Memories</span>
@@ -206,12 +206,13 @@ function SettingsNav() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
+            aria-keyshortcuts="Meta+,"
             className="mb-0.5"
             onClick={showSettings}
-            tooltip="Settings"
           >
             <SettingsIcon />
-            <span>Settings</span>
+            <span className="truncate">Settings</span>
+            <MenuShortcut>{shortcuts.settings}</MenuShortcut>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

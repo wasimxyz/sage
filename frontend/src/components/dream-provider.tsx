@@ -27,6 +27,7 @@ import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 import { commitAll } from "@/lib/pending-deletes";
 
 const ollamaPollMs = 4000;
+const pendingPollMs = 15_000;
 
 interface DreamState {
   confirmOpen: boolean;
@@ -34,6 +35,7 @@ interface DreamState {
   lastDreamedAt: string | null;
   ollamaRunning: boolean;
   ollamaStart: OllamaStartLoad;
+  pending: number;
   running: boolean;
   total: number;
 }
@@ -83,6 +85,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [lastDreamedAt, setLastDreamedAt] = useState<string | null>(null);
+  const [pending, setPending] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [ollamaRunning, setOllamaRunning] = useState(true);
   const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
@@ -150,13 +153,18 @@ export function DreamProvider({ children }: { children: ReactNode }) {
     }
   }, [running]);
 
-  const refresh = useCallback(async () => {
+  // A poll answers after a Dream may have started, so it only writes the count.
+  const refresh = useCallback(async (pendingOnly = false) => {
     const ready = (await waitForNativeBridge()) && hasNativeBridge();
     if (!ready) {
       return;
     }
     try {
       const status = await getDreamStatus();
+      setPending(status.pending);
+      if (pendingOnly) {
+        return;
+      }
       setRunning(status.running);
       setDone(status.done);
       setTotal(status.total);
@@ -169,6 +177,30 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh().catch(() => undefined);
   }, [refresh]);
+
+  // Journal and chat edits never reach this provider, so the count is read again
+  // on a timer while Dream is idle. A hidden window skips the timer and reads
+  // once when it comes back.
+  useEffect(() => {
+    if (running) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        refresh(true).catch(() => undefined);
+      }
+    }, pendingPollMs);
+    const onVisible = () => {
+      if (!document.hidden) {
+        refresh(true).catch(() => undefined);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh, running]);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,6 +264,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
         );
         getDreamStatus()
           .then((status) => {
+            setPending(status.pending);
             if (status.lastDreamedAt) {
               setLastDreamedAt(status.lastDreamedAt);
             }
@@ -261,6 +294,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
       lastDreamedAt,
       ollamaRunning,
       ollamaStart,
+      pending,
       running,
       total,
     }),
@@ -270,6 +304,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
       lastDreamedAt,
       ollamaRunning,
       ollamaStart,
+      pending,
       running,
       total,
     ]

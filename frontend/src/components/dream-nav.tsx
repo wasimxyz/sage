@@ -2,6 +2,7 @@ import { MoonStarIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { useDream } from "@/components/dream-provider";
+import { Hint } from "@/components/hint";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { SearchNavItem } from "@/components/search-dialog";
 import { Button } from "@/components/ui/button";
@@ -73,11 +74,30 @@ function DreamMenu() {
 function IdleDreamMenuButton() {
   const {
     actions: { prompt },
+    state: { lastDreamedAt, pending },
   } = useDream();
-  return (
-    <SidebarMenuButton onClick={prompt} tooltip="Dream">
+  const now = useRelativeNow();
+  const age = lastDreamedAt ? formatLastDreamed(lastDreamedAt, now) : "";
+  const button = (
+    <SidebarMenuButton className="justify-between" onClick={prompt}>
       <DreamMenuLabel>Dream</DreamMenuLabel>
+      {pending > 0 ? <PendingDot /> : null}
     </SidebarMenuButton>
+  );
+  if (!age) {
+    return button;
+  }
+  return <Hint label={`Last dreamed ${age}`}>{button}</Hint>;
+}
+
+// Sits in a 14px box, the same size as the chevron on the Chat item, so the
+// two share a right edge and a center line.
+function PendingDot() {
+  return (
+    <span className="flex size-3.5 shrink-0 items-center justify-center">
+      <span aria-hidden className="size-1.5 rounded-full bg-blue-500" />
+      <span className="sr-only">Needs dreaming</span>
+    </span>
   );
 }
 
@@ -91,10 +111,10 @@ function DreamingMenuButton() {
 
 function DreamMenuLabel({ children }: { children: ReactNode }) {
   return (
-    <>
+    <span className="flex min-w-0 items-center gap-2">
       <MoonStarIcon />
-      <span>{children}</span>
-    </>
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
@@ -181,7 +201,7 @@ function DreamStatusLine() {
   if (running) {
     return <DreamingCaption />;
   }
-  return <LastDreamedCaption />;
+  return null;
 }
 
 function DreamingCaption() {
@@ -193,21 +213,6 @@ function DreamingCaption() {
       <span className="tabular-nums">{formatDreamProgress(done, total)}</span>
     </DreamCaption>
   );
-}
-
-function LastDreamedCaption() {
-  const {
-    state: { lastDreamedAt },
-  } = useDream();
-  const now = useRelativeNow();
-  if (!lastDreamedAt) {
-    return null;
-  }
-  const age = formatLastDreamed(lastDreamedAt, now);
-  if (!age) {
-    return null;
-  }
-  return <DreamCaption>Last dreamed {age}</DreamCaption>;
 }
 
 function DreamCaption({ children }: { children: ReactNode }) {

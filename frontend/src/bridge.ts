@@ -606,6 +606,7 @@ export async function listPendingEmbeddings(): Promise<number[]> {
 export interface DreamStatus {
   done: number;
   lastDreamedAt: string | null;
+  pending: number;
   running: boolean;
   total: number;
 }
@@ -628,6 +629,7 @@ export async function getDreamStatus(): Promise<DreamStatus> {
   return {
     done: asNumber(response.done),
     lastDreamedAt: asStringOrNull(response.lastDreamedAt),
+    pending: asNumber(response.pending),
     running: asBoolean(response.running),
     total: asNumber(response.total),
   };

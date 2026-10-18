@@ -12,6 +12,7 @@ import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import EditorPane from "@/components/editor";
 import { EntriesList } from "@/components/entries-list";
 import { useFileMenu } from "@/components/file-menu-provider";
+import { Hint } from "@/components/hint";
 import { useJournal } from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,15 +28,11 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePanelSpring } from "@/hooks/use-panel-spring";
 import { useRememberedScroll } from "@/hooks/use-remembered-scroll";
 import { pageColumnClass } from "@/lib/page-column";
+import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 // The entry list sits a little further in than the other pages. The header and
@@ -251,7 +248,7 @@ function EntriesColumn() {
           </h1>
           <div className="flex shrink-0 items-center gap-2">
             <ImportButton />
-            <Button onClick={startDraft} size="sm">
+            <Button aria-keyshortcuts="Meta+N" onClick={startDraft} size="sm">
               <PlusIcon data-icon="inline-start" />
               New entry
             </Button>
@@ -281,21 +278,16 @@ function ImportButton() {
     actions: { openImport },
   } = useFileMenu();
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            aria-label="Import"
-            onClick={openImport}
-            size="icon-sm"
-            variant="ghost"
-          />
-        }
+    <Hint label="Import" shortcut={shortcuts.import}>
+      <Button
+        aria-label="Import"
+        onClick={openImport}
+        size="icon-sm"
+        variant="ghost"
       >
         <ImportIcon className="size-4.25" />
-      </TooltipTrigger>
-      <TooltipContent>Import</TooltipContent>
-    </Tooltip>
+      </Button>
+    </Hint>
   );
 }
 

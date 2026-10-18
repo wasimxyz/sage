@@ -418,61 +418,7 @@ pub const Store = struct {
         var rows = DreamPendingRows.init(self.allocator);
         defer rows.deinit();
         const outcome = self.db.query(
-            \\SELECT 'entry' AS source_type, journal_entry.id AS source_id,
-            \\  CASE WHEN dream_state.dreamed_at IS NULL OR dream_state.dreamed_at < journal_entry.updated_at
-            \\    THEN 1 ELSE 0 END AS needs_memory_extraction
-            \\FROM journal_entry
-            \\LEFT JOIN dream_state
-            \\  ON dream_state.source_type = 'entry'
-            \\ AND dream_state.source_id = journal_entry.id
-            \\LEFT JOIN entry_summary
-            \\  ON entry_summary.entry_id = journal_entry.id
-            \\LEFT JOIN (
-            \\  SELECT entry_id, MAX(embedded_at) AS embedded_at
-            \\  FROM entry_embedding
-            \\  GROUP BY entry_id
-            \\) emb ON emb.entry_id = journal_entry.id
-            \\WHERE dream_state.dreamed_at IS NULL
-            \\   OR dream_state.dreamed_at < journal_entry.updated_at
-            \\   OR (journal_entry.word_count > 0 AND (
-            \\     entry_summary.summarized_at IS NULL
-            \\     OR entry_summary.summarized_at < journal_entry.updated_at
-            \\     OR emb.embedded_at IS NULL
-            \\     OR emb.embedded_at < journal_entry.updated_at
-            \\   ))
-            \\UNION ALL
-            \\SELECT 'conversation' AS source_type, chat_conversation.id AS source_id,
-            \\  CASE WHEN dream_state.dreamed_at IS NULL OR dream_state.dreamed_at < chat_conversation.updated_at
-            \\    THEN 1 ELSE 0 END AS needs_memory_extraction
-            \\FROM chat_conversation
-            \\LEFT JOIN dream_state
-            \\  ON dream_state.source_type = 'conversation'
-            \\ AND dream_state.source_id = chat_conversation.id
-            \\LEFT JOIN chat_summary
-            \\  ON chat_summary.conversation_id = chat_conversation.id
-            \\LEFT JOIN (
-            \\  SELECT conversation_id, MAX(embedded_at) AS embedded_at
-            \\  FROM chat_embedding
-            \\  GROUP BY conversation_id
-            \\) chat_emb ON chat_emb.conversation_id = chat_conversation.id
-            \\WHERE dream_state.dreamed_at IS NULL
-            \\   OR dream_state.dreamed_at < chat_conversation.updated_at
-            \\   OR (?1 != 0 AND (
-            \\     EXISTS (
-            \\       SELECT 1 FROM chat_event
-            \\       WHERE chat_event.conversation_id = chat_conversation.id
-            \\     )
-            \\   ) AND NOT EXISTS (
-            \\     SELECT 1 FROM chat_index_skip
-            \\     WHERE chat_index_skip.conversation_id = chat_conversation.id
-            \\   ) AND (
-            \\     chat_summary.summarized_at IS NULL
-            \\     OR chat_summary.summarized_at < chat_conversation.updated_at
-            \\     OR chat_emb.embedded_at IS NULL
-            \\     OR chat_emb.embedded_at < chat_conversation.updated_at
-            \\   ))
-            \\ORDER BY 1, 2;
-        ,
+            dream_pending_select ++ "\nORDER BY 1, 2;",
             &.{.{ .integer = if (memory_enabled) 1 else 0 }},
             &rows,
             DreamPendingRows.collect,
@@ -481,6 +427,19 @@ pub const Store = struct {
         if (rows.failed) return error.SqlitePageFailed;
 
         return rows.toOwnedSlice();
+    }
+
+    /// How many sources `listPendingDream` would return, without building the list.
+    pub fn countPendingDream(self: *Store, memory_enabled: bool) !usize {
+        var counts = CountRows{};
+        const outcome = self.db.query(
+            "SELECT COUNT(*) AS n FROM (" ++ dream_pending_select ++ ");",
+            &.{.{ .integer = if (memory_enabled) 1 else 0 }},
+            &counts,
+            CountRows.collect,
+        );
+        if (outcome != .ok or counts.failed or !counts.found) return error.SqliteQueryFailed;
+        return @intCast(counts.value);
     }
 
     pub fn entryEmbeddingsStale(self: *Store, id: i64) !bool {
@@ -4753,6 +4712,64 @@ const ChatEmbedRewriteRows = struct {
     }
 };
 
+/// What Dream would work through. `?1` is 1 when memory is enabled. The list
+/// and the count read the same rows, so the sidebar dot matches a run.
+const dream_pending_select =
+    \\SELECT 'entry' AS source_type, journal_entry.id AS source_id,
+    \\  CASE WHEN dream_state.dreamed_at IS NULL OR dream_state.dreamed_at < journal_entry.updated_at
+    \\    THEN 1 ELSE 0 END AS needs_memory_extraction
+    \\FROM journal_entry
+    \\LEFT JOIN dream_state
+    \\  ON dream_state.source_type = 'entry'
+    \\ AND dream_state.source_id = journal_entry.id
+    \\LEFT JOIN entry_summary
+    \\  ON entry_summary.entry_id = journal_entry.id
+    \\LEFT JOIN (
+    \\  SELECT entry_id, MAX(embedded_at) AS embedded_at
+    \\  FROM entry_embedding
+    \\  GROUP BY entry_id
+    \\) emb ON emb.entry_id = journal_entry.id
+    \\WHERE dream_state.dreamed_at IS NULL
+    \\   OR dream_state.dreamed_at < journal_entry.updated_at
+    \\   OR (journal_entry.word_count > 0 AND (
+    \\     entry_summary.summarized_at IS NULL
+    \\     OR entry_summary.summarized_at < journal_entry.updated_at
+    \\     OR emb.embedded_at IS NULL
+    \\     OR emb.embedded_at < journal_entry.updated_at
+    \\   ))
+    \\UNION ALL
+    \\SELECT 'conversation' AS source_type, chat_conversation.id AS source_id,
+    \\  CASE WHEN dream_state.dreamed_at IS NULL OR dream_state.dreamed_at < chat_conversation.updated_at
+    \\    THEN 1 ELSE 0 END AS needs_memory_extraction
+    \\FROM chat_conversation
+    \\LEFT JOIN dream_state
+    \\  ON dream_state.source_type = 'conversation'
+    \\ AND dream_state.source_id = chat_conversation.id
+    \\LEFT JOIN chat_summary
+    \\  ON chat_summary.conversation_id = chat_conversation.id
+    \\LEFT JOIN (
+    \\  SELECT conversation_id, MAX(embedded_at) AS embedded_at
+    \\  FROM chat_embedding
+    \\  GROUP BY conversation_id
+    \\) chat_emb ON chat_emb.conversation_id = chat_conversation.id
+    \\WHERE dream_state.dreamed_at IS NULL
+    \\   OR dream_state.dreamed_at < chat_conversation.updated_at
+    \\   OR (?1 != 0 AND (
+    \\     EXISTS (
+    \\       SELECT 1 FROM chat_event
+    \\       WHERE chat_event.conversation_id = chat_conversation.id
+    \\     )
+    \\   ) AND NOT EXISTS (
+    \\     SELECT 1 FROM chat_index_skip
+    \\     WHERE chat_index_skip.conversation_id = chat_conversation.id
+    \\   ) AND (
+    \\     chat_summary.summarized_at IS NULL
+    \\     OR chat_summary.summarized_at < chat_conversation.updated_at
+    \\     OR chat_emb.embedded_at IS NULL
+    \\     OR chat_emb.embedded_at < chat_conversation.updated_at
+    \\   ))
+;
+
 const DreamPendingRows = struct {
     allocator: std.mem.Allocator,
     rows: std.ArrayList(DreamItem) = .empty,
@@ -7701,6 +7718,20 @@ test "listPendingDream includes seed entries and skips after indexes and Dream a
     for (after) |item| {
         try std.testing.expect(!(item.source == .entry and item.id == 1));
     }
+}
+
+test "countPendingDream matches listPendingDream" {
+    var store = try testStore();
+    defer store.deinit();
+    for ([_]bool{ false, true }) |memory_enabled| {
+        const pending = try store.listPendingDream(memory_enabled);
+        defer store.allocator.free(pending);
+        try std.testing.expectEqual(pending.len, try store.countPendingDream(memory_enabled));
+    }
+    try store.markDreamed(.entry, 1);
+    const after = try store.listPendingDream(true);
+    defer store.allocator.free(after);
+    try std.testing.expectEqual(after.len, try store.countPendingDream(true));
 }
 
 test "listPendingDream schedules stale chat indexes only with memory enabled" {

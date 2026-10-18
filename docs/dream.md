@@ -39,6 +39,12 @@ Dream also repairs sources whose embeddings or summaries are missing, for exampl
 
 The summary model is `qwen3.5:9b` unless `SAGE_SUMMARY_MODEL` names another one. Each call has its own time limit: 10 seconds for the status check, 2 minutes for an embedding or a title, and 5 minutes for a summary or an extraction.
 
+## The sidebar dot
+
+While Dream is idle, a blue dot sits at the right edge of the Dream item when there is work to do. `dream.status` counts that work with the same query `dream.start` uses, so the dot matches what a run would do. Edits to entries and chats do not reach the Dream provider, so it asks again every 15 seconds. The dot can take that long to appear after an edit.
+
+Hover Dream to see when it last finished.
+
 ## When Dream cannot run
 
 - **Ollama is down**: clicking Dream opens a dialog that says Ollama isn’t running, with a Start Ollama button. Once Ollama answers, the dialog asks you to confirm the Dream.
@@ -54,4 +60,4 @@ Every action in Settings > Data cancels a running Dream. A Dream item that start
 ## Bridge commands
 
 - `dream.start`: checks Ollama and the models, then starts a run and answers with the number of items
-- `dream.status`: whether a run is going, how many items are done out of the total, and when Dream last finished
+- `dream.status`: whether a run is going, how many items are done out of the total, when Dream last finished, and how many items are pending

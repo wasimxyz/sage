@@ -22,6 +22,7 @@ import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
+import { Hint } from "@/components/hint";
 import { useEntry, useJournal } from "@/components/journal-context";
 import {
   PanelIconButton,
@@ -40,6 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toggle } from "@/components/ui/toggle";
 import { readingColumnClass } from "@/lib/page-column";
+import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 const extensions = [
@@ -193,13 +195,15 @@ function useCloseEntry() {
 function ClosePanelButton() {
   const closeEntry = useCloseEntry();
   return (
-    <PanelIconButton
-      aria-keyshortcuts="Meta+Alt+B"
-      aria-label="Close entry"
-      onClick={closeEntry}
-    >
-      <ChevronsRightIcon className="size-4.5" />
-    </PanelIconButton>
+    <Hint label="Close entry" shortcut={shortcuts.closeEntry}>
+      <PanelIconButton
+        aria-keyshortcuts="Meta+Alt+B"
+        aria-label="Close entry"
+        onClick={closeEntry}
+      >
+        <ChevronsRightIcon className="size-4.5" />
+      </PanelIconButton>
+    </Hint>
   );
 }
 
@@ -213,9 +217,11 @@ function BackToJournalButton() {
     setExpanded(false);
   }, [setExpanded]);
   return (
-    <PanelIconButton aria-label="Back to journal" onClick={showList}>
-      <ArrowLeftIcon />
-    </PanelIconButton>
+    <Hint label="Back to journal">
+      <PanelIconButton aria-label="Back to journal" onClick={showList}>
+        <ArrowLeftIcon />
+      </PanelIconButton>
+    </Hint>
   );
 }
 
@@ -224,14 +230,16 @@ function ExpandToggle() {
     actions: { setExpanded },
   } = useJournal();
   return (
-    <Toggle
-      aria-label="Full screen"
-      className={cn("px-0", panelIconHoverClass)}
-      onPressedChange={setExpanded}
-      size="sm"
-    >
-      <Maximize2Icon />
-    </Toggle>
+    <Hint label="Full screen">
+      <Toggle
+        aria-label="Full screen"
+        className={cn("px-0", panelIconHoverClass)}
+        onPressedChange={setExpanded}
+        size="sm"
+      >
+        <Maximize2Icon />
+      </Toggle>
+    </Hint>
   );
 }
 

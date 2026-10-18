@@ -18,13 +18,9 @@ import {
 } from "@/components/ai-elements/model-selector";
 import { PromptInputButton } from "@/components/ai-elements/prompt-input";
 import { useChat } from "@/components/chat-provider";
+import { Hint } from "@/components/hint";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { CONTEXT_LENGTHS, formatContextLength } from "@/lib/chat/model-prefs";
 
 const MODEL_PILL_CLASS =
@@ -71,20 +67,24 @@ function ModelPickerReady({ names }: { names: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <ModelSelector onOpenChange={setOpen} open={open}>
-      <ModelSelectorTrigger
-        render={
-          <PromptInputButton
-            aria-expanded={open}
-            aria-label="Select model"
-            className={MODEL_PILL_CLASS}
-            size="sm"
-            variant="ghost"
-          />
-        }
-      >
-        <span className="truncate font-medium">{selectedModel || "Model"}</span>
-        <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
-      </ModelSelectorTrigger>
+      <Hint label="Select model">
+        <ModelSelectorTrigger
+          render={
+            <PromptInputButton
+              aria-expanded={open}
+              aria-label="Select model"
+              className={MODEL_PILL_CLASS}
+              size="sm"
+              variant="ghost"
+            />
+          }
+        >
+          <span className="truncate font-medium">
+            {selectedModel || "Model"}
+          </span>
+          <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
+        </ModelSelectorTrigger>
+      </Hint>
       <ModelSelectorContent>
         <ContextLengthMenu onPicked={setOpen} />
         <ModelSelectorRow
@@ -201,22 +201,17 @@ function ModelPickerUnavailable() {
       ? "Start Ollama so Sage can list local models."
       : "No chat models. Run ollama pull qwen3.5:9b.";
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <PromptInputButton
-            className={MODEL_PILL_CLASS}
-            disabled
-            size="sm"
-            variant="ghost"
-          />
-        }
+    <Hint label={hint}>
+      <PromptInputButton
+        className={MODEL_PILL_CLASS}
+        disabled
+        size="sm"
+        variant="ghost"
       >
         <span className="font-medium">No models</span>
         <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
-      </TooltipTrigger>
-      <TooltipContent>{hint}</TooltipContent>
-    </Tooltip>
+      </PromptInputButton>
+    </Hint>
   );
 }
 

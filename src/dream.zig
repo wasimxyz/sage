@@ -48,7 +48,7 @@ pub const Runner = struct {
         return self.checking or self.running;
     }
 
-    pub fn writeStatus(self: *const Runner, last_dreamed_at: []const u8, output: []u8) ![]const u8 {
+    pub fn writeStatus(self: *const Runner, last_dreamed_at: []const u8, pending: usize, output: []u8) ![]const u8 {
         var writer = std.Io.Writer.fixed(output);
         try writer.writeAll("{\"running\":");
         try writer.writeAll(if (self.busy()) "true" else "false");
@@ -62,6 +62,8 @@ pub const Runner = struct {
         } else {
             try journal.writeJsonStringStreaming(&writer, last_dreamed_at);
         }
+        try writer.writeAll(",\"pending\":");
+        try writer.print("{d}", .{pending});
         try writer.writeByte('}');
         return writer.buffered();
     }
@@ -765,9 +767,9 @@ test "index-only Dream repairs a summary without replacing memories" {
 test "status json names running done total and lastDreamedAt" {
     var runner: Runner = .{ .running = true, .done = 2, .total = 5 };
     var buffer: [128]u8 = undefined;
-    const json = try runner.writeStatus("2026-09-14T18:00:00.000Z", &buffer);
+    const json = try runner.writeStatus("2026-09-14T18:00:00.000Z", 3, &buffer);
     try std.testing.expectEqualStrings(
-        "{\"running\":true,\"done\":2,\"total\":5,\"lastDreamedAt\":\"2026-09-14T18:00:00.000Z\"}",
+        "{\"running\":true,\"done\":2,\"total\":5,\"lastDreamedAt\":\"2026-09-14T18:00:00.000Z\",\"pending\":3}",
         json,
     );
 }
@@ -775,9 +777,9 @@ test "status json names running done total and lastDreamedAt" {
 test "status json treats a model check as running" {
     var runner: Runner = .{ .checking = true };
     var buffer: [96]u8 = undefined;
-    const json = try runner.writeStatus("", &buffer);
+    const json = try runner.writeStatus("", 0, &buffer);
     try std.testing.expectEqualStrings(
-        "{\"running\":true,\"done\":0,\"total\":0,\"lastDreamedAt\":null}",
+        "{\"running\":true,\"done\":0,\"total\":0,\"lastDreamedAt\":null,\"pending\":0}",
         json,
     );
 }

@@ -33,6 +33,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Hint } from "@/components/hint";
 import {
   Command,
   CommandEmpty,
@@ -67,11 +68,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import type { TooltipContent } from "@/components/ui/tooltip";
+import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -1147,21 +1145,18 @@ export const PromptInputButton = ({
     return button;
   }
 
-  const tooltipContent =
-    typeof tooltip === "string" ? tooltip : tooltip.content;
-  const shortcut = typeof tooltip === "string" ? undefined : tooltip.shortcut;
-  const side = typeof tooltip === "string" ? "top" : (tooltip.side ?? "top");
+  if (typeof tooltip === "string") {
+    return <Hint label={tooltip}>{button}</Hint>;
+  }
 
   return (
-    <Tooltip>
-      <TooltipTrigger>{button}</TooltipTrigger>
-      <TooltipContent side={side}>
-        {tooltipContent}
-        {shortcut ? (
-          <span className="ml-2 text-muted-foreground">{shortcut}</span>
-        ) : null}
-      </TooltipContent>
-    </Tooltip>
+    <Hint
+      label={tooltip.content}
+      shortcut={tooltip.shortcut}
+      side={tooltip.side}
+    >
+      {button}
+    </Hint>
   );
 };
 
@@ -1248,18 +1243,22 @@ export const PromptInputSubmit = ({
     [isGenerating, onStop, onClick]
   );
 
+  const label = isGenerating ? "Stop" : "Submit";
+
   return (
-    <InputGroupButton
-      aria-label={isGenerating ? "Stop" : "Submit"}
-      className={cn("rounded-full", className)}
-      onClick={handleClick}
-      size={size}
-      type={isGenerating && onStop ? "button" : "submit"}
-      variant={variant}
-      {...props}
-    >
-      {children ?? Icon}
-    </InputGroupButton>
+    <Hint label={label} shortcut={isGenerating ? undefined : shortcuts.submit}>
+      <InputGroupButton
+        aria-label={label}
+        className={cn("rounded-full", className)}
+        onClick={handleClick}
+        size={size}
+        type={isGenerating && onStop ? "button" : "submit"}
+        variant={variant}
+        {...props}
+      >
+        {children ?? Icon}
+      </InputGroupButton>
+    </Hint>
   );
 };
 

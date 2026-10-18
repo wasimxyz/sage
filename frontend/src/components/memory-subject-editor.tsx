@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import type { SaveMemoryInput } from "@/bridge";
+import { Hint } from "@/components/hint";
 import { useMemories } from "@/components/memories-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -534,16 +535,18 @@ function FactDraftRow({ draft, index }: { draft: FactDraft; index: number }) {
         ref={handleRef}
         value={draft.text}
       />
-      <Button
-        aria-label={`Delete ${label}`}
-        disabled={busy}
-        onClick={handleRemove}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
-      >
-        <Trash2Icon />
-      </Button>
+      <Hint label="Delete">
+        <Button
+          aria-label={`Delete ${label}`}
+          disabled={busy}
+          onClick={handleRemove}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <Trash2Icon />
+        </Button>
+      </Hint>
     </li>
   );
 }

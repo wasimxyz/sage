@@ -10,11 +10,7 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 export function SidebarBackButton({ onClick }: { onClick: () => void }) {
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        className="relative justify-center"
-        onClick={onClick}
-        tooltip="Back"
-      >
+      <SidebarMenuButton className="relative justify-center" onClick={onClick}>
         <ChevronLeftIcon className="absolute left-2" />
         <span>Back</span>
       </SidebarMenuButton>

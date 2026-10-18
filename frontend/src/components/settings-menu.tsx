@@ -6,7 +6,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
-
 import { useJournal } from "@/components/journal-context";
 import { useSettings } from "@/components/settings-context";
 import { SidebarBackButton } from "@/components/sidebar-back-button";
@@ -86,11 +85,7 @@ function SettingsMenuItem({
   const handleClick = useCallback(() => onSelect(id), [id, onSelect]);
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={active}
-        onClick={handleClick}
-        tooltip={label}
-      >
+      <SidebarMenuButton isActive={active} onClick={handleClick}>
         {children}
         <span>{label}</span>
       </SidebarMenuButton>
