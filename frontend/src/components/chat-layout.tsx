@@ -4,7 +4,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 
 import type { ChatConversationMeta } from "@/bridge";
 import { ChatList } from "@/components/chat/chat-list";
@@ -46,12 +46,11 @@ export function ChatLayout() {
 
 function ChatSplitProvider({ children }: { children: ReactNode }) {
   const {
-    actions: { setPanelOpen },
-    state: { panelOpen },
+    actions: { setExpanded, setPanelOpen },
+    state: { expanded, panelOpen },
   } = useChat();
-  // Full screen belongs to this screen. It ends when Chat unmounts, and when
-  // the panel closes.
-  const [expanded, setExpanded] = useState(false);
+  // Full screen is kept while you visit other screens. It ends when the panel
+  // closes.
   const setOpen = useCallback(
     (open: boolean) => {
       setPanelOpen(open);
@@ -59,7 +58,7 @@ function ChatSplitProvider({ children }: { children: ReactNode }) {
         setExpanded(false);
       }
     },
-    [setPanelOpen]
+    [setExpanded, setPanelOpen]
   );
   const value = useMemo<SplitViewContextValue>(
     () => ({
@@ -67,7 +66,7 @@ function ChatSplitProvider({ children }: { children: ReactNode }) {
       meta: { id: "chat" },
       state: { expanded, open: panelOpen },
     }),
-    [expanded, panelOpen, setOpen]
+    [expanded, panelOpen, setExpanded, setOpen]
   );
   return <SplitView.Provider value={value}>{children}</SplitView.Provider>;
 }

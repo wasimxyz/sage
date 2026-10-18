@@ -78,6 +78,8 @@ interface ChatState {
   contextLengthLocked: boolean;
   conversations: ChatConversationMeta[];
   error: string | null;
+  /** Whether the open chat fills the window. Kept while you visit other screens. */
+  expanded: boolean;
   /** True once the chat list has loaded, so the list can show rows, not a gap. */
   listLoaded: boolean;
   models: ModelsLoad;
@@ -103,6 +105,7 @@ interface ChatActions {
   renameConversation: (id: number, title: string) => Promise<void>;
   selectModel: (model: string) => void;
   setContextLength: (value: number) => void;
+  setExpanded: (expanded: boolean) => void;
   setPanelOpen: (open: boolean) => void;
   setThinkingEnabled: (enabled: boolean) => void;
   showError: (message: string) => void;
@@ -217,6 +220,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Chat opens on a new chat, so the first visit shows the panel. After that
   // the panel stays as it was left.
   const [panelOpen, setPanelOpen] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [listLoaded, setListLoaded] = useState(false);
   const [models, setModels] = useState<ModelsLoad>({ kind: "loading" });
   const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
@@ -612,6 +616,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       renameConversation,
       selectModel,
       setContextLength,
+      setExpanded,
       setPanelOpen,
       setThinkingEnabled,
       showError,
@@ -646,6 +651,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         contextLengthLocked,
         conversations,
         error,
+        expanded,
         listLoaded,
         models,
         ollamaStart,
@@ -663,6 +669,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       contextLengthLocked,
       conversations,
       error,
+      expanded,
       listLoaded,
       models,
       ollamaStart,

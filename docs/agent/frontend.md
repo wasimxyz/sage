@@ -36,7 +36,7 @@ The first time you open Chat, the panel is open on an empty new chat, beside the
 The panel header has these controls:
 
 - **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again.
-- **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends when you close the panel or leave Chat.
+- **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends when you close the panel. It stays when you visit other screens, until you quit Sage.
 - **The title** is “New chat” until the first message saves.
 - **The ⋯ menu** has Rename and Delete. A new chat has no ⋯ menu, because there is nothing to rename or delete yet.
 
