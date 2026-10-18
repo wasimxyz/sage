@@ -95,6 +95,13 @@ function layoutStep(open: boolean, expanded: boolean): LayoutStep {
   return expanded ? "focus" : "open";
 }
 
+/** How much of the group each side takes at a step, as the panels' first size. */
+const startSizes: Record<LayoutStep, { detail: string; list: string }> = {
+  closed: { detail: "0%", list: "100%" },
+  focus: { detail: "100%", list: "0%" },
+  open: { detail: "60%", list: "40%" },
+};
+
 /** What `Root` shares with the list and the panel. Not for screens to read. */
 interface LayoutValue {
   detailMinSize: string;
@@ -276,7 +283,7 @@ function SplitViewList({ children }: { children: ReactNode }) {
     <ResizablePanel
       collapsedSize="0%"
       collapsible
-      defaultSize={startedAt === "open" ? "40%" : "100%"}
+      defaultSize={startSizes[startedAt].list}
       id={`${id}-list`}
       minSize={listMinSize}
       panelRef={listPanelRef}
@@ -317,7 +324,7 @@ function SplitViewDetail({ children }: { children: ReactNode }) {
       />
       <ResizablePanel
         className="overflow-hidden"
-        defaultSize={startedAt === "open" ? "60%" : "0%"}
+        defaultSize={startSizes[startedAt].detail}
         id={`${id}-detail`}
         minSize={detailMinSize}
         onResize={rememberDetailSize}
