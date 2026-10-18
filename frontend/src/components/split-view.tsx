@@ -31,6 +31,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePanelSpring } from "@/hooks/use-panel-spring";
 import { useRememberedScroll } from "@/hooks/use-remembered-scroll";
+import { hasOpenSurface } from "@/lib/open-surface";
 import { pageColumnClass } from "@/lib/page-column";
 import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -99,7 +100,10 @@ function layoutStep(open: boolean, expanded: boolean): LayoutStep {
 const startSizes: Record<LayoutStep, { detail: string; list: string }> = {
   closed: { detail: "0%", list: "100%" },
   focus: { detail: "100%", list: "0%" },
-  open: { detail: "60%", list: "40%" },
+  open: {
+    detail: `${defaultDetailPercent}%`,
+    list: `${100 - defaultDetailPercent}%`,
+  },
 };
 
 /** What `Root` shares with the list and the panel. Not for screens to read. */
@@ -138,7 +142,18 @@ function SplitViewProvider({
   return <SplitViewContext value={value}>{children}</SplitViewContext>;
 }
 
-function SplitViewRoot({ children }: { children: ReactNode }) {
+function SplitViewRoot({
+  children,
+  keepDetailMounted = false,
+}: {
+  children: ReactNode;
+  /**
+   * Keep the panel's content mounted, out of sight, once it has opened. For a
+   * panel that holds work in progress, such as a reply that is still coming
+   * in, which closing would cut off.
+   */
+  keepDetailMounted?: boolean;
+}) {
   const {
     actions: { setOpen },
     state: { expanded, open },
@@ -167,12 +182,15 @@ function SplitViewRoot({ children }: { children: ReactNode }) {
     openRef.current = open;
   }, [expanded, open]);
 
-  const handleSettled = useCallback((reached: string) => {
-    setSettledStep(reached as LayoutStep);
-    if (reached === "closed") {
-      setDetailMounted(false);
-    }
-  }, []);
+  const handleSettled = useCallback(
+    (reached: string) => {
+      setSettledStep(reached as LayoutStep);
+      if (reached === "closed" && !keepDetailMounted) {
+        setDetailMounted(false);
+      }
+    },
+    [keepDetailMounted]
+  );
 
   const { moving, movingRef, stop } = usePanelSpring(
     listPanelRef,
@@ -225,11 +243,13 @@ function SplitViewRoot({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      // Behind a dialog or a menu, the key belongs to that surface.
       if (
         event.code !== "KeyB" ||
         !(event.metaKey || event.ctrlKey) ||
         !event.altKey ||
-        event.shiftKey
+        event.shiftKey ||
+        hasOpenSurface()
       ) {
         return;
       }
@@ -330,7 +350,13 @@ function SplitViewDetail({ children }: { children: ReactNode }) {
         onResize={rememberDetailSize}
       >
         {open || detailMounted ? (
-          <div className="flex h-full min-h-0 flex-col">{children}</div>
+          <div
+            aria-hidden={open ? undefined : true}
+            className="flex h-full min-h-0 flex-col"
+            inert={!open}
+          >
+            {children}
+          </div>
         ) : null}
       </ResizablePanel>
     </>

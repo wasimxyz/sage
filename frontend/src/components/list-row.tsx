@@ -8,7 +8,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatJournalListDate } from "@/lib/format-date";
+import { useCalendarDay } from "@/hooks/use-calendar-day";
+import { formatJournalListDate, parseCalendarDate } from "@/lib/format-date";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -94,9 +95,11 @@ function ListRowTitle({ children }: { children: ReactNode }) {
 
 /** `date` is a calendar day, `yyyy-MM-dd`. */
 function ListRowDate({ date }: { date: string }) {
+  // Today and Yesterday turn over at midnight, even if the row does not change.
+  const today = useCalendarDay();
   return (
     <time className="shrink-0 text-muted-foreground" dateTime={date}>
-      {formatJournalListDate(date)}
+      {formatJournalListDate(date, parseCalendarDate(today) ?? new Date())}
     </time>
   );
 }

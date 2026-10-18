@@ -152,17 +152,20 @@ const usedLoads = new WeakSet<ChatLoadPromise>();
 // has shown it, it counts as used, and the next mount reads again.
 const rereads = new WeakMap<ChatLoadPromise, ChatLoadPromise>();
 
-function loadForMount(selection: ChatSelection): ChatLoadPromise {
+function loadForMount(selection: ChatSelection): {
+  load: ChatLoadPromise;
+  reread: boolean;
+} {
   if (selection.kind !== "saved" || !usedLoads.has(selection.load)) {
-    return selection.load;
+    return { load: selection.load, reread: false };
   }
   const started = rereads.get(selection.load);
   if (started && !usedLoads.has(started)) {
-    return started;
+    return { load: started, reread: true };
   }
   const fresh = loadConversation(selection.id);
   rereads.set(selection.load, fresh);
-  return fresh;
+  return { load: fresh, reread: true };
 }
 
 /** The panel beside the chat list. */
@@ -188,7 +191,7 @@ function ChatSessionLoad() {
   // again. A new load from the provider, such as a chat that has just saved,
   // takes over from this one.
   const [mounted] = useState(() => ({
-    load: loadForMount(selection),
+    ...loadForMount(selection),
     source: selection.load,
   }));
   const load =
@@ -197,16 +200,28 @@ function ChatSessionLoad() {
     usedLoads.add(load);
     usedLoads.add(selection.load);
   }, [load, selection.load]);
+  // A search hit scrolls the chat to its message when the chat opens. A chat
+  // read again on a later visit opens at its end instead.
+  const focusSeq =
+    selection.kind === "saved" && !mounted.reread
+      ? selection.focusSeq
+      : undefined;
   return (
     <Suspense fallback={<ChatSessionFallback />}>
-      <ChatSession load={load} />
+      <ChatSession focusSeq={focusSeq} load={load} />
     </Suspense>
   );
 }
 
-function ChatSession({ load }: { load: ChatLoadPromise }) {
+function ChatSession({
+  focusSeq,
+  load,
+}: {
+  focusSeq: number | undefined;
+  load: ChatLoadPromise;
+}) {
   const {
-    state: { agentToken, selection },
+    state: { agentToken },
   } = useChat();
   const result = use(load);
   if (result.kind === "failed") {
@@ -221,7 +236,7 @@ function ChatSession({ load }: { load: ChatLoadPromise }) {
     <ChatTurn
       agentToken={agentToken}
       conversation={result.conversation}
-      focusSeq={selection.kind === "saved" ? selection.focusSeq : undefined}
+      focusSeq={focusSeq}
     />
   );
 }

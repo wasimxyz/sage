@@ -7,6 +7,7 @@ import {
   isSettingsTab,
   navigationOverridesPendingMemoryRoute,
   parseHash,
+  planChatRoute,
   routeForMemoryFeature,
   routeFromState,
   routesEqual,
@@ -247,4 +248,48 @@ test("isNewChatSaved is true only when a new chat becomes a saved one", () => {
   assert.equal(isNewChatSaved(saved, fresh), false);
   assert.equal(isNewChatSaved(null, saved), false);
   assert.equal(isNewChatSaved({ section: "home" }, saved), false);
+});
+
+test("planChatRoute closes the panel for the list, and shows Chat if needed", () => {
+  const newChat = { kind: "new" } as const;
+  assert.deepEqual(
+    planChatRoute("list", { onChat: true, selection: newChat }),
+    {
+      afterShow: "close-panel",
+      showChat: false,
+    }
+  );
+  assert.deepEqual(
+    planChatRoute("list", { onChat: false, selection: newChat }),
+    { afterShow: "close-panel", showChat: true }
+  );
+});
+
+test("planChatRoute opens the panel on the chat that is already selected", () => {
+  assert.deepEqual(
+    planChatRoute("new", { onChat: true, selection: { kind: "new" } }),
+    { afterShow: "open-panel", showChat: false }
+  );
+  assert.deepEqual(
+    planChatRoute(7, { onChat: true, selection: { id: 7, kind: "saved" } }),
+    { afterShow: "open-panel", showChat: false }
+  );
+});
+
+test("planChatRoute starts a new chat or opens another one when the selection differs", () => {
+  assert.deepEqual(
+    planChatRoute("new", {
+      onChat: false,
+      selection: { id: 7, kind: "saved" },
+    }),
+    { afterShow: "new-chat", showChat: true }
+  );
+  assert.deepEqual(
+    planChatRoute(8, { onChat: true, selection: { id: 7, kind: "saved" } }),
+    { afterShow: { open: 8 }, showChat: false }
+  );
+  assert.deepEqual(
+    planChatRoute(8, { onChat: true, selection: { kind: "new" } }),
+    { afterShow: { open: 8 }, showChat: false }
+  );
 });

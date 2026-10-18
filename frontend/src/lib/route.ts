@@ -106,6 +106,39 @@ export function isNewChatSaved(prev: Route | null, route: Route): boolean {
   );
 }
 
+/** What Chat does to land on a chat route, given what it shows now. */
+export interface ChatRoutePlan {
+  /** What to do once Chat shows. */
+  afterShow: "close-panel" | "new-chat" | "open-panel" | { open: number };
+  /** Chat is not on screen yet. */
+  showChat: boolean;
+}
+
+export function planChatRoute(
+  view: ChatView,
+  current: {
+    onChat: boolean;
+    selection: { id: number; kind: "saved" } | { kind: "new" };
+  }
+): ChatRoutePlan {
+  const showChat = !current.onChat;
+  if (view === "list") {
+    return { afterShow: "close-panel", showChat };
+  }
+  if (view === "new") {
+    return {
+      afterShow: current.selection.kind === "new" ? "open-panel" : "new-chat",
+      showChat,
+    };
+  }
+  const alreadyOpen =
+    current.selection.kind === "saved" && current.selection.id === view;
+  return {
+    afterShow: alreadyOpen ? "open-panel" : { open: view },
+    showChat,
+  };
+}
+
 export function readRoute(): Route {
   return parseHash(window.location.hash);
 }

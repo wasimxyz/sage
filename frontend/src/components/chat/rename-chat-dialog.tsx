@@ -29,12 +29,9 @@ const titleLimit = 60;
 
 interface RenameChatContextValue {
   actions: { startRename: (row: ChatConversationMeta) => void };
-  meta: Record<string, never>;
-  state: { renaming: ChatConversationMeta | null };
 }
 
 const RenameChatContext = createContext<RenameChatContextValue | null>(null);
-const emptyMeta = {};
 
 export function useRenameChat(): RenameChatContextValue {
   const value = use(RenameChatContext);
@@ -46,7 +43,8 @@ export function useRenameChat(): RenameChatContextValue {
 
 /**
  * Holds the chat being renamed and shows the dialog once, so a row, its
- * context menu, and the panel's ⋯ menu all open the same one.
+ * context menu, and the panel's ⋯ menu all open the same one. What it shares
+ * never changes, so opening the dialog does not render the rows.
  */
 export function RenameChatProvider({ children }: { children: ReactNode }) {
   const [renaming, setRenaming] = useState<ChatConversationMeta | null>(null);
@@ -58,12 +56,8 @@ export function RenameChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<RenameChatContextValue>(
-    () => ({
-      actions: { startRename: setRenaming },
-      meta: emptyMeta,
-      state: { renaming },
-    }),
-    [renaming]
+    () => ({ actions: { startRename: setRenaming } }),
+    []
   );
 
   return (

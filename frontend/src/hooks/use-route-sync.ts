@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
-import { useChat } from "@/components/chat-provider";
+import { useChat, useChatPanel } from "@/components/chat-provider";
 import { useJournal } from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
@@ -9,6 +9,7 @@ import {
   hashMatches,
   isNewChatSaved,
   navigationOverridesPendingMemoryRoute,
+  planChatRoute,
   pushRoute,
   type Route,
   readRoute,
@@ -20,6 +21,7 @@ import {
 
 type JournalApi = ReturnType<typeof useJournal>;
 type ChatApi = ReturnType<typeof useChat>;
+type ChatPanelApi = ReturnType<typeof useChatPanel>;
 type MemoriesApi = ReturnType<typeof useMemories>;
 type SettingsApi = ReturnType<typeof useSettings>;
 
@@ -31,6 +33,7 @@ type SettingsApi = ReturnType<typeof useSettings>;
 export function useRouteSync() {
   const journal = useJournal();
   const chat = useChat();
+  const chatPanel = useChatPanel();
   const memories = useMemories();
   const settings = useSettings();
   const { memoryEnabled, ready: memoryFeatureReady } = useMemoryFeature();
@@ -39,6 +42,8 @@ export function useRouteSync() {
   journalRef.current = journal;
   const chatRef = useRef(chat);
   chatRef.current = chat;
+  const chatPanelRef = useRef(chatPanel);
+  chatPanelRef.current = chatPanel;
   const memoriesRef = useRef(memories);
   memoriesRef.current = memories;
   const settingsRef = useRef(settings);
@@ -66,6 +71,7 @@ export function useRouteSync() {
         await applyHashRoute(
           journalRef.current,
           chatRef.current,
+          chatPanelRef.current,
           memoriesRef.current,
           settingsRef.current,
           () => gen !== applyGenRef.current,
@@ -103,11 +109,8 @@ export function useRouteSync() {
   }, [applyFromHash]);
 
   const { detailOpen, section, selection } = journal.state;
-  const {
-    paneKey,
-    panelOpen: chatPanelOpen,
-    selection: chatSelection,
-  } = chat.state;
+  const { paneKey, selection: chatSelection } = chat.state;
+  const { panelOpen: chatPanelOpen } = chatPanel.state;
   const { tab: memoriesTab } = memories.state;
   const { tab: settingsTab } = settings.state;
   const entryId = selection?.kind === "id" ? selection.id : null;
@@ -182,13 +185,14 @@ export function useRouteSync() {
 function routeFromProviders(
   journal: JournalApi,
   chat: ChatApi,
+  chatPanel: ChatPanelApi,
   memories: MemoriesApi,
   settings: SettingsApi
 ): Route {
   return routeFromState({
     chatId:
       chat.state.selection.kind === "saved" ? chat.state.selection.id : null,
-    chatPanelOpen: chat.state.panelOpen,
+    chatPanelOpen: chatPanel.state.panelOpen,
     detailOpen: journal.state.detailOpen,
     entryId:
       journal.state.selection?.kind === "id"
@@ -203,6 +207,7 @@ function routeFromProviders(
 async function applyHashRoute(
   journal: JournalApi,
   chat: ChatApi,
+  chatPanel: ChatPanelApi,
   memories: MemoriesApi,
   settings: SettingsApi,
   isStale: () => boolean,
@@ -213,7 +218,13 @@ async function applyHashRoute(
   if (!routesEqual(route, requestedRoute)) {
     replaceRoute(route);
   }
-  const current = routeFromProviders(journal, chat, memories, settings);
+  const current = routeFromProviders(
+    journal,
+    chat,
+    chatPanel,
+    memories,
+    settings
+  );
   if (routesEqual(route, current)) {
     return;
   }
@@ -233,7 +244,7 @@ async function applyHashRoute(
     await applySettingsHash(route, journal, settings, isStale);
     return;
   }
-  await applyChatHash(route, current, journal, chat, isStale);
+  await applyChatHash(route, current, journal, chat, chatPanel, isStale);
 }
 
 async function applyJournalHash(
@@ -302,35 +313,39 @@ async function applyChatHash(
   current: Route,
   journal: JournalApi,
   chat: ChatApi,
+  chatPanel: ChatPanelApi,
   isStale: () => boolean
 ): Promise<void> {
   const { selection } = chat.state;
-  if (route.chat === "list") {
-    // Close it before Chat shows, so the panel does not flash open first.
-    chat.actions.setPanelOpen(false);
-  }
-  if (current.section !== "chat") {
+  const plan = planChatRoute(route.chat, {
+    onChat: current.section === "chat",
+    selection:
+      selection.kind === "saved"
+        ? { id: selection.id, kind: "saved" }
+        : { kind: "new" },
+  });
+  if (plan.showChat) {
     await journal.actions.showChat();
     if (isStale()) {
       return;
     }
   }
-  if (route.chat === "list") {
+  // The panel is not touched until Chat shows, so a navigation that is
+  // replaced or fails leaves it as it was. The close then lands in the same
+  // render as the screen change, so the panel does not flash open first.
+  if (plan.afterShow === "close-panel") {
+    chatPanel.actions.setPanelOpen(false);
     return;
   }
-  if (route.chat === "new") {
-    if (selection.kind === "new") {
-      chat.actions.setPanelOpen(true);
-    } else {
-      chat.actions.newChat();
-    }
+  if (plan.afterShow === "open-panel") {
+    chatPanel.actions.setPanelOpen(true);
     return;
   }
-  if (selection.kind === "saved" && selection.id === route.chat) {
-    chat.actions.setPanelOpen(true);
+  if (plan.afterShow === "new-chat") {
+    chat.actions.newChat();
     return;
   }
-  chat.actions.openConversation(route.chat);
+  chat.actions.openConversation(plan.afterShow.open);
 }
 
 function shouldReplaceHash(

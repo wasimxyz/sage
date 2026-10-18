@@ -1,4 +1,9 @@
-import { MessageCircleIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  MessageCircleIcon,
+  PencilIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   type KeyboardEvent,
   memo,
@@ -9,11 +14,13 @@ import {
 
 import type { ChatConversationMeta } from "@/bridge";
 import { useRenameChat } from "@/components/chat/rename-chat-dialog";
-import { useChat } from "@/components/chat-provider";
+import { useChat, useChatPanel } from "@/components/chat-provider";
 import { ListRow, ListRows, ListRowsSkeleton } from "@/components/list-row";
+import { Button } from "@/components/ui/button";
 import { ContextMenuItem } from "@/components/ui/context-menu";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -26,8 +33,11 @@ import { focusNeighborRow, isDeleteKey, isReturnKey } from "@/lib/row-keys";
 export function ChatList() {
   const {
     actions: { deleteConversation, openConversation, refreshList },
-    state: { conversations, listLoaded, panelOpen, selection },
+    state: { conversations, listFailed, listLoaded, selection },
   } = useChat();
+  const {
+    state: { panelOpen },
+  } = useChatPanel();
   const {
     actions: { startRename },
   } = useRenameChat();
@@ -51,8 +61,17 @@ export function ChatList() {
     [openConversation]
   );
 
+  const handleRetry = useCallback(() => {
+    refreshList().catch(() => undefined);
+  }, [refreshList]);
+
   if (!listLoaded) {
     return <ListRowsSkeleton label="Loading chats" />;
+  }
+
+  // With no rows to show, a failed read must not look like an empty list.
+  if (listFailed && conversations.length === 0) {
+    return <ChatListFailed onRetry={handleRetry} />;
   }
 
   // The list stays mounted when the last row goes, so that row can finish
@@ -86,6 +105,25 @@ export function ChatList() {
         </Empty>
       ) : null}
     </>
+  );
+}
+
+function ChatListFailed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Empty className="min-h-64">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <AlertCircleIcon />
+        </EmptyMedia>
+        <EmptyTitle>Could not load chats</EmptyTitle>
+        <EmptyDescription>Sage could not read your chats.</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button onClick={onRetry} size="sm" variant="outline">
+          Try again
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }
 

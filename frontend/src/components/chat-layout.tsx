@@ -12,7 +12,7 @@ import {
   RenameChatProvider,
   useRenameChat,
 } from "@/components/chat/rename-chat-dialog";
-import { useChat } from "@/components/chat-provider";
+import { useChat, useChatPanel } from "@/components/chat-provider";
 import { ChatScreen } from "@/components/chat-screen";
 import { Hint } from "@/components/hint";
 import { SplitView, type SplitViewContextValue } from "@/components/split-view";
@@ -30,7 +30,8 @@ export function ChatLayout() {
   return (
     <ChatSplitProvider>
       <RenameChatProvider>
-        <SplitView.Root>
+        {/* A reply keeps streaming and saving while the panel is closed. */}
+        <SplitView.Root keepDetailMounted>
           <SplitView.List>
             <ChatListColumn />
           </SplitView.List>
@@ -48,25 +49,14 @@ function ChatSplitProvider({ children }: { children: ReactNode }) {
   const {
     actions: { setExpanded, setPanelOpen },
     state: { expanded, panelOpen },
-  } = useChat();
-  // Full screen is kept while you visit other screens. It ends when the panel
-  // closes.
-  const setOpen = useCallback(
-    (open: boolean) => {
-      setPanelOpen(open);
-      if (!open) {
-        setExpanded(false);
-      }
-    },
-    [setExpanded, setPanelOpen]
-  );
+  } = useChatPanel();
   const value = useMemo<SplitViewContextValue>(
     () => ({
-      actions: { setExpanded, setOpen },
+      actions: { setExpanded, setOpen: setPanelOpen },
       meta: { id: "chat" },
       state: { expanded, open: panelOpen },
     }),
-    [expanded, panelOpen, setExpanded, setOpen]
+    [expanded, panelOpen, setExpanded, setPanelOpen]
   );
   return <SplitView.Provider value={value}>{children}</SplitView.Provider>;
 }

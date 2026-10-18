@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatJournalListDate, localDateKey } from "./format-date.ts";
+import {
+  formatJournalListDate,
+  localDateKey,
+  msUntilNextDay,
+} from "./format-date.ts";
 
 test("localDateKey gives the local day of a UTC instant", () => {
   // Built from local parts, so the answer does not depend on the time zone
@@ -29,4 +33,9 @@ test("a chat saved this evening reads Today in the list", () => {
     formatJournalListDate(localDateKey(savedThisMorning), now),
     "Today"
   );
+});
+
+test("msUntilNextDay counts down to the next local midnight", () => {
+  assert.equal(msUntilNextDay(new Date(2026, 9, 18, 23, 59, 30)), 30_000);
+  assert.equal(msUntilNextDay(new Date(2026, 9, 18, 0, 0, 0)), 24 * 3_600_000);
 });

@@ -6,7 +6,7 @@ This page explains the React side of Chat: how the screen streams a turn, when i
 
 These paths are under `frontend/src/components/`:
 
-- **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`
+- **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
 - **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. It sits above the screens, so a half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
 - **ChatLayout** (`chat-layout.tsx`): the chat list on the left and the panel on the right. It uses the same list-and-panel layout as Journal (`split-view.tsx`, `list-row.tsx`).
 - **The chat list** (`chat/chat-list.tsx`): one row per saved chat, with a New chat button above it
@@ -18,7 +18,7 @@ These paths are under `frontend/src/components/`:
 
 The sidebar stays on the main menu while Chat is open. Search is in that menu, as on every screen.
 
-Each row shows the chat’s title and the day it last changed, such as Today, Yesterday, or Oct 2. Click a row to open that chat in the panel. The open chat’s row is highlighted. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.”
+Each row shows the chat’s title and the day it last changed, such as Today, Yesterday, or Oct 2. The day labels turn over at midnight. Click a row to open that chat in the panel. The open chat’s row is highlighted. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.” If the list cannot load, it says “Could not load chats” with a Try again button, so a failed read never looks like an empty list.
 
 New chat opens an empty conversation, and so does ⌘N while Chat is open.
 
@@ -27,7 +27,7 @@ Right-click a saved chat for Rename and Delete. With a chat focused, Return rena
 - **Rename** opens a dialog and calls `chat.rename`. The row stays where it is, and later Dream runs keep that title.
 - **Delete** hides the chat and shows a toast with its title and Undo for 5 seconds. When the toast closes, Sage calls `chat.delete`. If Sage locks or quits first, it saves the delete and runs it after the next unlock. That removes the SQLite rows, the memories Dream took from the chat, and the chat’s eve session files.
 
-Deleting the open chat returns the panel to New chat at once. Undo brings the chat back and reopens it. Deleting a chat while the panel is closed leaves the panel closed.
+Deleting the open chat returns the panel to New chat at once. Undo brings the chat back and reopens it. Deleting a chat while the panel is closed leaves the panel closed. Deleting chats from Settings clears the open chat the same way, and leaves the panel as it was.
 
 ## The chat panel
 
@@ -35,14 +35,14 @@ The first time you open Chat, the panel is open on an empty new chat, beside the
 
 The panel header has these controls:
 
-- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again.
-- **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends when you close the panel. It stays when you visit other screens, until you quit Sage.
+- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again. It waits while a dialog or menu is open.
+- **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends whenever the panel closes, including when you go to `#/chat`. It stays when you visit other screens, until you quit Sage.
 - **The title** is “New chat” until the first message saves.
 - **The ⋯ menu** has Rename and Delete. A new chat has no ⋯ menu, because there is nothing to rename or delete yet.
 
 Drag the divider to resize the panel, and double-click it to reset the split. In a narrow window, the list sits above the panel.
 
-Closing the panel and opening it again reads the chat from storage, so the transcript shows every turn, including ones sent while the panel was open.
+Closing the panel does not stop the chat. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving, and the panel is as you left it when you open it again. Visiting another screen does end the conversation on screen. When you come back, Sage reads the chat from storage again, so the transcript shows every turn that saved.
 
 The address bar follows the panel:
 
