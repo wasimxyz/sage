@@ -35,15 +35,19 @@ test("command and another key does not", () => {
 });
 
 test("Chat starts a chat", () => {
-  assert.equal(newTarget("chat"), "chat");
+  assert.equal(newTarget("chat", false), "chat");
 });
 
 test("Home, Journal, and Memories start an entry", () => {
-  assert.equal(newTarget("home"), "entry");
-  assert.equal(newTarget("journal"), "entry");
-  assert.equal(newTarget("memories"), "entry");
+  assert.equal(newTarget("home", false), "entry");
+  assert.equal(newTarget("journal", false), "entry");
+  assert.equal(newTarget("memories", false), "entry");
+});
+
+test("Memories starts nothing while a memory is open for editing", () => {
+  assert.equal(newTarget("memories", true), null);
 });
 
 test("Settings starts nothing", () => {
-  assert.equal(newTarget("settings"), null);
+  assert.equal(newTarget("settings", false), null);
 });

@@ -196,7 +196,7 @@ export function SearchNavItem() {
     <SidebarMenuItem>
       <SidebarMenuButton aria-keyshortcuts="Meta+K Control+K" onClick={toggle}>
         <SearchIcon />
-        <span>Search</span>
+        <span className="truncate">Search</span>
         <MenuShortcut>{shortcuts.search}</MenuShortcut>
       </SidebarMenuButton>
     </SidebarMenuItem>

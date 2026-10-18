@@ -18,7 +18,7 @@ The editor is TipTap with Markdown support. Sage saves one second after you stop
 
 Cmd+S saves at once and shows a message that Sage saves your entry automatically.
 
-⌘N starts a new entry from Home, Journal, or Memories. It starts a chat while Chat is open, and does nothing in Settings or while a dialog is open. The shortcut lives in `frontend/src/hooks/use-new-shortcut.ts`.
+⌘N starts a new entry from Home, Journal, or Memories. It starts a chat while Chat is open. It does nothing in Settings, while a memory is open for editing, or while a dialog, popover, or menu is open. The shortcut lives in `frontend/src/hooks/use-new-shortcut.ts`.
 
 A body over 1 MiB is refused. Long bodies travel to the core in 32 KiB chunks, as [Architecture](architecture.md#the-bridge) explains.
 

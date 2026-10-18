@@ -1127,12 +1127,8 @@ fn handleDreamStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocati
     try requireReady(self);
     const last = self.store.lastDreamedAt() catch null;
     defer if (last) |text| self.store.allocator.free(text);
-    // The same list dream.start works through, so the dot matches what a Dream would do.
-    const pending = blk: {
-        const items = self.store.listPendingDream(build_options.memory_enabled) catch break :blk 0;
-        defer self.store.allocator.free(items);
-        break :blk items.len;
-    };
+    // The same rows dream.start works through, so the dot matches what a Dream would do.
+    const pending = self.store.countPendingDream(build_options.memory_enabled) catch 0;
     return self.dream_runner.writeStatus(if (last) |text| text else "", pending, output);
 }
 

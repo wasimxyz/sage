@@ -78,14 +78,16 @@ function IdleDreamMenuButton() {
   } = useDream();
   const now = useRelativeNow();
   const age = lastDreamedAt ? formatLastDreamed(lastDreamedAt, now) : "";
-  return (
-    <Hint label={age ? `Last dreamed ${age}` : "Dream"}>
-      <SidebarMenuButton className="justify-between" onClick={prompt}>
-        <DreamMenuLabel>Dream</DreamMenuLabel>
-        {pending > 0 ? <PendingDot /> : null}
-      </SidebarMenuButton>
-    </Hint>
+  const button = (
+    <SidebarMenuButton className="justify-between" onClick={prompt}>
+      <DreamMenuLabel>Dream</DreamMenuLabel>
+      {pending > 0 ? <PendingDot /> : null}
+    </SidebarMenuButton>
   );
+  if (!age) {
+    return button;
+  }
+  return <Hint label={`Last dreamed ${age}`}>{button}</Hint>;
 }
 
 // Sits in a 14px box, the same size as the chevron on the Chat item, so the
@@ -111,7 +113,7 @@ function DreamMenuLabel({ children }: { children: ReactNode }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
       <MoonStarIcon />
-      <span>{children}</span>
+      <span className="truncate">{children}</span>
     </span>
   );
 }

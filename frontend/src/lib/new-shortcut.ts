@@ -27,13 +27,17 @@ export function isNewKey(event: KeyLike): boolean {
 
 /**
  * What ⌘N starts on each screen: a chat on Chat, an entry on the others.
- * Settings is a form, so it starts nothing.
+ * Settings is a form, so it starts nothing. Memories starts nothing while a
+ * memory is open for editing, because leaving would drop what is typed.
  */
-export function newTarget(section: Section): NewTarget | null {
+export function newTarget(
+  section: Section,
+  editingMemory: boolean
+): NewTarget | null {
   if (section === "chat") {
     return "chat";
   }
-  if (section === "settings") {
+  if (section === "settings" || (section === "memories" && editingMemory)) {
     return null;
   }
   return "entry";

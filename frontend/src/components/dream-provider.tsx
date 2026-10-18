@@ -153,18 +153,22 @@ export function DreamProvider({ children }: { children: ReactNode }) {
     }
   }, [running]);
 
-  const refresh = useCallback(async () => {
+  // A poll answers after a Dream may have started, so it only writes the count.
+  const refresh = useCallback(async (pendingOnly = false) => {
     const ready = (await waitForNativeBridge()) && hasNativeBridge();
     if (!ready) {
       return;
     }
     try {
       const status = await getDreamStatus();
+      setPending(status.pending);
+      if (pendingOnly) {
+        return;
+      }
       setRunning(status.running);
       setDone(status.done);
       setTotal(status.total);
       setLastDreamedAt(status.lastDreamedAt);
-      setPending(status.pending);
     } catch {
       // A missing status leaves the idle pill; the next Dream click retries.
     }
@@ -175,31 +179,28 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   // Journal and chat edits never reach this provider, so the count is read again
-  // on a timer while Dream is idle.
-  const refreshPending = useCallback(async () => {
-    const ready = (await waitForNativeBridge()) && hasNativeBridge();
-    if (!ready) {
-      return;
-    }
-    try {
-      const status = await getDreamStatus();
-      setPending(status.pending);
-    } catch {
-      // The dot keeps its last value until the next poll.
-    }
-  }, []);
-
+  // on a timer while Dream is idle. A hidden window skips the timer and reads
+  // once when it comes back.
   useEffect(() => {
     if (running) {
       return;
     }
     const timer = window.setInterval(() => {
-      refreshPending().catch(() => undefined);
+      if (!document.hidden) {
+        refresh(true).catch(() => undefined);
+      }
     }, pendingPollMs);
+    const onVisible = () => {
+      if (!document.hidden) {
+        refresh(true).catch(() => undefined);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refreshPending, running]);
+  }, [refresh, running]);
 
   useEffect(() => {
     let cancelled = false;

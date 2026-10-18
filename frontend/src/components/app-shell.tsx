@@ -211,7 +211,7 @@ function SettingsNav() {
             onClick={showSettings}
           >
             <SettingsIcon />
-            <span>Settings</span>
+            <span className="truncate">Settings</span>
             <MenuShortcut>{shortcuts.settings}</MenuShortcut>
           </SidebarMenuButton>
         </SidebarMenuItem>
