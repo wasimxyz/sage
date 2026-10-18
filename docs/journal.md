@@ -18,6 +18,8 @@ The editor is TipTap with Markdown support. Sage saves one second after you stop
 
 Cmd+S saves at once and shows a message that Sage saves your entry automatically.
 
+⌘N starts a new entry from Home, Journal, or Memories. It starts a chat while Chat is open, and does nothing in Settings or while a dialog is open. The shortcut lives in `frontend/src/hooks/use-new-shortcut.ts`.
+
 A body over 1 MiB is refused. Long bodies travel to the core in 32 KiB chunks, as [Architecture](architecture.md#the-bridge) explains.
 
 After you stop typing for 30 seconds, Sage embeds the entry through `embeddings.generate`. When Sage loads your entries, it also embeds any entry saved since its last embedding. If Ollama is down, Sage tries that pass again every 15 seconds.

@@ -6,6 +6,7 @@ import { AnimatePresence, m } from "motion/react";
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback } from "react";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -99,20 +100,22 @@ export const ConversationScrollButton = ({
           initial={scrollButtonHidden}
           transition={spring}
         >
-          <Button
-            aria-label="Scroll to latest message"
-            className={cn(
-              "rounded-full border bg-surface hover:bg-accent dark:hover:bg-muted",
-              className
-            )}
-            onClick={handleScrollToBottom}
-            size="icon"
-            type="button"
-            variant="outline"
-            {...props}
-          >
-            <ArrowDownIcon className="size-4" />
-          </Button>
+          <Hint label="Scroll to latest">
+            <Button
+              aria-label="Scroll to latest message"
+              className={cn(
+                "rounded-full border bg-surface hover:bg-accent dark:hover:bg-muted",
+                className
+              )}
+              onClick={handleScrollToBottom}
+              size="icon"
+              type="button"
+              variant="outline"
+              {...props}
+            >
+              <ArrowDownIcon className="size-4" />
+            </Button>
+          </Hint>
         </m.div>
       )}
     </AnimatePresence>

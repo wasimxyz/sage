@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 import type { EventMemory, MemoryKind, ProfileMemory } from "@/bridge";
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
+import { Hint } from "@/components/hint";
 import {
   type MemoryDeleteTarget,
   type MemoryEditor,
@@ -276,9 +277,15 @@ function SubjectCloseBar() {
       data-slot="window-drag"
       onPointerDown={onTitlebarPointerDown}
     >
-      <PanelIconButton aria-label="Close" onClick={closeSubject} type="button">
-        <ChevronsRightIcon className="size-4.5" />
-      </PanelIconButton>
+      <Hint label="Close">
+        <PanelIconButton
+          aria-label="Close"
+          onClick={closeSubject}
+          type="button"
+        >
+          <ChevronsRightIcon className="size-4.5" />
+        </PanelIconButton>
+      </Hint>
     </div>
   );
 }

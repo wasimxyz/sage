@@ -27,6 +27,7 @@ import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 import { commitAll } from "@/lib/pending-deletes";
 
 const ollamaPollMs = 4000;
+const pendingPollMs = 15_000;
 
 interface DreamState {
   confirmOpen: boolean;
@@ -34,6 +35,7 @@ interface DreamState {
   lastDreamedAt: string | null;
   ollamaRunning: boolean;
   ollamaStart: OllamaStartLoad;
+  pending: number;
   running: boolean;
   total: number;
 }
@@ -83,6 +85,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [lastDreamedAt, setLastDreamedAt] = useState<string | null>(null);
+  const [pending, setPending] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [ollamaRunning, setOllamaRunning] = useState(true);
   const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
@@ -161,6 +164,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
       setDone(status.done);
       setTotal(status.total);
       setLastDreamedAt(status.lastDreamedAt);
+      setPending(status.pending);
     } catch {
       // A missing status leaves the idle pill; the next Dream click retries.
     }
@@ -169,6 +173,33 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh().catch(() => undefined);
   }, [refresh]);
+
+  // Journal and chat edits never reach this provider, so the count is read again
+  // on a timer while Dream is idle.
+  const refreshPending = useCallback(async () => {
+    const ready = (await waitForNativeBridge()) && hasNativeBridge();
+    if (!ready) {
+      return;
+    }
+    try {
+      const status = await getDreamStatus();
+      setPending(status.pending);
+    } catch {
+      // The dot keeps its last value until the next poll.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (running) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      refreshPending().catch(() => undefined);
+    }, pendingPollMs);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [refreshPending, running]);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,6 +263,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
         );
         getDreamStatus()
           .then((status) => {
+            setPending(status.pending);
             if (status.lastDreamedAt) {
               setLastDreamedAt(status.lastDreamedAt);
             }
@@ -261,6 +293,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
       lastDreamedAt,
       ollamaRunning,
       ollamaStart,
+      pending,
       running,
       total,
     }),
@@ -270,6 +303,7 @@ export function DreamProvider({ children }: { children: ReactNode }) {
       lastDreamedAt,
       ollamaRunning,
       ollamaStart,
+      pending,
       running,
       total,
     ]

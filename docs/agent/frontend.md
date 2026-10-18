@@ -13,6 +13,8 @@ These paths are under `frontend/src/components/`:
 
 ## The sidebar list
 
+New chat opens an empty conversation, and so does ⌘N while Chat is open.
+
 Right-click a saved chat for Rename and Delete. With a chat focused, Return renames it and ⌘⌫ deletes it:
 
 - **Rename** opens a dialog and calls `chat.rename`. The row stays where it is, and later Dream runs keep that title.

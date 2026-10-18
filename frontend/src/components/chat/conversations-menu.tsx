@@ -152,9 +152,9 @@ function NewChatButton() {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
+        aria-keyshortcuts="Meta+N"
         isActive={selection.kind === "new"}
         onClick={newChat}
-        tooltip="New chat"
       >
         <PlusIcon />
         <span>New chat</span>

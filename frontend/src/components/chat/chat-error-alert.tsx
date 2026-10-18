@@ -1,6 +1,7 @@
 import { AlertCircleIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
 import { useChat } from "@/components/chat-provider";
+import { Hint } from "@/components/hint";
 import {
   OllamaNotice,
   OllamaNoticeCopy,
@@ -29,14 +30,16 @@ export function ChatErrorAlert() {
       <AlertTitle>Something went wrong</AlertTitle>
       <AlertDescription>{error}</AlertDescription>
       <AlertAction>
-        <Button
-          aria-label="Dismiss"
-          onClick={clearError}
-          size="icon-xs"
-          variant="ghost"
-        >
-          <XIcon />
-        </Button>
+        <Hint label="Dismiss">
+          <Button
+            aria-label="Dismiss"
+            onClick={clearError}
+            size="icon-xs"
+            variant="ghost"
+          >
+            <XIcon />
+          </Button>
+        </Hint>
       </AlertAction>
     </Alert>
   );

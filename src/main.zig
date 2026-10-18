@@ -1127,7 +1127,13 @@ fn handleDreamStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocati
     try requireReady(self);
     const last = self.store.lastDreamedAt() catch null;
     defer if (last) |text| self.store.allocator.free(text);
-    return self.dream_runner.writeStatus(if (last) |text| text else "", output);
+    // The same list dream.start works through, so the dot matches what a Dream would do.
+    const pending = blk: {
+        const items = self.store.listPendingDream(build_options.memory_enabled) catch break :blk 0;
+        defer self.store.allocator.free(items);
+        break :blk items.len;
+    };
+    return self.dream_runner.writeStatus(if (last) |text| text else "", pending, output);
 }
 
 fn handleFeaturesGet(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
@@ -3446,19 +3452,35 @@ test "embeddings.generate reports a missing entry" {
 
 test "dream.status reports idle" {
     var rig: EmbedTestRig = undefined;
-    try rig.init();
+    try rig.initEmpty();
     defer rig.deinit();
 
     const invocation = native_sdk.bridge.Invocation{
         .request = .{ .id = "t-dream-status", .command = "dream.status", .payload = "{}" },
         .source = .{},
     };
-    var output: [128]u8 = undefined;
+    var output: [160]u8 = undefined;
     const json = try handleDreamStatus(@ptrCast(&rig.app), invocation, &output);
     try std.testing.expectEqualStrings(
-        "{\"running\":false,\"done\":0,\"total\":0,\"lastDreamedAt\":null}",
+        "{\"running\":false,\"done\":0,\"total\":0,\"lastDreamedAt\":null,\"pending\":0}",
         json,
     );
+}
+
+test "dream.status counts pending Dream work" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    const invocation = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dream-pending", .command = "dream.status", .payload = "{}" },
+        .source = .{},
+    };
+    var output: [192]u8 = undefined;
+    const json = try handleDreamStatus(@ptrCast(&rig.app), invocation, &output);
+    // Fixture entries have never been dreamed, so Dream has work to do.
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"pending\":0") == null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"pending\":") != null);
 }
 
 test "features.get reports build mode and memory bridge reads are gated" {

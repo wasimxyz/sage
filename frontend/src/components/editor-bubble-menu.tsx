@@ -14,9 +14,11 @@ import {
   UnderlineIcon,
 } from "lucide-react";
 import { type ComponentProps, useCallback } from "react";
+import { Hint } from "@/components/hint";
 import { panelIconHoverClass } from "@/components/panel-icon-button";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 const markNames = ["bold", "italic", "strike", "underline"] as const;
@@ -160,18 +162,26 @@ function applyMark(editor: Editor, mark: MarkName) {
 // Same hover as the editor's header buttons. A toggle that is on sits a
 // step darker, hovered or not.
 function FormatToggle({
+  "aria-label": label,
   className,
+  shortcut,
   ...props
-}: ComponentProps<typeof ToggleGroupItem>) {
+}: ComponentProps<typeof ToggleGroupItem> & {
+  "aria-label": string;
+  shortcut: string;
+}) {
   return (
-    <ToggleGroupItem
-      className={cn(
-        panelIconHoverClass,
-        "aria-pressed:bg-foreground/15 aria-pressed:hover:bg-foreground/15",
-        className
-      )}
-      {...props}
-    />
+    <Hint label={label} shortcut={shortcut}>
+      <ToggleGroupItem
+        aria-label={label}
+        className={cn(
+          panelIconHoverClass,
+          "aria-pressed:bg-foreground/15 aria-pressed:hover:bg-foreground/15",
+          className
+        )}
+        {...props}
+      />
+    </Hint>
   );
 }
 
@@ -198,16 +208,28 @@ function MarkToggles({ formatting }: { formatting: FormattingState }) {
       size="sm"
       value={value}
     >
-      <FormatToggle aria-label="Bold" value="bold">
+      <FormatToggle aria-label="Bold" shortcut={shortcuts.bold} value="bold">
         <BoldIcon />
       </FormatToggle>
-      <FormatToggle aria-label="Italic" value="italic">
+      <FormatToggle
+        aria-label="Italic"
+        shortcut={shortcuts.italic}
+        value="italic"
+      >
         <ItalicIcon />
       </FormatToggle>
-      <FormatToggle aria-label="Underline" value="underline">
+      <FormatToggle
+        aria-label="Underline"
+        shortcut={shortcuts.underline}
+        value="underline"
+      >
         <UnderlineIcon />
       </FormatToggle>
-      <FormatToggle aria-label="Strikethrough" value="strike">
+      <FormatToggle
+        aria-label="Strikethrough"
+        shortcut={shortcuts.strikethrough}
+        value="strike"
+      >
         <StrikethroughIcon />
       </FormatToggle>
     </ToggleGroup>
@@ -231,25 +253,49 @@ function BlockToggles({ formatting }: { formatting: FormattingState }) {
       size="sm"
       value={[formatting.block]}
     >
-      <FormatToggle aria-label="Paragraph" value="paragraph">
+      <FormatToggle
+        aria-label="Paragraph"
+        shortcut={shortcuts.paragraph}
+        value="paragraph"
+      >
         <PilcrowIcon />
       </FormatToggle>
-      <FormatToggle aria-label="Heading 1" value="h1">
+      <FormatToggle
+        aria-label="Heading 1"
+        shortcut={shortcuts.heading1}
+        value="h1"
+      >
         <Heading1Icon className="size-4" />
       </FormatToggle>
-      <FormatToggle aria-label="Heading 2" value="h2">
+      <FormatToggle
+        aria-label="Heading 2"
+        shortcut={shortcuts.heading2}
+        value="h2"
+      >
         <Heading2Icon className="size-4" />
       </FormatToggle>
-      <FormatToggle aria-label="Heading 3" value="h3">
+      <FormatToggle
+        aria-label="Heading 3"
+        shortcut={shortcuts.heading3}
+        value="h3"
+      >
         <Heading3Icon className="size-4" />
       </FormatToggle>
-      <FormatToggle aria-label="Quote" value="quote">
+      <FormatToggle aria-label="Quote" shortcut={shortcuts.quote} value="quote">
         <TextQuoteIcon />
       </FormatToggle>
-      <FormatToggle aria-label="Bullet list" value="bullet">
+      <FormatToggle
+        aria-label="Bullet list"
+        shortcut={shortcuts.bulletList}
+        value="bullet"
+      >
         <ListIcon />
       </FormatToggle>
-      <FormatToggle aria-label="Numbered list" value="ordered">
+      <FormatToggle
+        aria-label="Numbered list"
+        shortcut={shortcuts.orderedList}
+        value="ordered"
+      >
         <ListOrderedIcon />
       </FormatToggle>
     </ToggleGroup>

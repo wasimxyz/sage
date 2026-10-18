@@ -18,6 +18,7 @@ import {
 } from "react";
 
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -209,20 +210,22 @@ function ToolCopyButton({ code }: { code: string }) {
     );
   }, [code]);
   return (
-    <Button
-      aria-label="Copy"
-      className={toolCopyButtonClassName}
-      onClick={onCopy}
-      size="icon-sm"
-      type="button"
-      variant="ghost"
-    >
-      {copied ? (
-        <CheckIcon className="size-3.5" />
-      ) : (
-        <CopyIcon className="size-3.5" />
-      )}
-    </Button>
+    <Hint label={copied ? "Copied" : "Copy"}>
+      <Button
+        aria-label="Copy"
+        className={toolCopyButtonClassName}
+        onClick={onCopy}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+      >
+        {copied ? (
+          <CheckIcon className="size-3.5" />
+        ) : (
+          <CopyIcon className="size-3.5" />
+        )}
+      </Button>
+    </Hint>
   );
 }
 

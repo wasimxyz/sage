@@ -27,6 +27,7 @@ import { useChat } from "@/components/chat-provider";
 import { useJournal } from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
+import { MenuShortcut } from "@/components/menu-shortcut";
 import {
   Dialog,
   DialogDescription,
@@ -45,6 +46,7 @@ import {
   settledSearchQuery,
   visibleHits,
 } from "@/lib/search-hits";
+import { shortcuts } from "@/lib/shortcuts";
 import { eventDateKey } from "@/lib/sort-events";
 import { cn } from "@/lib/utils";
 
@@ -192,13 +194,10 @@ export function SearchNavItem() {
   } = useSearch();
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        aria-keyshortcuts="Meta+K Control+K"
-        onClick={toggle}
-        tooltip="Search"
-      >
+      <SidebarMenuButton aria-keyshortcuts="Meta+K Control+K" onClick={toggle}>
         <SearchIcon />
         <span>Search</span>
+        <MenuShortcut>{shortcuts.search}</MenuShortcut>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
