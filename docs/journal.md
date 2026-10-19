@@ -2,6 +2,8 @@
 
 This page explains how entries are written, saved, imported, exported, and searched, and what the Home screen shows. The screen code is `frontend/src/components/editor.tsx` and `frontend/src/components/journal-provider.tsx`. Storage is the journal section of `src/journal.zig`.
 
+Journal and Chat share one layout: a list on the left, and a panel that opens beside it when you choose a row. The panel can go full screen, and you can drag the divider to resize it. The code is `frontend/src/components/split-view.tsx` and `frontend/src/components/list-row.tsx`. [The Chat frontend](agent/frontend.md#the-chat-panel) covers the Chat side.
+
 ## What an entry holds
 
 Each entry is one row in `journal_entry`:

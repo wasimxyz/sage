@@ -2,13 +2,7 @@ import { Markdown } from "@tiptap/markdown";
 import { Selection } from "@tiptap/pm/state";
 import { Tiptap, useEditor, useTiptap } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import {
-  ArrowLeftIcon,
-  ChevronsRightIcon,
-  Maximize2Icon,
-  MoreHorizontalIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { MoreHorizontalIcon, Trash2Icon } from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -18,17 +12,12 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
-import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { NoUnderlineShortcut } from "@/components/editor-no-underline";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
-import { Hint } from "@/components/hint";
-import { useEntry, useJournal } from "@/components/journal-context";
-import {
-  PanelIconButton,
-  panelIconHoverClass,
-} from "@/components/panel-icon-button";
+import { useEntry } from "@/components/journal-context";
+import { SplitView, useSplitView } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -40,9 +29,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Toggle } from "@/components/ui/toggle";
 import { readingColumnClass } from "@/lib/page-column";
-import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 const extensions = [
@@ -55,13 +42,6 @@ const extensions = [
   NoUnderlineShortcut,
 ];
 const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
-
-// Focus mode puts the header buttons under the titlebar toggle. The padding
-// follows the sidebar's slide, full when it is closed and none when it is
-// open. It sits on the header alone, so the text column stays centered in the
-// window.
-const collapsedLeadingClass =
-  "pl-[calc(1.5rem+(var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
 function EditorFrame({ children }: { children: ReactNode }) {
   const {
@@ -158,90 +138,14 @@ function EditorFrame({ children }: { children: ReactNode }) {
 }
 
 function EditorHeader() {
-  const {
-    state: { expanded },
-  } = useJournal();
   return (
-    <div
-      className={cn(
-        "flex h-(--titlebar-height) shrink-0 items-center gap-2 px-6",
-        expanded && collapsedLeadingClass
-      )}
-      data-slot="window-drag"
-      onPointerDown={onTitlebarPointerDown}
-    >
-      <div className="flex items-center">
-        {expanded ? (
-          <BackToJournalButton />
-        ) : (
-          <>
-            <ClosePanelButton />
-            <ExpandToggle />
-          </>
-        )}
-      </div>
+    <SplitView.DetailHeader>
+      <SplitView.PanelControls
+        backLabel="Back to journal"
+        closeLabel="Close entry"
+      />
       <EntryMenu />
-    </div>
-  );
-}
-
-function useCloseEntry() {
-  const {
-    actions: { setDetailOpen },
-  } = useJournal();
-  return useCallback(() => {
-    setDetailOpen(false);
-  }, [setDetailOpen]);
-}
-
-function ClosePanelButton() {
-  const closeEntry = useCloseEntry();
-  return (
-    <Hint label="Close entry" shortcut={shortcuts.closeEntry}>
-      <PanelIconButton
-        aria-keyshortcuts="Meta+Alt+B"
-        aria-label="Close entry"
-        onClick={closeEntry}
-      >
-        <ChevronsRightIcon className="size-4.5" />
-      </PanelIconButton>
-    </Hint>
-  );
-}
-
-// Back leaves full screen and keeps the entry open. The list slides back in
-// beside it, to the split the owner last chose.
-function BackToJournalButton() {
-  const {
-    actions: { setExpanded },
-  } = useJournal();
-  const showList = useCallback(() => {
-    setExpanded(false);
-  }, [setExpanded]);
-  return (
-    <Hint label="Back to journal">
-      <PanelIconButton aria-label="Back to journal" onClick={showList}>
-        <ArrowLeftIcon />
-      </PanelIconButton>
-    </Hint>
-  );
-}
-
-function ExpandToggle() {
-  const {
-    actions: { setExpanded },
-  } = useJournal();
-  return (
-    <Hint label="Full screen">
-      <Toggle
-        aria-label="Full screen"
-        className={cn("px-0", panelIconHoverClass)}
-        onPressedChange={setExpanded}
-        size="sm"
-      >
-        <Maximize2Icon />
-      </Toggle>
-    </Hint>
+    </SplitView.DetailHeader>
   );
 }
 
@@ -456,7 +360,7 @@ function useSaveShortcut() {
 export default function EditorPane() {
   const {
     state: { expanded },
-  } = useJournal();
+  } = useSplitView();
   useSaveShortcut();
   return (
     <Editor.Frame>

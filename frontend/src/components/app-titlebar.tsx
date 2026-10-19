@@ -22,7 +22,10 @@ export function AppTitlebar() {
       ref={rowRef}
     >
       <Hint label="Toggle sidebar" shortcut={shortcuts.toggleSidebar}>
-        <SidebarTrigger aria-pressed={open} />
+        <SidebarTrigger
+          aria-pressed={open}
+          className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent"
+        />
       </Hint>
     </header>
   );
