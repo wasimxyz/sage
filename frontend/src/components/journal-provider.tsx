@@ -28,8 +28,9 @@ import {
   type EntryActions,
   type EntryContextValue,
   type JournalActions,
-  type JournalContextValue,
+  type JournalEntriesState,
   JournalStateProvider,
+  type JournalViewState,
   type Section,
   type SidebarMenu,
 } from "@/components/journal-context";
@@ -909,31 +910,21 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     [changeTitle, deleteOpenEntry, flush, registerEditor, scheduleSave]
   );
 
-  const journalValue = useMemo<JournalContextValue>(
+  const view = useMemo<JournalViewState>(
     () => ({
-      actions: journalActions,
-      meta: emptyMeta,
-      state: {
-        detailOpen,
-        entries: visibleEntries,
-        expanded,
-        loadingList,
-        section,
-        selectedId: selection?.kind === "id" ? selection.id : null,
-        selection,
-        sidebarMenu,
-      },
-    }),
-    [
       detailOpen,
       expanded,
-      journalActions,
-      loadingList,
       section,
+      selectedId: selection?.kind === "id" ? selection.id : null,
       selection,
       sidebarMenu,
-      visibleEntries,
-    ]
+    }),
+    [detailOpen, expanded, section, selection, sidebarMenu]
+  );
+
+  const entriesState = useMemo<JournalEntriesState>(
+    () => ({ entries: visibleEntries, loadingList }),
+    [loadingList, visibleEntries]
   );
 
   const entryValue = useMemo<EntryContextValue>(
@@ -951,7 +942,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <JournalStateProvider entry={entryValue} journal={journalValue}>
+    <JournalStateProvider
+      actions={journalActions}
+      entries={entriesState}
+      entry={entryValue}
+      view={view}
+    >
       {children}
     </JournalStateProvider>
   );

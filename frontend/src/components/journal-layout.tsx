@@ -13,7 +13,11 @@ import EditorPane from "@/components/editor";
 import { EntriesList } from "@/components/entries-list";
 import { useFileMenu } from "@/components/file-menu-provider";
 import { Hint } from "@/components/hint";
-import { useJournal } from "@/components/journal-context";
+import {
+  useJournalActions,
+  useJournalEntries,
+  useJournalView,
+} from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -58,10 +62,8 @@ const dividerKeys = new Set([
 type LayoutStep = "closed" | "focus" | "open";
 
 export function JournalLayout() {
-  const {
-    actions: { setDetailOpen },
-    state: { detailOpen, expanded },
-  } = useJournal();
+  const { setDetailOpen } = useJournalActions();
+  const { detailOpen, expanded } = useJournalView();
   const isMobile = useIsMobile();
   const entriesPanelRef = usePanelRef();
   // The group stays mounted whether or not an entry is open, so the list
@@ -213,9 +215,7 @@ function layoutStep(detailOpen: boolean, expanded: boolean): LayoutStep {
 }
 
 function JournalDetail() {
-  const {
-    state: { selection },
-  } = useJournal();
+  const { selection } = useJournalView();
   return (
     <div className="flex h-full min-h-0 flex-col">
       {selection ? <EditorPane /> : <SelectEntryEmpty />}
@@ -225,10 +225,9 @@ function JournalDetail() {
 
 function EntriesColumn() {
   const listRef = useRememberedScroll<HTMLDivElement>("journal-list");
-  const {
-    actions: { deleteEntry, select, startDraft },
-    state: { entries, loadingList, selectedId },
-  } = useJournal();
+  const { deleteEntry, select, startDraft } = useJournalActions();
+  const { entries, loadingList } = useJournalEntries();
+  const { selectedId } = useJournalView();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div

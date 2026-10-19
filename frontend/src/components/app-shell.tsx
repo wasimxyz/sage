@@ -21,7 +21,8 @@ import {
 import { HomeScreen } from "@/components/home-screen";
 import {
   type SidebarMenu as SidebarMenuName,
-  useJournal,
+  useJournalActions,
+  useJournalView,
 } from "@/components/journal-context";
 import { JournalLayout } from "@/components/journal-layout";
 import { MemoriesScreen } from "@/components/memories-screen";
@@ -49,9 +50,7 @@ import { shortcuts } from "@/lib/shortcuts";
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
   useNewShortcut();
-  const {
-    state: { section },
-  } = useJournal();
+  const { section } = useJournalView();
   return (
     <SearchProvider>
       <div
@@ -99,9 +98,7 @@ function RouteSync() {
 
 /** Sage > Settings opens the settings screen. */
 function SettingsMenuListener() {
-  const {
-    actions: { showSettings },
-  } = useJournal();
+  const { showSettings } = useJournalActions();
   useEffect(
     () =>
       onOpenSettings(() => {
@@ -113,9 +110,7 @@ function SettingsMenuListener() {
 }
 
 function AppSidebar() {
-  const {
-    state: { sidebarMenu },
-  } = useJournal();
+  const { sidebarMenu } = useJournalView();
   return (
     <Sidebar
       className="md:[&_[data-slot=sidebar-inner]]:pt-[calc(var(--titlebar-height)-0.5rem)]"
@@ -140,10 +135,8 @@ function SidebarBody({ menu }: { menu: SidebarMenuName }) {
 }
 
 function NavMenu() {
-  const {
-    actions: { showChat, showHome, showJournal, showMemories },
-    state: { section },
-  } = useJournal();
+  const { showChat, showHome, showJournal, showMemories } = useJournalActions();
+  const { section } = useJournalView();
   const { memoryEnabled } = useMemoryFeature();
   return (
     <>
@@ -198,9 +191,7 @@ function NavMenu() {
 }
 
 function SettingsNav() {
-  const {
-    actions: { showSettings },
-  } = useJournal();
+  const { showSettings } = useJournalActions();
   return (
     <SidebarFooter>
       <SidebarMenu>
@@ -221,9 +212,7 @@ function SettingsNav() {
 }
 
 function AppMain() {
-  const {
-    state: { section },
-  } = useJournal();
+  const { section } = useJournalView();
   const { memoryEnabled } = useMemoryFeature();
   if (section === "home") {
     return <HomeScreen />;

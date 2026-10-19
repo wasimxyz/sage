@@ -12,7 +12,7 @@ import {
 
 import type { ChatConversationMeta } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { SearchNavItem } from "@/components/search-dialog";
 import { SidebarBackButton } from "@/components/sidebar-back-button";
 import { Button } from "@/components/ui/button";
@@ -164,9 +164,7 @@ function NewChatButton() {
 }
 
 function ConversationsBackButton() {
-  const {
-    actions: { showJournal },
-  } = useJournal();
+  const { showJournal } = useJournalActions();
   return <SidebarBackButton onClick={showJournal} />;
 }
 

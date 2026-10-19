@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, use } from "react";
+import { createContext, type ReactNode, use, useMemo } from "react";
 
 import type { JournalEntry, JournalEntryMeta } from "@/bridge";
 import type { ParsedImport } from "@/lib/parse-markdown";
@@ -17,16 +17,26 @@ export interface EditorAdapter {
   resetDraft: () => void;
 }
 
-export interface JournalState {
+/**
+ * Where the owner is: which screen, which entry, and how it is laid out. It
+ * changes when they move around, not when an entry saves.
+ */
+export interface JournalViewState {
   detailOpen: boolean;
-  entries: JournalEntryMeta[];
   expanded: boolean;
-  loadingList: boolean;
   section: Section;
   selectedId: number | null;
   selection: EditorSelection | null;
   sidebarMenu: SidebarMenu;
 }
+
+/** The entry list. It changes on every save, so only the list should read it. */
+export interface JournalEntriesState {
+  entries: JournalEntryMeta[];
+  loadingList: boolean;
+}
+
+export type JournalState = JournalViewState & JournalEntriesState;
 
 export interface JournalActions {
   beginDataWipe: () => Promise<void>;
@@ -84,37 +94,81 @@ export interface EntryContextValue {
   state: EntryState;
 }
 
-const JournalContext = createContext<JournalContextValue | null>(null);
-const EntryContext = createContext<EntryContextValue | null>(null);
+const emptyMeta: Record<string, never> = {};
 
-export function useJournal(): JournalContextValue {
-  const value = use(JournalContext);
+// Each slice has its own context, so a component redraws only for the part it
+// reads. A save changes the list and the open entry, never the view or the
+// actions. `useJournal` and `useEntry` still return everything at once.
+const JournalActionsContext = createContext<JournalActions | null>(null);
+const JournalViewContext = createContext<JournalViewState | null>(null);
+const JournalEntriesContext = createContext<JournalEntriesState | null>(null);
+const EntryContext = createContext<EntryContextValue | null>(null);
+const EntryActionsContext = createContext<EntryActions | null>(null);
+
+function present<T>(value: T | null): T {
   if (!value) {
     throw new Error("JournalProvider is missing.");
   }
   return value;
+}
+
+/** Only the actions. They stay the same between saves. */
+export function useJournalActions(): JournalActions {
+  return present(use(JournalActionsContext));
+}
+
+/** Only the view: section, selection, and layout. */
+export function useJournalView(): JournalViewState {
+  return present(use(JournalViewContext));
+}
+
+/** Only the entry list. */
+export function useJournalEntries(): JournalEntriesState {
+  return present(use(JournalEntriesContext));
+}
+
+/** Everything. Prefer the narrower hooks above. */
+export function useJournal(): JournalContextValue {
+  const actions = useJournalActions();
+  const view = useJournalView();
+  const entries = useJournalEntries();
+  return useMemo(
+    () => ({ actions, meta: emptyMeta, state: { ...view, ...entries } }),
+    [actions, entries, view]
+  );
 }
 
 export function useEntry(): EntryContextValue {
-  const value = use(EntryContext);
-  if (!value) {
-    throw new Error("JournalProvider is missing.");
-  }
-  return value;
+  return present(use(EntryContext));
+}
+
+/** Only the actions of the open entry. */
+export function useEntryActions(): EntryActions {
+  return present(use(EntryActionsContext));
 }
 
 export function JournalStateProvider({
+  actions,
   children,
+  entries,
   entry,
-  journal,
+  view,
 }: {
+  actions: JournalActions;
   children: ReactNode;
+  entries: JournalEntriesState;
   entry: EntryContextValue;
-  journal: JournalContextValue;
+  view: JournalViewState;
 }) {
   return (
-    <JournalContext value={journal}>
-      <EntryContext value={entry}>{children}</EntryContext>
-    </JournalContext>
+    <JournalActionsContext value={actions}>
+      <JournalViewContext value={view}>
+        <JournalEntriesContext value={entries}>
+          <EntryActionsContext value={entry.actions}>
+            <EntryContext value={entry}>{children}</EntryContext>
+          </EntryActionsContext>
+        </JournalEntriesContext>
+      </JournalViewContext>
+    </JournalActionsContext>
   );
 }

@@ -23,7 +23,12 @@ import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
 import { Hint } from "@/components/hint";
-import { useEntry, useJournal } from "@/components/journal-context";
+import {
+  useEntry,
+  useEntryActions,
+  useJournalActions,
+  useJournalView,
+} from "@/components/journal-context";
 import {
   PanelIconButton,
   panelIconHoverClass,
@@ -62,9 +67,7 @@ const collapsedLeadingClass =
   "pl-[calc(1.5rem+(var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
 
 function EditorFrame({ children }: { children: ReactNode }) {
-  const {
-    actions: { registerEditor, scheduleSave },
-  } = useEntry();
+  const { registerEditor, scheduleSave } = useEntryActions();
 
   const editor = useEditor({
     content: emptyDoc,
@@ -156,9 +159,7 @@ function EditorFrame({ children }: { children: ReactNode }) {
 }
 
 function EditorHeader() {
-  const {
-    state: { expanded },
-  } = useJournal();
+  const { expanded } = useJournalView();
   return (
     <div
       className={cn(
@@ -184,9 +185,7 @@ function EditorHeader() {
 }
 
 function useCloseEntry() {
-  const {
-    actions: { setDetailOpen },
-  } = useJournal();
+  const { setDetailOpen } = useJournalActions();
   return useCallback(() => {
     setDetailOpen(false);
   }, [setDetailOpen]);
@@ -210,9 +209,7 @@ function ClosePanelButton() {
 // Back leaves full screen and keeps the entry open. The list slides back in
 // beside it, to the split the owner last chose.
 function BackToJournalButton() {
-  const {
-    actions: { setExpanded },
-  } = useJournal();
+  const { setExpanded } = useJournalActions();
   const showList = useCallback(() => {
     setExpanded(false);
   }, [setExpanded]);
@@ -226,9 +223,7 @@ function BackToJournalButton() {
 }
 
 function ExpandToggle() {
-  const {
-    actions: { setExpanded },
-  } = useJournal();
+  const { setExpanded } = useJournalActions();
   return (
     <Hint label="Full screen">
       <Toggle
@@ -244,9 +239,7 @@ function ExpandToggle() {
 }
 
 function EntryMenu() {
-  const {
-    actions: { deleteOpenEntry },
-  } = useEntry();
+  const { deleteOpenEntry } = useEntryActions();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -420,9 +413,7 @@ export const Editor = {
 // Cmd+S saves at once, then says Sage saves on its own. The toast id keeps
 // repeated presses to one toast.
 function useSaveShortcut() {
-  const {
-    actions: { flush },
-  } = useEntry();
+  const { flush } = useEntryActions();
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (
@@ -452,9 +443,7 @@ function useSaveShortcut() {
 }
 
 export default function EditorPane() {
-  const {
-    state: { expanded },
-  } = useJournal();
+  const { expanded } = useJournalView();
   useSaveShortcut();
   return (
     <Editor.Frame>

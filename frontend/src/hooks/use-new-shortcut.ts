@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 
 import { useChat } from "@/components/chat-provider";
-import { useJournal } from "@/components/journal-context";
+import {
+  useJournalActions,
+  useJournalView,
+} from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { isNewKey, newTarget } from "@/lib/new-shortcut";
 
@@ -21,10 +24,8 @@ const openSurfaceSelector = [
  * behind it.
  */
 export function useNewShortcut() {
-  const {
-    actions: { startDraft },
-    state: { section },
-  } = useJournal();
+  const { startDraft } = useJournalActions();
+  const { section } = useJournalView();
   const {
     actions: { newChat },
   } = useChat();

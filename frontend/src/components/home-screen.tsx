@@ -20,7 +20,7 @@ import {
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { useChat } from "@/components/chat-provider";
 import { EntryDateLine } from "@/components/entry-date-line";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { ProtectReminder } from "@/components/protect-reminder";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,9 +64,7 @@ async function loadHomeFeed(): Promise<HomeFeed> {
 }
 
 export function HomeScreen() {
-  const {
-    actions: { startDraft },
-  } = useJournal();
+  const { startDraft } = useJournalActions();
   const [feed, setFeed] = useState<HomeFeed>(emptyFeed);
   const [loading, setLoading] = useState(true);
 
@@ -217,9 +215,7 @@ function HomeFeedItemRow({ item }: { item: HomeFeedItem }) {
 }
 
 function HomeJournalRow({ item }: { item: HomeFeedItem }) {
-  const {
-    actions: { select },
-  } = useJournal();
+  const { select } = useJournalActions();
   const handleClick = useCallback(() => {
     select(item.id).catch(() => {
       // The editor toasts its own load errors.
@@ -237,9 +233,7 @@ function HomeJournalRow({ item }: { item: HomeFeedItem }) {
 }
 
 function HomeConversationRow({ item }: { item: HomeFeedItem }) {
-  const {
-    actions: { showChat },
-  } = useJournal();
+  const { showChat } = useJournalActions();
   const {
     actions: { openConversation },
   } = useChat();
@@ -317,9 +311,7 @@ function HomeFeedSection({
 }
 
 function ContinueWritingCard({ entry }: { entry: HomeLatestEntry }) {
-  const {
-    actions: { select },
-  } = useJournal();
+  const { select } = useJournalActions();
   const handleClick = useCallback(() => {
     select(entry.id).catch(() => {
       // The editor toasts its own load errors.

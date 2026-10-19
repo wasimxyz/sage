@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useMemo } from "react";
 
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
@@ -20,9 +20,7 @@ const toolHeaderClassName = "h-8 w-full justify-start";
 
 // A card opens its entry in the expanded editor, not beside the list.
 function useOpenEntryExpanded(id: number) {
-  const {
-    actions: { select, setExpanded },
-  } = useJournal();
+  const { select, setExpanded } = useJournalActions();
   return useCallback(async () => {
     await select(id);
     setExpanded(true);
