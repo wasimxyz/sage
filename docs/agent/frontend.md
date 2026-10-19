@@ -35,14 +35,14 @@ The first time you open Chat, the panel is open on an empty new chat, beside the
 
 The panel header has these controls:
 
-- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again. It waits while a dialog or menu is open.
+- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again. It works only while Chat is on screen, and it waits while a dialog or menu is open.
 - **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends whenever the panel closes, including when you go to `#/chat`. It stays when you visit other screens, until you quit Sage.
 - **The title** is “New chat” until the first message saves.
 - **The ⋯ menu** has Rename and Delete. A new chat has no ⋯ menu, because there is nothing to rename or delete yet.
 
 Drag the divider to resize the panel, and double-click it to reset the split. In a narrow window, the list sits above the panel.
 
-Closing the panel does not stop the chat. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving, and the panel is as you left it when you open it again. Visiting another screen does end the conversation on screen. When you come back, Sage reads the chat from storage again, so the transcript shows every turn that saved.
+Closing the panel does not stop the chat, and neither does visiting another screen. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you open the panel again or come back to Chat, the transcript and its scroll position are as you left them. A menu or dialog that was open in Chat closes when you leave.
 
 The address bar follows the panel:
 

@@ -145,6 +145,9 @@ const expiredSessionRestoredMessage =
  * Loads a pane has already read. A running pane keeps its own copy of the
  * chat, so a load is out of date once its pane is gone: it has none of the
  * turns sent since. A pane that mounts on a used load reads the chat again.
+ * Chat stays mounted while other screens show, so this happens only when the
+ * whole app shell mounts again, such as after the protect reminder or setup,
+ * and under StrictMode.
  */
 const usedLoads = new WeakSet<ChatLoadPromise>();
 // The read a mounting pane has started for a used load. Rendering twice, as

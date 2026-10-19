@@ -1,6 +1,6 @@
 import { AnimatePresence, m, useIsPresent } from "motion/react";
 import type { KeyboardEvent, ReactNode } from "react";
-
+import { useCloseOnScreenHide } from "@/components/screen-active";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -41,6 +41,7 @@ function ListRowRoot({
 }) {
   // A row that is leaving cannot take focus, and neighbors skip it.
   const isPresent = useIsPresent();
+  const actionsRef = useCloseOnScreenHide();
   return (
     <m.li
       animate={rowOpen}
@@ -51,7 +52,7 @@ function ListRowRoot({
     >
       {/* The gap between rows lives inside, so the row can shrink to nothing. */}
       <div className="pb-0.5">
-        <ContextMenu>{children}</ContextMenu>
+        <ContextMenu actionsRef={actionsRef}>{children}</ContextMenu>
       </div>
     </m.li>
   );

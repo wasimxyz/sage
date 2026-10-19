@@ -15,6 +15,7 @@ import {
 import { useChat, useChatPanel } from "@/components/chat-provider";
 import { ChatScreen } from "@/components/chat-screen";
 import { Hint } from "@/components/hint";
+import { useCloseOnScreenHide } from "@/components/screen-active";
 import { SplitView, type SplitViewContextValue } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -112,6 +113,7 @@ function ChatMenu({ row }: { row: ChatConversationMeta }) {
   const {
     actions: { startRename },
   } = useRenameChat();
+  const actionsRef = useCloseOnScreenHide();
   const handleRename = useCallback(() => {
     startRename(row);
   }, [row, startRename]);
@@ -119,7 +121,7 @@ function ChatMenu({ row }: { row: ChatConversationMeta }) {
     deleteConversation(row.id);
   }, [deleteConversation, row.id]);
   return (
-    <DropdownMenu>
+    <DropdownMenu actionsRef={actionsRef}>
       <DropdownMenuTrigger
         render={
           <Button aria-label="Chat actions" size="icon-sm" variant="ghost" />
