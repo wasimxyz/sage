@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
+import { NoUnderlineShortcut } from "@/components/editor-no-underline";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
 import { Hint } from "@/components/hint";
@@ -51,6 +52,7 @@ const extensions = [
     },
   }),
   Markdown,
+  NoUnderlineShortcut,
 ];
 const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
 

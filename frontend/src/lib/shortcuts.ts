@@ -17,5 +17,4 @@ export const shortcuts = {
   strikethrough: "⇧⌘S",
   submit: "↩",
   toggleSidebar: "⌘B",
-  underline: "⌘U",
 } as const;

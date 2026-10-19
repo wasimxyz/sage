@@ -11,7 +11,6 @@ import {
   PilcrowIcon,
   StrikethroughIcon,
   TextQuoteIcon,
-  UnderlineIcon,
 } from "lucide-react";
 import { type ComponentProps, useCallback } from "react";
 import { Hint } from "@/components/hint";
@@ -21,13 +20,12 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
-const markNames = ["bold", "italic", "strike", "underline"] as const;
+const markNames = ["bold", "italic", "strike"] as const;
 const idleFormatting: FormattingState = {
   block: "paragraph",
   bold: false,
   italic: false,
   strike: false,
-  underline: false,
 };
 
 type MarkName = (typeof markNames)[number];
@@ -45,7 +43,6 @@ interface FormattingState {
   bold: boolean;
   italic: boolean;
   strike: boolean;
-  underline: boolean;
 }
 
 function readBlock(editor: Editor): BlockName {
@@ -79,7 +76,6 @@ function readFormatting(editor: Editor | null): FormattingState {
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
     strike: editor.isActive("strike"),
-    underline: editor.isActive("underline"),
   };
 }
 
@@ -92,7 +88,6 @@ function sameFormatting(
     current.bold === previous.bold &&
     current.italic === previous.italic &&
     current.strike === previous.strike &&
-    current.underline === previous.underline &&
     current.block === previous.block
   );
 }
@@ -152,11 +147,7 @@ function applyMark(editor: Editor, mark: MarkName) {
     chain.toggleItalic().run();
     return;
   }
-  if (mark === "strike") {
-    chain.toggleStrike().run();
-    return;
-  }
-  chain.toggleUnderline().run();
+  chain.toggleStrike().run();
 }
 
 // Same hover as the editor's header buttons. A toggle that is on sits a
@@ -217,13 +208,6 @@ function MarkToggles({ formatting }: { formatting: FormattingState }) {
         value="italic"
       >
         <ItalicIcon />
-      </FormatToggle>
-      <FormatToggle
-        aria-label="Underline"
-        shortcut={shortcuts.underline}
-        value="underline"
-      >
-        <UnderlineIcon />
       </FormatToggle>
       <FormatToggle
         aria-label="Strikethrough"
