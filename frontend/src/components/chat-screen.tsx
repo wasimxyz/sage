@@ -204,7 +204,8 @@ function ChatSessionLoad() {
     usedLoads.add(selection.load);
   }, [load, selection.load]);
   // A search hit scrolls the chat to its message when the chat opens. A chat
-  // read again on a later visit opens at its end instead.
+  // read again, as when the whole app shell mounts again, opens at its end
+  // instead.
   const focusSeq =
     selection.kind === "saved" && !mounted.reread
       ? selection.focusSeq

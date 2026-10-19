@@ -36,9 +36,10 @@ export function useChatDraft(): ChatDraftContextValue {
 }
 
 /**
- * Holds the text in the message box. It sits above the screens, so the draft
- * survives a visit to Home or Journal. A new chat or an opened chat starts
- * with an empty box, because the draft belongs to the pane it was typed in.
+ * Holds the text in the message box. The box in a loading or failed pane and
+ * the box in a live one read the same draft. A new chat or an opened chat
+ * starts with an empty box, because the draft belongs to the pane it was
+ * typed in.
  */
 export function ChatDraftProvider({ children }: { children: ReactNode }) {
   const {

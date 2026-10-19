@@ -7,6 +7,7 @@ import {
 import { type ReactNode, useCallback, useMemo } from "react";
 
 import type { ChatConversationMeta } from "@/bridge";
+import { ChatDraftProvider } from "@/components/chat/chat-draft";
 import { ChatList } from "@/components/chat/chat-list";
 import {
   RenameChatProvider,
@@ -31,16 +32,18 @@ export function ChatLayout() {
   return (
     <ChatSplitProvider>
       <RenameChatProvider>
-        {/* A reply keeps streaming and saving while the panel is closed. */}
-        <SplitView.Root keepDetailMounted>
-          <SplitView.List>
-            <ChatListColumn />
-          </SplitView.List>
-          <SplitView.Detail>
-            <ChatPanelHeader />
-            <ChatScreen />
-          </SplitView.Detail>
-        </SplitView.Root>
+        <ChatDraftProvider>
+          {/* A reply keeps streaming and saving while the panel is closed. */}
+          <SplitView.Root keepDetailMounted>
+            <SplitView.List>
+              <ChatListColumn />
+            </SplitView.List>
+            <SplitView.Detail>
+              <ChatPanelHeader />
+              <ChatScreen />
+            </SplitView.Detail>
+          </SplitView.Root>
+        </ChatDraftProvider>
       </RenameChatProvider>
     </ChatSplitProvider>
   );

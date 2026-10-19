@@ -9,7 +9,6 @@ import { type CSSProperties, useEffect, useState } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar } from "@/components/app-titlebar";
-import { ChatDraftProvider } from "@/components/chat/chat-draft";
 import { ChatLayout } from "@/components/chat-layout";
 import {
   DreamConfirmDialog,
@@ -72,10 +71,7 @@ export function AppShell() {
         <div className="flex min-h-0 min-w-0 flex-1">
           <AppSidebar />
           <SidebarInset className="min-h-0 overflow-hidden">
-            {/* Above AppMain so a half-typed message survives other screens. */}
-            <ChatDraftProvider>
-              <AppMain />
-            </ChatDraftProvider>
+            <AppMain />
           </SidebarInset>
         </div>
       </div>

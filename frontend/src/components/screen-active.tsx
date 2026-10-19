@@ -1,3 +1,4 @@
+import type { Menu } from "@base-ui/react/menu";
 import {
   createContext,
   type ReactNode,
@@ -52,19 +53,13 @@ export function useOnScreenHide(onHide: () => void) {
   }, [active]);
 }
 
-/** What a Base UI menu or dialog hands its `actionsRef`. */
-interface PopupActions {
-  close: () => void;
-  unmount: () => void;
-}
-
 /**
- * An `actionsRef` for a Base UI menu or dialog. The popup sits outside the
- * screen, so hiding the screen would leave it open over the next one. This
- * closes it, as leaving a screen that unmounts does.
+ * An `actionsRef` for a Base UI menu, a dropdown or a context menu. The menu
+ * sits outside the screen, so hiding the screen would leave it open over the
+ * next one. This closes it, as leaving a screen that unmounts does.
  */
-export function useCloseOnScreenHide(): RefObject<PopupActions | null> {
-  const actionsRef = useRef<PopupActions | null>(null);
+export function useCloseOnScreenHide(): RefObject<Menu.Root.Actions | null> {
+  const actionsRef = useRef<Menu.Root.Actions | null>(null);
   useOnScreenHide(() => {
     actionsRef.current?.close();
   });

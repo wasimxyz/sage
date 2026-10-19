@@ -7,8 +7,9 @@ This page explains the React side of Chat: how the screen streams a turn, when i
 These paths are under `frontend/src/components/`:
 
 - **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
-- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. It sits above the screens, so a half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
+- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
 - **ChatLayout** (`chat-layout.tsx`): the chat list on the left and the panel on the right. It uses the same list-and-panel layout as Journal (`split-view.tsx`, `list-row.tsx`).
+- **ScreenActive** (`screen-active.tsx`): tells Chat’s parts whether Chat is on screen. Chat stays mounted while other screens show, so a menu or dialog in Chat uses it to close when Chat hides.
 - **The chat list** (`chat/chat-list.tsx`): one row per saved chat, with a New chat button above it
 - **The chat panel**: the header in `chat-layout.tsx` and the conversation in `chat-screen.tsx`
 - **Rename dialog** (`chat/rename-chat-dialog.tsx`): one dialog, shared by the rows and the panel’s ⋯ menu
