@@ -1,6 +1,11 @@
 import { Markdown } from "@tiptap/markdown";
 import { Selection } from "@tiptap/pm/state";
-import { Tiptap, useEditor, useTiptap } from "@tiptap/react";
+import {
+  Tiptap,
+  type Editor as TiptapEditor,
+  useEditor,
+  useTiptap,
+} from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeftIcon,
@@ -17,7 +22,7 @@ import {
   useEffect,
 } from "react";
 import { toast } from "sonner";
-import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
+import { type JournalEntry, parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
@@ -40,6 +45,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toggle } from "@/components/ui/toggle";
+import { withEmptyHistory } from "@/lib/editor-history";
 import { readingColumnClass } from "@/lib/page-column";
 import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -60,6 +66,33 @@ const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
 // window.
 const collapsedLeadingClass =
   "pl-[calc(1.5rem+(var(--titlebar-leading)+2.75rem)*(1-var(--sidebar-progress,1)))]";
+
+function setEntryContent(editor: TiptapEditor, entry: JournalEntry) {
+  if (entry.format === "markdown") {
+    if (entry.body.trim().length === 0) {
+      editor.commands.setContent(emptyDoc, { emitUpdate: false });
+      return;
+    }
+    try {
+      editor.commands.setContent(entry.body, {
+        contentType: "markdown",
+        emitUpdate: false,
+      });
+    } catch {
+      editor.commands.setContent(plainTextToTiptap(entry.body), {
+        emitUpdate: false,
+      });
+    }
+    return;
+  }
+  editor.commands.setContent(parseStoredDoc(entry), { emitUpdate: false });
+}
+
+// Opening an entry is not an edit. Without this, ⌘Z would undo the opening
+// and autosave would save the text that was there before.
+function forgetHistory(editor: TiptapEditor) {
+  editor.view.updateState(withEmptyHistory(editor.state));
+}
 
 function EditorFrame({ children }: { children: ReactNode }) {
   const {
@@ -105,32 +138,15 @@ function EditorFrame({ children }: { children: ReactNode }) {
         if (editor.isDestroyed) {
           return;
         }
-        if (entry.format === "markdown") {
-          if (entry.body.trim().length === 0) {
-            editor.commands.setContent(emptyDoc, { emitUpdate: false });
-            return;
-          }
-          try {
-            editor.commands.setContent(entry.body, {
-              contentType: "markdown",
-              emitUpdate: false,
-            });
-          } catch {
-            editor.commands.setContent(plainTextToTiptap(entry.body), {
-              emitUpdate: false,
-            });
-          }
-          return;
-        }
-        editor.commands.setContent(parseStoredDoc(entry), {
-          emitUpdate: false,
-        });
+        setEntryContent(editor, entry);
+        forgetHistory(editor);
       },
       resetDraft: () => {
         if (editor.isDestroyed) {
           return;
         }
         editor.commands.setContent(emptyDoc, { emitUpdate: false });
+        forgetHistory(editor);
         editor.commands.focus("end");
       },
     });
@@ -276,7 +292,7 @@ function EntryMenu() {
 function EditorTitle() {
   const {
     actions: { changeTitle },
-    state: { date, title, updatedAt },
+    state: { date, loading, title, updatedAt },
   } = useEntry();
 
   const handleTitleChange = useCallback(
@@ -315,6 +331,7 @@ function EditorTitle() {
                 onChange={handleTitleChange}
                 onKeyDown={handleTitleKeyDown}
                 placeholder="Untitled"
+                readOnly={loading}
                 rows={1}
                 value={title}
               />
