@@ -27,6 +27,7 @@ import {
   startOllamaServer,
 } from "@/bridge";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
+import { useVisiblePoll } from "@/hooks/use-visible-poll";
 import {
   type AgentHealth,
   agentDownMessage,
@@ -66,6 +67,7 @@ import {
 import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 
 const emptyMeta = {};
+const modelsPollMs = 4000;
 
 type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
@@ -398,11 +400,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshModels().catch(() => undefined);
-    const timer = window.setInterval(() => {
-      refreshModels().catch(() => undefined);
-    }, 4000);
-    return () => window.clearInterval(timer);
   }, [refreshModels]);
+
+  // A hidden window skips the check and runs one when it comes back.
+  useVisiblePoll(() => {
+    refreshModels().catch(() => undefined);
+  }, modelsPollMs);
 
   // The notice's Start button: the core launches Ollama and answers once the
   // server replies, so the starting notice holds until this resolves.

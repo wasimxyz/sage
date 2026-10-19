@@ -11,7 +11,7 @@ type FetchLike = (
 
 /** Sage's Chat only talks to Ollama on this Mac. Rewrites a stale `/v1` suffix. */
 export function localOllamaBaseURL(raw: string | undefined): string {
-  const value = raw ?? "http://localhost:11434/api";
+  const value = raw ?? "http://127.0.0.1:11434/api";
   let hostname: string;
   try {
     ({ hostname } = new URL(value));

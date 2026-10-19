@@ -20,7 +20,7 @@ export function chatModels(): string[] {
 }
 
 export function ollamaBaseURL(): string {
-  const raw = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/api";
+  const raw = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434/api";
   return raw.replace(trailingV1Pattern, "/api");
 }
 

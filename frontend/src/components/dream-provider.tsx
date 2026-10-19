@@ -22,6 +22,7 @@ import {
   startOllamaServer,
   waitForNativeBridge,
 } from "@/bridge";
+import { useVisiblePoll } from "@/hooks/use-visible-poll";
 import { formatDreamError, ollamaDownDreamMessage } from "@/lib/dream-errors";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 import { commitAll } from "@/lib/pending-deletes";
@@ -181,54 +182,35 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   // Journal and chat edits never reach this provider, so the count is read again
   // on a timer while Dream is idle. A hidden window skips the timer and reads
   // once when it comes back.
-  useEffect(() => {
-    if (running) {
+  useVisiblePoll(
+    () => {
+      refresh(true).catch(() => undefined);
+    },
+    pendingPollMs,
+    !running
+  );
+
+  const refreshOllamaStatus = useCallback(async () => {
+    const ready = (await waitForNativeBridge()) && hasNativeBridge();
+    if (!ready) {
       return;
     }
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        refresh(true).catch(() => undefined);
-      }
-    }, pendingPollMs);
-    const onVisible = () => {
-      if (!document.hidden) {
-        refresh(true).catch(() => undefined);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [refresh, running]);
+    try {
+      const status = await getOllamaStatus();
+      setOllamaRunning(status.running);
+    } catch {
+      setOllamaRunning(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const ready = (await waitForNativeBridge()) && hasNativeBridge();
-      if (!ready || cancelled) {
-        return;
-      }
-      try {
-        const status = await getOllamaStatus();
-        if (!cancelled) {
-          setOllamaRunning(status.running);
-        }
-      } catch {
-        if (!cancelled) {
-          setOllamaRunning(false);
-        }
-      }
-    };
-    load().catch(() => undefined);
-    const timer = window.setInterval(() => {
-      load().catch(() => undefined);
-    }, ollamaPollMs);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
+    refreshOllamaStatus().catch(() => undefined);
+  }, [refreshOllamaStatus]);
+
+  // The same rule: no check while the window is hidden.
+  useVisiblePoll(() => {
+    refreshOllamaStatus().catch(() => undefined);
+  }, ollamaPollMs);
 
   useEffect(
     () =>
