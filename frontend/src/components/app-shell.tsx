@@ -6,13 +6,12 @@ import {
   RotateCcwClockIcon,
   SettingsIcon,
 } from "lucide-react";
-import { type CSSProperties, useEffect } from "react";
+import { type CSSProperties, lazy, Suspense, useEffect } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar, onTitlebarPointerDown } from "@/components/app-titlebar";
 import { ChatDraftProvider } from "@/components/chat/chat-draft";
 import { ConversationsMenu } from "@/components/chat/conversations-menu";
-import { ChatScreen } from "@/components/chat-screen";
 import {
   DreamConfirmDialog,
   DreamNav,
@@ -41,10 +40,24 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { Spinner } from "@/components/ui/spinner";
 import { useNewShortcut } from "@/hooks/use-new-shortcut";
 import { useRouteSync } from "@/hooks/use-route-sync";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
 import { shortcuts } from "@/lib/shortcuts";
+
+// Chat brings Markdown, code, math, and diagram rendering with it. None of
+// that is needed until the first time Chat opens, so it loads on demand.
+const loadChatScreen = () => import("@/components/chat-screen");
+const ChatScreen = lazy(() =>
+  loadChatScreen().then((module) => ({ default: module.ChatScreen }))
+);
+
+// Hovering or focusing the Chat row starts the load, so the screen is usually
+// there by the time it is opened.
+function preloadChatScreen() {
+  loadChatScreen().catch(() => undefined);
+}
 
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
@@ -172,6 +185,8 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "chat"}
                 onClick={showChat}
+                onFocus={preloadChatScreen}
+                onPointerEnter={preloadChatScreen}
               >
                 <MessageCircleIcon />
                 <span>Chat</span>
@@ -220,6 +235,14 @@ function SettingsNav() {
   );
 }
 
+function ChatLoading() {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background">
+      <Spinner />
+    </div>
+  );
+}
+
 function AppMain() {
   const {
     state: { section },
@@ -229,7 +252,11 @@ function AppMain() {
     return <HomeScreen />;
   }
   if (section === "chat") {
-    return <ChatScreen />;
+    return (
+      <Suspense fallback={<ChatLoading />}>
+        <ChatScreen />
+      </Suspense>
+    );
   }
   if (section === "memories" && memoryEnabled) {
     return <MemoriesScreen />;

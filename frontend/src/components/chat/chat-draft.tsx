@@ -26,9 +26,22 @@ interface ChatDraftContextValue {
 const emptyMeta = {};
 
 const ChatDraftContext = createContext<ChatDraftContextValue | null>(null);
+const ChatDraftActionsContext = createContext<ChatDraftActions | null>(null);
 
 export function useChatDraft(): ChatDraftContextValue {
   const value = use(ChatDraftContext);
+  if (!value) {
+    throw new Error("ChatDraftProvider is missing.");
+  }
+  return value;
+}
+
+/**
+ * Only the actions. A component that sets the text but never reads it uses
+ * this, so it does not redraw on every keystroke.
+ */
+export function useChatDraftActions(): ChatDraftActions {
+  const value = use(ChatDraftActionsContext);
   if (!value) {
     throw new Error("ChatDraftProvider is missing.");
   }
@@ -61,5 +74,9 @@ export function ChatDraftProvider({ children }: { children: ReactNode }) {
     }),
     [actions, text]
   );
-  return <ChatDraftContext value={value}>{children}</ChatDraftContext>;
+  return (
+    <ChatDraftActionsContext value={actions}>
+      <ChatDraftContext value={value}>{children}</ChatDraftContext>
+    </ChatDraftActionsContext>
+  );
 }
