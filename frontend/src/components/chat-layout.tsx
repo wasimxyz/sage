@@ -7,6 +7,7 @@ import {
 import { type ReactNode, useCallback, useMemo } from "react";
 
 import type { ChatConversationMeta } from "@/bridge";
+import { closeReplyOverlays } from "@/components/ai-elements/message";
 import { ChatDraftProvider } from "@/components/chat/chat-draft";
 import { ChatList } from "@/components/chat/chat-list";
 import {
@@ -16,7 +17,10 @@ import {
 import { useChat, useChatPanel } from "@/components/chat-provider";
 import { ChatScreen } from "@/components/chat-screen";
 import { Hint } from "@/components/hint";
-import { useCloseOnScreenHide } from "@/components/screen-active";
+import {
+  useCloseOnScreenHide,
+  useOnScreenHide,
+} from "@/components/screen-active";
 import { SplitView, type SplitViewContextValue } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,10 +32,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { shortcuts } from "@/lib/shortcuts";
 
+/** Reply overlays sit outside Chat's layer, so hiding Chat closes them. */
+function CloseReplyOverlaysOnHide() {
+  useOnScreenHide(closeReplyOverlays);
+  return null;
+}
+
 export function ChatLayout() {
   return (
     <ChatSplitProvider>
       <RenameChatProvider>
+        <CloseReplyOverlaysOnHide />
         <ChatDraftProvider>
           {/* A reply keeps streaming and saving while the panel is closed. */}
           <SplitView.Root keepDetailMounted>

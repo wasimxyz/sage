@@ -43,7 +43,7 @@ The panel header has these controls:
 
 Drag the divider to resize the panel, and double-click it to reset the split. In a narrow window, the list sits above the panel.
 
-Closing the panel does not stop the chat, and neither does visiting another screen. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you open the panel again or come back to Chat, the transcript and its scroll position are as you left them. A menu or dialog that was open in Chat closes when you leave.
+Closing the panel does not stop the chat, and neither does visiting another screen. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you open the panel again or come back to Chat, the transcript and its scroll position are as you left them. Opening the chat that is already open, from its row, from Home, or from a search hit, shows the panel and leaves the conversation as it is. A menu, a dialog, or a full-screen table or diagram that was open in Chat closes when you leave.
 
 The address bar follows the panel:
 
@@ -67,7 +67,7 @@ Switching tabs without changing the query reuses the lists already loaded.
 Choosing a hit opens it:
 
 - A journal hit opens that entry.
-- A conversation hit opens that conversation in the panel. If the hit has a `seq`, Chat scrolls to the matching message, and a title-only hit opens it without scrolling.
+- A conversation hit opens that conversation in the panel. If the hit has a `seq`, Chat scrolls to the matching message, and a title-only hit opens it without scrolling. A hit in the chat that is already open scrolls to its message without reading the chat again.
 - A memory hit opens that memory. Profile and topic hits open the subject pane, and an event hit opens its edit dialog.
 
 ## Streaming a turn
