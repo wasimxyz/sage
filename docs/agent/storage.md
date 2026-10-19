@@ -91,7 +91,7 @@ When encryption is on, titles and events are encrypted:
 - Titles use the label `chat_conversation:title`.
 - Each event uses `chat_event:<conversation_id>:<seq>`, so an encrypted row cannot be moved to another conversation or position.
 
-Session ids, timestamps, `seq`, the model name, the Thinking setting, and the context length stay readable. That lets the sidebar list and resume work without decrypting every row. [Encryption at rest](../security/encryption.md) covers the passes that encrypt and decrypt these rows.
+Session ids, timestamps, `seq`, the model name, the Thinking setting, and the context length stay readable. That lets the chat list and resume work without decrypting every row. [Encryption at rest](../security/encryption.md) covers the passes that encrypt and decrypt these rows.
 
 ## Exporting conversations
 

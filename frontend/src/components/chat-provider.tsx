@@ -5,6 +5,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
+  useRef,
   useState,
 } from "react";
 
@@ -54,6 +56,7 @@ import {
   saveChatModelPrefs,
 } from "@/lib/chat/model-prefs";
 import { type ModelsLoad, sameModelsLoad } from "@/lib/chat/models-load";
+import { initialPanel, panelReducer } from "@/lib/chat/panel-state";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
@@ -69,7 +72,7 @@ import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 const emptyMeta = {};
 const modelsPollMs = 4000;
 
-type ChatSelection =
+export type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
   | { focusSeq?: number; id: number; kind: "saved"; load: ChatLoadPromise };
 
@@ -80,6 +83,10 @@ interface ChatState {
   contextLengthLocked: boolean;
   conversations: ChatConversationMeta[];
   error: string | null;
+  /** True when the last read of the chat list failed. */
+  listFailed: boolean;
+  /** True once the chat list has loaded, so the list can show rows, not a gap. */
+  listLoaded: boolean;
   models: ModelsLoad;
   ollamaStart: OllamaStartLoad;
   paneKey: number;
@@ -99,6 +106,8 @@ interface ChatActions {
   recordCreated: (id: number, title: string) => void;
   refreshList: () => Promise<void>;
   renameConversation: (id: number, title: string) => Promise<void>;
+  /** Back to an empty chat, with the panel as it is. */
+  resetToNewChat: () => void;
   selectModel: (model: string) => void;
   setContextLength: (value: number) => void;
   setThinkingEnabled: (enabled: boolean) => void;
@@ -113,6 +122,27 @@ interface ChatContextValue {
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+
+/**
+ * Whether the panel beside the chat list is open, and whether it fills the
+ * window. It has its own context, so opening and closing the panel does not
+ * render every screen that reads the chat.
+ */
+interface ChatPanelContextValue {
+  actions: {
+    setExpanded: (expanded: boolean) => void;
+    setPanelOpen: (open: boolean) => void;
+  };
+  meta: Record<string, never>;
+  state: {
+    /** Kept while you visit other screens, and ended when the panel closes. */
+    expanded: boolean;
+    /** Closing keeps the selection. */
+    panelOpen: boolean;
+  };
+}
+
+const ChatPanelContext = createContext<ChatPanelContextValue | null>(null);
 
 /** The real delete for one chat. The pending-delete store also runs it after a relaunch. */
 async function commitChatDelete(id: number): Promise<CommitResult> {
@@ -170,6 +200,14 @@ export function useChat(): ChatContextValue {
   return value;
 }
 
+export function useChatPanel(): ChatPanelContextValue {
+  const value = use(ChatPanelContext);
+  if (!value) {
+    throw new Error("ChatProvider is missing.");
+  }
+  return value;
+}
+
 export function isChatComposerLocked(state: {
   agent: ChatState["agent"];
   dreaming?: boolean;
@@ -211,6 +249,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     load: emptyChatLoad,
   });
   const [paneKey, setPaneKey] = useState(0);
+  // Chat opens on a new chat, so the first visit shows the panel. After that
+  // the panel stays as it was left.
+  const [panel, dispatchPanel] = useReducer(panelReducer, initialPanel);
+  const panelOpenRef = useRef(panel.open);
+  const [listLoaded, setListLoaded] = useState(false);
+  const [listFailed, setListFailed] = useState(false);
   const [models, setModels] = useState<ModelsLoad>({ kind: "loading" });
   const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
     kind: "idle",
@@ -220,6 +264,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [agent, setAgent] = useState<AgentHealth>({ kind: "checking" });
   const [agentToken, setAgentToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    panelOpenRef.current = panel.open;
+  }, [panel.open]);
+
+  const setPanelOpen = useCallback((open: boolean) => {
+    dispatchPanel({ type: open ? "open" : "close" });
+  }, []);
+
+  const setExpanded = useCallback((expanded: boolean) => {
+    dispatchPanel({ expanded, type: "expand" });
+  }, []);
 
   const showError = useCallback((message: string) => {
     setError(message);
@@ -247,11 +303,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const refreshList = useCallback(async () => {
     try {
       setConversations(await chatList());
+      setListFailed(false);
     } catch (caught) {
+      setListFailed(true);
       setError(
         caught instanceof Error ? caught.message : "Could not load chats."
       );
     }
+    setListLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -451,13 +510,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [selection]
   );
 
-  const newChat = useCallback(() => {
+  // Back to an empty chat, with the panel as it is.
+  const resetToNewChat = useCallback(() => {
     setError(null);
     setSelection({ kind: "new", load: emptyChatLoad });
     setPrefs(loadChatModelPrefs());
     setContextLengthLocked(false);
     setPaneKey((current) => current + 1);
   }, []);
+
+  const newChat = useCallback(() => {
+    resetToNewChat();
+    setPanelOpen(true);
+  }, [resetToNewChat, setPanelOpen]);
 
   const renameConversation = useCallback(async (id: number, title: string) => {
     try {
@@ -488,16 +553,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
       setContextLengthLocked(true);
       setPaneKey((current) => current + 1);
+      setPanelOpen(true);
     },
-    []
+    [setPanelOpen]
   );
 
   const deleteConversation = useCallback(
     (id: number) => {
-      const wasOpen = selection.kind === "saved" && selection.id === id;
+      const isSelected = selection.kind === "saved" && selection.id === id;
+      // Undo reopens a chat that was on screen, not one the closed panel
+      // only remembered.
+      const wasOpen = isSelected && panelOpenRef.current;
       const title = allConversations.find((row) => row.id === id)?.title ?? "";
-      if (wasOpen) {
-        newChat();
+      if (isSelected) {
+        resetToNewChat();
       }
       deleteWithUndo({
         commit: () => commitChatDelete(id),
@@ -511,7 +580,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
       });
     },
-    [allConversations, newChat, openConversation, selection]
+    [allConversations, openConversation, resetToNewChat, selection]
   );
 
   const recordCreated = useCallback(
@@ -593,6 +662,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       recordCreated,
       refreshList,
       renameConversation,
+      resetToNewChat,
       selectModel,
       setContextLength,
       setThinkingEnabled,
@@ -609,6 +679,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       recordCreated,
       refreshList,
       renameConversation,
+      resetToNewChat,
       selectModel,
       setContextLength,
       setThinkingEnabled,
@@ -628,6 +699,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         contextLengthLocked,
         conversations,
         error,
+        listFailed,
+        listLoaded,
         models,
         ollamaStart,
         paneKey,
@@ -643,6 +716,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       contextLengthLocked,
       conversations,
       error,
+      listFailed,
+      listLoaded,
       models,
       ollamaStart,
       paneKey,
@@ -651,5 +726,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  return <ChatContext value={value}>{children}</ChatContext>;
+  const panelValue = useMemo<ChatPanelContextValue>(
+    () => ({
+      actions: { setExpanded, setPanelOpen },
+      meta: emptyMeta,
+      state: { expanded: panel.expanded, panelOpen: panel.open },
+    }),
+    [panel.expanded, panel.open, setExpanded, setPanelOpen]
+  );
+
+  return (
+    <ChatContext value={value}>
+      <ChatPanelContext value={panelValue}>{children}</ChatPanelContext>
+    </ChatContext>
+  );
 }
