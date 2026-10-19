@@ -51,7 +51,7 @@ export function DataSettings() {
     runStaleEmbeddingPass,
   } = useJournalActions();
   const {
-    actions: { newChat, refreshList },
+    actions: { refreshList, resetToNewChat },
   } = useChat();
   const {
     actions: { refresh: refreshMemories },
@@ -115,10 +115,10 @@ export function DataSettings() {
   ]);
 
   const deleteChats = useCallback(async () => {
-    flushSync(() => newChat());
+    flushSync(() => resetToNewChat());
     await deleteConversations();
     await Promise.all([refreshList(), refreshMemories(), refreshCounts()]);
-  }, [newChat, refreshCounts, refreshList, refreshMemories]);
+  }, [refreshCounts, refreshList, refreshMemories, resetToNewChat]);
 
   const deleteIndexes = useCallback(async () => {
     await deleteEmbeddings();
@@ -136,7 +136,7 @@ export function DataSettings() {
   }, [refreshCounts, refreshMemories]);
 
   const deleteEverything = useCallback(async () => {
-    flushSync(() => newChat());
+    flushSync(() => resetToNewChat());
     await beginDataWipe();
     try {
       await deleteAllData();
@@ -145,7 +145,7 @@ export function DataSettings() {
     } finally {
       endDataWipe();
     }
-  }, [beginDataWipe, endDataWipe, newChat]);
+  }, [beginDataWipe, endDataWipe, resetToNewChat]);
 
   const handleConfirm = useCallback(async () => {
     if (!confirmation || busy || typedConfirmation !== "delete") {

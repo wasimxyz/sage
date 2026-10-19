@@ -1,5 +1,4 @@
 import {
-  ChevronRightIcon,
   HouseIcon,
   MessageCircleIcon,
   NotebookTextIcon,
@@ -9,10 +8,9 @@ import {
 import { type CSSProperties, useEffect } from "react";
 
 import { onOpenSettings } from "@/bridge";
-import { AppTitlebar, onTitlebarPointerDown } from "@/components/app-titlebar";
+import { AppTitlebar } from "@/components/app-titlebar";
 import { ChatDraftProvider } from "@/components/chat/chat-draft";
-import { ConversationsMenu } from "@/components/chat/conversations-menu";
-import { ChatScreen } from "@/components/chat-screen";
+import { ChatLayout } from "@/components/chat-layout";
 import {
   DreamConfirmDialog,
   DreamNav,
@@ -50,7 +48,6 @@ import { shortcuts } from "@/lib/shortcuts";
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
   useNewShortcut();
-  const { section } = useJournalView();
   return (
     <SearchProvider>
       <div
@@ -73,13 +70,6 @@ export function AppShell() {
         <div className="flex min-h-0 min-w-0 flex-1">
           <AppSidebar />
           <SidebarInset className="min-h-0 overflow-hidden">
-            {section === "chat" ? (
-              <div
-                className="h-(--titlebar-height) shrink-0"
-                data-slot="window-drag"
-                onPointerDown={onTitlebarPointerDown}
-              />
-            ) : null}
             {/* Above AppMain so a half-typed message survives other screens. */}
             <ChatDraftProvider>
               <AppMain />
@@ -125,9 +115,6 @@ function AppSidebar() {
 }
 
 function SidebarBody({ menu }: { menu: SidebarMenuName }) {
-  if (menu === "conversations") {
-    return <ConversationsMenu />;
-  }
   if (menu === "settings") {
     return <SettingsMenu />;
   }
@@ -168,7 +155,6 @@ function NavMenu() {
               >
                 <MessageCircleIcon />
                 <span>Chat</span>
-                <ChevronRightIcon className="ml-auto" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             {memoryEnabled ? (
@@ -218,7 +204,7 @@ function AppMain() {
     return <HomeScreen />;
   }
   if (section === "chat") {
-    return <ChatScreen />;
+    return <ChatLayout />;
   }
   if (section === "memories" && memoryEnabled) {
     return <MemoriesScreen />;

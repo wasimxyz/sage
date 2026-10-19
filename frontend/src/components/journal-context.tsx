@@ -5,7 +5,7 @@ import type { ParsedImport } from "@/lib/parse-markdown";
 
 export type Section = "chat" | "home" | "journal" | "memories" | "settings";
 
-export type SidebarMenu = "conversations" | "nav" | "settings";
+export type SidebarMenu = "nav" | "settings";
 
 export type EditorSelection = { kind: "id"; id: number } | { kind: "draft" };
 
@@ -104,9 +104,10 @@ const JournalViewContext = createContext<JournalViewState | null>(null);
 const JournalEntriesContext = createContext<JournalEntriesState | null>(null);
 const EntryContext = createContext<EntryContextValue | null>(null);
 const EntryActionsContext = createContext<EntryActions | null>(null);
+const EntryLoadingContext = createContext<boolean | null>(null);
 
 function present<T>(value: T | null): T {
-  if (!value) {
+  if (value === null) {
     throw new Error("JournalProvider is missing.");
   }
   return value;
@@ -147,6 +148,11 @@ export function useEntryActions(): EntryActions {
   return present(use(EntryActionsContext));
 }
 
+/** Only whether the open entry is still loading. It does not change on a save. */
+export function useEntryLoading(): boolean {
+  return present(use(EntryLoadingContext));
+}
+
 export function JournalStateProvider({
   actions,
   children,
@@ -165,7 +171,9 @@ export function JournalStateProvider({
       <JournalViewContext value={view}>
         <JournalEntriesContext value={entries}>
           <EntryActionsContext value={entry.actions}>
-            <EntryContext value={entry}>{children}</EntryContext>
+            <EntryLoadingContext value={entry.state.loading}>
+              <EntryContext value={entry}>{children}</EntryContext>
+            </EntryLoadingContext>
           </EntryActionsContext>
         </JournalEntriesContext>
       </JournalViewContext>
