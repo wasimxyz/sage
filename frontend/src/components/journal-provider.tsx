@@ -627,14 +627,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     await flush();
     setSection("home");
     setSidebarMenu("nav");
-    setExpanded(false);
   }, [flush]);
 
   const showChat = useCallback(async () => {
     await flush();
     setSection("chat");
-    setSidebarMenu("conversations");
-    setExpanded(false);
+    setSidebarMenu("nav");
   }, [flush]);
 
   const showJournal = useCallback(async () => {
@@ -652,14 +650,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     await flush();
     setSection("memories");
     setSidebarMenu("nav");
-    setExpanded(false);
   }, [flush, memoryEnabled]);
 
   const showSettings = useCallback(async () => {
     await flush();
     setSection("settings");
     setSidebarMenu("settings");
-    setExpanded(false);
   }, [flush]);
 
   const closeSettings = useCallback(async () => {

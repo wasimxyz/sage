@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   isMemoriesTab,
+  isNewChatSaved,
   isSettingsTab,
   navigationOverridesPendingMemoryRoute,
   parseHash,
+  planChatRoute,
   routeForMemoryFeature,
   routeFromState,
   routesEqual,
@@ -51,7 +53,7 @@ test("navigation during a delayed memory check overrides the startup hash", () =
   assert.equal(
     navigationOverridesPendingMemoryRoute(
       initial,
-      { conversationId: null, section: "chat" },
+      { chat: "list", section: "chat" },
       false
     ),
     true
@@ -63,7 +65,7 @@ test("navigation during a delayed memory check overrides the startup hash", () =
   assert.equal(
     navigationOverridesPendingMemoryRoute(
       initial,
-      { conversationId: null, section: "chat" },
+      { chat: "list", section: "chat" },
       true
     ),
     false
@@ -104,6 +106,7 @@ test("routeFromState keeps the Memories tab", () => {
   assert.deepEqual(
     routeFromState({
       chatId: null,
+      chatPanelOpen: true,
       detailOpen: false,
       entryId: null,
       memoriesTab: "facts",
@@ -151,6 +154,7 @@ test("routeFromState keeps the settings tab", () => {
   assert.deepEqual(
     routeFromState({
       chatId: 4,
+      chatPanelOpen: true,
       detailOpen: true,
       entryId: 9,
       memoriesTab: "facts",
@@ -190,4 +194,102 @@ test("isMemoriesTab accepts only Facts and Events", () => {
   assert.equal(isMemoriesTab("profile"), false);
   assert.equal(isMemoriesTab("topics"), false);
   assert.equal(isMemoriesTab(null), false);
+});
+
+test("parseHash maps chat hashes onto the list, a new chat, and a saved chat", () => {
+  assert.deepEqual(parseHash("#/chat"), { chat: "list", section: "chat" });
+  assert.deepEqual(parseHash("#/chat/new"), { chat: "new", section: "chat" });
+  assert.deepEqual(parseHash("#/chat/12"), { chat: 12, section: "chat" });
+  assert.deepEqual(parseHash("#/chat/0"), { section: "home" });
+  assert.deepEqual(parseHash("#/chat/other"), { section: "home" });
+  assert.deepEqual(parseHash("#/chat/12/extra"), { section: "home" });
+});
+
+test("toHash writes each chat view and parses back to the same place", () => {
+  assert.equal(toHash({ chat: "list", section: "chat" }), "/chat");
+  assert.equal(toHash({ chat: "new", section: "chat" }), "/chat/new");
+  assert.equal(toHash({ chat: 12, section: "chat" }), "/chat/12");
+  for (const hash of ["#/chat", "#/chat/new", "#/chat/12"]) {
+    assert.equal(`#${toHash(parseHash(hash))}`, hash);
+  }
+});
+
+test("routeFromState shows the list alone while the chat panel is closed", () => {
+  const base = {
+    detailOpen: false,
+    entryId: null,
+    memoriesTab: "facts",
+    section: "chat",
+    settingsTab: "agent",
+  } as const;
+  assert.deepEqual(
+    routeFromState({ ...base, chatId: 4, chatPanelOpen: false }),
+    { chat: "list", section: "chat" }
+  );
+  assert.deepEqual(
+    routeFromState({ ...base, chatId: null, chatPanelOpen: true }),
+    { chat: "new", section: "chat" }
+  );
+  assert.deepEqual(
+    routeFromState({ ...base, chatId: 4, chatPanelOpen: true }),
+    {
+      chat: 4,
+      section: "chat",
+    }
+  );
+});
+
+test("isNewChatSaved is true only when a new chat becomes a saved one", () => {
+  const fresh = { chat: "new", section: "chat" } as const;
+  const saved = { chat: 5, section: "chat" } as const;
+  const list = { chat: "list", section: "chat" } as const;
+  assert.equal(isNewChatSaved(fresh, saved), true);
+  assert.equal(isNewChatSaved(list, saved), false);
+  assert.equal(isNewChatSaved(saved, fresh), false);
+  assert.equal(isNewChatSaved(null, saved), false);
+  assert.equal(isNewChatSaved({ section: "home" }, saved), false);
+});
+
+test("planChatRoute closes the panel for the list, and shows Chat if needed", () => {
+  const newChat = { kind: "new" } as const;
+  assert.deepEqual(
+    planChatRoute("list", { onChat: true, selection: newChat }),
+    {
+      afterShow: "close-panel",
+      showChat: false,
+    }
+  );
+  assert.deepEqual(
+    planChatRoute("list", { onChat: false, selection: newChat }),
+    { afterShow: "close-panel", showChat: true }
+  );
+});
+
+test("planChatRoute opens the panel on the chat that is already selected", () => {
+  assert.deepEqual(
+    planChatRoute("new", { onChat: true, selection: { kind: "new" } }),
+    { afterShow: "open-panel", showChat: false }
+  );
+  assert.deepEqual(
+    planChatRoute(7, { onChat: true, selection: { id: 7, kind: "saved" } }),
+    { afterShow: "open-panel", showChat: false }
+  );
+});
+
+test("planChatRoute starts a new chat or opens another one when the selection differs", () => {
+  assert.deepEqual(
+    planChatRoute("new", {
+      onChat: false,
+      selection: { id: 7, kind: "saved" },
+    }),
+    { afterShow: "new-chat", showChat: true }
+  );
+  assert.deepEqual(
+    planChatRoute(8, { onChat: true, selection: { id: 7, kind: "saved" } }),
+    { afterShow: { open: 8 }, showChat: false }
+  );
+  assert.deepEqual(
+    planChatRoute(8, { onChat: true, selection: { kind: "new" } }),
+    { afterShow: { open: 8 }, showChat: false }
+  );
 });

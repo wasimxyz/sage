@@ -1,3 +1,4 @@
+import { addDays } from "date-fns/addDays";
 import { secondsInMonth } from "date-fns/constants";
 import { differenceInCalendarDays } from "date-fns/differenceInCalendarDays";
 import { differenceInCalendarMonths } from "date-fns/differenceInCalendarMonths";
@@ -9,6 +10,7 @@ import { intlFormatDistance } from "date-fns/intlFormatDistance";
 import { isSameYear } from "date-fns/isSameYear";
 import { isValid } from "date-fns/isValid";
 import { parse } from "date-fns/parse";
+import { startOfDay } from "date-fns/startOfDay";
 import { startOfMonth } from "date-fns/startOfMonth";
 import { startOfWeek } from "date-fns/startOfWeek";
 import { startOfYear } from "date-fns/startOfYear";
@@ -24,6 +26,21 @@ export function parseCalendarDate(value: string): Date | null {
 
 export function calendarDateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");
+}
+
+/** How long until the next local midnight, when "Today" turns into "Yesterday". */
+export function msUntilNextDay(now: Date): number {
+  return startOfDay(addDays(now, 1)).getTime() - now.getTime();
+}
+
+/**
+ * The local calendar day of a UTC instant such as a chat's `updatedAt`, as
+ * `yyyy-MM-dd`. A chat saved at 11pm belongs to that evening, not to the next
+ * day in UTC. A value that is not a date comes back unchanged.
+ */
+export function localDateKey(instant: string): string {
+  const date = new Date(instant);
+  return Number.isNaN(date.getTime()) ? instant : calendarDateKey(date);
 }
 
 function eventAgeUnit(date: Date, now: Date): EventAgeUnit {

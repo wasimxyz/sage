@@ -1,5 +1,4 @@
 import {
-  ChevronRightIcon,
   HouseIcon,
   MessageCircleIcon,
   NotebookTextIcon,
@@ -9,9 +8,8 @@ import {
 import { type CSSProperties, lazy, Suspense, useEffect } from "react";
 
 import { onOpenSettings } from "@/bridge";
-import { AppTitlebar, onTitlebarPointerDown } from "@/components/app-titlebar";
+import { AppTitlebar } from "@/components/app-titlebar";
 import { ChatDraftProvider } from "@/components/chat/chat-draft";
-import { ConversationsMenu } from "@/components/chat/conversations-menu";
 import {
   DreamConfirmDialog,
   DreamNav,
@@ -48,23 +46,20 @@ import { shortcuts } from "@/lib/shortcuts";
 
 // Chat brings Markdown, code, math, and diagram rendering with it. None of
 // that is needed until the first time Chat opens, so it loads on demand.
-const loadChatScreen = () => import("@/components/chat-screen");
-const ChatScreen = lazy(() =>
-  loadChatScreen().then((module) => ({ default: module.ChatScreen }))
+const loadChatLayout = () => import("@/components/chat-layout");
+const ChatLayout = lazy(() =>
+  loadChatLayout().then((module) => ({ default: module.ChatLayout }))
 );
 
 // Hovering or focusing the Chat row starts the load, so the screen is usually
 // there by the time it is opened.
-function preloadChatScreen() {
-  loadChatScreen().catch(() => undefined);
+function preloadChatLayout() {
+  loadChatLayout().catch(() => undefined);
 }
 
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
   useNewShortcut();
-  const {
-    state: { section },
-  } = useJournal();
   return (
     <SearchProvider>
       <div
@@ -87,13 +82,6 @@ export function AppShell() {
         <div className="flex min-h-0 min-w-0 flex-1">
           <AppSidebar />
           <SidebarInset className="min-h-0 overflow-hidden">
-            {section === "chat" ? (
-              <div
-                className="h-(--titlebar-height) shrink-0"
-                data-slot="window-drag"
-                onPointerDown={onTitlebarPointerDown}
-              />
-            ) : null}
             {/* Above AppMain so a half-typed message survives other screens. */}
             <ChatDraftProvider>
               <AppMain />
@@ -143,9 +131,6 @@ function AppSidebar() {
 }
 
 function SidebarBody({ menu }: { menu: SidebarMenuName }) {
-  if (menu === "conversations") {
-    return <ConversationsMenu />;
-  }
   if (menu === "settings") {
     return <SettingsMenu />;
   }
@@ -185,12 +170,11 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "chat"}
                 onClick={showChat}
-                onFocus={preloadChatScreen}
-                onPointerEnter={preloadChatScreen}
+                onFocus={preloadChatLayout}
+                onPointerEnter={preloadChatLayout}
               >
                 <MessageCircleIcon />
                 <span>Chat</span>
-                <ChevronRightIcon className="ml-auto" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             {memoryEnabled ? (
@@ -254,7 +238,7 @@ function AppMain() {
   if (section === "chat") {
     return (
       <Suspense fallback={<ChatLoading />}>
-        <ChatScreen />
+        <ChatLayout />
       </Suspense>
     );
   }
