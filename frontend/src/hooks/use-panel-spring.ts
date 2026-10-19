@@ -35,26 +35,33 @@ const sameSize = 0.1;
  *
  * `onSettled` gets the step the panel has reached. It also runs when the
  * panel was already there, so a caller can finish what it waited on.
+ *
+ * `shouldJump` is read when a move starts. When it returns true, the move
+ * jumps as it does with reduced motion, such as for a screen nobody sees.
  */
 export function usePanelSpring(
   panelRef: RefObject<PanelImperativeHandle | null>,
   step: string,
   getTarget: () => number,
-  onSettled?: (step: string) => void
+  onSettled?: (step: string) => void,
+  shouldJump?: () => boolean
 ): PanelSpring {
   const reduceMotion = usePrefersReducedMotion();
   const value = useSpring(0, spring);
   const [moving, setMoving] = useState(false);
   const movingRef = useRef<boolean>(false);
   const pendingRef = useRef<number | null>(null);
+  const pendingJumpRef = useRef<boolean>(false);
   const targetRef = useRef(0);
   const stepRef = useRef(step);
   const getTargetRef = useRef(getTarget);
   const onSettledRef = useRef(onSettled);
+  const shouldJumpRef = useRef(shouldJump);
 
   useEffect(() => {
     getTargetRef.current = getTarget;
     onSettledRef.current = onSettled;
+    shouldJumpRef.current = shouldJump;
   });
 
   const setMovingNow = useCallback((next: boolean) => {
@@ -92,11 +99,12 @@ export function usePanelSpring(
     if (!panel) {
       return;
     }
+    const jump = reduceMotion || shouldJumpRef.current?.() === true;
     // biome-ignore lint/suspicious/noUnnecessaryConditions: setMovingNow flips movingRef between steps
     if (movingRef.current) {
       // A move is under way. Steer it, and drop a target that was waiting.
       pendingRef.current = null;
-      if (reduceMotion) {
+      if (jump) {
         value.jump(target);
         settle();
       } else {
@@ -111,6 +119,7 @@ export function usePanelSpring(
     }
     value.jump(current);
     pendingRef.current = target;
+    pendingJumpRef.current = jump;
     setMovingNow(true);
   }, [panelRef, reduceMotion, settle, setMovingNow, step, value]);
 
@@ -121,7 +130,8 @@ export function usePanelSpring(
     }
     const target = pendingRef.current;
     pendingRef.current = null;
-    if (!reduceMotion) {
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: the step effect sets pendingJumpRef before each move
+    if (!pendingJumpRef.current) {
       value.set(target);
       return;
     }
@@ -130,7 +140,7 @@ export function usePanelSpring(
       settle();
     });
     return () => cancelAnimationFrame(frame);
-  }, [moving, reduceMotion, settle, value]);
+  }, [moving, settle, value]);
 
   return { moving, movingRef, stop };
 }
