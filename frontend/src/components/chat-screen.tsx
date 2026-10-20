@@ -5,7 +5,7 @@ import type {
   MessageStreamEvent,
 } from "eve/client";
 import { type EveMessage, useEveAgent } from "eve/react";
-import { MessageCircleIcon } from "lucide-react";
+import { ArrowDownIcon, MessageCircleIcon } from "lucide-react";
 import { m } from "motion/react";
 import {
   type ChangeEvent,
@@ -22,15 +22,8 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { useStickToBottomContext } from "use-stick-to-bottom";
 
 import { type ChatConversation, chatSave, isMissingRowError } from "@/bridge";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "@/components/ai-elements/conversation";
 import {
   PromptInput,
   PromptInputBody,
@@ -66,6 +59,23 @@ import {
   useChat,
 } from "@/components/chat-provider";
 import { useDream } from "@/components/dream-provider";
+import { Hint } from "@/components/hint";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller,
+} from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
 import { shouldShowAssistantPending } from "@/lib/chat/assistant-pending";
 import {
@@ -675,44 +685,53 @@ function ChatTurnSession({
     agent.cancel().catch(() => undefined);
   }, [agent]);
 
-  const hasMessages = agent.data.messages.length > 0;
+  const { messages } = agent.data;
+  const pending = shouldShowAssistantPending(messages, agent.status);
 
   return (
     <ChatPane>
-      <ChatTranscriptShell
-        busy={busy}
-        contentClassName={hasMessages ? "py-6" : "h-full"}
-        initial={focus === undefined ? "instant" : false}
-        resize={focus === undefined ? "smooth" : false}
-      >
-        {hasMessages ? (
-          <div className="flex flex-col gap-6">
-            {agent.data.messages.map((item) => (
-              <MessageArrival
-                arriving={busy && !openingMessageIds.has(item.id)}
-                key={item.id}
-              >
-                <MessageBubble message={item} />
-              </MessageArrival>
-            ))}
-            {shouldShowAssistantPending(agent.data.messages, agent.status) ? (
-              <AssistantPending />
-            ) : null}
+      {messages.length > 0 ? (
+        <ChatTranscriptShell
+          busy={busy}
+          outside={
             <SearchMessageFocus
               events={initialEvents}
               focus={focus}
-              messages={agent.data.messages}
+              messages={messages}
             />
-          </div>
-        ) : (
-          <ConversationEmptyState
-            className="[&_p]:mx-auto [&_p]:max-w-md"
-            description="Talk through your thoughts with a companion that knows what you've written. Nothing you share leaves this space."
-            icon={<MessageCircleIcon className="size-8" />}
-            title="Chat with Sage"
-          />
-        )}
-      </ChatTranscriptShell>
+          }
+        >
+          {messages.map((item, index) => (
+            <MessageScrollerItem
+              className={TRANSCRIPT_ITEM_CLASS}
+              // eve shows a sent message under a temporary id, then swaps in
+              // the server's. Keyed by id, the row would be replaced, and the
+              // scroller jumps to the chat's first message when a row is
+              // replaced. Messages only ever arrive at the end, so the
+              // position is stable.
+              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              key={index}
+              messageId={item.id}
+              scrollAnchor={item.role === "user"}
+            >
+              <MessageArrival
+                arriving={busy && !openingMessageIds.has(item.id)}
+              >
+                <MessageBubble message={item} />
+              </MessageArrival>
+              {pending && index === messages.length - 1 ? (
+                <AssistantPending />
+              ) : null}
+            </MessageScrollerItem>
+          ))}
+        </ChatTranscriptShell>
+      ) : (
+        <ChatEmptyState
+          description="Talk through your thoughts with a companion that knows what you've written. Nothing you share leaves this space."
+          icon={<MessageCircleIcon />}
+          title="Chat with Sage"
+        />
+      )}
       <ChatComposerBar>
         <ChatPromptForm
           onStop={stopTurn}
@@ -753,8 +772,10 @@ function MessageArrival({
 function ChatSessionFallback() {
   return (
     <ChatPane aria-busy="true" aria-label="Loading conversation">
-      <ChatTranscriptShell contentClassName="py-6">
-        <ConversationSkeleton />
+      <ChatTranscriptShell>
+        <MessageScrollerItem>
+          <ConversationSkeleton />
+        </MessageScrollerItem>
       </ChatTranscriptShell>
       <ChatComposerBar>
         <ChatPromptForm
@@ -770,12 +791,7 @@ function ChatSessionFallback() {
 function ChatLoadFailed({ message }: { message: string }) {
   return (
     <ChatPane>
-      <ChatTranscriptShell contentClassName="h-full">
-        <ConversationEmptyState
-          description={message}
-          title="Could not open that chat"
-        />
-      </ChatTranscriptShell>
+      <ChatEmptyState description={message} title="Could not open that chat" />
       <ChatComposerBar>
         <ChatPromptForm
           onSubmit={ignoreSubmit}
@@ -806,35 +822,40 @@ function SearchMessageFocus({
   focus?: ChatFocus;
   messages: readonly EveMessage[];
 }) {
-  const { scrollToBottom, stopScroll } = useStickToBottomContext();
+  const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const targetId =
     focus === undefined ? null : projectedMessageIdAtSeq(events, focus.seq);
   const hasTarget =
     targetId !== null && messages.some((message) => message.id === targetId);
 
+  // Runs after the scroller has opened the chat at its end, so the search
+  // hit wins.
   useLayoutEffect(() => {
     if (focus === undefined) {
       return;
     }
     if (targetId === null) {
-      scrollToBottom("instant");
+      scrollToEnd();
       return;
     }
     if (!hasTarget) {
       return;
     }
+    // The row carries the id too, so ask for the bubble inside it, which has
+    // the ring.
     const node = document.querySelector(
-      `[data-message-id="${CSS.escape(targetId)}"]`
+      `[data-slot="message-scroller-item"] [data-message-id="${CSS.escape(targetId)}"]`
     );
     if (!(node instanceof HTMLElement)) {
-      scrollToBottom("instant");
+      scrollToEnd();
       return;
     }
-    node.scrollIntoView({ block: "center" });
     node.dataset.searchFocus = "";
-    stopScroll();
+    scrollToMessage(targetId, { align: "center" });
+    // Rows near the target draw at their real height only once they are on
+    // screen, so center it again on the next frame.
     const frame = window.requestAnimationFrame(() => {
-      node.scrollIntoView({ block: "center" });
+      scrollToMessage(targetId, { align: "center" });
     });
     const timer = window.setTimeout(() => {
       delete node.dataset.searchFocus;
@@ -844,43 +865,86 @@ function SearchMessageFocus({
       window.clearTimeout(timer);
       delete node.dataset.searchFocus;
     };
-  }, [focus, hasTarget, scrollToBottom, stopScroll, targetId]);
+  }, [focus, hasTarget, scrollToEnd, scrollToMessage, targetId]);
 
   return null;
 }
 
+/**
+ * A transcript row. The pending leaf sits inside the last row rather than in a
+ * row of its own: the scroller anchors a sent message when rows are added, and
+ * swapping one row for another in the same render would make it jump to the
+ * chat's first message. A row whose message shows nothing takes no space, and
+ * a row with a search hit draws past its edge so the ring shows.
+ */
+const TRANSCRIPT_ITEM_CLASS =
+  "flex flex-col gap-6 has-[>:only-child:empty]:hidden has-[[data-search-focus]]:[content-visibility:visible]";
+
+/**
+ * The scrolling transcript. Sending a message moves it near the top, and the
+ * reply follows below it until it fills the view.
+ */
 function ChatTranscriptShell({
   busy = false,
   children,
-  contentClassName,
-  initial = "instant",
-  resize = "smooth",
+  outside,
 }: {
   /** True while a reply streams, so a screen reader reads it once when done. */
   busy?: boolean;
   children: ReactNode;
-  contentClassName?: string;
-  initial?: ComponentProps<typeof Conversation>["initial"];
-  resize?: ComponentProps<typeof Conversation>["resize"] | false;
+  /** Parts that use the scroller but are not transcript rows. */
+  outside?: ReactNode;
 }) {
   return (
-    <Conversation
-      aria-busy={busy}
-      className={cn(
-        "min-h-0 w-full",
-        TRANSCRIPT_GUTTER_CLASS,
-        TRANSCRIPT_FADE_CLASS
-      )}
-      initial={initial}
-      resize={resize as ComponentProps<typeof Conversation>["resize"]}
-    >
-      <ConversationContent
-        className={cn(TRANSCRIPT_COLUMN_CLASS, "gap-0 p-0", contentClassName)}
+    <MessageScrollerProvider autoScroll>
+      <MessageScroller
+        className={cn(
+          "min-h-0 flex-1",
+          TRANSCRIPT_GUTTER_CLASS,
+          TRANSCRIPT_FADE_CLASS
+        )}
       >
-        {children}
-      </ConversationContent>
-      <ConversationScrollButton />
-    </Conversation>
+        <MessageScrollerViewport className="hide-scrollbar scroll-fade-none scrollbar-none">
+          <MessageScrollerContent
+            aria-busy={busy}
+            className={cn(TRANSCRIPT_COLUMN_CLASS, "py-6")}
+          >
+            {children}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <Hint label="Scroll to latest">
+          <MessageScrollerButton
+            aria-label="Scroll to latest message"
+            className="rounded-full bg-surface hover:bg-accent dark:hover:bg-muted"
+            size="icon"
+            variant="outline"
+          >
+            <ArrowDownIcon />
+          </MessageScrollerButton>
+        </Hint>
+      </MessageScroller>
+      {outside}
+    </MessageScrollerProvider>
+  );
+}
+
+function ChatEmptyState({
+  description,
+  icon,
+  title,
+}: {
+  description: string;
+  icon?: ReactNode;
+  title: string;
+}) {
+  return (
+    <Empty className={cn("min-h-0", TRANSCRIPT_GUTTER_CLASS)}>
+      <EmptyHeader>
+        {icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -924,7 +988,7 @@ function ChatPromptForm({
   // keystroke redraws them and not the model picker or the rest of the form.
   return (
     <PromptInput className="w-full" onSubmit={onSubmit}>
-      <PromptInputBody>
+      <PromptInputBody className="relative w-full">
         <ChatPromptTextarea dreaming={dreaming} locked={locked} />
       </PromptInputBody>
       <PromptInputFooter>
@@ -964,20 +1028,33 @@ function ChatPromptTextarea({
       textareaRef.current?.scrollTo(0, 0);
     }
   }, [text]);
+  const placeholder = dreaming
+    ? "Sage is dreaming… chat pauses until it finishes."
+    : "What's on your mind?";
+  // The placeholder is drawn here, not by the textarea. WebKit sizes a native
+  // placeholder in a field-sizing textarea once and can keep a narrow width
+  // after the box empties, cutting the text off until something restyles it.
   return (
-    <PromptInputTextarea
-      aria-label="Message"
-      className="shrink-0"
-      disabled={locked}
-      onChange={onPromptChange}
-      placeholder={
-        dreaming
-          ? "Sage is dreaming… chat pauses until it finishes."
-          : "What's on your mind?"
-      }
-      ref={textareaRef}
-      value={text}
-    />
+    <>
+      <PromptInputTextarea
+        aria-label="Message"
+        aria-placeholder={placeholder}
+        className="shrink-0"
+        disabled={locked}
+        onChange={onPromptChange}
+        placeholder=""
+        ref={textareaRef}
+        value={text}
+      />
+      {text.length === 0 ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 px-5 pt-4 text-muted-foreground text-sm"
+        >
+          {placeholder}
+        </span>
+      ) : null}
+    </>
   );
 }
 
