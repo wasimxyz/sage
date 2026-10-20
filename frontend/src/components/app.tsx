@@ -11,6 +11,7 @@ import { LockProvider } from "@/components/lock-provider";
 import { MemoriesProvider } from "@/components/memories-provider";
 import { MemoryFeatureProvider } from "@/components/memory-feature-provider";
 import { ModelDownloadsProvider } from "@/components/model-downloads-provider";
+import { OllamaProvider } from "@/components/ollama-provider";
 import {
   OnboardingProvider,
   useOnboarding,
@@ -41,22 +42,24 @@ export default function App() {
               <LockProvider>
                 <ModelDownloadsProvider>
                   <MemoryFeatureProvider>
-                    <DreamProvider>
-                      <SettingsProvider>
-                        <JournalProvider>
-                          <FileMenuProvider>
-                            <ChatProvider>
-                              <MemoriesProvider>
-                                <OnboardingProvider>
-                                  <OnboardingGate />
-                                  <AppToaster />
-                                </OnboardingProvider>
-                              </MemoriesProvider>
-                            </ChatProvider>
-                          </FileMenuProvider>
-                        </JournalProvider>
-                      </SettingsProvider>
-                    </DreamProvider>
+                    <OllamaProvider>
+                      <DreamProvider>
+                        <SettingsProvider>
+                          <JournalProvider>
+                            <FileMenuProvider>
+                              <ChatProvider>
+                                <MemoriesProvider>
+                                  <OnboardingProvider>
+                                    <OnboardingGate />
+                                    <AppToaster />
+                                  </OnboardingProvider>
+                                </MemoriesProvider>
+                              </ChatProvider>
+                            </FileMenuProvider>
+                          </JournalProvider>
+                        </SettingsProvider>
+                      </DreamProvider>
+                    </OllamaProvider>
                   </MemoryFeatureProvider>
                 </ModelDownloadsProvider>
               </LockProvider>

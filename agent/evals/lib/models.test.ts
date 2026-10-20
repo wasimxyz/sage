@@ -100,6 +100,16 @@ test("ollamaBaseURL rewrites a /v1 host to the native /api prefix", () => {
   }
 });
 
+test("ollamaBaseURL uses the default when the value is empty", () => {
+  const previous = process.env.OLLAMA_BASE_URL;
+  process.env.OLLAMA_BASE_URL = "";
+  try {
+    assert.equal(ollamaBaseURL(), "http://127.0.0.1:11434/api");
+  } finally {
+    restoreEnv("OLLAMA_BASE_URL", previous);
+  }
+});
+
 test("chatModels defaults to qwen3.5:9b", () => {
   const previousChat = process.env.SAGE_CHAT_MODELS;
   const previousOllama = process.env.OLLAMA_MODEL;

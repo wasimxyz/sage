@@ -6,7 +6,8 @@ This page explains the React side of Chat: how the screen streams a turn, when i
 
 These paths are under `frontend/src/components/`:
 
-- **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
+- **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the agent health check, and the Chat token from `chat.agentToken`. It reads the model list from OllamaProvider. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
+- **OllamaProvider** (`ollama-provider.tsx`): checks whether Ollama is running and lists its chat models. Dream and Settings > Models read the same check, so Sage asks Ollama once every 4 seconds, not once per screen.
 - **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it. Only the message box and the Send button read the text. Code that only sets it, such as `ChatTurn`, calls `useChatDraftActions()`, so a keystroke does not redraw the conversation.
 - **ChatLayout** (`chat-layout.tsx`): the chat list on the left and the panel on the right. It uses the same list-and-panel layout as Journal (`split-view.tsx`, `list-row.tsx`).
 - **ChatRoute** (`chat-route.tsx`): opens Chat. It loads `ChatLayout` the first time you open Chat, and the layout then stays mounted. If Chat cannot load or draw, ChatRoute shows “Could not open Chat” with a Reload button, and the rest of Sage keeps working.
@@ -143,11 +144,11 @@ Each saved conversation keeps its own model, Thinking setting, and context lengt
 
 ## When Ollama is down
 
-Chat checks `embeddings.status` every 4 seconds, then lists chat models with `ollama.models` when Ollama is running. If Ollama is down, or has no local chat models, Chat shows a notice above the prompt and turns off the composer. The model list reloads as soon as Start Ollama succeeds, as [Models](../models.md#when-ollama-is-not-running) explains.
+OllamaProvider checks `embeddings.status` every 4 seconds while the window is visible, then lists chat models with `ollama.models` when Ollama is running. A hidden window skips the check and runs it once when it comes back. If Ollama is down, or has no local chat models, Chat shows a notice above the prompt and turns off the composer. The model list reloads as soon as Start Ollama succeeds, as [Models](../models.md#when-ollama-is-not-running) explains.
 
 ## When the agent is down
 
-Chat checks `/eve/v1/health` every 4 seconds and needs a JSON body of `{ "ok": true }`. A 200 HTML page from a missing server does not count.
+Chat checks `/eve/v1/health` every 4 seconds while the window is visible and needs a JSON body of `{ "ok": true }`. A 200 HTML page from a missing server does not count. A hidden window skips the check and runs it once when it comes back.
 
 While a packaged Chat server is starting, Chat checks every 250 ms and stays in its checking state, so the first page load does not flash a warning. After 8 seconds with no healthy answer, Chat shows the warning. A `chat.agent` status other than `ready` shows it at once.
 

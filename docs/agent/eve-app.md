@@ -73,7 +73,7 @@ Packaged Chat loads from `zero://app`, so the channel allows cross-origin reques
 
 `agent/.env.example` lists three settings for `eve dev`. Copy it to `agent/.env.local` to change them:
 
-- `OLLAMA_BASE_URL`: Ollama’s native `/api` prefix. It must be a loopback address (`127.0.0.1`, `localhost`, or `::1`), or the agent stops. A leftover `/v1` suffix is rewritten to `/api`, so older env files still work.
+- `OLLAMA_BASE_URL`: Ollama’s native `/api` prefix. It must be a loopback address (`127.0.0.1`, `localhost`, or `::1`), or the agent stops. An empty value uses `http://127.0.0.1:11434/api`. A leftover `/v1` suffix is rewritten to `/api`, so older env files still work.
 - `OLLAMA_MODEL`: the fallback chat model
 - `OLLAMA_CONTEXT_WINDOW`: the fallback context length
 

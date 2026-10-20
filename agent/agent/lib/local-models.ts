@@ -9,9 +9,12 @@ type FetchLike = (
   init?: { signal?: AbortSignal }
 ) => Promise<Response>;
 
-/** Sage's Chat only talks to Ollama on this Mac. Rewrites a stale `/v1` suffix. */
+/**
+ * Sage's Chat only talks to Ollama on this Mac. Rewrites a stale `/v1` suffix.
+ * An unset or empty value uses the default.
+ */
 export function localOllamaBaseURL(raw: string | undefined): string {
-  const value = raw ?? "http://localhost:11434/api";
+  const value = raw?.trim() || "http://127.0.0.1:11434/api";
   let hostname: string;
   try {
     ({ hostname } = new URL(value));
