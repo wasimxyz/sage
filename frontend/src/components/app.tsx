@@ -5,12 +5,13 @@ import { AppShell } from "@/components/app-shell";
 import { ChatProvider } from "@/components/chat-provider";
 import { DreamProvider } from "@/components/dream-provider";
 import { FileMenuProvider } from "@/components/file-menu-provider";
-import { useJournal } from "@/components/journal-context";
+import { useJournalView } from "@/components/journal-context";
 import { JournalProvider } from "@/components/journal-provider";
 import { LockProvider } from "@/components/lock-provider";
 import { MemoriesProvider } from "@/components/memories-provider";
 import { MemoryFeatureProvider } from "@/components/memory-feature-provider";
 import { ModelDownloadsProvider } from "@/components/model-downloads-provider";
+import { OllamaProvider } from "@/components/ollama-provider";
 import {
   OnboardingProvider,
   useOnboarding,
@@ -41,22 +42,24 @@ export default function App() {
               <LockProvider>
                 <ModelDownloadsProvider>
                   <MemoryFeatureProvider>
-                    <DreamProvider>
-                      <SettingsProvider>
-                        <JournalProvider>
-                          <FileMenuProvider>
-                            <ChatProvider>
-                              <MemoriesProvider>
-                                <OnboardingProvider>
-                                  <OnboardingGate />
-                                  <AppToaster />
-                                </OnboardingProvider>
-                              </MemoriesProvider>
-                            </ChatProvider>
-                          </FileMenuProvider>
-                        </JournalProvider>
-                      </SettingsProvider>
-                    </DreamProvider>
+                    <OllamaProvider>
+                      <DreamProvider>
+                        <SettingsProvider>
+                          <JournalProvider>
+                            <FileMenuProvider>
+                              <ChatProvider>
+                                <MemoriesProvider>
+                                  <OnboardingProvider>
+                                    <OnboardingGate />
+                                    <AppToaster />
+                                  </OnboardingProvider>
+                                </MemoriesProvider>
+                              </ChatProvider>
+                            </FileMenuProvider>
+                          </JournalProvider>
+                        </SettingsProvider>
+                      </DreamProvider>
+                    </OllamaProvider>
                   </MemoryFeatureProvider>
                 </ModelDownloadsProvider>
               </LockProvider>
@@ -91,9 +94,7 @@ function OnboardingGate() {
 }
 
 function AppToaster() {
-  const {
-    state: { section },
-  } = useJournal();
+  const { section } = useJournalView();
   const onChat = section === "chat";
   return (
     <Toaster

@@ -5,12 +5,12 @@ import {
   RotateCcwClockIcon,
   SettingsIcon,
 } from "lucide-react";
-import { type CSSProperties, useEffect } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar } from "@/components/app-titlebar";
-import { ChatDraftProvider } from "@/components/chat/chat-draft";
-import { ChatLayout } from "@/components/chat-layout";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
+import { ChatRoute } from "@/components/chat-route";
 import {
   DreamConfirmDialog,
   DreamNav,
@@ -18,13 +18,16 @@ import {
 } from "@/components/dream-nav";
 import { HomeScreen } from "@/components/home-screen";
 import {
+  type Section,
   type SidebarMenu as SidebarMenuName,
-  useJournal,
+  useJournalActions,
+  useJournalView,
 } from "@/components/journal-context";
 import { JournalLayout } from "@/components/journal-layout";
 import { MemoriesScreen } from "@/components/memories-screen";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { MenuShortcut } from "@/components/menu-shortcut";
+import { ScreenActiveProvider } from "@/components/screen-active";
 import { SearchDialog, SearchProvider } from "@/components/search-dialog";
 import { SettingsMenu } from "@/components/settings-menu";
 import { SettingsScreen } from "@/components/settings-screen";
@@ -43,6 +46,7 @@ import { useNewShortcut } from "@/hooks/use-new-shortcut";
 import { useRouteSync } from "@/hooks/use-route-sync";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
 import { shortcuts } from "@/lib/shortcuts";
+import { cn } from "@/lib/utils";
 
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
@@ -69,10 +73,7 @@ export function AppShell() {
         <div className="flex min-h-0 min-w-0 flex-1">
           <AppSidebar />
           <SidebarInset className="min-h-0 overflow-hidden">
-            {/* Above AppMain so a half-typed message survives other screens. */}
-            <ChatDraftProvider>
-              <AppMain />
-            </ChatDraftProvider>
+            <AppMain />
           </SidebarInset>
         </div>
       </div>
@@ -87,9 +88,7 @@ function RouteSync() {
 
 /** Sage > Settings opens the settings screen. */
 function SettingsMenuListener() {
-  const {
-    actions: { showSettings },
-  } = useJournal();
+  const { showSettings } = useJournalActions();
   useEffect(
     () =>
       onOpenSettings(() => {
@@ -101,9 +100,7 @@ function SettingsMenuListener() {
 }
 
 function AppSidebar() {
-  const {
-    state: { sidebarMenu },
-  } = useJournal();
+  const { sidebarMenu } = useJournalView();
   return (
     <Sidebar
       className="md:[&_[data-slot=sidebar-inner]]:pt-[calc(var(--titlebar-height)-0.5rem)]"
@@ -125,10 +122,8 @@ function SidebarBody({ menu }: { menu: SidebarMenuName }) {
 }
 
 function NavMenu() {
-  const {
-    actions: { showChat, showHome, showJournal, showMemories },
-    state: { section },
-  } = useJournal();
+  const { showChat, showHome, showJournal, showMemories } = useJournalActions();
+  const { section } = useJournalView();
   const { memoryEnabled } = useMemoryFeature();
   return (
     <>
@@ -157,6 +152,8 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "chat"}
                 onClick={showChat}
+                onFocus={preloadChatLayout}
+                onPointerEnter={preloadChatLayout}
               >
                 <MessageCircleIcon />
                 <span>Chat</span>
@@ -182,9 +179,7 @@ function NavMenu() {
 }
 
 function SettingsNav() {
-  const {
-    actions: { showSettings },
-  } = useJournal();
+  const { showSettings } = useJournalActions();
   return (
     <SidebarFooter>
       <SidebarMenu>
@@ -204,16 +199,47 @@ function SettingsNav() {
   );
 }
 
+// One element for the life of the shell. A render of AppMain, such as for a
+// change in the journal, then leaves the hidden chat alone.
+const chatLayout = <ChatRoute />;
+
 function AppMain() {
-  const {
-    state: { section },
-  } = useJournal();
+  const { section } = useJournalView();
+  const onChat = section === "chat";
+  // Chat mounts the first time it opens and then stays, out of sight while
+  // another screen shows. The transcript, its scroll, and a reply that is
+  // still coming in are as you left them when you come back. It is hidden,
+  // not removed from the layout, so the scroll and the panel keep measuring.
+  const [chatMounted, setChatMounted] = useState(onChat);
+  if (onChat && !chatMounted) {
+    setChatMounted(true);
+  }
+  return (
+    <>
+      {chatMounted ? (
+        <ScreenActiveProvider active={onChat}>
+          <div
+            aria-hidden={onChat ? undefined : true}
+            className={cn(
+              "absolute inset-0 flex min-h-0 min-w-0 flex-col",
+              !onChat && "invisible"
+            )}
+            inert={!onChat}
+          >
+            {chatLayout}
+          </div>
+        </ScreenActiveProvider>
+      ) : null}
+      {onChat ? null : <OtherScreen section={section} />}
+    </>
+  );
+}
+
+/** Every screen but Chat. These unmount when you leave them. */
+function OtherScreen({ section }: { section: Section }) {
   const { memoryEnabled } = useMemoryFeature();
   if (section === "home") {
     return <HomeScreen />;
-  }
-  if (section === "chat") {
-    return <ChatLayout />;
   }
   if (section === "memories" && memoryEnabled) {
     return <MemoriesScreen />;

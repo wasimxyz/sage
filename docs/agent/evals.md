@@ -88,7 +88,7 @@ A failed trio does not stop the sweep, and the runner exits non-zero at the end 
 | `SAGE_CHAT_MODELS` | `SAGE_CHAT_MODEL`, then `OLLAMA_MODEL`, then `qwen3.5:9b` | Comma-separated chat models for `make eval` |
 | `SAGE_CHAT_MODEL` | first entry of `SAGE_CHAT_MODELS`, then `OLLAMA_MODEL`, then `qwen3.5:9b` | Chat model for one run. Chat evals read this first |
 | `SAGE_JUDGE_MODEL` | `qwen3.5:9b` | Model that scores summaries and answers |
-| `OLLAMA_BASE_URL` | `http://localhost:11434/api` | Ollama native API prefix |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434/api` | Ollama native API prefix. An empty value uses the default |
 | `SAGE_EVAL_CACHE` | on (`0` skips) | Reuse a previous Dream snapshot when the dataset and models match |
 | `SAGE_EVAL_CACHE_DIR` | `agent/evals/.cache/dream` | Folder that stores Dream snapshots |
 

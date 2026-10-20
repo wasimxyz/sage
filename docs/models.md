@@ -57,7 +57,7 @@ Start Ollama calls `ollama.start`:
 
 While the call runs, the notice reads Starting Ollama… and the button reads Starting…. If the start fails, the notice shows the reason and the button comes back.
 
-Chat checks `embeddings.status` every 4 seconds to see whether Ollama is running. When Ollama comes up, Chat reloads its model list and Settings > Models reloads its Installed table.
+`OllamaProvider` (`frontend/src/components/ollama-provider.tsx`) checks `embeddings.status` every 4 seconds to see whether Ollama is running, then lists models with `ollama.models` when it is. Chat, Dream, and Settings > Models all read this one check. A check that is still waiting on Ollama holds back the next one. A hidden window skips the check and runs it once when it comes back. When Ollama comes up, Chat reloads its model list and Settings > Models reloads its Installed table.
 
 ## Bridge commands
 

@@ -12,7 +12,6 @@ import { toast } from "sonner";
 
 import {
   getDreamStatus,
-  getOllamaStatus,
   hasNativeBridge,
   onDreamFailed,
   onDreamFinished,
@@ -22,11 +21,12 @@ import {
   startOllamaServer,
   waitForNativeBridge,
 } from "@/bridge";
+import { useOllama } from "@/components/ollama-provider";
+import { useVisiblePoll } from "@/hooks/use-visible-poll";
 import { formatDreamError, ollamaDownDreamMessage } from "@/lib/dream-errors";
 import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
 import { commitAll } from "@/lib/pending-deletes";
 
-const ollamaPollMs = 4000;
 const pendingPollMs = 15_000;
 
 interface DreamState {
@@ -87,7 +87,12 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   const [lastDreamedAt, setLastDreamedAt] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [ollamaRunning, setOllamaRunning] = useState(true);
+  const {
+    actions: { markDown: markOllamaDown, refresh: refreshOllama },
+    state: { models },
+  } = useOllama();
+  // Before the first check lands, the dialog assumes Ollama is up.
+  const ollamaRunning = models.kind !== "down";
   const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
     kind: "idle",
   });
@@ -116,13 +121,12 @@ export function DreamProvider({ children }: { children: ReactNode }) {
     setOllamaStart({ kind: "starting" });
     try {
       await startOllamaServer();
-      const status = await getOllamaStatus();
-      setOllamaRunning(status.running);
+      await refreshOllama();
       setOllamaStart({ kind: "idle" });
     } catch (caught) {
       setOllamaStart(ollamaStartFailed(caught));
     }
-  }, []);
+  }, [refreshOllama]);
 
   const start = useCallback(async () => {
     setConfirmOpen(false);
@@ -147,11 +151,11 @@ export function DreamProvider({ children }: { children: ReactNode }) {
       totalRef.current = 0;
       const message = formatDreamError(error);
       if (message === ollamaDownDreamMessage) {
-        setOllamaRunning(false);
+        markOllamaDown();
       }
       toast.error(message);
     }
-  }, [running]);
+  }, [markOllamaDown, running]);
 
   // A poll answers after a Dream may have started, so it only writes the count.
   const refresh = useCallback(async (pendingOnly = false) => {
@@ -181,54 +185,10 @@ export function DreamProvider({ children }: { children: ReactNode }) {
   // Journal and chat edits never reach this provider, so the count is read again
   // on a timer while Dream is idle. A hidden window skips the timer and reads
   // once when it comes back.
-  useEffect(() => {
-    if (running) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        refresh(true).catch(() => undefined);
-      }
-    }, pendingPollMs);
-    const onVisible = () => {
-      if (!document.hidden) {
-        refresh(true).catch(() => undefined);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [refresh, running]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const ready = (await waitForNativeBridge()) && hasNativeBridge();
-      if (!ready || cancelled) {
-        return;
-      }
-      try {
-        const status = await getOllamaStatus();
-        if (!cancelled) {
-          setOllamaRunning(status.running);
-        }
-      } catch {
-        if (!cancelled) {
-          setOllamaRunning(false);
-        }
-      }
-    };
-    load().catch(() => undefined);
-    const timer = window.setInterval(() => {
-      load().catch(() => undefined);
-    }, ollamaPollMs);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
+  useVisiblePoll(() => refresh(true), pendingPollMs, {
+    enabled: !running,
+    leading: false,
+  });
 
   useEffect(
     () =>
@@ -280,11 +240,11 @@ export function DreamProvider({ children }: { children: ReactNode }) {
         setRunning(false);
         const message = formatDreamError(payload.message);
         if (message === ollamaDownDreamMessage) {
-          setOllamaRunning(false);
+          markOllamaDown();
         }
         toast.error(message);
       }),
-    []
+    [markOllamaDown]
   );
 
   const state = useMemo<DreamState>(

@@ -22,12 +22,10 @@ import {
   chatSavePrefs,
   getChatAgent,
   getChatAgentToken,
-  getOllamaStatus,
   isMissingRowError,
-  listOllamaModels,
   onDreamFinished,
-  startOllamaServer,
 } from "@/bridge";
+import { useOllama } from "@/components/ollama-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import {
   type AgentHealth,
@@ -54,11 +52,12 @@ import {
   prefsFromConversation,
   saveChatModelPrefs,
 } from "@/lib/chat/model-prefs";
-import { type ModelsLoad, sameModelsLoad } from "@/lib/chat/models-load";
+import type { ModelsLoad } from "@/lib/chat/models-load";
+import { keepsOpenPane } from "@/lib/chat/open-chat";
 import { initialPanel, panelReducer } from "@/lib/chat/panel-state";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
-import { type OllamaStartLoad, ollamaStartFailed } from "@/lib/ollama-start";
+import type { OllamaStartLoad } from "@/lib/ollama-start";
 import {
   type CommitResult,
   commitAll,
@@ -67,12 +66,22 @@ import {
   restore,
 } from "@/lib/pending-deletes";
 import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
+import { documentPollHost, startVisiblePoll } from "@/lib/visible-poll";
 
 const emptyMeta = {};
 
+/**
+ * A message to scroll to when a chat opens, such as for a search hit. Each
+ * request is its own object, so asking for the same message again scrolls
+ * again.
+ */
+export interface ChatFocus {
+  seq: number;
+}
+
 export type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
-  | { focusSeq?: number; id: number; kind: "saved"; load: ChatLoadPromise };
+  | { focus?: ChatFocus; id: number; kind: "saved"; load: ChatLoadPromise };
 
 interface ChatState {
   agent: AgentHealth;
@@ -100,7 +109,7 @@ interface ChatActions {
   deleteConversation: (id: number) => void;
   lockContextLength: () => void;
   newChat: () => void;
-  openConversation: (id: number, focus?: { seq: number }) => void;
+  openConversation: (id: number, focus?: ChatFocus) => void;
   recordCreated: (id: number, title: string) => void;
   refreshList: () => Promise<void>;
   renameConversation: (id: number, title: string) => Promise<void>;
@@ -246,6 +255,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     kind: "new",
     load: emptyChatLoad,
   });
+  const selectionRef = useRef(selection);
   const [paneKey, setPaneKey] = useState(0);
   // Chat opens on a new chat, so the first visit shows the panel. After that
   // the panel stays as it was left.
@@ -253,10 +263,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const panelOpenRef = useRef(panel.open);
   const [listLoaded, setListLoaded] = useState(false);
   const [listFailed, setListFailed] = useState(false);
-  const [models, setModels] = useState<ModelsLoad>({ kind: "loading" });
-  const [ollamaStart, setOllamaStart] = useState<OllamaStartLoad>({
-    kind: "idle",
-  });
+  const {
+    actions: { startOllama },
+    state: { models, ollamaStart },
+  } = useOllama();
   const [prefs, setPrefs] = useState<ChatModelPrefs>(loadChatModelPrefs);
   const [contextLengthLocked, setContextLengthLocked] = useState(false);
   const [agent, setAgent] = useState<AgentHealth>({ kind: "checking" });
@@ -266,6 +276,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     panelOpenRef.current = panel.open;
   }, [panel.open]);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
 
   const setPanelOpen = useCallback((open: boolean) => {
     dispatchPanel({ type: open ? "open" : "close" });
@@ -328,18 +342,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [refreshList]
   );
 
+  // A hidden window skips the health check and runs one when it comes back.
   useEffect(() => {
     let cancelled = false;
     const startedAtMs = Date.now();
-    let timer: number | undefined;
+    let delayMs = eveStartupPollMs;
 
-    const schedule = (delayMs: number) => {
-      timer = window.setTimeout(() => {
-        tick().catch(() => undefined);
-      }, delayMs);
-    };
-
-    const tick = async () => {
+    const check = async () => {
       // A packaged build asks `chat.agent` on every poll, healthy or not:
       // another program bound to 2001 can answer health, so only that status
       // says whether Sage started the process answering Chat. In `make dev`
@@ -364,17 +373,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setAgent((current) =>
         sameAgentHealth(current, decision) ? current : decision
       );
-      schedule(
-        decision.kind === "checking" ? eveStartupPollMs : eveHealthPollMs
-      );
+      delayMs =
+        decision.kind === "checking" ? eveStartupPollMs : eveHealthPollMs;
     };
 
-    tick().catch(() => undefined);
+    const stop = startVisiblePoll({
+      check,
+      delayMs: () => delayMs,
+      host: documentPollHost,
+      leading: true,
+    });
     return () => {
       cancelled = true;
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-      }
+      stop();
     };
   }, []);
 
@@ -414,66 +425,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Reads the Ollama status and, when it answers, the chat model list. The
-  // warning and the model picker both render what this lands.
-  const refreshModels = useCallback(async () => {
-    // Keep the old value when the check says the same thing, so the poll does
-    // not re-render every screen that reads Chat.
-    const land = (next: ModelsLoad) => {
-      setModels((current) => (sameModelsLoad(current, next) ? current : next));
-    };
-    try {
-      const status = await getOllamaStatus();
-      if (!status.running) {
-        land({ kind: "down" });
-        return;
-      }
-      const names = await listOllamaModels();
-      // Ollama answered: a start Sage was waiting on has landed, so the
-      // warning drops its spinner (or its failure text) here.
-      setOllamaStart((current) =>
-        current.kind === "idle" ? current : { kind: "idle" }
-      );
-      if (names.length === 0) {
-        land({ kind: "empty" });
-        return;
-      }
-      land({ kind: "ready", names });
-      setPrefs((current) => {
-        if (current.model.length > 0) {
-          return current;
-        }
-        const model = names.includes(DEFAULT_CHAT_MODEL)
-          ? DEFAULT_CHAT_MODEL
-          : names[0];
-        const next = { ...current, model };
-        saveChatModelPrefs(next);
-        return next;
-      });
-    } catch {
-      land({ kind: "down" });
-    }
-  }, []);
-
+  // With no model chosen yet, pick one as soon as Ollama lists its models,
+  // and remember it for the next new chat.
+  const noModelChosen = prefs.model.length === 0;
   useEffect(() => {
-    refreshModels().catch(() => undefined);
-    const timer = window.setInterval(() => {
-      refreshModels().catch(() => undefined);
-    }, 4000);
-    return () => window.clearInterval(timer);
-  }, [refreshModels]);
-
-  // The notice's Start button: the core launches Ollama and answers once the
-  // server replies, so the starting notice holds until this resolves.
-  const startOllama = useCallback(async () => {
-    setOllamaStart({ kind: "starting" });
-    try {
-      await startOllamaServer();
-      await refreshModels();
-    } catch (caught) {
-      setOllamaStart(ollamaStartFailed(caught));
+    if (!noModelChosen || models.kind !== "ready") {
+      return;
     }
-  }, [refreshModels]);
+    const { names } = models;
+    setPrefs((current) => {
+      if (current.model.length > 0) {
+        return current;
+      }
+      const model = names.includes(DEFAULT_CHAT_MODEL)
+        ? DEFAULT_CHAT_MODEL
+        : names[0];
+      const next = { ...current, model };
+      saveChatModelPrefs(next);
+      return next;
+    });
+  }, [models, noModelChosen]);
 
   const applyConversationPrefs = useCallback(
     (conversation: ChatConversation) => {
@@ -536,14 +507,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openConversation = useCallback(
-    (id: number, focus?: { seq: number }) => {
+    (id: number, focus?: ChatFocus) => {
       // A chat that is waiting out its undo window cannot be opened.
       if (isHidden("chat", id)) {
         return;
       }
+      // The chat is already open, such as from Home or a search hit. Keep its
+      // pane, so a reply that is still coming in is not cut off. Show the
+      // panel, and scroll to the hit if there is one.
+      if (keepsOpenPane(selectionRef.current, id)) {
+        if (focus) {
+          setSelection((current) =>
+            current.kind === "saved" && current.id === id
+              ? { ...current, focus }
+              : current
+          );
+        }
+        setPanelOpen(true);
+        return;
+      }
       setError(null);
       setSelection({
-        focusSeq: focus?.seq,
+        focus,
         id,
         kind: "saved",
         load: loadConversation(id),

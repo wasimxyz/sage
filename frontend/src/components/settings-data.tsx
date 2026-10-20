@@ -12,7 +12,7 @@ import {
   getDataCounts,
 } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { SettingsRow } from "@/components/settings-row";
@@ -45,13 +45,11 @@ interface DeleteConfirmation {
 export function DataSettings() {
   const { memoryEnabled } = useMemoryFeature();
   const {
-    actions: {
-      beginDataWipe,
-      endDataWipe,
-      refreshAfterDataWipe,
-      runStaleEmbeddingPass,
-    },
-  } = useJournal();
+    beginDataWipe,
+    endDataWipe,
+    refreshAfterDataWipe,
+    runStaleEmbeddingPass,
+  } = useJournalActions();
   const {
     actions: { refreshList, resetToNewChat },
   } = useChat();
