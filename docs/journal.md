@@ -20,6 +20,10 @@ The editor is TipTap with Markdown support. Sage saves one second after you stop
 
 Cmd+S saves at once and shows a message that Sage saves your entry automatically.
 
+Opening an entry is not an edit. Each entry opens with an empty undo history, so ⌘Z cannot undo the opening or bring back the text of the entry you had open before. A new entry starts the same way, and the title box is read-only while an entry loads. The reset lives in `frontend/src/lib/editor-history.ts`.
+
+If an entry fails to open, Sage shows an error, and the editor still holds the entry you had open. Sage does not save what you type there, because it would land in the wrong entry. It tells you so instead. Open another entry, then this one again.
+
 ⌘N starts a new entry from Home, Journal, or Memories. It starts a chat while Chat is open. It does nothing in Settings, while a memory is open for editing, or while a dialog, popover, or menu is open. The shortcut lives in `frontend/src/hooks/use-new-shortcut.ts`.
 
 A body over 1 MiB is refused. Long bodies travel to the core in 32 KiB chunks, as [Architecture](architecture.md#the-bridge) explains.

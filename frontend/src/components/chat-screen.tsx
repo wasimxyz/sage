@@ -60,6 +60,7 @@ import {
   TRANSCRIPT_GUTTER_CLASS,
 } from "@/components/chat/transcript-column";
 import {
+  type ChatFocus,
   type ChatSelection,
   isChatComposerLocked,
   useChat,
@@ -152,6 +153,9 @@ const expiredSessionRestoredMessage =
  * Loads a pane has already read. A running pane keeps its own copy of the
  * chat, so a load is out of date once its pane is gone: it has none of the
  * turns sent since. A pane that mounts on a used load reads the chat again.
+ * Chat stays mounted while other screens show, so this happens only when the
+ * whole app shell mounts again, such as after the protect reminder or setup,
+ * and under StrictMode.
  */
 const usedLoads = new WeakSet<ChatLoadPromise>();
 // The read a mounting pane has started for a used load. Rendering twice, as
@@ -207,24 +211,23 @@ function ChatSessionLoad() {
     usedLoads.add(load);
     usedLoads.add(selection.load);
   }, [load, selection.load]);
-  // A search hit scrolls the chat to its message when the chat opens. A chat
-  // read again on a later visit opens at its end instead.
-  const focusSeq =
-    selection.kind === "saved" && !mounted.reread
-      ? selection.focusSeq
-      : undefined;
+  // A search hit scrolls the chat to its message, whether it opens the chat or
+  // finds it already open. A chat read again, as when the whole app shell
+  // mounts again, opens at its end instead.
+  const focus =
+    selection.kind === "saved" && !mounted.reread ? selection.focus : undefined;
   return (
     <Suspense fallback={<ChatSessionFallback />}>
-      <ChatSession focusSeq={focusSeq} load={load} />
+      <ChatSession focus={focus} load={load} />
     </Suspense>
   );
 }
 
 function ChatSession({
-  focusSeq,
+  focus,
   load,
 }: {
-  focusSeq: number | undefined;
+  focus: ChatFocus | undefined;
   load: ChatLoadPromise;
 }) {
   const {
@@ -243,7 +246,7 @@ function ChatSession({
     <ChatTurn
       agentToken={agentToken}
       conversation={result.conversation}
-      focusSeq={focusSeq}
+      focus={focus}
     />
   );
 }
@@ -251,11 +254,11 @@ function ChatSession({
 function ChatTurn({
   agentToken,
   conversation,
-  focusSeq,
+  focus,
 }: {
   agentToken: string | null;
   conversation: ChatConversation | null;
-  focusSeq?: number;
+  focus?: ChatFocus;
 }) {
   const {
     actions: { applyConversationPrefs, recordCreated, refreshList, showError },
@@ -393,7 +396,7 @@ function ChatTurn({
     <ChatTurnSession
       agentToken={agentToken}
       downCopy={downCopy}
-      focusSeq={focusSeq}
+      focus={focus}
       initialEvents={eventsRef.current}
       initialSession={initialSession}
       key={recoveryCount}
@@ -434,7 +437,7 @@ interface TurnRefs {
 function ChatTurnSession({
   agentToken,
   downCopy,
-  focusSeq,
+  focus,
   initialEvents,
   initialSession,
   persist,
@@ -445,7 +448,7 @@ function ChatTurnSession({
 }: {
   agentToken: string | null;
   downCopy: string;
-  focusSeq?: number;
+  focus?: ChatFocus;
   initialEvents: EveAgentReducerEvent[];
   initialSession: ClientSessionState | undefined;
   persist: (next: PersistPatch) => Promise<void>;
@@ -675,8 +678,8 @@ function ChatTurnSession({
       <ChatTranscriptShell
         busy={busy}
         contentClassName={hasMessages ? "py-6" : "h-full"}
-        initial={focusSeq === undefined ? "instant" : false}
-        resize={focusSeq === undefined ? "smooth" : false}
+        initial={focus === undefined ? "instant" : false}
+        resize={focus === undefined ? "smooth" : false}
       >
         {hasMessages ? (
           <div className="flex flex-col gap-6">
@@ -693,7 +696,7 @@ function ChatTurnSession({
             ) : null}
             <SearchMessageFocus
               events={initialEvents}
-              focusSeq={focusSeq}
+              focus={focus}
               messages={agent.data.messages}
             />
           </div>
@@ -793,21 +796,21 @@ const searchFocusMs = 1600;
 
 function SearchMessageFocus({
   events,
-  focusSeq,
+  focus,
   messages,
 }: {
   events: readonly EveAgentReducerEvent[];
-  focusSeq?: number;
+  focus?: ChatFocus;
   messages: readonly EveMessage[];
 }) {
   const { scrollToBottom, stopScroll } = useStickToBottomContext();
   const targetId =
-    focusSeq === undefined ? null : projectedMessageIdAtSeq(events, focusSeq);
+    focus === undefined ? null : projectedMessageIdAtSeq(events, focus.seq);
   const hasTarget =
     targetId !== null && messages.some((message) => message.id === targetId);
 
   useLayoutEffect(() => {
-    if (focusSeq === undefined) {
+    if (focus === undefined) {
       return;
     }
     if (targetId === null) {
@@ -838,7 +841,7 @@ function SearchMessageFocus({
       window.clearTimeout(timer);
       delete node.dataset.searchFocus;
     };
-  }, [focusSeq, hasTarget, scrollToBottom, stopScroll, targetId]);
+  }, [focus, hasTarget, scrollToBottom, stopScroll, targetId]);
 
   return null;
 }

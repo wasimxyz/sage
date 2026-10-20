@@ -11,6 +11,7 @@ import {
 
 import type { ChatConversationMeta } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
+import { useOnScreenHide } from "@/components/screen-active";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,6 +49,10 @@ export function useRenameChat(): RenameChatContextValue {
  */
 export function RenameChatProvider({ children }: { children: ReactNode }) {
   const [renaming, setRenaming] = useState<ChatConversationMeta | null>(null);
+  // The dialog sits outside Chat, so it would stay open over the next screen.
+  useOnScreenHide(() => {
+    setRenaming(null);
+  });
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {

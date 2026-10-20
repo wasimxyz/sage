@@ -16,6 +16,7 @@ import type { ChatConversationMeta } from "@/bridge";
 import { useRenameChat } from "@/components/chat/rename-chat-dialog";
 import { useChat, useChatPanel } from "@/components/chat-provider";
 import { ListRow, ListRows, ListRowsSkeleton } from "@/components/list-row";
+import { useCloseOnScreenHide } from "@/components/screen-active";
 import { Button } from "@/components/ui/button";
 import { ContextMenuItem } from "@/components/ui/context-menu";
 import {
@@ -142,6 +143,8 @@ function ChatRowView({
   onRename: (row: ChatConversationMeta) => void;
   onSelect: (id: number) => void;
 }) {
+  // Chat stays mounted while another screen shows, so the menu closes itself.
+  const menuActionsRef = useCloseOnScreenHide();
   const handleClick = useCallback(() => {
     onSelect(row.id);
   }, [onSelect, row.id]);
@@ -170,7 +173,7 @@ function ChatRowView({
   );
 
   return (
-    <ListRow.Root animateIn={animateIn}>
+    <ListRow.Root actionsRef={menuActionsRef} animateIn={animateIn}>
       <ListRow.Trigger
         onClick={handleClick}
         onKeyDown={handleKeyDown}
