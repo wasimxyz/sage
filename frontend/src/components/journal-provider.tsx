@@ -29,8 +29,9 @@ import {
   type EntryActions,
   type EntryContextValue,
   type JournalActions,
-  type JournalContextValue,
+  type JournalEntriesState,
   JournalStateProvider,
+  type JournalViewState,
   type Section,
   type SidebarMenu,
 } from "@/components/journal-context";
@@ -131,6 +132,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const selectionRef = useRef(selection);
   const entriesRef = useRef(entries);
+  const loadingListRef = useRef(loadingList);
   const returnSectionRef = useRef<Exclude<Section, "settings">>("home");
   const titleRef = useRef(title);
   const dateRef = useRef(date);
@@ -168,6 +170,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
+
+  useEffect(() => {
+    loadingListRef.current = loadingList;
+  }, [loadingList]);
 
   // Rows waiting out their undo window stay out of the list. When a delete
   // finishes, the list drops its copy too.
@@ -661,13 +667,15 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setSidebarMenu("nav");
   }, [flush]);
 
+  // Reads the list through refs, so a save that changes the list does not
+  // change this function or the actions that hold it.
   const showJournal = useCallback(async () => {
     setSection("journal");
     setSidebarMenu("nav");
-    if (entries.length === 0 && !loadingList) {
+    if (entriesRef.current.length === 0 && !loadingListRef.current) {
       await loadEntries();
     }
-  }, [entries.length, loadEntries, loadingList]);
+  }, [loadEntries]);
 
   const showMemories = useCallback(async () => {
     if (!memoryEnabled) {
@@ -931,31 +939,21 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     [changeTitle, deleteOpenEntry, flush, registerEditor, scheduleSave]
   );
 
-  const journalValue = useMemo<JournalContextValue>(
+  const view = useMemo<JournalViewState>(
     () => ({
-      actions: journalActions,
-      meta: emptyMeta,
-      state: {
-        detailOpen,
-        entries: visibleEntries,
-        expanded,
-        loadingList,
-        section,
-        selectedId: selection?.kind === "id" ? selection.id : null,
-        selection,
-        sidebarMenu,
-      },
-    }),
-    [
       detailOpen,
       expanded,
-      journalActions,
-      loadingList,
       section,
+      selectedId: selection?.kind === "id" ? selection.id : null,
       selection,
       sidebarMenu,
-      visibleEntries,
-    ]
+    }),
+    [detailOpen, expanded, section, selection, sidebarMenu]
+  );
+
+  const entriesState = useMemo<JournalEntriesState>(
+    () => ({ entries: visibleEntries, loadingList }),
+    [loadingList, visibleEntries]
   );
 
   const entryValue = useMemo<EntryContextValue>(
@@ -973,7 +971,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <JournalStateProvider entry={entryValue} journal={journalValue}>
+    <JournalStateProvider
+      actions={journalActions}
+      entries={entriesState}
+      entry={entryValue}
+      view={view}
+    >
       {children}
     </JournalStateProvider>
   );

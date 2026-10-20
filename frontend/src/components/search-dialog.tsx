@@ -24,7 +24,7 @@ import {
   searchMemories,
 } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { MenuShortcut } from "@/components/menu-shortcut";
@@ -253,9 +253,7 @@ export function SearchDialog() {
 }
 
 function SearchForm() {
-  const {
-    actions: { select, showChat, showMemories },
-  } = useJournal();
+  const { select, showChat, showMemories } = useJournalActions();
   const {
     actions: { openConversation },
   } = useChat();

@@ -20,7 +20,8 @@ import { HomeScreen } from "@/components/home-screen";
 import {
   type Section,
   type SidebarMenu as SidebarMenuName,
-  useJournal,
+  useJournalActions,
+  useJournalView,
 } from "@/components/journal-context";
 import { JournalLayout } from "@/components/journal-layout";
 import { MemoriesScreen } from "@/components/memories-screen";
@@ -87,9 +88,7 @@ function RouteSync() {
 
 /** Sage > Settings opens the settings screen. */
 function SettingsMenuListener() {
-  const {
-    actions: { showSettings },
-  } = useJournal();
+  const { showSettings } = useJournalActions();
   useEffect(
     () =>
       onOpenSettings(() => {
@@ -101,9 +100,7 @@ function SettingsMenuListener() {
 }
 
 function AppSidebar() {
-  const {
-    state: { sidebarMenu },
-  } = useJournal();
+  const { sidebarMenu } = useJournalView();
   return (
     <Sidebar
       className="md:[&_[data-slot=sidebar-inner]]:pt-[calc(var(--titlebar-height)-0.5rem)]"
@@ -125,10 +122,8 @@ function SidebarBody({ menu }: { menu: SidebarMenuName }) {
 }
 
 function NavMenu() {
-  const {
-    actions: { showChat, showHome, showJournal, showMemories },
-    state: { section },
-  } = useJournal();
+  const { showChat, showHome, showJournal, showMemories } = useJournalActions();
+  const { section } = useJournalView();
   const { memoryEnabled } = useMemoryFeature();
   return (
     <>
@@ -184,9 +179,7 @@ function NavMenu() {
 }
 
 function SettingsNav() {
-  const {
-    actions: { showSettings },
-  } = useJournal();
+  const { showSettings } = useJournalActions();
   return (
     <SidebarFooter>
       <SidebarMenu>
@@ -211,9 +204,7 @@ function SettingsNav() {
 const chatLayout = <ChatRoute />;
 
 function AppMain() {
-  const {
-    state: { section },
-  } = useJournal();
+  const { section } = useJournalView();
   const onChat = section === "chat";
   // Chat mounts the first time it opens and then stays, out of sight while
   // another screen shows. The transcript, its scroll, and a reply that is

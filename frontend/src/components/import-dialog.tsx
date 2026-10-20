@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { openMarkdownFileDialog, readImportFile } from "@/bridge";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,9 +58,7 @@ export function ImportDialog({
    */
   pickFirst?: boolean;
 }) {
-  const {
-    actions: { importEntries },
-  } = useJournal();
+  const { importEntries } = useJournalActions();
   const [step, setStep] = useState<ImportStep>("pick");
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [embedProgress, setEmbedProgress] = useState<EmbedProgress | null>(

@@ -14,7 +14,11 @@ import { toast } from "sonner";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
-import { useEntry } from "@/components/journal-context";
+import {
+  useEntry,
+  useEntryActions,
+  useEntryLoading,
+} from "@/components/journal-context";
 import { SplitView, useSplitView } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,9 +49,7 @@ const extensions = [
 ];
 
 function EditorFrame({ children }: { children: ReactNode }) {
-  const {
-    actions: { registerEditor, scheduleSave },
-  } = useEntry();
+  const { registerEditor, scheduleSave } = useEntryActions();
 
   const editor = useEditor({
     content: emptyDoc,
@@ -132,9 +134,7 @@ function EditorHeader() {
 }
 
 function EntryMenu() {
-  const {
-    actions: { deleteOpenEntry },
-  } = useEntry();
+  const { deleteOpenEntry } = useEntryActions();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -224,9 +224,7 @@ function clamp(value: number, min: number, max: number) {
 
 function EditorBody() {
   const { editor } = useTiptap();
-  const {
-    state: { loading },
-  } = useEntry();
+  const loading = useEntryLoading();
 
   // The text ends well before the pane does. A click on the empty page around
   // it would land on the scroll area, take focus from the editor, and hide the
@@ -309,9 +307,7 @@ export const Editor = {
 // Cmd+S saves at once, then says Sage saves on its own. The toast id keeps
 // repeated presses to one toast.
 function useSaveShortcut() {
-  const {
-    actions: { flush },
-  } = useEntry();
+  const { flush } = useEntryActions();
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (

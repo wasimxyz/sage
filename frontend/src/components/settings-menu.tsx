@@ -6,7 +6,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { type ReactNode, useCallback } from "react";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { useSettings } from "@/components/settings-context";
 import { SidebarBackButton } from "@/components/sidebar-back-button";
 import {
@@ -31,9 +31,7 @@ const items = [
 }[];
 
 export function SettingsMenu() {
-  const {
-    actions: { closeSettings },
-  } = useJournal();
+  const { closeSettings } = useJournalActions();
   const {
     actions: { setTab },
     state: { tab },

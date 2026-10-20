@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { ChatProvider } from "@/components/chat-provider";
 import { DreamProvider } from "@/components/dream-provider";
 import { FileMenuProvider } from "@/components/file-menu-provider";
-import { useJournal } from "@/components/journal-context";
+import { useJournalView } from "@/components/journal-context";
 import { JournalProvider } from "@/components/journal-provider";
 import { LockProvider } from "@/components/lock-provider";
 import { MemoriesProvider } from "@/components/memories-provider";
@@ -91,9 +91,7 @@ function OnboardingGate() {
 }
 
 function AppToaster() {
-  const {
-    state: { section },
-  } = useJournal();
+  const { section } = useJournalView();
   const onChat = section === "chat";
   return (
     <Toaster

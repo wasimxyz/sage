@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useChat, useChatPanel } from "@/components/chat-provider";
-import { useJournal } from "@/components/journal-context";
+import {
+  type JournalActions,
+  type JournalViewState,
+  useJournalActions,
+  useJournalView,
+} from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useSettings } from "@/components/settings-context";
@@ -19,7 +24,10 @@ import {
   routesEqual,
 } from "@/lib/route";
 
-type JournalApi = ReturnType<typeof useJournal>;
+interface JournalApi {
+  actions: JournalActions;
+  state: JournalViewState;
+}
 type ChatApi = ReturnType<typeof useChat>;
 type ChatPanelApi = ReturnType<typeof useChatPanel>;
 type MemoriesApi = ReturnType<typeof useMemories>;
@@ -31,7 +39,12 @@ type SettingsApi = ReturnType<typeof useSettings>;
  * the same place.
  */
 export function useRouteSync() {
-  const journal = useJournal();
+  const journalActions = useJournalActions();
+  const journalView = useJournalView();
+  const journal = useMemo<JournalApi>(
+    () => ({ actions: journalActions, state: journalView }),
+    [journalActions, journalView]
+  );
   const chat = useChat();
   const chatPanel = useChatPanel();
   const memories = useMemories();
