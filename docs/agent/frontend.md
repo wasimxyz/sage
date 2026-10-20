@@ -52,6 +52,8 @@ The panel header has these controls:
 
 Drag the divider to resize the panel, and double-click it to reset the split. In a narrow window, the list sits above the panel.
 
+The transcript, a shadcn `MessageScroller`, opens at the chat’s latest message. A message you send moves near the top of the panel, under the end of the previous reply. Its reply comes in below it, and once the reply fills the panel, the transcript follows it. Scrolling up stops the transcript there, and the arrow at the bottom returns to the latest message.
+
 Closing the panel does not stop the chat, and neither does visiting another screen. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you open the panel again or come back to Chat, the transcript and its scroll position are as you left them. Opening the chat that is already open, from its row, from Home, or from a search hit, shows the panel and leaves the conversation as it is. A menu, a dialog, or a full-screen table or diagram that was open in Chat closes when you leave.
 
 The address bar follows the panel:
