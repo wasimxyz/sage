@@ -1,4 +1,3 @@
-import type { JSONContent } from "@tiptap/react";
 import type { ExportCounts } from "./lib/export-data-flow";
 import { memoryEnabledFrom } from "./lib/memory-feature";
 import type { NativeSdkInvokeError, NativeSdkJson } from "./zero";
@@ -1487,32 +1486,6 @@ function onWindowEvent(
     return () => undefined;
   }
   return zero.on(name, callback);
-}
-
-export function plainTextToTiptap(text: string): JSONContent {
-  const lines = text.length === 0 ? [""] : text.split("\n");
-  return {
-    content: lines.map((line) =>
-      line.length === 0
-        ? { type: "paragraph" }
-        : { content: [{ text: line, type: "text" }], type: "paragraph" }
-    ),
-    type: "doc",
-  };
-}
-
-export function parseStoredDoc(entry: JournalEntry): JSONContent {
-  if (entry.format === "tiptap") {
-    try {
-      const parsed: unknown = JSON.parse(entry.body);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as JSONContent;
-      }
-    } catch {
-      // Existing rows may still be plain text even if the format flag is wrong.
-    }
-  }
-  return plainTextToTiptap(entry.body);
 }
 
 export function todayDate(): string {

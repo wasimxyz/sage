@@ -1,11 +1,6 @@
 import { Markdown } from "@tiptap/markdown";
 import { Selection } from "@tiptap/pm/state";
-import {
-  Tiptap,
-  type Editor as TiptapEditor,
-  useEditor,
-  useTiptap,
-} from "@tiptap/react";
+import { Tiptap, useEditor, useTiptap } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { MoreHorizontalIcon, Trash2Icon } from "lucide-react";
 import {
@@ -16,7 +11,6 @@ import {
   useEffect,
 } from "react";
 import { toast } from "sonner";
-import { type JournalEntry, parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
@@ -33,7 +27,11 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { withEmptyHistory } from "@/lib/editor-history";
+import {
+  emptyDoc,
+  loadBlankContent,
+  loadEntryContent,
+} from "@/lib/editor-content";
 import { readingColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
@@ -45,34 +43,6 @@ const extensions = [
   }),
   Markdown,
 ];
-const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
-
-function setEntryContent(editor: TiptapEditor, entry: JournalEntry) {
-  if (entry.format === "markdown") {
-    if (entry.body.trim().length === 0) {
-      editor.commands.setContent(emptyDoc, { emitUpdate: false });
-      return;
-    }
-    try {
-      editor.commands.setContent(entry.body, {
-        contentType: "markdown",
-        emitUpdate: false,
-      });
-    } catch {
-      editor.commands.setContent(plainTextToTiptap(entry.body), {
-        emitUpdate: false,
-      });
-    }
-    return;
-  }
-  editor.commands.setContent(parseStoredDoc(entry), { emitUpdate: false });
-}
-
-// Opening an entry is not an edit. Without this, ⌘Z would undo the opening
-// and autosave would save the text that was there before.
-function forgetHistory(editor: TiptapEditor) {
-  editor.view.updateState(withEmptyHistory(editor.state));
-}
 
 function EditorFrame({ children }: { children: ReactNode }) {
   const {
@@ -118,15 +88,13 @@ function EditorFrame({ children }: { children: ReactNode }) {
         if (editor.isDestroyed) {
           return;
         }
-        setEntryContent(editor, entry);
-        forgetHistory(editor);
+        loadEntryContent(editor, entry);
       },
       resetDraft: () => {
         if (editor.isDestroyed) {
           return;
         }
-        editor.commands.setContent(emptyDoc, { emitUpdate: false });
-        forgetHistory(editor);
+        loadBlankContent(editor);
         editor.commands.focus("end");
       },
     });
