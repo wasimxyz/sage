@@ -301,6 +301,21 @@ function ChatTurn({
     contextLengthRef.current = contextLength;
   }
 
+  // The refs never change, so the object is built once and the turn gets the
+  // same one on every render.
+  const [turnRefs] = useState<TurnRefs>(() => ({
+    aliveRef,
+    contextLengthRef,
+    idRef,
+    lastSubmittedRef,
+    pendingActionRef,
+    pendingResendRef,
+    recoveringRef,
+    selectedModelRef,
+    sessionRef,
+    thinkingEnabledRef,
+  }));
+
   useLayoutEffect(() => {
     if (conversation) {
       applyConversationPrefs(conversation);
@@ -403,18 +418,7 @@ function ChatTurn({
       persist={persist}
       persistLater={persistLater}
       recoverDeadSession={recoverDeadSession}
-      refs={{
-        aliveRef,
-        contextLengthRef,
-        idRef,
-        lastSubmittedRef,
-        pendingActionRef,
-        pendingResendRef,
-        recoveringRef,
-        selectedModelRef,
-        sessionRef,
-        thinkingEnabledRef,
-      }}
+      refs={turnRefs}
       setText={setText}
     />
   );
@@ -711,7 +715,6 @@ function ChatTurnSession({
       </ChatTranscriptShell>
       <ChatComposerBar>
         <ChatPromptForm
-          busy={busy}
           onStop={stopTurn}
           onSubmit={handleSubmit}
           submitBlocked={agentToken === null || resuming}
@@ -901,29 +904,54 @@ function ChatComposerBar({ children }: { children: ReactNode }) {
 }
 
 function ChatPromptForm({
-  busy = false,
   onStop,
   onSubmit,
   submitBlocked,
   submitStatus,
 }: {
-  /** A reply is on its way, so the button stops it and needs no text. */
-  busy?: boolean;
   onStop?: () => void;
   onSubmit: (message: PromptInputMessage) => void;
   /** Sending is not possible yet, whatever the box holds. */
   submitBlocked: boolean;
   submitStatus: ChatStatus;
 }) {
-  const {
-    actions: { setText },
-    state: { text },
-  } = useChatDraft();
   const { state } = useChat();
   const {
     state: { running: dreaming },
   } = useDream();
   const locked = isChatComposerLocked({ ...state, dreaming });
+  // The form never reads the text. Only the two leaves below do, so a
+  // keystroke redraws them and not the model picker or the rest of the form.
+  return (
+    <PromptInput className="w-full" onSubmit={onSubmit}>
+      <PromptInputBody>
+        <ChatPromptTextarea dreaming={dreaming} locked={locked} />
+      </PromptInputBody>
+      <PromptInputFooter>
+        <PromptInputTools>
+          <ModelPicker />
+        </PromptInputTools>
+        <ChatPromptSubmit
+          blocked={locked || submitBlocked}
+          onStop={onStop}
+          status={submitStatus}
+        />
+      </PromptInputFooter>
+    </PromptInput>
+  );
+}
+
+function ChatPromptTextarea({
+  dreaming,
+  locked,
+}: {
+  dreaming: boolean;
+  locked: boolean;
+}) {
+  const {
+    actions: { setText },
+    state: { text },
+  } = useChatDraft();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const onPromptChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -937,35 +965,42 @@ function ChatPromptForm({
     }
   }, [text]);
   return (
-    <PromptInput className="w-full" onSubmit={onSubmit}>
-      <PromptInputBody>
-        <PromptInputTextarea
-          aria-label="Message"
-          className="shrink-0"
-          disabled={locked}
-          onChange={onPromptChange}
-          placeholder={
-            dreaming
-              ? "Sage is dreaming… chat pauses until it finishes."
-              : "What's on your mind?"
-          }
-          ref={textareaRef}
-          value={text}
-        />
-      </PromptInputBody>
-      <PromptInputFooter>
-        <PromptInputTools>
-          <ModelPicker />
-        </PromptInputTools>
-        <PromptInputSubmit
-          disabled={
-            locked || submitBlocked || (!busy && text.trim().length === 0)
-          }
-          onStop={onStop}
-          status={submitStatus}
-        />
-      </PromptInputFooter>
-    </PromptInput>
+    <PromptInputTextarea
+      aria-label="Message"
+      className="shrink-0"
+      disabled={locked}
+      onChange={onPromptChange}
+      placeholder={
+        dreaming
+          ? "Sage is dreaming… chat pauses until it finishes."
+          : "What's on your mind?"
+      }
+      ref={textareaRef}
+      value={text}
+    />
+  );
+}
+
+function ChatPromptSubmit({
+  blocked,
+  onStop,
+  status,
+}: {
+  blocked: boolean;
+  onStop?: () => void;
+  status: ChatStatus;
+}) {
+  const {
+    state: { text },
+  } = useChatDraft();
+  // While a reply is on its way the button stops it, so it needs no text.
+  const busy = status === "submitted" || status === "streaming";
+  return (
+    <PromptInputSubmit
+      disabled={blocked || (!busy && text.trim().length === 0)}
+      onStop={onStop}
+      status={status}
+    />
   );
 }
 
@@ -1052,17 +1087,19 @@ function sameSession(
 
 async function applyPersistPatch(
   next: PersistPatch,
-  refs: {
-    aliveRef: RefObject<boolean>;
-    contextLengthRef: RefObject<number>;
+  refs: Pick<
+    TurnRefs,
+    | "aliveRef"
+    | "contextLengthRef"
+    | "idRef"
+    | "selectedModelRef"
+    | "sessionRef"
+    | "thinkingEnabledRef"
+  > & {
     eventsRef: RefObject<EveAgentReducerEvent[]>;
-    idRef: RefObject<number | null>;
     persistedEventsRef: RefObject<EveAgentReducerEvent[]>;
     recordCreated: (id: number, title: string) => void;
     refreshList: () => Promise<void>;
-    selectedModelRef: RefObject<string>;
-    sessionRef: RefObject<ClientSessionState | undefined>;
-    thinkingEnabledRef: RefObject<boolean>;
     titleRef: RefObject<string>;
   }
 ): Promise<void> {
