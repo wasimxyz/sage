@@ -132,6 +132,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const selectionRef = useRef(selection);
   const entriesRef = useRef(entries);
+  const loadingListRef = useRef(loadingList);
   const returnSectionRef = useRef<Exclude<Section, "settings">>("home");
   const titleRef = useRef(title);
   const dateRef = useRef(date);
@@ -169,6 +170,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
+
+  useEffect(() => {
+    loadingListRef.current = loadingList;
+  }, [loadingList]);
 
   // Rows waiting out their undo window stay out of the list. When a delete
   // finishes, the list drops its copy too.
@@ -662,13 +667,15 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setSidebarMenu("nav");
   }, [flush]);
 
+  // Reads the list through refs, so a save that changes the list does not
+  // change this function or the actions that hold it.
   const showJournal = useCallback(async () => {
     setSection("journal");
     setSidebarMenu("nav");
-    if (entries.length === 0 && !loadingList) {
+    if (entriesRef.current.length === 0 && !loadingListRef.current) {
       await loadEntries();
     }
-  }, [entries.length, loadEntries, loadingList]);
+  }, [loadEntries]);
 
   const showMemories = useCallback(async () => {
     if (!memoryEnabled) {

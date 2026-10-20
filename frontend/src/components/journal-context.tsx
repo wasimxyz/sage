@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, use, useMemo } from "react";
+import { createContext, type ReactNode, use } from "react";
 
 import type { JournalEntry, JournalEntryMeta } from "@/bridge";
 import type { ParsedImport } from "@/lib/parse-markdown";
@@ -19,7 +19,8 @@ export interface EditorAdapter {
 
 /**
  * Where the owner is: which screen, which entry, and how it is laid out. It
- * changes when they move around, not when an entry saves.
+ * changes when they move around, not on each autosave. A new entry's first
+ * save is the one exception: it gives the draft an id.
  */
 export interface JournalViewState {
   detailOpen: boolean;
@@ -35,8 +36,6 @@ export interface JournalEntriesState {
   entries: JournalEntryMeta[];
   loadingList: boolean;
 }
-
-export type JournalState = JournalViewState & JournalEntriesState;
 
 export interface JournalActions {
   beginDataWipe: () => Promise<void>;
@@ -82,23 +81,15 @@ export interface EntryActions {
   scheduleSave: () => void;
 }
 
-export interface JournalContextValue {
-  actions: JournalActions;
-  meta: Record<string, never>;
-  state: JournalState;
-}
-
 export interface EntryContextValue {
   actions: EntryActions;
   meta: Record<string, never>;
   state: EntryState;
 }
 
-const emptyMeta: Record<string, never> = {};
-
 // Each slice has its own context, so a component redraws only for the part it
-// reads. A save changes the list and the open entry, never the view or the
-// actions. `useJournal` and `useEntry` still return everything at once.
+// reads. Saving the open entry changes the list and the open entry, not the
+// view or the actions. `useEntry` still returns the whole open entry at once.
 const JournalActionsContext = createContext<JournalActions | null>(null);
 const JournalViewContext = createContext<JournalViewState | null>(null);
 const JournalEntriesContext = createContext<JournalEntriesState | null>(null);
@@ -113,7 +104,7 @@ function present<T>(value: T | null): T {
   return value;
 }
 
-/** Only the actions. They stay the same between saves. */
+/** Only the actions. They do not change on an autosave. */
 export function useJournalActions(): JournalActions {
   return present(use(JournalActionsContext));
 }
@@ -126,17 +117,6 @@ export function useJournalView(): JournalViewState {
 /** Only the entry list. */
 export function useJournalEntries(): JournalEntriesState {
   return present(use(JournalEntriesContext));
-}
-
-/** Everything. Prefer the narrower hooks above. */
-export function useJournal(): JournalContextValue {
-  const actions = useJournalActions();
-  const view = useJournalView();
-  const entries = useJournalEntries();
-  return useMemo(
-    () => ({ actions, meta: emptyMeta, state: { ...view, ...entries } }),
-    [actions, entries, view]
-  );
 }
 
 export function useEntry(): EntryContextValue {
