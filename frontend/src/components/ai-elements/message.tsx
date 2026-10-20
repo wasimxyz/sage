@@ -321,6 +321,24 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+// A table or diagram in full screen and the link prompt cover the whole window
+// from a portal on <body>, so hiding Chat does not remove them. Each one
+// closes when its own backdrop is clicked.
+const replyOverlaySelector = [
+  '[data-streamdown="table-fullscreen"]',
+  '[data-streamdown="mermaid-fullscreen"]',
+  '[data-streamdown="link-safety-modal"]',
+].join(",");
+
+/** Closes any full-screen view or link prompt a reply has open. */
+export function closeReplyOverlays() {
+  for (const overlay of document.querySelectorAll<HTMLElement>(
+    replyOverlaySelector
+  )) {
+    overlay.click();
+  }
+}
+
 const AssistantInlineCode: NonNullable<Components["inlineCode"]> = ({
   className,
   children,

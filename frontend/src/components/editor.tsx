@@ -11,11 +11,14 @@ import {
   useEffect,
 } from "react";
 import { toast } from "sonner";
-import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
-import { useEntry } from "@/components/journal-context";
+import {
+  useEntry,
+  useEntryActions,
+  useEntryLoading,
+} from "@/components/journal-context";
 import { SplitView, useSplitView } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +31,11 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  emptyDoc,
+  loadBlankContent,
+  loadEntryContent,
+} from "@/lib/editor-content";
 import { readingColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
@@ -39,12 +47,9 @@ const extensions = [
   }),
   Markdown,
 ];
-const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
 
 function EditorFrame({ children }: { children: ReactNode }) {
-  const {
-    actions: { registerEditor, scheduleSave },
-  } = useEntry();
+  const { registerEditor, scheduleSave } = useEntryActions();
 
   const editor = useEditor({
     content: emptyDoc,
@@ -85,32 +90,13 @@ function EditorFrame({ children }: { children: ReactNode }) {
         if (editor.isDestroyed) {
           return;
         }
-        if (entry.format === "markdown") {
-          if (entry.body.trim().length === 0) {
-            editor.commands.setContent(emptyDoc, { emitUpdate: false });
-            return;
-          }
-          try {
-            editor.commands.setContent(entry.body, {
-              contentType: "markdown",
-              emitUpdate: false,
-            });
-          } catch {
-            editor.commands.setContent(plainTextToTiptap(entry.body), {
-              emitUpdate: false,
-            });
-          }
-          return;
-        }
-        editor.commands.setContent(parseStoredDoc(entry), {
-          emitUpdate: false,
-        });
+        loadEntryContent(editor, entry);
       },
       resetDraft: () => {
         if (editor.isDestroyed) {
           return;
         }
-        editor.commands.setContent(emptyDoc, { emitUpdate: false });
+        loadBlankContent(editor);
         editor.commands.focus("end");
       },
     });
@@ -148,9 +134,7 @@ function EditorHeader() {
 }
 
 function EntryMenu() {
-  const {
-    actions: { deleteOpenEntry },
-  } = useEntry();
+  const { deleteOpenEntry } = useEntryActions();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -180,7 +164,7 @@ function EntryMenu() {
 function EditorTitle() {
   const {
     actions: { changeTitle },
-    state: { date, title, updatedAt },
+    state: { date, loading, title, updatedAt },
   } = useEntry();
 
   const handleTitleChange = useCallback(
@@ -219,6 +203,7 @@ function EditorTitle() {
                 onChange={handleTitleChange}
                 onKeyDown={handleTitleKeyDown}
                 placeholder="Untitled"
+                readOnly={loading}
                 rows={1}
                 value={title}
               />
@@ -239,9 +224,7 @@ function clamp(value: number, min: number, max: number) {
 
 function EditorBody() {
   const { editor } = useTiptap();
-  const {
-    state: { loading },
-  } = useEntry();
+  const loading = useEntryLoading();
 
   // The text ends well before the pane does. A click on the empty page around
   // it would land on the scroll area, take focus from the editor, and hide the
@@ -324,9 +307,7 @@ export const Editor = {
 // Cmd+S saves at once, then says Sage saves on its own. The toast id keeps
 // repeated presses to one toast.
 function useSaveShortcut() {
-  const {
-    actions: { flush },
-  } = useEntry();
+  const { flush } = useEntryActions();
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if (

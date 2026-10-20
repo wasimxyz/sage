@@ -5,7 +5,11 @@ import EditorPane from "@/components/editor";
 import { EntriesList } from "@/components/entries-list";
 import { useFileMenu } from "@/components/file-menu-provider";
 import { Hint } from "@/components/hint";
-import { useJournal } from "@/components/journal-context";
+import {
+  useJournalActions,
+  useJournalEntries,
+  useJournalView,
+} from "@/components/journal-context";
 import { SplitView, type SplitViewContextValue } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,10 +37,8 @@ export function JournalLayout() {
 }
 
 function JournalSplitProvider({ children }: { children: ReactNode }) {
-  const {
-    actions: { setDetailOpen, setExpanded },
-    state: { detailOpen, expanded },
-  } = useJournal();
+  const { setDetailOpen, setExpanded } = useJournalActions();
+  const { detailOpen, expanded } = useJournalView();
   const value = useMemo<SplitViewContextValue>(
     () => ({
       actions: { setExpanded, setOpen: setDetailOpen },
@@ -49,17 +51,14 @@ function JournalSplitProvider({ children }: { children: ReactNode }) {
 }
 
 function JournalDetail() {
-  const {
-    state: { selection },
-  } = useJournal();
+  const { selection } = useJournalView();
   return selection ? <EditorPane /> : <SelectEntryEmpty />;
 }
 
 function EntriesColumn() {
-  const {
-    actions: { deleteEntry, select, startDraft },
-    state: { entries, loadingList, selectedId },
-  } = useJournal();
+  const { deleteEntry, select, startDraft } = useJournalActions();
+  const { entries, loadingList } = useJournalEntries();
+  const { selectedId } = useJournalView();
   return (
     <>
       <SplitView.ListHeader title="Journal">

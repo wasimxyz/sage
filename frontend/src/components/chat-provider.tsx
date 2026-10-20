@@ -53,6 +53,7 @@ import {
   saveChatModelPrefs,
 } from "@/lib/chat/model-prefs";
 import type { ModelsLoad } from "@/lib/chat/models-load";
+import { keepsOpenPane } from "@/lib/chat/open-chat";
 import { initialPanel, panelReducer } from "@/lib/chat/panel-state";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
@@ -69,9 +70,18 @@ import { documentPollHost, startVisiblePoll } from "@/lib/visible-poll";
 
 const emptyMeta = {};
 
+/**
+ * A message to scroll to when a chat opens, such as for a search hit. Each
+ * request is its own object, so asking for the same message again scrolls
+ * again.
+ */
+export interface ChatFocus {
+  seq: number;
+}
+
 export type ChatSelection =
   | { kind: "new"; load: ChatLoadPromise }
-  | { focusSeq?: number; id: number; kind: "saved"; load: ChatLoadPromise };
+  | { focus?: ChatFocus; id: number; kind: "saved"; load: ChatLoadPromise };
 
 interface ChatState {
   agent: AgentHealth;
@@ -99,7 +109,7 @@ interface ChatActions {
   deleteConversation: (id: number) => void;
   lockContextLength: () => void;
   newChat: () => void;
-  openConversation: (id: number, focus?: { seq: number }) => void;
+  openConversation: (id: number, focus?: ChatFocus) => void;
   recordCreated: (id: number, title: string) => void;
   refreshList: () => Promise<void>;
   renameConversation: (id: number, title: string) => Promise<void>;
@@ -245,6 +255,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     kind: "new",
     load: emptyChatLoad,
   });
+  const selectionRef = useRef(selection);
   const [paneKey, setPaneKey] = useState(0);
   // Chat opens on a new chat, so the first visit shows the panel. After that
   // the panel stays as it was left.
@@ -265,6 +276,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     panelOpenRef.current = panel.open;
   }, [panel.open]);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
 
   const setPanelOpen = useCallback((open: boolean) => {
     dispatchPanel({ type: open ? "open" : "close" });
@@ -492,14 +507,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openConversation = useCallback(
-    (id: number, focus?: { seq: number }) => {
+    (id: number, focus?: ChatFocus) => {
       // A chat that is waiting out its undo window cannot be opened.
       if (isHidden("chat", id)) {
         return;
       }
+      // The chat is already open, such as from Home or a search hit. Keep its
+      // pane, so a reply that is still coming in is not cut off. Show the
+      // panel, and scroll to the hit if there is one.
+      if (keepsOpenPane(selectionRef.current, id)) {
+        if (focus) {
+          setSelection((current) =>
+            current.kind === "saved" && current.id === id
+              ? { ...current, focus }
+              : current
+          );
+        }
+        setPanelOpen(true);
+        return;
+      }
       setError(null);
       setSelection({
-        focusSeq: focus?.seq,
+        focus,
         id,
         kind: "saved",
         load: loadConversation(id),

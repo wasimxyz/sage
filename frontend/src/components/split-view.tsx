@@ -21,6 +21,7 @@ import {
   PanelIconButton,
   panelIconHoverClass,
 } from "@/components/panel-icon-button";
+import { useScreenActive } from "@/components/screen-active";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -159,6 +160,7 @@ function SplitViewRoot({
     state: { expanded, open },
   } = useSplitView();
   const isMobile = useIsMobile();
+  const active = useScreenActive();
   const listPanelRef = usePanelRef();
   // The group stays mounted whether or not the panel is open, so the list
   // keeps its place. Opening, closing, and full screen all move one number:
@@ -171,6 +173,8 @@ function SplitViewRoot({
   const detailPercentRef = useRef(defaultDetailPercent);
   const expandedRef = useRef(expanded);
   const openRef = useRef(open);
+  // False from when the screen hides until it has painted again.
+  const shownRef = useRef(active);
   // The panel stays on screen while it shrinks away.
   const [detailMounted, setDetailMounted] = useState(open);
   if (open && !detailMounted) {
@@ -181,6 +185,17 @@ function SplitViewRoot({
     expandedRef.current = expanded;
     openRef.current = open;
   }, [expanded, open]);
+
+  useEffect(() => {
+    if (!active) {
+      shownRef.current = false;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      shownRef.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
 
   const handleSettled = useCallback(
     (reached: string) => {
@@ -203,7 +218,13 @@ function SplitViewRoot({
       // last left it.
       return step === "focus" ? 0 : 100 - detailPercentRef.current;
     },
-    handleSettled
+    handleSettled,
+    // A move that starts while the screen is hidden, or before it has painted
+    // again, jumps. Coming back to Chat from a search hit or Back then looks
+    // as it did when Chat mounted afresh, with the panel already in place.
+    // A click can land the screen change and the panel change in separate
+    // renders, so one render is not enough.
+    () => !shownRef.current
   );
 
   // Remember where the owner dragged the divider, but not the sizes that a
@@ -242,6 +263,10 @@ function SplitViewRoot({
   );
 
   useEffect(() => {
+    // A hidden screen leaves the key to the one on show.
+    if (!active) {
+      return;
+    }
     function onKeyDown(event: KeyboardEvent) {
       // Behind a dialog or a menu, the key belongs to that surface.
       if (
@@ -258,7 +283,7 @@ function SplitViewRoot({
     }
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [open, setOpen]);
+  }, [active, open, setOpen]);
 
   // Panels with a minimum snap to it, or to collapsed, on any size below it.
   // A move passes through those sizes, so the minimum is off while it runs.

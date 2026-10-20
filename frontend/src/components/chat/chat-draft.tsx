@@ -26,6 +26,7 @@ interface ChatDraftContextValue {
 const emptyMeta = {};
 
 const ChatDraftContext = createContext<ChatDraftContextValue | null>(null);
+const ChatDraftActionsContext = createContext<ChatDraftActions | null>(null);
 
 export function useChatDraft(): ChatDraftContextValue {
   const value = use(ChatDraftContext);
@@ -36,9 +37,22 @@ export function useChatDraft(): ChatDraftContextValue {
 }
 
 /**
- * Holds the text in the message box. It sits above the screens, so the draft
- * survives a visit to Home or Journal. A new chat or an opened chat starts
- * with an empty box, because the draft belongs to the pane it was typed in.
+ * Only the actions. A component that sets the text but never reads it uses
+ * this, so it does not redraw on every keystroke.
+ */
+export function useChatDraftActions(): ChatDraftActions {
+  const value = use(ChatDraftActionsContext);
+  if (!value) {
+    throw new Error("ChatDraftProvider is missing.");
+  }
+  return value;
+}
+
+/**
+ * Holds the text in the message box. The box in a loading or failed pane and
+ * the box in a live one read the same draft. A new chat or an opened chat
+ * starts with an empty box, because the draft belongs to the pane it was
+ * typed in.
  */
 export function ChatDraftProvider({ children }: { children: ReactNode }) {
   const {
@@ -61,5 +75,9 @@ export function ChatDraftProvider({ children }: { children: ReactNode }) {
     }),
     [actions, text]
   );
-  return <ChatDraftContext value={value}>{children}</ChatDraftContext>;
+  return (
+    <ChatDraftActionsContext value={actions}>
+      <ChatDraftContext value={value}>{children}</ChatDraftContext>
+    </ChatDraftActionsContext>
+  );
 }

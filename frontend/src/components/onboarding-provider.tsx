@@ -20,7 +20,7 @@ import {
   type UnlockMethod,
   waitForNativeBridge,
 } from "@/bridge";
-import { useJournal } from "@/components/journal-context";
+import { useJournalActions } from "@/components/journal-context";
 import { launchScreen } from "@/lib/onboarding";
 import { replaceRoute } from "@/lib/route";
 
@@ -85,9 +85,7 @@ export function useOnboarding(): OnboardingContextValue {
  * and decides who counts as an existing user.
  */
 export function OnboardingProvider({ children }: { children: ReactNode }) {
-  const {
-    actions: { startDraft },
-  } = useJournal();
+  const { startDraft } = useJournalActions();
   const [mode, setMode] = useState<OnboardingMode>({ kind: "loading" });
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const draftAfterHome = useRef(false);

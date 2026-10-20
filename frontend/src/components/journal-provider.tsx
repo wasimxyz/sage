@@ -22,14 +22,16 @@ import {
   todayDate,
   waitForNativeBridge,
 } from "@/bridge";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
 import {
   type EditorAdapter,
   type EditorSelection,
   type EntryActions,
   type EntryContextValue,
   type JournalActions,
-  type JournalContextValue,
+  type JournalEntriesState,
   JournalStateProvider,
+  type JournalViewState,
   type Section,
   type SidebarMenu,
 } from "@/components/journal-context";
@@ -130,10 +132,14 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const selectionRef = useRef(selection);
   const entriesRef = useRef(entries);
+  const loadingListRef = useRef(loadingList);
   const returnSectionRef = useRef<Exclude<Section, "settings">>("home");
   const titleRef = useRef(title);
   const dateRef = useRef(date);
   const idRef = useRef<number | null>(null);
+  // Whose text the editor holds: an entry id, null for a new draft, undefined
+  // before anything has loaded. A save goes out only when this matches idRef.
+  const editorEntryIdRef = useRef<number | null | undefined>(undefined);
   const dirtyRef = useRef<boolean>(false);
   const timerRef = useRef<number | null>(null);
   const embedTimerRef = useRef<number | null>(null);
@@ -164,6 +170,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
+
+  useEffect(() => {
+    loadingListRef.current = loadingList;
+  }, [loadingList]);
 
   // Rows waiting out their undo window stay out of the list. When a delete
   // finishes, the list drops its copy too.
@@ -223,6 +233,18 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return;
     }
     dirtyRef.current = false;
+    const entryId = idRef.current;
+    // The editor still shows another entry, as after one that failed to open.
+    // Saving would put that text under this id.
+    if (editorEntryIdRef.current !== entryId) {
+      toast.error(
+        "This entry did not open, so Sage did not save your changes.",
+        {
+          id: "entry-not-open",
+        }
+      );
+      return;
+    }
     const body = adapter.getBody();
     const wordCount = countWords(adapter.getText());
     const nextTitle = titleRef.current.trim() || "Untitled";
@@ -231,11 +253,15 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         body,
         date: dateRef.current,
         format: "markdown",
-        id: idRef.current,
+        id: entryId,
         title: nextTitle,
         wordCount,
       });
       idRef.current = saved.id;
+      // A draft's first save gives the text its id.
+      if (editorEntryIdRef.current === entryId) {
+        editorEntryIdRef.current = saved.id;
+      }
       const nextUpdatedAt =
         saved.updatedAt.length > 0 ? saved.updatedAt : new Date().toISOString();
       setUpdatedAt(nextUpdatedAt);
@@ -419,6 +445,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const registerEditor = useCallback((adapter: EditorAdapter | null) => {
     adapterRef.current = adapter;
+    editorEntryIdRef.current = undefined;
     if (adapter === null) {
       loadedKeyRef.current = null;
       setEditorReady(false);
@@ -474,6 +501,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       setUpdatedAt("");
       setEntryLoading(false);
       adapter.resetDraft();
+      editorEntryIdRef.current = null;
       return;
     }
 
@@ -496,6 +524,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         setDate(entry.date);
         setUpdatedAt(entry.updatedAt);
         current.loadDoc(entry);
+        editorEntryIdRef.current = entry.id;
         setEntryLoading(false);
       })
       .catch((error: unknown) => {
@@ -614,6 +643,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     pendingEmbedIdsRef.current.clear();
     idRef.current = null;
     adapterRef.current?.resetDraft();
+    editorEntryIdRef.current = null;
     setSelection(null);
     setDetailOpenState(false);
     setExpanded(false);
@@ -630,18 +660,22 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   }, [flush]);
 
   const showChat = useCallback(async () => {
-    await flush();
+    // Every way into Chat comes through here, so the load starts with the
+    // flush. Chat then opens at once instead of behind a spinner.
+    await Promise.all([flush(), preloadChatLayout()]);
     setSection("chat");
     setSidebarMenu("nav");
   }, [flush]);
 
+  // Reads the list through refs, so a save that changes the list does not
+  // change this function or the actions that hold it.
   const showJournal = useCallback(async () => {
     setSection("journal");
     setSidebarMenu("nav");
-    if (entries.length === 0 && !loadingList) {
+    if (entriesRef.current.length === 0 && !loadingListRef.current) {
       await loadEntries();
     }
-  }, [entries.length, loadEntries, loadingList]);
+  }, [loadEntries]);
 
   const showMemories = useCallback(async () => {
     if (!memoryEnabled) {
@@ -905,31 +939,21 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     [changeTitle, deleteOpenEntry, flush, registerEditor, scheduleSave]
   );
 
-  const journalValue = useMemo<JournalContextValue>(
+  const view = useMemo<JournalViewState>(
     () => ({
-      actions: journalActions,
-      meta: emptyMeta,
-      state: {
-        detailOpen,
-        entries: visibleEntries,
-        expanded,
-        loadingList,
-        section,
-        selectedId: selection?.kind === "id" ? selection.id : null,
-        selection,
-        sidebarMenu,
-      },
-    }),
-    [
       detailOpen,
       expanded,
-      journalActions,
-      loadingList,
       section,
+      selectedId: selection?.kind === "id" ? selection.id : null,
       selection,
       sidebarMenu,
-      visibleEntries,
-    ]
+    }),
+    [detailOpen, expanded, section, selection, sidebarMenu]
+  );
+
+  const entriesState = useMemo<JournalEntriesState>(
+    () => ({ entries: visibleEntries, loadingList }),
+    [loadingList, visibleEntries]
   );
 
   const entryValue = useMemo<EntryContextValue>(
@@ -947,7 +971,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <JournalStateProvider entry={entryValue} journal={journalValue}>
+    <JournalStateProvider
+      actions={journalActions}
+      entries={entriesState}
+      entry={entryValue}
+      view={view}
+    >
       {children}
     </JournalStateProvider>
   );
