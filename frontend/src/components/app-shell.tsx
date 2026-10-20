@@ -9,7 +9,8 @@ import { type CSSProperties, useEffect, useState } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar } from "@/components/app-titlebar";
-import { ChatLayout } from "@/components/chat-layout";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
+import { ChatRoute } from "@/components/chat-route";
 import {
   DreamConfirmDialog,
   DreamNav,
@@ -156,6 +157,8 @@ function NavMenu() {
               <SidebarMenuButton
                 isActive={section === "chat"}
                 onClick={showChat}
+                onFocus={preloadChatLayout}
+                onPointerEnter={preloadChatLayout}
               >
                 <MessageCircleIcon />
                 <span>Chat</span>
@@ -205,7 +208,7 @@ function SettingsNav() {
 
 // One element for the life of the shell. A render of AppMain, such as for a
 // change in the journal, then leaves the hidden chat alone.
-const chatLayout = <ChatLayout />;
+const chatLayout = <ChatRoute />;
 
 function AppMain() {
   const {

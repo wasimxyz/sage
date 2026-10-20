@@ -11,8 +11,8 @@ import {
   type ChangeEvent,
   type ComponentProps,
   Fragment,
-  type MutableRefObject,
   type ReactNode,
+  type RefObject,
   Suspense,
   use,
   useCallback,
@@ -41,7 +41,10 @@ import {
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
 import { AssistantPending } from "@/components/chat/assistant-pending";
-import { useChatDraft } from "@/components/chat/chat-draft";
+import {
+  useChatDraft,
+  useChatDraftActions,
+} from "@/components/chat/chat-draft";
 import {
   ChatAgentAlert,
   ChatErrorAlert,
@@ -111,7 +114,11 @@ function commonPrefixLength(
 ): number {
   const n = Math.min(left.length, right.length);
   let i = 0;
-  while (i < n && JSON.stringify(left[i]) === JSON.stringify(right[i])) {
+  while (
+    i < n &&
+    (left[i] === right[i] ||
+      JSON.stringify(left[i]) === JSON.stringify(right[i]))
+  ) {
     i += 1;
   }
   return i;
@@ -257,9 +264,7 @@ function ChatTurn({
     actions: { applyConversationPrefs, recordCreated, refreshList, showError },
     state: { agent: agentLoad, contextLength, selectedModel, thinkingEnabled },
   } = useChat();
-  const {
-    actions: { setText },
-  } = useChatDraft();
+  const { setText } = useChatDraftActions();
   const idRef = useRef<number | null>(conversation?.id ?? null);
   const titleRef = useRef(conversation?.title ?? "");
   const eventsRef = useRef<EveAgentReducerEvent[]>(
@@ -295,6 +300,21 @@ function ChatTurn({
     thinkingEnabledRef.current = thinkingEnabled;
     contextLengthRef.current = contextLength;
   }
+
+  // The refs never change, so the object is built once and the turn gets the
+  // same one on every render.
+  const [turnRefs] = useState<TurnRefs>(() => ({
+    aliveRef,
+    contextLengthRef,
+    idRef,
+    lastSubmittedRef,
+    pendingActionRef,
+    pendingResendRef,
+    recoveringRef,
+    selectedModelRef,
+    sessionRef,
+    thinkingEnabledRef,
+  }));
 
   useLayoutEffect(() => {
     if (conversation) {
@@ -390,70 +410,69 @@ function ChatTurn({
   return (
     <ChatTurnSession
       agentToken={agentToken}
-      aliveRef={aliveRef}
-      contextLengthRef={contextLengthRef}
       downCopy={downCopy}
       focus={focus}
-      idRef={idRef}
       initialEvents={eventsRef.current}
       initialSession={initialSession}
       key={recoveryCount}
-      lastSubmittedRef={lastSubmittedRef}
-      pendingActionRef={pendingActionRef}
-      pendingResendRef={pendingResendRef}
       persist={persist}
       persistLater={persistLater}
       recoverDeadSession={recoverDeadSession}
-      recoveringRef={recoveringRef}
-      selectedModelRef={selectedModelRef}
-      sessionRef={sessionRef}
+      refs={turnRefs}
       setText={setText}
-      thinkingEnabledRef={thinkingEnabledRef}
     />
   );
 }
 
+/** The refs a turn shares with its pane. Their identity never changes. */
+interface TurnRefs {
+  aliveRef: RefObject<boolean>;
+  contextLengthRef: RefObject<number>;
+  idRef: RefObject<number | null>;
+  lastSubmittedRef: RefObject<string | null>;
+  pendingActionRef: RefObject<"send" | null>;
+  pendingResendRef: RefObject<string | null>;
+  recoveringRef: RefObject<boolean>;
+  selectedModelRef: RefObject<string>;
+  sessionRef: RefObject<ClientSessionState | undefined>;
+  thinkingEnabledRef: RefObject<boolean>;
+}
+
 function ChatTurnSession({
   agentToken,
-  aliveRef,
-  contextLengthRef,
   downCopy,
   focus,
-  idRef,
   initialEvents,
   initialSession,
-  lastSubmittedRef,
-  pendingActionRef,
-  pendingResendRef,
   persist,
   persistLater,
   recoverDeadSession,
-  recoveringRef,
-  selectedModelRef,
-  sessionRef,
+  refs,
   setText,
-  thinkingEnabledRef,
 }: {
-  aliveRef: MutableRefObject<boolean>;
-  contextLengthRef: MutableRefObject<number>;
+  agentToken: string | null;
   downCopy: string;
   focus?: ChatFocus;
-  idRef: MutableRefObject<number | null>;
   initialEvents: EveAgentReducerEvent[];
   initialSession: ClientSessionState | undefined;
-  lastSubmittedRef: MutableRefObject<string | null>;
-  pendingActionRef: MutableRefObject<"send" | null>;
-  pendingResendRef: MutableRefObject<string | null>;
   persist: (next: PersistPatch) => Promise<void>;
   persistLater: (next: PersistPatch) => void;
   recoverDeadSession: () => boolean;
-  recoveringRef: MutableRefObject<boolean>;
-  selectedModelRef: MutableRefObject<string>;
-  sessionRef: MutableRefObject<ClientSessionState | undefined>;
+  refs: TurnRefs;
   setText: (text: string) => void;
-  thinkingEnabledRef: MutableRefObject<boolean>;
-  agentToken: string | null;
 }) {
+  const {
+    aliveRef,
+    contextLengthRef,
+    idRef,
+    lastSubmittedRef,
+    pendingActionRef,
+    pendingResendRef,
+    recoveringRef,
+    selectedModelRef,
+    sessionRef,
+    thinkingEnabledRef,
+  } = refs;
   const agentTokenRef = useRef(agentToken);
   agentTokenRef.current = agentToken;
   const {
@@ -463,9 +482,6 @@ function ChatTurnSession({
   const {
     state: { running: dreaming },
   } = useDream();
-  const {
-    state: { text },
-  } = useChatDraft();
   // Capture once. Later saves replace eventsRef with the new session, and
   // clientContext lasts only for the current turn, so later sends in this
   // remount still need the old transcript.
@@ -701,11 +717,7 @@ function ChatTurnSession({
         <ChatPromptForm
           onStop={stopTurn}
           onSubmit={handleSubmit}
-          submitDisabled={
-            agentToken === null ||
-            resuming ||
-            (!busy && text.trim().length === 0)
-          }
+          submitBlocked={agentToken === null || resuming}
           submitStatus={submitStatus}
         />
       </ChatComposerBar>
@@ -747,7 +759,7 @@ function ChatSessionFallback() {
       <ChatComposerBar>
         <ChatPromptForm
           onSubmit={ignoreSubmit}
-          submitDisabled
+          submitBlocked
           submitStatus="ready"
         />
       </ChatComposerBar>
@@ -767,7 +779,7 @@ function ChatLoadFailed({ message }: { message: string }) {
       <ChatComposerBar>
         <ChatPromptForm
           onSubmit={ignoreSubmit}
-          submitDisabled
+          submitBlocked
           submitStatus="ready"
         />
       </ChatComposerBar>
@@ -894,23 +906,52 @@ function ChatComposerBar({ children }: { children: ReactNode }) {
 function ChatPromptForm({
   onStop,
   onSubmit,
-  submitDisabled,
+  submitBlocked,
   submitStatus,
 }: {
   onStop?: () => void;
   onSubmit: (message: PromptInputMessage) => void;
-  submitDisabled: boolean;
+  /** Sending is not possible yet, whatever the box holds. */
+  submitBlocked: boolean;
   submitStatus: ChatStatus;
 }) {
-  const {
-    actions: { setText },
-    state: { text },
-  } = useChatDraft();
   const { state } = useChat();
   const {
     state: { running: dreaming },
   } = useDream();
   const locked = isChatComposerLocked({ ...state, dreaming });
+  // The form never reads the text. Only the two leaves below do, so a
+  // keystroke redraws them and not the model picker or the rest of the form.
+  return (
+    <PromptInput className="w-full" onSubmit={onSubmit}>
+      <PromptInputBody>
+        <ChatPromptTextarea dreaming={dreaming} locked={locked} />
+      </PromptInputBody>
+      <PromptInputFooter>
+        <PromptInputTools>
+          <ModelPicker />
+        </PromptInputTools>
+        <ChatPromptSubmit
+          blocked={locked || submitBlocked}
+          onStop={onStop}
+          status={submitStatus}
+        />
+      </PromptInputFooter>
+    </PromptInput>
+  );
+}
+
+function ChatPromptTextarea({
+  dreaming,
+  locked,
+}: {
+  dreaming: boolean;
+  locked: boolean;
+}) {
+  const {
+    actions: { setText },
+    state: { text },
+  } = useChatDraft();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const onPromptChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -924,33 +965,42 @@ function ChatPromptForm({
     }
   }, [text]);
   return (
-    <PromptInput className="w-full" onSubmit={onSubmit}>
-      <PromptInputBody>
-        <PromptInputTextarea
-          aria-label="Message"
-          className="shrink-0"
-          disabled={locked}
-          onChange={onPromptChange}
-          placeholder={
-            dreaming
-              ? "Sage is dreaming… chat pauses until it finishes."
-              : "What's on your mind?"
-          }
-          ref={textareaRef}
-          value={text}
-        />
-      </PromptInputBody>
-      <PromptInputFooter>
-        <PromptInputTools>
-          <ModelPicker />
-        </PromptInputTools>
-        <PromptInputSubmit
-          disabled={locked || submitDisabled}
-          onStop={onStop}
-          status={submitStatus}
-        />
-      </PromptInputFooter>
-    </PromptInput>
+    <PromptInputTextarea
+      aria-label="Message"
+      className="shrink-0"
+      disabled={locked}
+      onChange={onPromptChange}
+      placeholder={
+        dreaming
+          ? "Sage is dreaming… chat pauses until it finishes."
+          : "What's on your mind?"
+      }
+      ref={textareaRef}
+      value={text}
+    />
+  );
+}
+
+function ChatPromptSubmit({
+  blocked,
+  onStop,
+  status,
+}: {
+  blocked: boolean;
+  onStop?: () => void;
+  status: ChatStatus;
+}) {
+  const {
+    state: { text },
+  } = useChatDraft();
+  // While a reply is on its way the button stops it, so it needs no text.
+  const busy = status === "submitted" || status === "streaming";
+  return (
+    <PromptInputSubmit
+      disabled={blocked || (!busy && text.trim().length === 0)}
+      onStop={onStop}
+      status={status}
+    />
   );
 }
 
@@ -1021,7 +1071,7 @@ function ignoreSubmit(_message: PromptInputMessage) {
   // Pending and failed panes keep the composer visible but cannot send.
 }
 
-function isPaneAlive(aliveRef: MutableRefObject<boolean>): boolean {
+function isPaneAlive(aliveRef: RefObject<boolean>): boolean {
   return aliveRef.current;
 }
 
@@ -1037,18 +1087,20 @@ function sameSession(
 
 async function applyPersistPatch(
   next: PersistPatch,
-  refs: {
-    aliveRef: MutableRefObject<boolean>;
-    contextLengthRef: MutableRefObject<number>;
-    eventsRef: MutableRefObject<EveAgentReducerEvent[]>;
-    idRef: MutableRefObject<number | null>;
-    persistedEventsRef: MutableRefObject<EveAgentReducerEvent[]>;
+  refs: Pick<
+    TurnRefs,
+    | "aliveRef"
+    | "contextLengthRef"
+    | "idRef"
+    | "selectedModelRef"
+    | "sessionRef"
+    | "thinkingEnabledRef"
+  > & {
+    eventsRef: RefObject<EveAgentReducerEvent[]>;
+    persistedEventsRef: RefObject<EveAgentReducerEvent[]>;
     recordCreated: (id: number, title: string) => void;
     refreshList: () => Promise<void>;
-    selectedModelRef: MutableRefObject<string>;
-    sessionRef: MutableRefObject<ClientSessionState | undefined>;
-    thinkingEnabledRef: MutableRefObject<boolean>;
-    titleRef: MutableRefObject<string>;
+    titleRef: RefObject<string>;
   }
 ): Promise<void> {
   if (!isPaneAlive(refs.aliveRef)) {
