@@ -1,5 +1,5 @@
 import { AnimatePresence, m, useIsPresent } from "motion/react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 
 import {
   ContextMenu,
@@ -32,9 +32,12 @@ const rowClassName =
   "flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
 
 function ListRowRoot({
+  actionsRef,
   animateIn,
   children,
 }: {
+  /** Lets a screen close the row's menu, such as when the screen hides. */
+  actionsRef?: ComponentProps<typeof ContextMenu>["actionsRef"];
   /** True for a row that arrives on its own, which grows in. */
   animateIn: boolean;
   children: ReactNode;
@@ -51,7 +54,7 @@ function ListRowRoot({
     >
       {/* The gap between rows lives inside, so the row can shrink to nothing. */}
       <div className="pb-0.5">
-        <ContextMenu>{children}</ContextMenu>
+        <ContextMenu actionsRef={actionsRef}>{children}</ContextMenu>
       </div>
     </m.li>
   );

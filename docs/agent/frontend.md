@@ -7,8 +7,9 @@ This page explains the React side of Chat: how the screen streams a turn, when i
 These paths are under `frontend/src/components/`:
 
 - **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
-- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. It sits above the screens, so a half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
+- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
 - **ChatLayout** (`chat-layout.tsx`): the chat list on the left and the panel on the right. It uses the same list-and-panel layout as Journal (`split-view.tsx`, `list-row.tsx`).
+- **ScreenActive** (`screen-active.tsx`): tells Chat’s parts whether Chat is on screen. Chat stays mounted while other screens show, so a menu or dialog in Chat uses it to close when Chat hides.
 - **The chat list** (`chat/chat-list.tsx`): one row per saved chat, with a New chat button above it
 - **The chat panel**: the header in `chat-layout.tsx` and the conversation in `chat-screen.tsx`
 - **Rename dialog** (`chat/rename-chat-dialog.tsx`): one dialog, shared by the rows and the panel’s ⋯ menu
@@ -35,14 +36,14 @@ The first time you open Chat, the panel is open on an empty new chat, beside the
 
 The panel header has these controls:
 
-- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again. It waits while a dialog or menu is open.
+- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again. It works only while Chat is on screen, and it waits while a dialog or menu is open.
 - **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends whenever the panel closes, including when you go to `#/chat`. It stays when you visit other screens, until you quit Sage.
 - **The title** is “New chat” until the first message saves.
 - **The ⋯ menu** has Rename and Delete. A new chat has no ⋯ menu, because there is nothing to rename or delete yet.
 
 Drag the divider to resize the panel, and double-click it to reset the split. In a narrow window, the list sits above the panel.
 
-Closing the panel does not stop the chat. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving, and the panel is as you left it when you open it again. Visiting another screen does end the conversation on screen. When you come back, Sage reads the chat from storage again, so the transcript shows every turn that saved.
+Closing the panel does not stop the chat, and neither does visiting another screen. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you open the panel again or come back to Chat, the transcript and its scroll position are as you left them. Opening the chat that is already open, from its row, from Home, or from a search hit, shows the panel and leaves the conversation as it is. A menu, a dialog, or a full-screen table or diagram that was open in Chat closes when you leave.
 
 The address bar follows the panel:
 
@@ -66,7 +67,7 @@ Switching tabs without changing the query reuses the lists already loaded.
 Choosing a hit opens it:
 
 - A journal hit opens that entry.
-- A conversation hit opens that conversation in the panel. If the hit has a `seq`, Chat scrolls to the matching message, and a title-only hit opens it without scrolling.
+- A conversation hit opens that conversation in the panel. If the hit has a `seq`, Chat scrolls to the matching message, and a title-only hit opens it without scrolling. A hit in the chat that is already open scrolls to its message without reading the chat again.
 - A memory hit opens that memory. Profile and topic hits open the subject pane, and an event hit opens its edit dialog.
 
 ## Streaming a turn
