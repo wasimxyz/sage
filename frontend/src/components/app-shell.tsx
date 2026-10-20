@@ -5,10 +5,12 @@ import {
   RotateCcwClockIcon,
   SettingsIcon,
 } from "lucide-react";
-import { type CSSProperties, lazy, Suspense, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar } from "@/components/app-titlebar";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
+import { ChatRoute } from "@/components/chat-route";
 import {
   DreamConfirmDialog,
   DreamNav,
@@ -39,36 +41,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { Spinner } from "@/components/ui/spinner";
 import { useNewShortcut } from "@/hooks/use-new-shortcut";
 import { useRouteSync } from "@/hooks/use-route-sync";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
 import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-
-// Chat brings Markdown, code, math, and diagram rendering with it. None of
-// that is needed until the first time Chat opens, so it loads on demand.
-type ChatLayoutComponent = typeof import("@/components/chat-layout").ChatLayout;
-
-// Set once the module has loaded, whether a hover or an open started the load.
-let loadedChatLayout: ChatLayoutComponent | null = null;
-
-function loadChatLayout() {
-  return import("@/components/chat-layout").then((module) => {
-    loadedChatLayout = module.ChatLayout;
-    return module;
-  });
-}
-
-const LazyChatLayout = lazy(() =>
-  loadChatLayout().then((module) => ({ default: module.ChatLayout }))
-);
-
-// Hovering or focusing the Chat row starts the load, so the screen is usually
-// there by the time it is opened.
-function preloadChatLayout() {
-  loadChatLayout().catch(() => undefined);
-}
 
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
@@ -226,33 +203,6 @@ function SettingsNav() {
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
-  );
-}
-
-function ChatLoading() {
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background">
-      <Spinner />
-    </div>
-  );
-}
-
-/**
- * Opens Chat. A module that is already here, as after a hover on the Chat row,
- * renders at once. Going through Suspense would still hold its spinner for
- * about 300 ms. Only a cold open takes the lazy path. This is decided once per
- * mount, so a load that finishes later never swaps the element and remounts
- * Chat.
- */
-function ChatRoute() {
-  const [Loaded] = useState(() => loadedChatLayout);
-  if (Loaded) {
-    return <Loaded />;
-  }
-  return (
-    <Suspense fallback={<ChatLoading />}>
-      <LazyChatLayout />
-    </Suspense>
   );
 }
 

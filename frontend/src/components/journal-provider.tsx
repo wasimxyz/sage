@@ -22,6 +22,7 @@ import {
   todayDate,
   waitForNativeBridge,
 } from "@/bridge";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
 import {
   type EditorAdapter,
   type EditorSelection,
@@ -653,7 +654,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   }, [flush]);
 
   const showChat = useCallback(async () => {
-    await flush();
+    // Every way into Chat comes through here, so the load starts with the
+    // flush. Chat then opens at once instead of behind a spinner.
+    await Promise.all([flush(), preloadChatLayout()]);
     setSection("chat");
     setSidebarMenu("nav");
   }, [flush]);
