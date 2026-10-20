@@ -36,6 +36,7 @@ import {
   loadBlankContent,
   loadEntryContent,
 } from "@/lib/editor-content";
+import { LegacyUnderline } from "@/lib/legacy-underline";
 import { readingColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +45,9 @@ const extensions = [
     link: {
       openOnClick: false,
     },
+    underline: false,
   }),
+  LegacyUnderline,
   Markdown,
 ];
 

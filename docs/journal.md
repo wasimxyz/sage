@@ -18,6 +18,8 @@ Each entry is one row in `journal_entry`:
 
 The editor is TipTap with Markdown support. Sage saves one second after you stop typing, through `journal.save`, and stores the body as Markdown. Older `plain` entries open as plain text.
 
+There is no Underline button, and ⌘U and ⇧⌘U do nothing. Text underlined in an older entry stays underlined, and Sage saves it as `++text++`. Text you type after it is not underlined, and pasted underline is dropped. Plus signs with a space after them, as in `C++ and C++`, stay plain text. The rules live in `frontend/src/lib/legacy-underline.ts`.
+
 Cmd+S saves at once and shows a message that Sage saves your entry automatically.
 
 Opening an entry is not an edit. Each entry opens with an empty undo history, so ⌘Z cannot undo the opening or bring back the text of the entry you had open before. A new entry starts the same way, and the title box is read-only while an entry loads. The reset lives in `frontend/src/lib/editor-history.ts`.
