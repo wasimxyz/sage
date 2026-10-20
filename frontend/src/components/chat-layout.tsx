@@ -7,6 +7,8 @@ import {
 import { type ReactNode, useCallback, useMemo } from "react";
 
 import type { ChatConversationMeta } from "@/bridge";
+import { closeReplyOverlays } from "@/components/ai-elements/message";
+import { ChatDraftProvider } from "@/components/chat/chat-draft";
 import { ChatList } from "@/components/chat/chat-list";
 import {
   RenameChatProvider,
@@ -15,6 +17,10 @@ import {
 import { useChat, useChatPanel } from "@/components/chat-provider";
 import { ChatScreen } from "@/components/chat-screen";
 import { Hint } from "@/components/hint";
+import {
+  useCloseOnScreenHide,
+  useOnScreenHide,
+} from "@/components/screen-active";
 import { SplitView, type SplitViewContextValue } from "@/components/split-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,20 +32,29 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { shortcuts } from "@/lib/shortcuts";
 
+/** Reply overlays sit outside Chat's layer, so hiding Chat closes them. */
+function CloseReplyOverlaysOnHide() {
+  useOnScreenHide(closeReplyOverlays);
+  return null;
+}
+
 export function ChatLayout() {
   return (
     <ChatSplitProvider>
       <RenameChatProvider>
-        {/* A reply keeps streaming and saving while the panel is closed. */}
-        <SplitView.Root keepDetailMounted>
-          <SplitView.List>
-            <ChatListColumn />
-          </SplitView.List>
-          <SplitView.Detail>
-            <ChatPanelHeader />
-            <ChatScreen />
-          </SplitView.Detail>
-        </SplitView.Root>
+        <CloseReplyOverlaysOnHide />
+        <ChatDraftProvider>
+          {/* A reply keeps streaming and saving while the panel is closed. */}
+          <SplitView.Root keepDetailMounted>
+            <SplitView.List>
+              <ChatListColumn />
+            </SplitView.List>
+            <SplitView.Detail>
+              <ChatPanelHeader />
+              <ChatScreen />
+            </SplitView.Detail>
+          </SplitView.Root>
+        </ChatDraftProvider>
       </RenameChatProvider>
     </ChatSplitProvider>
   );
@@ -112,6 +127,7 @@ function ChatMenu({ row }: { row: ChatConversationMeta }) {
   const {
     actions: { startRename },
   } = useRenameChat();
+  const actionsRef = useCloseOnScreenHide();
   const handleRename = useCallback(() => {
     startRename(row);
   }, [row, startRename]);
@@ -119,7 +135,7 @@ function ChatMenu({ row }: { row: ChatConversationMeta }) {
     deleteConversation(row.id);
   }, [deleteConversation, row.id]);
   return (
-    <DropdownMenu>
+    <DropdownMenu actionsRef={actionsRef}>
       <DropdownMenuTrigger
         render={
           <Button aria-label="Chat actions" size="icon-sm" variant="ghost" />

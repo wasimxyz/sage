@@ -19,6 +19,7 @@ import {
 import { PromptInputButton } from "@/components/ai-elements/prompt-input";
 import { useChat } from "@/components/chat-provider";
 import { Hint } from "@/components/hint";
+import { useOnScreenHide } from "@/components/screen-active";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { CONTEXT_LENGTHS, formatContextLength } from "@/lib/chat/model-prefs";
@@ -65,6 +66,9 @@ function ModelPickerReady({ names }: { names: string[] }) {
     state: { selectedModel, thinkingEnabled },
   } = useChat();
   const [open, setOpen] = useState(false);
+  useOnScreenHide(() => {
+    setOpen(false);
+  });
   return (
     <ModelSelector onOpenChange={setOpen} open={open}>
       <Hint label="Select model">

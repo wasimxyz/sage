@@ -22,6 +22,7 @@ import {
   todayDate,
   waitForNativeBridge,
 } from "@/bridge";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
 import {
   type EditorAdapter,
   type EditorSelection,
@@ -135,6 +136,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const titleRef = useRef(title);
   const dateRef = useRef(date);
   const idRef = useRef<number | null>(null);
+  // Whose text the editor holds: an entry id, null for a new draft, undefined
+  // before anything has loaded. A save goes out only when this matches idRef.
+  const editorEntryIdRef = useRef<number | null | undefined>(undefined);
   const dirtyRef = useRef<boolean>(false);
   const timerRef = useRef<number | null>(null);
   const embedTimerRef = useRef<number | null>(null);
@@ -224,6 +228,18 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return;
     }
     dirtyRef.current = false;
+    const entryId = idRef.current;
+    // The editor still shows another entry, as after one that failed to open.
+    // Saving would put that text under this id.
+    if (editorEntryIdRef.current !== entryId) {
+      toast.error(
+        "This entry did not open, so Sage did not save your changes.",
+        {
+          id: "entry-not-open",
+        }
+      );
+      return;
+    }
     const body = adapter.getBody();
     const wordCount = countWords(adapter.getText());
     const nextTitle = titleRef.current.trim() || "Untitled";
@@ -232,11 +248,15 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         body,
         date: dateRef.current,
         format: "markdown",
-        id: idRef.current,
+        id: entryId,
         title: nextTitle,
         wordCount,
       });
       idRef.current = saved.id;
+      // A draft's first save gives the text its id.
+      if (editorEntryIdRef.current === entryId) {
+        editorEntryIdRef.current = saved.id;
+      }
       const nextUpdatedAt =
         saved.updatedAt.length > 0 ? saved.updatedAt : new Date().toISOString();
       setUpdatedAt(nextUpdatedAt);
@@ -420,6 +440,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const registerEditor = useCallback((adapter: EditorAdapter | null) => {
     adapterRef.current = adapter;
+    editorEntryIdRef.current = undefined;
     if (adapter === null) {
       loadedKeyRef.current = null;
       setEditorReady(false);
@@ -475,6 +496,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       setUpdatedAt("");
       setEntryLoading(false);
       adapter.resetDraft();
+      editorEntryIdRef.current = null;
       return;
     }
 
@@ -497,6 +519,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         setDate(entry.date);
         setUpdatedAt(entry.updatedAt);
         current.loadDoc(entry);
+        editorEntryIdRef.current = entry.id;
         setEntryLoading(false);
       })
       .catch((error: unknown) => {
@@ -615,6 +638,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     pendingEmbedIdsRef.current.clear();
     idRef.current = null;
     adapterRef.current?.resetDraft();
+    editorEntryIdRef.current = null;
     setSelection(null);
     setDetailOpenState(false);
     setExpanded(false);
@@ -631,7 +655,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   }, [flush]);
 
   const showChat = useCallback(async () => {
-    await flush();
+    // Every way into Chat comes through here, so the load starts with the
+    // flush. Chat then opens at once instead of behind a spinner.
+    await Promise.all([flush(), preloadChatLayout()]);
     setSection("chat");
     setSidebarMenu("nav");
   }, [flush]);
