@@ -41,13 +41,13 @@ The summary model is `qwen3.5:9b` unless `SAGE_SUMMARY_MODEL` names another one.
 
 ## The sidebar dot
 
-While Dream is idle, a blue dot sits at the right edge of the Dream item when there is work to do. `dream.status` counts that work with the same query `dream.start` uses, so the dot matches what a run would do. Edits to entries and chats do not reach the Dream provider, so it asks again every 15 seconds. The dot can take that long to appear after an edit.
+While Dream is idle, a blue dot sits at the right edge of the Dream item when there is work to do. `dream.status` counts that work with the same query `dream.start` uses, so the dot matches what a run would do. Edits to entries and chats do not reach the Dream provider, so it asks again every 15 seconds. The dot can take that long to appear after an edit. A hidden window skips the check and runs it once when it comes back.
 
 Hover Dream to see when it last finished.
 
 ## When Dream cannot run
 
-- **Ollama is down**: clicking Dream opens a dialog that says Ollama isn’t running, with a Start Ollama button. Once Ollama answers, the dialog asks you to confirm the Dream.
+- **Ollama is down**: Dream reads the same Ollama check as Chat, every 4 seconds. When that check says Ollama is down, clicking Dream opens a dialog that says Ollama isn’t running, with a Start Ollama button. Once Ollama answers, the dialog asks you to confirm the Dream.
 - **A model is missing**: Dream stops with a message such as “The summary model is not pulled. Run: ollama pull qwen3.5:9b”.
 - **Sage is locked**: `dream.start` and `dream.status` answer “Sage is locked.”
 

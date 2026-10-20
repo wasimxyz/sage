@@ -36,6 +36,8 @@ function tagsFetch(body: unknown, ok = true) {
 
 test("localOllamaBaseURL accepts loopback hosts", () => {
   assert.equal(localOllamaBaseURL(undefined), "http://127.0.0.1:11434/api");
+  assert.equal(localOllamaBaseURL(""), "http://127.0.0.1:11434/api");
+  assert.equal(localOllamaBaseURL("  "), "http://127.0.0.1:11434/api");
   assert.equal(
     localOllamaBaseURL("http://127.0.0.1:11434/api"),
     "http://127.0.0.1:11434/api"
