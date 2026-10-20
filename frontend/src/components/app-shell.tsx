@@ -5,7 +5,7 @@ import {
   RotateCcwClockIcon,
   SettingsIcon,
 } from "lucide-react";
-import { type CSSProperties, lazy, Suspense, useEffect } from "react";
+import { type CSSProperties, lazy, Suspense, useEffect, useState } from "react";
 
 import { onOpenSettings } from "@/bridge";
 import { AppTitlebar } from "@/components/app-titlebar";
@@ -46,8 +46,19 @@ import { shortcuts } from "@/lib/shortcuts";
 
 // Chat brings Markdown, code, math, and diagram rendering with it. None of
 // that is needed until the first time Chat opens, so it loads on demand.
-const loadChatLayout = () => import("@/components/chat-layout");
-const ChatLayout = lazy(() =>
+type ChatLayoutComponent = typeof import("@/components/chat-layout").ChatLayout;
+
+// Set once the module has loaded, whether a hover or an open started the load.
+let loadedChatLayout: ChatLayoutComponent | null = null;
+
+function loadChatLayout() {
+  return import("@/components/chat-layout").then((module) => {
+    loadedChatLayout = module.ChatLayout;
+    return module;
+  });
+}
+
+const LazyChatLayout = lazy(() =>
   loadChatLayout().then((module) => ({ default: module.ChatLayout }))
 );
 
@@ -227,6 +238,25 @@ function ChatLoading() {
   );
 }
 
+/**
+ * Opens Chat. A module that is already here, as after a hover on the Chat row,
+ * renders at once. Going through Suspense would still hold its spinner for
+ * about 300 ms. Only a cold open takes the lazy path. This is decided once per
+ * mount, so a load that finishes later never swaps the element and remounts
+ * Chat.
+ */
+function ChatRoute() {
+  const [Loaded] = useState(() => loadedChatLayout);
+  if (Loaded) {
+    return <Loaded />;
+  }
+  return (
+    <Suspense fallback={<ChatLoading />}>
+      <LazyChatLayout />
+    </Suspense>
+  );
+}
+
 function AppMain() {
   const {
     state: { section },
@@ -236,11 +266,7 @@ function AppMain() {
     return <HomeScreen />;
   }
   if (section === "chat") {
-    return (
-      <Suspense fallback={<ChatLoading />}>
-        <ChatLayout />
-      </Suspense>
-    );
+    return <ChatRoute />;
   }
   if (section === "memories" && memoryEnabled) {
     return <MemoriesScreen />;
