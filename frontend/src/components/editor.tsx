@@ -13,7 +13,6 @@ import {
 import { toast } from "sonner";
 import { parseStoredDoc, plainTextToTiptap } from "@/bridge";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
-import { NoUnderlineShortcut } from "@/components/editor-no-underline";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
 import { useEntry } from "@/components/journal-context";
@@ -29,6 +28,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LegacyUnderline } from "@/lib/legacy-underline";
 import { readingColumnClass } from "@/lib/page-column";
 import { cn } from "@/lib/utils";
 
@@ -37,9 +37,10 @@ const extensions = [
     link: {
       openOnClick: false,
     },
+    underline: false,
   }),
+  LegacyUnderline,
   Markdown,
-  NoUnderlineShortcut,
 ];
 const emptyDoc = { content: [{ type: "paragraph" }], type: "doc" as const };
 
