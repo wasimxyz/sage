@@ -7,13 +7,21 @@ This page explains the React side of Chat: how the screen streams a turn, when i
 These paths are under `frontend/src/components/`:
 
 - **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the model list, the agent health check, and the Chat token from `chat.agentToken`. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
-- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it.
+- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it. Only the message box and the Send button read the text. Code that only sets it, such as `ChatTurn`, calls `useChatDraftActions()`, so a keystroke does not redraw the conversation.
 - **ChatLayout** (`chat-layout.tsx`): the chat list on the left and the panel on the right. It uses the same list-and-panel layout as Journal (`split-view.tsx`, `list-row.tsx`).
+- **ChatRoute** (`chat-route.tsx`): opens Chat. It loads `ChatLayout` the first time you open Chat, and the layout then stays mounted. If Chat cannot load or draw, ChatRoute shows “Could not open Chat” with a Reload button, and the rest of Sage keeps working.
+- **Chat loader** (`chat-layout-loader.ts`): holds the load of `chat-layout.tsx`. Hovering or focusing the Chat row starts it, and so does `showChat`.
 - **ScreenActive** (`screen-active.tsx`): tells Chat’s parts whether Chat is on screen. Chat stays mounted while other screens show, so a menu or dialog in Chat uses it to close when Chat hides.
 - **The chat list** (`chat/chat-list.tsx`): one row per saved chat, with a New chat button above it
 - **The chat panel**: the header in `chat-layout.tsx` and the conversation in `chat-screen.tsx`
 - **Rename dialog** (`chat/rename-chat-dialog.tsx`): one dialog, shared by the rows and the panel’s ⋯ menu
 - **ChatTurn** (`chat-screen.tsx`): one conversation, connected to the agent through eve’s `useEveAgent` hook
+
+## How Chat loads
+
+Chat’s Markdown, code, math, and diagram rendering is about 1.6 MB, nearly half the startup file. It loads the first time you open Chat instead. `showChat` starts the load while the editor saves, and hovering or focusing the Chat row starts it sooner. `showChat` waits for the load before it switches screens, so Chat opens without a spinner.
+
+A module that fails to load stays failed until the page reloads, so a retry in place cannot work. ChatRoute shows the Reload button for that case.
 
 ## The chat list
 
