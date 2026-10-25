@@ -1,9 +1,11 @@
 // Clouds drawn as a grid of dots, ported from the Sage website. The density of
 // the cloud at each dot sets how big and how opaque it is, so the clouds read
-// as halftone. Here they hold still: one draw, no animation loop.
+// as halftone. Here they drift at 40% of the website's speed, and a frame is
+// drawn about 12 times a second instead of 30, to go easy on the battery.
 
 const GAP = 12;
 const SCALE = 1 / 230;
+const SPEED = 0.02;
 const FULL_CIRCLE = Math.PI * 2;
 
 // Cloud density below this fades out entirely; it reaches full over FEATHER.
@@ -20,6 +22,8 @@ const STAR_PEAK_ALPHA = 0.9;
 const CLEAR_FEATHER = 160;
 
 export const MAX_PIXEL_RATIO = 2;
+/** The time between frames. Slow drift needs no more. */
+export const FRAME_MS = 83;
 
 export interface CloudPalette {
   dotAlphaHigh: number;
@@ -37,6 +41,8 @@ export interface CloudOptions {
   /** Slides the clouds along their noise, so two places can look different. */
   offset?: number;
   palette: CloudPalette;
+  /** How long the clouds have drifted, in seconds. Zero holds them still. */
+  seconds?: number;
   width: number;
 }
 
@@ -66,12 +72,12 @@ function noise(x: number, y: number) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
-// Three layers of noise at growing detail.
-function cloud(x: number, y: number) {
+// Three layers of noise at growing detail, each drifting a little faster.
+function cloud(x: number, y: number, t: number) {
   return (
-    0.5 * noise(x, y) +
-    0.3 * noise(x * 2.1 + 17, y * 2.1 + 5) +
-    0.2 * noise(x * 4.3 + 41, y * 4.3 + 11)
+    0.5 * noise(x - t, y) +
+    0.3 * noise(x * 2.1 - t * 1.6 + 17, y * 2.1 + 5) +
+    0.2 * noise(x * 4.3 - t * 2.4 + 41, y * 4.3 + 11)
   );
 }
 
@@ -95,7 +101,7 @@ export function readCloudPalette(element: Element): CloudPalette {
   };
 }
 
-/** Draws one still frame. The caller sets the canvas size and transform. */
+/** Draws one frame. The caller sets the canvas size and transform. */
 export function drawClouds(
   context: CanvasRenderingContext2D,
   {
@@ -104,10 +110,13 @@ export function drawClouds(
     height,
     offset = 0,
     palette,
+    seconds = 0,
     width,
   }: CloudOptions
 ) {
   const stars: number[] = [];
+  // The clouds drift to the right, so from the right edge they come closer.
+  const t = (anchor === "right" ? -seconds : seconds) * SPEED;
   context.clearRect(0, 0, width, height);
   context.fillStyle = palette.dotColor;
 
@@ -118,7 +127,7 @@ export function drawClouds(
     // stay put relative to it.
     for (let from = GAP / 2; from < width; from += GAP) {
       const x = anchor === "right" ? width - from : from;
-      const density = cloud(from * SCALE + offset, y * SCALE * 1.7);
+      const density = cloud(from * SCALE + offset, y * SCALE * 1.7, t);
       const open =
         clearUntil > 0 ? smoothstep((x - clearUntil) / CLEAR_FEATHER) : 1;
       const k = smoothstep((density - CLOUD_FLOOR) / CLOUD_FEATHER) * open;
@@ -142,8 +151,8 @@ export function drawClouds(
   context.fillStyle = "#FFFFFF";
   for (let i = 0; i < stars.length; i += 4) {
     const seed = stars[i + 2] ?? 0;
-    // The website's twinkle, held at its first moment.
-    const twinkle = 0.55 + 0.45 * Math.sin(seed * 40);
+    const twinkle =
+      0.55 + 0.45 * Math.sin(seconds * (0.6 + seed * 1.2) + seed * 40);
     context.globalAlpha = twinkle * (stars[i + 3] ?? 0) * STAR_PEAK_ALPHA;
     context.beginPath();
     context.arc(stars[i] ?? 0, stars[i + 1] ?? 0, STAR_RADIUS, 0, FULL_CIRCLE);

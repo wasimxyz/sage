@@ -9,12 +9,17 @@ import {
 } from "react";
 
 import { onTitlebarPointerDown } from "@/components/app-titlebar";
-import { useChat } from "@/components/chat-provider";
+import { useChat, useChatPanel } from "@/components/chat-provider";
 import { Clouds } from "@/components/clouds";
 import {
   useJournalActions,
   useJournalEntries,
 } from "@/components/journal-context";
+import {
+  ListRow,
+  ListRowsSkeleton,
+  listRowClassName,
+} from "@/components/list-row";
 import { ProtectReminder } from "@/components/protect-reminder";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -48,15 +53,52 @@ const groupTitles: readonly { group: HomeGroup; title: string }[] = [
 // Past the text, so the clouds never come up under it.
 const textClearancePx = 24;
 
-const rowClassName =
-  "-mx-3 flex h-12 w-[calc(100%+1.5rem)] cursor-pointer items-center gap-3 rounded-xl px-3 text-left text-[15px] outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
-
 // White on the band, with the band's own color showing in the gap.
 const bandFocusClassName =
   "focus-visible:border-white focus-visible:ring-white/70";
 
+/**
+ * Opening an entry or a chat from Home fills the window with it, and the list
+ * is one step back. The Journal and Chat lists open it beside the list.
+ */
+function useOpenFullScreen() {
+  const { select, setExpanded, showChat } = useJournalActions();
+  const {
+    actions: { openConversation },
+  } = useChat();
+  const {
+    actions: { setExpanded: setChatExpanded },
+  } = useChatPanel();
+  const openEntry = useCallback(
+    (id: number) => {
+      select(id)
+        .then(() => {
+          setExpanded(true);
+        })
+        .catch(() => {
+          // The editor toasts its own load errors.
+        });
+    },
+    [select, setExpanded]
+  );
+  const openChat = useCallback(
+    (id: number) => {
+      showChat()
+        .then(() => {
+          openConversation(id);
+          setChatExpanded(true);
+        })
+        .catch(() => {
+          // showChat flushes the editor; openers toast their own errors.
+        });
+    },
+    [openConversation, setChatExpanded, showChat]
+  );
+  return { openChat, openEntry };
+}
+
 export function HomeScreen() {
-  const { select } = useJournalActions();
+  const { openChat, openEntry } = useOpenFullScreen();
   const { entries, loadingList } = useJournalEntries();
   const {
     state: { conversations, listLoaded },
@@ -89,15 +131,6 @@ export function HomeScreen() {
   );
   const nothingYet = visibleEntries.length === 0 && conversations.length === 0;
 
-  const openEntry = useCallback(
-    (id: number) => {
-      select(id).catch(() => {
-        // The editor toasts its own load errors.
-      });
-    },
-    [select]
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">
@@ -121,8 +154,9 @@ export function HomeScreen() {
             groups={groups}
             loading={loading}
             nothingYet={nothingYet}
+            onOpenChat={openChat}
+            onOpenEntry={openEntry}
           />
-          <EndButtons />
         </div>
       </ScrollArea>
       <ProtectReminder ready={!loading} />
@@ -200,7 +234,7 @@ function CloudBand({
 
   return (
     <div
-      className="relative min-h-75 overflow-hidden text-white"
+      className="relative overflow-hidden text-white"
       ref={measureBand}
       style={{
         backgroundImage: `linear-gradient(to right, var(--band-from) ${clearUntil}px, var(--band-to))`,
@@ -225,43 +259,48 @@ function CloudBand({
       <div
         className={cn(
           pageColumnClass,
-          "relative pt-[calc(var(--titlebar-height)+0.125rem)] pb-10"
+          "relative flex min-h-[186px] items-center py-[38px]"
         )}
       >
-        <div className="flex max-w-md flex-col items-start" data-band-text>
-          <p className="text-[15px] text-white/90 leading-normal">
+        <div
+          className="flex w-full max-w-md flex-col items-start"
+          data-band-text
+        >
+          <p className="text-white/90 text-xs leading-4">
             {formatHomeHeadingDate(now)}
           </p>
-          <h1 className="mt-1.5 font-semibold text-[2.375rem] leading-tight tracking-tight">
+          <h1 className="mt-0.5 font-semibold text-2xl leading-tight tracking-tight">
             {greetingFor(now)}
           </h1>
           {monthAgo === null ? null : (
-            <p className="mt-2 text-[15px] text-white/90 leading-normal">
+            <p className="mt-1 text-[13px] text-white/90 leading-snug">
               {monthAgo.line}{" "}
               <RereadLink id={monthAgo.id} onOpen={onOpenEntry} />
             </p>
           )}
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-2.5 flex flex-wrap gap-2">
             <Button
               aria-keyshortcuts="Meta+N"
               className={cn(
-                "h-11.5 bg-white px-5 text-(--band-from) text-base hover:bg-white/90 active:bg-white/80",
+                "h-7.5 bg-white px-3.5 text-(--band-from) hover:bg-white/90 active:bg-white/80 has-data-[icon=inline-start]:pl-3",
                 bandFocusClassName
               )}
               onClick={handleStartDraft}
+              size="sm"
             >
-              <PencilIcon data-icon="inline-start" />
+              <PencilIcon className="size-3" data-icon="inline-start" />
               New entry
             </Button>
             <Button
               className={cn(
-                "h-11.5 border-white/50 bg-white/10 px-5 text-base text-white hover:bg-white/20 hover:text-white active:bg-white/25 dark:border-white/50 dark:bg-white/10 dark:hover:bg-white/20",
+                "h-7.5 border-white/50 bg-white/10 px-3.5 text-white hover:bg-white/20 hover:text-white active:bg-white/25 has-data-[icon=inline-start]:pl-3 dark:border-white/50 dark:bg-white/10 dark:hover:bg-white/20",
                 bandFocusClassName
               )}
               onClick={handleNewChat}
+              size="sm"
               variant="outline"
             >
-              <MessageCircleIcon data-icon="inline-start" />
+              <MessageCircleIcon className="size-3" data-icon="inline-start" />
               New chat
             </Button>
           </div>
@@ -309,17 +348,25 @@ function MonthRow({
 }) {
   const labelId = useId();
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="@container flex items-start justify-between gap-x-3">
+      {/* As tall as a square's cell, so the label lines up with the first row
+          of squares when the row wraps. */}
       <span
-        className="min-w-14 shrink-0 text-[15px] text-muted-foreground"
+        className="flex h-6 min-w-14 shrink-0 items-center text-muted-foreground text-sm"
         id={labelId}
       >
         {monthLabel}
       </span>
       {loading ? (
-        <Skeleton className="h-3 w-full max-w-xl" />
+        <Skeleton className="mt-1.5 h-3 max-w-[612px] flex-1" />
       ) : (
-        <fieldset aria-labelledby={labelId} className="flex flex-wrap">
+        // The squares end at the right edge of the column. They fill one row
+        // when it fits, spaced 8 px apart at most, and two aligned rows when it
+        // does not.
+        <fieldset
+          aria-labelledby={labelId}
+          className="grid min-w-0 @md:max-w-[612px] flex-1 @md:grid-cols-[repeat(31,0.75rem)] grid-cols-[repeat(16,0.75rem)] justify-between"
+        >
           {days.map((day) => (
             <DaySquare day={day} key={day.date} onOpenEntry={onOpenEntry} />
           ))}
@@ -346,14 +393,14 @@ function DaySquare({
     <button
       aria-current={day.today ? "date" : undefined}
       aria-label={day.label}
-      className="group/day flex h-6 w-5 items-center justify-center rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 enabled:cursor-pointer"
+      className="group/day relative flex h-6 items-center justify-center rounded-sm outline-none after:absolute after:-inset-x-1 after:inset-y-0 enabled:cursor-pointer"
       disabled={entryId === null}
       onClick={handleClick}
       type="button"
     >
       <span
         className={cn(
-          "size-3 rounded-[3px] transition-transform group-enabled/day:group-hover/day:scale-125",
+          "size-3 rounded-[3px] transition-transform group-focus-visible/day:ring-[3px] group-focus-visible/day:ring-ring/50 group-enabled/day:group-hover/day:scale-125",
           day.state === "written" && "bg-brand",
           day.state === "empty" && "bg-foreground/10",
           day.state === "future" && "border border-foreground/20",
@@ -368,13 +415,17 @@ function HomeLists({
   groups,
   loading,
   nothingYet,
+  onOpenChat,
+  onOpenEntry,
 }: {
   groups: Record<HomeGroup, HomeRow[]>;
   loading: boolean;
   nothingYet: boolean;
+  onOpenChat: (id: number) => void;
+  onOpenEntry: (id: number) => void;
 }) {
   if (loading) {
-    return <HomeListsSkeleton />;
+    return <ListRowsSkeleton label="Loading Home" />;
   }
   if (nothingYet) {
     return (
@@ -392,6 +443,8 @@ function HomeLists({
               <HomeListRow
                 group={group}
                 key={`${row.kind}-${row.id}`}
+                onOpenChat={onOpenChat}
+                onOpenEntry={onOpenEntry}
                 row={row}
               />
             ))}
@@ -410,100 +463,59 @@ function HomeSection({
   title: string;
 }) {
   return (
-    <section className="flex flex-col gap-0.5">
-      <h2 className="font-medium text-[15px] text-muted-foreground">{title}</h2>
-      <ul className="flex flex-col gap-0.5">{children}</ul>
+    <section className="flex flex-col gap-2">
+      <h2 className="font-medium text-muted-foreground text-sm">{title}</h2>
+      <ul className="flex flex-col">{children}</ul>
     </section>
   );
 }
 
-function HomeListRow({ group, row }: { group: HomeGroup; row: HomeRow }) {
-  const { select, showChat } = useJournalActions();
-  const {
-    actions: { openConversation },
-  } = useChat();
+function HomeListRow({
+  group,
+  onOpenChat,
+  onOpenEntry,
+  row,
+}: {
+  group: HomeGroup;
+  onOpenChat: (id: number) => void;
+  onOpenEntry: (id: number) => void;
+  row: HomeRow;
+}) {
   const { id, kind } = row;
   const handleClick = useCallback(() => {
     if (kind === "entry") {
-      select(id).catch(() => {
-        // The editor toasts its own load errors.
-      });
-      return;
+      onOpenEntry(id);
+    } else {
+      onOpenChat(id);
     }
-    showChat()
-      .then(() => {
-        openConversation(id);
-      })
-      .catch(() => {
-        // showChat flushes the editor; openers toast their own errors.
-      });
-  }, [id, kind, openConversation, select, showChat]);
+  }, [id, kind, onOpenChat, onOpenEntry]);
   const Icon = kind === "entry" ? NotebookTextIcon : MessageCircleIcon;
   return (
-    <li>
-      <button className={rowClassName} onClick={handleClick} type="button">
-        <Icon
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
-        />
-        <span className="min-w-0 flex-1 truncate">
-          <span className="sr-only">
-            {kind === "entry" ? "Entry: " : "Chat: "}
-          </span>
-          {row.title}
+    <li className="pb-0.5">
+      <button
+        className={cn(listRowClassName, "-mx-3 w-[calc(100%+1.5rem)]")}
+        onClick={handleClick}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <Icon
+            aria-hidden="true"
+            className="size-4 shrink-0 text-muted-foreground"
+          />
+          <ListRow.Title>
+            <span className="sr-only">
+              {kind === "entry" ? "Entry: " : "Chat: "}
+            </span>
+            {row.title}
+          </ListRow.Title>
         </span>
         <time
-          className="shrink-0 text-muted-foreground text-sm tabular-nums"
+          className="shrink-0 text-muted-foreground"
           dateTime={group === "today" ? row.updatedAt : row.day}
         >
           {homeRowDate(row, group)}
         </time>
       </button>
     </li>
-  );
-}
-
-function EndButtons() {
-  const { showChat, showJournal } = useJournalActions();
-  const handleEntries = useCallback(() => {
-    showJournal().catch(() => undefined);
-  }, [showJournal]);
-  const handleChats = useCallback(() => {
-    showChat().catch(() => undefined);
-  }, [showChat]);
-  return (
-    <div className="flex flex-wrap gap-3">
-      <Button
-        className="h-10.5 px-4 text-[15px]"
-        onClick={handleEntries}
-        variant="outline"
-      >
-        All entries
-      </Button>
-      <Button
-        className="h-10.5 px-4 text-[15px]"
-        onClick={handleChats}
-        variant="outline"
-      >
-        All chats
-      </Button>
-    </div>
-  );
-}
-
-function HomeListsSkeleton() {
-  return (
-    <output className="flex flex-col gap-8">
-      <span className="sr-only">Loading Home</span>
-      <div className="flex flex-col gap-1">
-        <Skeleton className="h-4 w-16" />
-        <Skeleton className="h-12 w-full rounded-xl" />
-        <Skeleton className="h-12 w-full rounded-xl" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <Skeleton className="h-4 w-20" />
-        <Skeleton className="h-12 w-full rounded-xl" />
-      </div>
-    </output>
   );
 }

@@ -79,7 +79,7 @@ The band holds today's date, a greeting, and two buttons: **New entry** and **Ne
 
 A line under the greeting reads A month ago today, you wrote “Title.” when you wrote an entry on the same day of last month. A **Reread** link opens it. With several entries on that day, Sage picks the newest. The line uses the saved title alone, and no model writes it. Home hides the line when there is no such entry, and when last month has no such day, as with March 31.
 
-The clouds come from the Sage website. `frontend/src/components/clouds.tsx` draws them once on a canvas and leaves them still, and `frontend/src/index.css` sets the dot colors for light and dark. The lock screen draws the same clouds behind its card.
+The clouds come from the Sage website. `frontend/src/components/clouds.tsx` draws them on a canvas and lets them drift slowly, at about 12 frames a second. They hold still when Reduce motion is on, and they stop drawing while the window is hidden or the band is scrolled out of view. `frontend/src/index.css` sets the dot colors for light and dark. The lock screen draws the same clouds behind its card.
 
 ### The month row
 
@@ -87,11 +87,11 @@ The row has one small square for each day of the month. A day with an entry is f
 
 ### Entries and chats
 
-Entries and chats appear together, newest first, under Today, This week, and Last week. A group with nothing in it is hidden. Each row shows an icon for its type and a title. It never shows text from the entry or the chat. The right side shows the time for Today, the weekday for This week, and a short date such as “Sat, Oct 17” for Last week. A chat belongs to the local day it last changed.
+Entries and chats appear together, newest first, under Today, This week, and Last week. A group with nothing in it is hidden. Each row shows an icon for its type and a title. It never shows text from the entry or the chat. The right side shows the time for Today, the weekday for This week, and a short date such as “Sat, Oct 17” for Last week. A chat belongs to the local day it last changed. Choosing a row, a day square, or Reread opens that entry or chat full screen, and the back arrow returns to the list beside it.
 
 A week starts on the first day of the week in System Settings > General > Language & Region. Sage reads it through `system.calendar`, and the week starts on Sunday if that fails.
 
-**All entries** opens Journal and **All chats** opens Chat. With no entries and no chats, the lists give way to “Your entries and chats will show up here.”
+With no entries and no chats, the lists give way to “Your entries and chats will show up here.”
 
 ## Deleting entries
 
