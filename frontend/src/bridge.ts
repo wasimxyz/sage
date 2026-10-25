@@ -27,31 +27,6 @@ export interface JournalSearchResult extends JournalEntryMeta {
   excerpt: string;
 }
 
-export type HomeFeedKind = "conversation" | "entry";
-
-export interface HomeFeedItem {
-  date: string;
-  id: number;
-  kind: HomeFeedKind;
-  snippet: string;
-  title: string;
-}
-
-export interface HomeLatestEntry {
-  date: string;
-  format: BodyFormat;
-  id: number;
-  snippet: string;
-  title: string;
-  updatedAt: string;
-  wordCount: number;
-}
-
-export interface HomeFeed {
-  items: HomeFeedItem[];
-  latest: HomeLatestEntry | null;
-}
-
 export type ChatSearchRole = "assistant" | "user";
 
 export interface ChatSearchHit {
@@ -318,42 +293,6 @@ export async function listEntries(): Promise<JournalEntryMeta[]> {
     throw new Error("Unexpected bridge response.");
   }
   return entries.map((item) => metaFrom(asRecord(item)));
-}
-
-export async function homeFeed(sinceDate: string): Promise<HomeFeed> {
-  const response = asRecord(await invoke("home.feed", { sinceDate }));
-  return {
-    items: asJsonArray(response.items).map(homeItemFrom),
-    latest: homeLatestFrom(response.latest),
-  };
-}
-
-function homeLatestFrom(
-  value: NativeSdkJson | undefined
-): HomeLatestEntry | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  const row = asRecord(value);
-  return {
-    ...metaFrom(row),
-    snippet: asString(row.snippet),
-  };
-}
-
-function homeItemFrom(item: NativeSdkJson): HomeFeedItem {
-  const row = asRecord(item);
-  const kind = asString(row.kind);
-  if (kind !== "conversation" && kind !== "entry") {
-    throw new Error("Unexpected bridge response.");
-  }
-  return {
-    date: asString(row.date),
-    id: asNumber(row.id),
-    kind,
-    snippet: asString(row.snippet),
-    title: asString(row.title),
-  };
 }
 
 export async function getBuildFeatures(): Promise<BuildFeatures> {
@@ -1049,6 +988,16 @@ export async function getSystemHardware(): Promise<SystemHardware> {
     cpuCores: asNumber(response.cpuCores),
     ramGb: asNumber(response.ramGb),
   };
+}
+
+export interface SystemCalendar {
+  /** NSCalendar's first weekday: 1 is Sunday and 7 is Saturday. */
+  firstWeekday: number;
+}
+
+export async function getSystemCalendar(): Promise<SystemCalendar> {
+  const response = asRecord(await invoke("system.calendar", {}));
+  return { firstWeekday: asNumber(response.firstWeekday) };
 }
 
 export interface OllamaPullProgress {

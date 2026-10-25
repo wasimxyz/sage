@@ -46,6 +46,7 @@
   --color-foreground: var(--foreground);
   --color-background: var(--background);
   --color-row-hover: var(--row-hover);
+  --color-brand: var(--brand);
   --color-surface: var(--surface);
   --color-dragon: var(--dragon);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -98,6 +99,19 @@
   --sidebar-ring: oklch(0.708 0 0);
   /* Hidden titlebar band. Leading inset is set in app-shell.tsx. */
   --titlebar-height: 3.25rem;
+  /* The one blue: filled day squares on Home and the Dream dot. */
+  --brand: #3461bf;
+  /* Cloud dots, read by components/clouds.tsx, and the sky behind them. */
+  --cloud-dot-rgb: 255, 255, 255;
+  --cloud-dot-lo: 0.18;
+  --cloud-dot-hi: 0.9;
+  --cloud-stars: 0;
+  --sky: linear-gradient(180deg, #2e6bc9 0%, #5d97e0 55%, #b4d3f4 100%);
+  /* The Home band runs from the dark end, under the text, to the light end. */
+  --band-from: #2b53ad;
+  --band-to: #7ea3e0;
+  --card-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 0.15), 0 30px 60px -12px rgb(16 40 90 / 0.4);
 }
 
 .dark {
@@ -137,6 +151,16 @@
   --sidebar-accent-foreground: oklch(0.9 0 0);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.556 0 0);
+  --brand: #7d9ce8;
+  --cloud-dot-rgb: 185, 198, 230;
+  --cloud-dot-lo: 0.06;
+  --cloud-dot-hi: 0.42;
+  --cloud-stars: 1;
+  --sky: linear-gradient(180deg, #050a1a 0%, #0c1736 60%, #1a2a52 100%);
+  --band-from: #080e24;
+  --band-to: #1d3266;
+  --card-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.1), 0 30px 60px -12px rgb(0 0 0 / 0.6);
 }
 
 html[data-fullscreen] {

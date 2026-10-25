@@ -6,13 +6,16 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useId,
   useState,
 } from "react";
 
 import { startWindowDrag } from "@/bridge";
+import { Clouds } from "@/components/clouds";
 import { useLock } from "@/components/lock-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
 import { recoveryUnlockMessage } from "@/lib/lock-errors";
@@ -25,6 +28,7 @@ export function LockScreen() {
     state: { status, statusError, touchIdBusy, touchIdError },
   } = useLock();
   const fullscreen = useWindowFullscreen();
+  const passwordId = useId();
   const [password, setPassword] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
@@ -132,87 +136,98 @@ export function LockScreen() {
 
   return (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+      className="bg-(image:--sky) relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       style={
         {
           "--titlebar-leading": fullscreen ? "0.5rem" : "5.375rem",
         } as CSSProperties
       }
     >
+      <Clouds className="pointer-events-none absolute inset-0 size-full" />
       <header
-        className="flex h-(--titlebar-height) shrink-0 flex-col"
+        className="absolute inset-x-0 top-0 z-10 flex h-(--titlebar-height) shrink-0 flex-col"
         data-slot="window-titlebar"
         onPointerDown={onTitlebarPointerDown}
       >
         <div className="flex h-(--titlebar-height) shrink-0 items-center pl-[calc(var(--titlebar-leading)+0.5rem)]" />
       </header>
-      <main className="flex min-h-0 flex-1 items-center justify-center px-6 pb-16">
-        <div className="flex w-full max-w-2xs flex-col items-center gap-4 text-center">
-          <LeafIcon className="size-8 text-muted-foreground" />
-          <div className="flex flex-col gap-1">
-            <h1 className="font-medium text-lg">Sage is locked</h1>
-            <p className="text-balance text-muted-foreground text-sm">
-              Unlock Sage to read and write entries.
-            </p>
+      {/* The same room above and below, so the card sits in the middle of the
+          window and still scrolls when the window is short. */}
+      <main className="relative flex min-h-0 flex-1 overflow-y-auto px-4 py-(--titlebar-height)">
+        <div className="m-auto flex w-full max-w-[360px] flex-col items-center gap-6 rounded-2xl bg-card p-8 text-center text-card-foreground shadow-(--card-shadow)">
+          <div className="flex flex-col items-center gap-4">
+            <LeafIcon className="size-8 text-muted-foreground" />
+            <div className="flex flex-col gap-1">
+              <h1 className="font-semibold text-xl">Sage is locked</h1>
+              <p className="text-balance text-muted-foreground text-sm">
+                Unlock Sage to read and write entries.
+              </p>
+            </div>
           </div>
-          {showRecovery ? (
-            <RecoveryKeyForm
-              onBack={handleHideRecovery}
-              onError={setError}
-              waitSeconds={waitSeconds}
-            />
-          ) : null}
-          {!showRecovery && status?.passwordSet ? (
-            <form className="flex w-full flex-col gap-2" onSubmit={submit}>
-              <Input
-                aria-label="Password"
-                autoFocus
-                disabled={passwordBusy || waitSeconds > 0}
-                onChange={handlePasswordChange}
-                placeholder="Password"
-                type="password"
-                value={password}
+          <div className="flex w-full flex-col gap-2">
+            {showRecovery ? (
+              <RecoveryKeyForm
+                onBack={handleHideRecovery}
+                onError={setError}
+                waitSeconds={waitSeconds}
               />
+            ) : null}
+            {!showRecovery && status?.passwordSet ? (
+              <form className="flex flex-col gap-3 text-left" onSubmit={submit}>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={passwordId}>Password</Label>
+                  <Input
+                    autoFocus
+                    className="h-11"
+                    disabled={passwordBusy || waitSeconds > 0}
+                    id={passwordId}
+                    onChange={handlePasswordChange}
+                    type="password"
+                    value={password}
+                  />
+                </div>
+                <Button
+                  className="h-11 text-base"
+                  disabled={
+                    passwordBusy || waitSeconds > 0 || password.length === 0
+                  }
+                  type="submit"
+                >
+                  {passwordBusy ? <Spinner data-icon="inline-start" /> : null}
+                  {passwordBusy ? "Unlocking..." : "Unlock"}
+                </Button>
+              </form>
+            ) : null}
+            {!showRecovery && status?.touchIdEnabled ? (
+              <TouchIdButton
+                biometrics={status.touchIdBiometrics}
+                busy={touchIdBusy}
+                onClick={handleTouchIdClick}
+              />
+            ) : null}
+            {!showRecovery && canUseRecoveryKey && failedAttempt ? (
               <Button
-                disabled={
-                  passwordBusy || waitSeconds > 0 || password.length === 0
-                }
-                type="submit"
+                className="h-11 w-full text-base"
+                onClick={handleShowRecovery}
+                type="button"
+                variant="ghost"
               >
-                {passwordBusy ? <Spinner data-icon="inline-start" /> : null}
-                {passwordBusy ? "Unlocking..." : "Unlock"}
+                Use recovery key
               </Button>
-            </form>
-          ) : null}
-          {!showRecovery && status?.touchIdEnabled ? (
-            <TouchIdButton
-              biometrics={status.touchIdBiometrics}
-              busy={touchIdBusy}
-              onClick={handleTouchIdClick}
-            />
-          ) : null}
-          {!showRecovery && canUseRecoveryKey && failedAttempt ? (
-            <Button
-              className="-mt-2 w-full"
-              onClick={handleShowRecovery}
-              type="button"
-              variant="ghost"
-            >
-              Use recovery key
-            </Button>
-          ) : null}
-          {statusError ? (
-            <LockStatusError
-              busy={statusRetryBusy}
-              message={statusError}
-              onRetry={retryLockStatus}
-            />
-          ) : null}
-          {message ? (
-            <p className="text-destructive text-sm" role="alert">
-              {message}
-            </p>
-          ) : null}
+            ) : null}
+            {statusError ? (
+              <LockStatusError
+                busy={statusRetryBusy}
+                message={statusError}
+                onRetry={retryLockStatus}
+              />
+            ) : null}
+            {message ? (
+              <p className="text-destructive text-sm" role="alert">
+                {message}
+              </p>
+            ) : null}
+          </div>
         </div>
       </main>
     </div>
@@ -230,7 +245,7 @@ function TouchIdButton({
 }) {
   return (
     <Button
-      className="w-full"
+      className="h-11 w-full text-base"
       disabled={busy}
       onClick={onClick}
       variant="outline"
@@ -260,6 +275,7 @@ function RecoveryKeyForm({
   const {
     actions: { tryRecoveryKey },
   } = useLock();
+  const recoveryId = useId();
   const [recoveryKey, setRecoveryKey] = useState("");
   const [busy, setBusy] = useState(false);
   const valid = normalizeRecoveryKey(recoveryKey) !== null;
@@ -296,27 +312,42 @@ function RecoveryKeyForm({
   );
 
   return (
-    <form className="flex w-full flex-col gap-2" onSubmit={submit}>
-      <Input
-        aria-label="Recovery key"
-        autoCapitalize="characters"
-        autoComplete="off"
-        autoCorrect="off"
-        autoFocus
-        className="font-mono tracking-wider"
-        disabled={busy || waitSeconds > 0}
-        onChange={handleChange}
-        placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-        spellCheck={false}
-        value={recoveryKey}
-      />
-      <Button disabled={busy || waitSeconds > 0 || !valid} type="submit">
-        {busy ? <Spinner data-icon="inline-start" /> : null}
-        {busy ? "Unlocking..." : "Unlock"}
-      </Button>
-      <Button disabled={busy} onClick={onBack} type="button" variant="ghost">
-        Back
-      </Button>
+    <form className="flex w-full flex-col gap-3 text-left" onSubmit={submit}>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={recoveryId}>Recovery key</Label>
+        <Input
+          autoCapitalize="characters"
+          autoComplete="off"
+          autoCorrect="off"
+          autoFocus
+          className="h-11 font-mono tracking-wider"
+          disabled={busy || waitSeconds > 0}
+          id={recoveryId}
+          onChange={handleChange}
+          placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+          spellCheck={false}
+          value={recoveryKey}
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Button
+          className="h-11 text-base"
+          disabled={busy || waitSeconds > 0 || !valid}
+          type="submit"
+        >
+          {busy ? <Spinner data-icon="inline-start" /> : null}
+          {busy ? "Unlocking..." : "Unlock"}
+        </Button>
+        <Button
+          className="h-11 text-base"
+          disabled={busy}
+          onClick={onBack}
+          type="button"
+          variant="ghost"
+        >
+          Back
+        </Button>
+      </div>
     </form>
   );
 }
@@ -335,7 +366,12 @@ function LockStatusError({
       <p className="text-destructive text-sm" role="alert">
         {message}
       </p>
-      <Button disabled={busy} onClick={onRetry} variant="outline">
+      <Button
+        className="h-11 text-base"
+        disabled={busy}
+        onClick={onRetry}
+        variant="outline"
+      >
         {busy ? <Spinner data-icon="inline-start" /> : null}
         {busy ? "Checking..." : "Retry"}
       </Button>

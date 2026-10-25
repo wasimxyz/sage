@@ -95,7 +95,7 @@ function IdleDreamMenuButton() {
 function PendingDot() {
   return (
     <span className="flex size-3.5 shrink-0 items-center justify-center">
-      <span aria-hidden className="size-1.5 rounded-full bg-blue-500" />
+      <span aria-hidden className="size-1.5 rounded-full bg-brand" />
       <span className="sr-only">Needs dreaming</span>
     </span>
   );

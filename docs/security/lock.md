@@ -55,7 +55,7 @@ A wrong password or a cancelled prompt changes nothing. The check runs in the Zi
 While locked, these commands answer “Sage is locked.” and return nothing:
 
 - Every journal, embeddings, Dream, and memory command
-- Every Ollama command, the hardware info, and the Chat agent status
+- Every Ollama command, the hardware info, the first day of the week, and the Chat agent status
 - The Chat token command, `chat.agentToken`
 - Changing the password, turning the lock off, turning Touch ID on or off, and turning encryption on or off
 

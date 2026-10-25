@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const build_options = @import("build_options");
 const runner = @import("runner");
 const native_sdk = @import("native_sdk");
+const calendar_mod = @import("calendar.zig");
 const journal = @import("journal.zig");
 const import_mod = @import("import.zig");
 const export_mod = @import("export.zig");
@@ -47,7 +48,6 @@ const external_link_urls = [_][]const u8{
 const command_names = [_][]const u8{
     "journal.list",
     "journal.get",
-    "home.feed",
     "journal.search",
     "journal.save",
     "journal.delete",
@@ -105,6 +105,7 @@ const command_names = [_][]const u8{
     "ollama.pullCancel",
     "ollama.delete",
     "system.hardware",
+    "system.calendar",
     "onboarding.status",
     "onboarding.save",
     "onboarding.reminderShown",
@@ -433,7 +434,6 @@ const App = struct {
         self.handlers = .{
             .{ .name = "journal.list", .context = self, .invoke_fn = handleList },
             .{ .name = "journal.get", .context = self, .invoke_fn = handleGet },
-            .{ .name = "home.feed", .context = self, .invoke_fn = handleHomeFeed },
             .{ .name = "journal.search", .context = self, .invoke_fn = handleSearch },
             .{ .name = "journal.save", .context = self, .invoke_fn = handleSave },
             .{ .name = "journal.delete", .context = self, .invoke_fn = handleDelete },
@@ -475,6 +475,7 @@ const App = struct {
             .{ .name = "agent.instructions.get", .context = self, .invoke_fn = handleAgentInstructionsGet },
             .{ .name = "agent.instructions.save", .context = self, .invoke_fn = handleAgentInstructionsSave },
             .{ .name = "system.hardware", .context = self, .invoke_fn = handleSystemHardware },
+            .{ .name = "system.calendar", .context = self, .invoke_fn = handleSystemCalendar },
             .{ .name = "ollama.pull", .context = self, .invoke_fn = handleOllamaPull },
             .{ .name = "ollama.pulls", .context = self, .invoke_fn = handleOllamaPulls },
             .{ .name = "ollama.pullCancel", .context = self, .invoke_fn = handleOllamaPullCancel },
@@ -640,12 +641,6 @@ fn handleList(context: *anyopaque, invocation: native_sdk.bridge.Invocation, out
     const self: *App = @ptrCast(@alignCast(context));
     try requireReady(self);
     return self.store.list(output);
-}
-
-fn handleHomeFeed(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
-    const self: *App = @ptrCast(@alignCast(context));
-    try requireReady(self);
-    return self.store.homeFeed(invocation.request.payload, output);
 }
 
 fn handleGet(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
@@ -929,6 +924,13 @@ fn handleSystemHardware(context: *anyopaque, invocation: native_sdk.bridge.Invoc
     try journal.writeJsonStringStreaming(&writer, info.chip_name);
     try writer.print(",\"ramGb\":{d},\"cpuCores\":{d}}}", .{ info.ram_gb, info.cpu_cores });
     return writer.buffered();
+}
+
+fn handleSystemCalendar(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireUnlocked(self);
+    return std.fmt.bufPrint(output, "{{\"firstWeekday\":{d}}}", .{calendar_mod.firstWeekday()});
 }
 
 // --- first-launch setup ---
@@ -2907,6 +2909,7 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
+    _ = calendar_mod;
     _ = journal;
     _ = keychain;
     _ = lock_mod;
@@ -3710,7 +3713,7 @@ test "journal commands refuse while locked and answer after unlock" {
     try std.testing.expect(std.mem.indexOf(u8, json, "Morning walk") != null);
 }
 
-test "home.feed refuses while locked and answers after unlock" {
+test "system.calendar refuses while locked and answers after unlock" {
     var rig: EmbedTestRig = undefined;
     try rig.init();
     defer rig.deinit();
@@ -3720,14 +3723,16 @@ test "home.feed refuses while locked and answers after unlock" {
     rig.app.lock.unlocked = false;
 
     const invocation = native_sdk.bridge.Invocation{
-        .request = .{ .id = "t-home-locked", .command = "home.feed", .payload = "{\"sinceDate\":\"2026-08-18\"}" },
+        .request = .{ .id = "t-calendar-locked", .command = "system.calendar", .payload = "{}" },
         .source = .{},
     };
-    try std.testing.expectError(error.Locked, handleHomeFeed(@ptrCast(&rig.app), invocation, &output));
+    try std.testing.expectError(error.Locked, handleSystemCalendar(@ptrCast(&rig.app), invocation, &output));
 
     _ = try rig.app.lock.unlockPassword("{\"password\":\"correct horse\"}", &output);
-    const json = try handleHomeFeed(@ptrCast(&rig.app), invocation, &output);
-    try std.testing.expect(std.mem.indexOf(u8, json, "Quiet evening") != null);
+    const json = try handleSystemCalendar(@ptrCast(&rig.app), invocation, &output);
+    try std.testing.expect(std.mem.startsWith(u8, json, "{\"firstWeekday\":"));
+    const digit = json["{\"firstWeekday\":".len];
+    try std.testing.expect(digit >= '1' and digit <= '7');
 }
 
 test "data.deleteAll refuses while locked and wipes content after unlock" {
