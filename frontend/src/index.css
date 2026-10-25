@@ -325,9 +325,11 @@ html:has(
   margin: 0.8em 0;
 }
 
-/* In the native app, a click in an empty entry body puts the selection in
-   place, but WebKit draws no caret. A zero-width character gives the empty
-   line some text, and the caret shows. See issue 17. */
+/* In the native app, a click in an empty entry body once drew no caret. It
+   went away after a restart and has not come back, and the cause is unknown.
+   See issue 17. A zero-width character gives the empty line some text, so
+   the caret shows if it comes back. It is generated content, so it never
+   saves or copies. */
 .tiptap > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
   content: "\200b";
 }
