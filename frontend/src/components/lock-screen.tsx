@@ -22,12 +22,11 @@ import { normalizeRecoveryKey } from "@/lib/recovery-key";
 export function LockScreen() {
   const {
     actions: { refresh, tryPassword, tryTouchId },
-    state: { status, statusError, touchIdError },
+    state: { status, statusError, touchIdBusy, touchIdError },
   } = useLock();
   const fullscreen = useWindowFullscreen();
   const [password, setPassword] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
-  const [touchIdBusy, setTouchIdBusy] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [passwordFailed, setPasswordFailed] = useState(false);
   const [statusRetryBusy, setStatusRetryBusy] = useState(false);
@@ -50,21 +49,6 @@ export function LockScreen() {
     const timer = setTimeout(() => setWaitSeconds(waitSeconds - 1), 1000);
     return () => clearTimeout(timer);
   }, [waitSeconds]);
-
-  const runTouchId = useCallback(
-    async (showError: boolean) => {
-      setTouchIdBusy(true);
-      if (showError) {
-        setError(null);
-      }
-      const failure = await tryTouchId();
-      setTouchIdBusy(false);
-      if (showError) {
-        setError(failure);
-      }
-    },
-    [tryTouchId]
-  );
 
   const submit = useCallback(
     async (event: FormEvent) => {
@@ -113,9 +97,10 @@ export function LockScreen() {
     []
   );
 
-  const handleTouchIdClick = useCallback(() => {
-    runTouchId(true);
-  }, [runTouchId]);
+  const handleTouchIdClick = useCallback(async () => {
+    setError(null);
+    setError(await tryTouchId());
+  }, [tryTouchId]);
 
   const retryLockStatus = useCallback(async () => {
     setStatusRetryBusy(true);

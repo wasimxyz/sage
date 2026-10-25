@@ -28,7 +28,7 @@ A module that fails to load stays failed until the page reloads, so a retry in p
 
 The sidebar stays on the main menu while Chat is open. Search is in that menu, as on every screen.
 
-Each row shows the chat’s title and the day it last changed, such as Today, Yesterday, or Oct 2. The day labels turn over at midnight. Click a row to open that chat in the panel. The open chat’s row is highlighted. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.” If the list cannot load, it says “Could not load chats” with a Try again button, so a failed read never looks like an empty list.
+Each row shows the chat’s title and the day it last changed, such as Today, Yesterday, or Friday, Oct 2. Older days show the weekday and recent days do not. The day labels turn over at midnight. The open chat’s header shows the same day in full, such as Friday, October 2, 2026, in lighter text next to the title. A new chat has no day yet, so its header shows only the title. Click a row to open that chat in the panel. The open chat’s row is highlighted. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.” If the list cannot load, it says “Could not load chats” with a Try again button, so a failed read never looks like an empty list.
 
 New chat opens an empty conversation, and so does ⌘N while Chat is open.
 

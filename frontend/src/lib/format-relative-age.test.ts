@@ -3,11 +3,21 @@ import test from "node:test";
 
 import {
   formatLastEdited,
+  formatMemoryDate,
+  formatMemoryUpdatedOn,
   formatRelativeAge,
   formatRelativeCalendarAge,
 } from "./format-relative-age.ts";
 
 const now = Date.parse("2026-09-19T17:00:00");
+
+test("memory dates lead with the weekday", () => {
+  assert.equal(
+    formatMemoryUpdatedOn("2026-10-02T09:00:00"),
+    "Updated Friday, Oct 2"
+  );
+  assert.equal(formatMemoryDate("2026-10-02T09:00:00"), "Friday, Oct 2, 2026");
+});
 
 test("formatRelativeAge uses minutes, hours, and days", () => {
   assert.equal(formatRelativeAge("2026-09-19T16:50:00", now), "10m");
