@@ -12,13 +12,18 @@
     "test": "node --test --experimental-strip-types lib/reports/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
+  "overrides": {
+    "@vercel/cli-config": {
+      "zod": "^4.6.6"
+    }
+  },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@vercel/blob": "^2.8.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "lucide-react": "^1.46.0",
-    "next": "16.3.8",
+    "next": "16.4.3",
     "next-themes": "^0.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -31,7 +36,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "shadcn": "^4.21.0",
+    "shadcn": "^4.22.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "ultracite": "^7.12.0"
