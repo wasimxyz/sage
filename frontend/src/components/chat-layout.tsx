@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { formatEntryDate, localDateKey } from "@/lib/format-date";
 import { shortcuts } from "@/lib/shortcuts";
 
 /** Reply overlays sit outside Chat's layer, so hiding Chat closes them. */
@@ -114,9 +115,26 @@ function ChatPanelHeader() {
         backLabel="Back to chats"
         closeLabel="Close chat"
       />
-      <h2 className="min-w-0 flex-1 truncate font-medium text-sm">{title}</h2>
+      <div className="flex min-w-0 flex-1 items-baseline gap-3 text-sm">
+        <h2 className="min-w-0 truncate font-medium">{title}</h2>
+        {row ? <ChatDate updatedAt={row.updatedAt} /> : null}
+      </div>
       {row ? <ChatMenu row={row} /> : null}
     </SplitView.DetailHeader>
+  );
+}
+
+/** `updatedAt` is a UTC instant. The header shows the local day. */
+function ChatDate({ updatedAt }: { updatedAt: string }) {
+  const day = localDateKey(updatedAt);
+  // The date gives way before the title does when the panel is narrow.
+  return (
+    <time
+      className="min-w-0 shrink-[4] truncate text-muted-foreground"
+      dateTime={day}
+    >
+      {formatEntryDate(day)}
+    </time>
   );
 }
 

@@ -179,6 +179,7 @@ export function formatMemoryUpdatedOn(iso: string): string {
   return `Updated ${intlFormat(date, {
     day: "numeric",
     month: "short",
+    weekday: "long",
   })}`;
 }
 
@@ -190,6 +191,7 @@ export function formatMemoryDate(iso: string): string {
   return intlFormat(date, {
     day: "numeric",
     month: "short",
+    weekday: "long",
     year: "numeric",
   });
 }

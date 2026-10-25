@@ -34,6 +34,12 @@ After you stop typing for 30 seconds, Sage embeds the entry through `embeddings.
 
 Saving also marks the entry for the next [Dream](dream.md), which refreshes its summary.
 
+## How dates read
+
+The entry list, Home, and the Chat list show recent days as Today, Yesterday, 3 days ago, or 1 week ago. A day two weeks back or earlier shows its weekday, such as Friday, Oct 2, and adds the year when it is not this year. Relative labels never show a weekday.
+
+The editor shows the full date under the title, such as Friday, October 2, 2026, followed by when you last edited the entry. An open chat shows the day it last changed in lighter text next to its title, in the same full form. Memories use the same weekday in their Updated dates. The code is `frontend/src/lib/format-date.ts`.
+
 ## Importing Markdown
 
 File > Import opens a file picker through `journal.importDialog`. You can pick several `.md`, `.markdown`, or `.txt` files of up to 1 MiB each. Sage reads only the files you picked, through `journal.readFile`, and shows a preview before it saves anything.

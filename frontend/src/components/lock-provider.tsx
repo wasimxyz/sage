@@ -37,6 +37,7 @@ import { normalizeRecoveryKey } from "@/lib/recovery-key";
 export interface LockState {
   status: LockStatus | null;
   statusError: string | null;
+  touchIdBusy: boolean;
   touchIdError: string | null;
 }
 
@@ -102,6 +103,7 @@ export function useLock(): LockContextValue {
 export function LockProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<LockStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [touchIdBusy, setTouchIdBusy] = useState(false);
   const [touchIdError, setTouchIdError] = useState<string | null>(null);
   const launchTouchIdPrompt = useRef<LaunchTouchIdPromptState>({
     checked: false,
@@ -235,7 +237,11 @@ export function LockProvider({ children }: { children: ReactNode }) {
     [refresh]
   );
 
+  // The busy flag lives here, not in the lock screen, because the prompt at
+  // launch starts here too. It stays on through the status read, so the button
+  // keeps spinning after the system prompt closes until the screen is gone.
   const tryTouchId = useCallback(async (): Promise<string | null> => {
+    setTouchIdBusy(true);
     setTouchIdError(null);
     try {
       await unlockWithTouchId();
@@ -246,6 +252,8 @@ export function LockProvider({ children }: { children: ReactNode }) {
         handlerErrorMessage(error) || "Touch ID was not completed.";
       setTouchIdError(message);
       return message;
+    } finally {
+      setTouchIdBusy(false);
     }
   }, [refresh]);
 
@@ -263,8 +271,11 @@ export function LockProvider({ children }: { children: ReactNode }) {
     [refresh, tryPassword, tryRecoveryKey, tryTouchId]
   );
   const value = useMemo<LockContextValue>(
-    () => ({ actions, state: { status, statusError, touchIdError } }),
-    [actions, status, statusError, touchIdError]
+    () => ({
+      actions,
+      state: { status, statusError, touchIdBusy, touchIdError },
+    }),
+    [actions, status, statusError, touchIdBusy, touchIdError]
   );
 
   const locked = shouldKeepLockScreen(status, statusError);

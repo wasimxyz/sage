@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  formatEntryDate,
   formatJournalListDate,
   localDateKey,
   msUntilNextDay,
@@ -33,6 +34,35 @@ test("a chat saved this evening reads Today in the list", () => {
     formatJournalListDate(localDateKey(savedThisMorning), now),
     "Today"
   );
+});
+
+test("formatEntryDate leads with the weekday unless asked not to", () => {
+  assert.equal(formatEntryDate("2026-11-30"), "Monday, November 30, 2026");
+  assert.equal(
+    formatEntryDate("2026-11-30", { weekday: false }),
+    "November 30, 2026"
+  );
+});
+
+test("an older date in the list shows the weekday", () => {
+  const now = new Date(2026, 9, 18, 9, 0);
+  assert.equal(formatJournalListDate("2026-10-02", now), "Friday, Oct 2");
+  assert.equal(
+    formatJournalListDate("2025-11-28", now),
+    "Friday, Nov 28, 2025"
+  );
+  assert.equal(
+    formatJournalListDate("2026-11-30", now),
+    "Monday, November 30, 2026"
+  );
+});
+
+test("a relative date in the list has no weekday", () => {
+  const now = new Date(2026, 9, 18, 9, 0);
+  assert.equal(formatJournalListDate("2026-10-18", now), "Today");
+  assert.equal(formatJournalListDate("2026-10-17", now), "Yesterday");
+  assert.equal(formatJournalListDate("2026-10-13", now), "5 days ago");
+  assert.equal(formatJournalListDate("2026-10-08", now), "1 week ago");
 });
 
 test("msUntilNextDay counts down to the next local midnight", () => {

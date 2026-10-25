@@ -99,7 +99,14 @@ export function formatEventAge(value: string, now = new Date()): string {
   return eventAgeGroup(value, now)?.title ?? value;
 }
 
-export function formatEntryDate(value: string): string {
+/**
+ * A full date such as "Monday, November 30, 2026". A place too narrow for the
+ * weekday passes `{ weekday: false }`.
+ */
+export function formatEntryDate(
+  value: string,
+  { weekday = true }: { weekday?: boolean } = {}
+): string {
   const date = parseCalendarDate(value);
   if (!date) {
     return value;
@@ -107,6 +114,7 @@ export function formatEntryDate(value: string): string {
   return intlFormat(date, {
     day: "numeric",
     month: "long",
+    weekday: weekday ? "long" : undefined,
     year: "numeric",
   });
 }
@@ -148,11 +156,13 @@ export function formatJournalListDate(value: string, now = new Date()): string {
     return intlFormat(date, {
       day: "numeric",
       month: "short",
+      weekday: "long",
     });
   }
   return intlFormat(date, {
     day: "numeric",
     month: "short",
+    weekday: "long",
     year: "numeric",
   });
 }

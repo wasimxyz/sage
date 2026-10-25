@@ -284,7 +284,9 @@ function PreviewTable({ rows }: { rows: PreviewRow[] }) {
           {rows.map((row) => {
             const title = row.kind === "ok" ? row.parsed.title : "—";
             const date =
-              row.kind === "ok" ? formatEntryDate(row.parsed.date) : "—";
+              row.kind === "ok"
+                ? formatEntryDate(row.parsed.date, { weekday: false })
+                : "—";
             const notes = rowNotes(row);
             return (
               <TableRow key={row.path}>
