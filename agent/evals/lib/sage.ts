@@ -38,9 +38,14 @@ export interface ProfileFact {
 
 export async function searchJournal(
   query: string,
-  limit = 5
+  limit = 5,
+  range?: { from: string; to: string }
 ): Promise<JournalHit[]> {
-  const payload = await postJson("/journal/search", { limit, query });
+  const payload = await postJson("/journal/search", {
+    limit,
+    query,
+    ...range,
+  });
   return arrayOf(payload, "entries", (item) => {
     if (
       item === null ||
@@ -165,7 +170,7 @@ export async function listProfile(): Promise<ProfileFact[]> {
 
 async function postJson(
   pathname: string,
-  body: { limit: number; query: string }
+  body: { from?: string; limit: number; query: string; to?: string }
 ): Promise<unknown> {
   const embedding = embeddingFor(body.query);
   const payload = embedding === undefined ? body : { ...body, embedding };

@@ -44,8 +44,11 @@ pub const Job = struct {
     model_name: []const u8 = &.{},
     err: ?anyerror = null,
     target: SearchTarget = .journal,
+    /// Journal searches only: keeps the search, or the listing, to entries
+    /// dated inside it.
+    range: ?journal.DateRange = null,
 
-    pub const Kind = enum { get_entry, search, search_ready, memory_profile, agent_instructions };
+    pub const Kind = enum { get_entry, search, search_ready, journal_range, memory_profile, agent_instructions };
 };
 
 pub const Queue = struct {
@@ -417,12 +420,32 @@ fn handleConnection(self: *Server, stream: std.Io.net.Stream) void {
 fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, target: SearchTarget) void {
     var used: usize = 0;
     var string_buf: [8192]u8 = undefined;
-    const query = journal.jsonString(body, "query", &string_buf, &used) orelse {
-        replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
-        stream.close(self.io);
-        return;
-    };
+    // Only the journal search takes a date range.
+    const range: ?journal.DateRange = if (target == .journal) switch (journal.jsonDateRange(body)) {
+        .absent => null,
+        .range => |found| found,
+        .invalid => {
+            replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
+            stream.close(self.io);
+            return;
+        },
+    } else null;
+    const query = journal.jsonString(body, "query", &string_buf, &used) orelse "";
+    const limit = journal.jsonI64(body, "limit") orelse 5;
     if (query.len == 0) {
+        // A date range alone lists the entries in it, with no embedding.
+        if (range) |bounded| {
+            enqueue(self, stream, .{
+                .kind = .journal_range,
+                .stream = stream,
+                .limit = if (limit < 1) 5 else limit,
+                .range = bounded,
+            }) catch {
+                replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+                stream.close(self.io);
+            };
+            return;
+        }
         replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
         stream.close(self.io);
         return;
@@ -432,7 +455,6 @@ fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, tar
         stream.close(self.io);
         return;
     };
-    const limit = journal.jsonI64(body, "limit") orelse 5;
     const owned_query = self.allocator.dupe(u8, query) catch {
         if (provided) |vec| self.allocator.free(vec);
         replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
@@ -441,7 +463,7 @@ fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, tar
     };
     if (provided) |vec| {
         if (vec.len > 0) {
-            enqueueReadySearch(self, stream, owned_query, vec, limit, target);
+            enqueueReadySearch(self, stream, owned_query, vec, limit, target, range);
             return;
         }
         self.allocator.free(vec);
@@ -452,6 +474,7 @@ fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, tar
         .query = owned_query,
         .limit = if (limit < 1) 5 else limit,
         .target = target,
+        .range = range,
     }) catch {
         self.allocator.free(owned_query);
         replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
@@ -466,6 +489,7 @@ fn enqueueReadySearch(
     vec: []f32,
     limit: i64,
     target: SearchTarget,
+    range: ?journal.DateRange,
 ) void {
     const batch = self.allocator.alloc([]f32, 1) catch {
         self.allocator.free(vec);
@@ -482,6 +506,7 @@ fn enqueueReadySearch(
         .limit = if (limit < 1) 5 else limit,
         .vectors = batch,
         .target = target,
+        .range = range,
     }) catch {
         self.allocator.free(vec);
         self.allocator.free(batch);

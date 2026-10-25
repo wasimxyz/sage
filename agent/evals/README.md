@@ -36,7 +36,7 @@ Each file in this directory turns `case.yaml` references into eve evals:
 - `extraction.eval.ts`: facts and events against the memory search endpoints, with judge factuality scores
 - `summaries.eval.ts`: entry summaries read from SQLite, scored by the judge
 - `retrieval.eval.ts`: journal search queries with a hard top-hit check
-- `chat.eval.ts`: Chat questions for the run’s chat model. Writes each reply to `chat-transcripts.jsonl` and checks that the turn finished. When the case asks, it also checks for a `search_journal` or `facts__search_memories` call
+- `chat.eval.ts`: Chat questions for the run’s chat model. Writes each reply to `chat-transcripts.jsonl` and checks that the turn finished. When the case asks, it also checks for a `search_journal` or `facts__search_memories` call, and for a `search_journal` call that passed `when`
 - `chat-judge.eval.ts`: judge factuality scores for the saved chat replies
 - `embeddings.eval.ts`: one Ollama batch that embeds retrieval queries, fact and event references, and entry titles, then writes `query-embeddings.jsonl`
 - `evals.config.ts`: the eve eval config: the judge model, sequential runs, a ten-minute per-test timeout, and the result recorder when `SAGE_EVAL_RESULTS` is set

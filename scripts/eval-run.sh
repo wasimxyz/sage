@@ -125,6 +125,9 @@ run_one() {
   export SAGE_DATA_DIR="$data_dir"
   export SAGE_DISCOVERY_FILE="$data_dir/agent-server.json"
   export SAGE_EVAL_MANIFEST="$data_dir/manifest.json"
+  # A fixed day after every fixture entry (the newest is 2026-11-04), so
+  # "in June" and "recently" read the same way on every run.
+  export SAGE_TODAY=2026-11-15
   export SAGE_SUMMARY_MODEL="$summary_model"
   export SAGE_EMBED_MODEL="$embed_model"
   export SAGE_CHAT_MODEL="$chat_model"

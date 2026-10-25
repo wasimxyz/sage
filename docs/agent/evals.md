@@ -10,8 +10,8 @@ Each eval file turns part of a case’s `case.yaml` into checks. A hard check fa
 
 - **Extraction** (`extraction.eval.ts`): searches memory for each `facts` and `events` reference. Hard checks: memory returns something, and each event’s `sourceId` matches the seeded entry. The judge scores whether the result matches the reference, and a fact with a `stale` key soft-checks that the current wording ranks above the old one.
 - **Summaries** (`summaries.eval.ts`): reads the full summary from `entry_summary` in the throwaway SQLite file. Hard check: a summary exists. The judge scores it against the reference, and an encrypted row fails the eval.
-- **Retrieval** (`retrieval.eval.ts`): sends each `retrieval` query to journal search. Hard check: the expected entry is the top hit. There is no judge.
-- **Chat** (`chat.eval.ts`): sends each `chat` question to the agent, and `chat-judge.eval.ts` later scores the saved reply against the reference. Hard check: the turn finishes. With `expectTool: true`, a soft check looks for a `search_journal` or `facts__search_memories` call.
+- **Retrieval** (`retrieval.eval.ts`): sends each `retrieval` query to journal search. When a case sets `when`, the search covers only that time. Hard check: the expected entry is the top hit. There is no judge.
+- **Chat** (`chat.eval.ts`): sends each `chat` question to the agent, and `chat-judge.eval.ts` later scores the saved reply against the reference. Hard check: the turn finishes. With `expectTool: true`, a soft check looks for a `search_journal` or `facts__search_memories` call. With `expectWhen: true`, a second soft check looks for a `search_journal` call that passed `when`.
 
 Judge scores are tracked data, not merge blockers. Use the hard checks to tell whether a run is broken, and compare judge scores across runs.
 
@@ -93,6 +93,8 @@ A failed trio does not stop the sweep, and the runner exits non-zero at the end 
 | `SAGE_EVAL_CACHE_DIR` | `agent/evals/.cache/dream` | Folder that stores Dream snapshots |
 
 Each trio sets both `SAGE_CHAT_MODEL` and `OLLAMA_MODEL` to its one chat model before `eve eval`. If you run `eve eval` yourself with the two set differently, Chat uses `SAGE_CHAT_MODEL`.
+
+The runner pins `SAGE_TODAY` to 2026-11-15, later than every fixture entry, so phrases such as “in June” and “recently” read the same way on every run. You can’t override it.
 
 The runner sets `SAGE_DATA_DIR`, `SAGE_DISCOVERY_FILE`, and `SAGE_AUTOMATION_CWD`, so do not point them at your real journal. It also sets `EVE_EVAL_AUTH_TOKEN` for the `eve eval` processes only, from the token in `SAGE_DISCOVERY_FILE`. You never set that token yourself.
 

@@ -18,8 +18,8 @@ Entry files are seeded in filename order. Frontmatter needs `date` (`YYYY-MM-DD`
 - `facts`: claims that should be true after the last entry, each with a `subject` and a `reference`. An optional `stale` value is the earlier wording that a current-state query should rank below, not a claim that the old fact was deleted.
 - `events`: dated things that happened, each with a `reference` and the 1-based `entry` it came from. The eval checks that search returns the event and that its `sourceId` is that entry’s journal id.
 - `summaries`: a `reference` summary for one `entry`
-- `retrieval`: a `query` and the entry it should rank first, in `expectEntry`. Add a pair of similar entries when you want to check that search can tell them apart.
-- `chat`: a `question` and the `reference` answer it should be grounded in. Set `expectTool: true` only when the question is about entry content, because current-state questions may be answered from recalled facts with no tool call.
+- `retrieval`: a `query` and the entry it should rank first, in `expectEntry`. Add a pair of similar entries when you want to check that search can tell them apart. An optional `when`, such as `June`, limits the search to that time, read as of the day the runner pins in `SAGE_TODAY`. Pair it with similar entries on different dates to check that the date picks the right one.
+- `chat`: a `question` and the `reference` answer it should be grounded in. Set `expectTool: true` only when the question is about entry content, because current-state questions may be answered from recalled facts with no tool call. Set `expectWhen: true` when the question names a time, to check that the agent passed it to `search_journal` as `when`.
 
 Each key feeds one eval file: `facts` and `events` go to extraction, `summaries` to summaries, `retrieval` to retrieval, and `chat` to chat. [Eval suite](../../../docs/agent/evals.md) explains what each eval checks.
 

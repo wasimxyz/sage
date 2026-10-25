@@ -21,6 +21,12 @@ retrieval:
     expectEntry: 1
   - query: when I got told to stop running because of shin splints
     expectEntry: 2
+  - query: running
+    when: April
+    expectEntry: 1
+  - query: running
+    when: May
+    expectEntry: 2
 chat:
   - question: Am I currently running?
     reference: "No. The more recent state is time off for shin splints, not the half marathon"

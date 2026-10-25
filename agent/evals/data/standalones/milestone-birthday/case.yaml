@@ -18,3 +18,7 @@ chat:
   - question: How did I feel on my birthday?
     reference: Reflective and ultimately grateful at a small dinner, not only anxious about a checklist
     expectTool: true
+  - question: What have I been writing about lately?
+    reference: The user turned 30 and ended the day grateful at a small dinner with friends
+    expectTool: true
+    expectWhen: true

@@ -11,12 +11,14 @@ const model = chatModel();
 const evals = cases.flatMap((fixture) =>
   fixture.chat.map((item, index) => {
     const expectTool = item.expectTool === true;
+    const expectWhen = item.expectWhen === true;
     const tags = tagsFor(fixture, "chat");
     return defineEval({
       description: `${fixture.id}: chat ${index + 1}`,
       metadata: {
         caseId: fixture.id,
         expectTool,
+        expectWhen,
         index,
         model,
         question: item.question,
@@ -44,6 +46,20 @@ const evals = cases.flatMap((fixture) =>
           )
             .soft()
             .label("searched journal or memories");
+        }
+        if (expectWhen) {
+          t.check(
+            turn.toolCalls.some(
+              (call) =>
+                call.status === "completed" &&
+                call.name === "search_journal" &&
+                typeof call.input.when === "string" &&
+                call.input.when.trim().length > 0
+            ),
+            equals(true)
+          )
+            .soft()
+            .label("passed when to search_journal");
         }
         appendChatTranscript({
           caseId: fixture.id,

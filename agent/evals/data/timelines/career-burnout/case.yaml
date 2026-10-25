@@ -24,3 +24,7 @@ retrieval:
 chat:
   - question: How am I doing with work lately?
     reference: Burnout built up until the user arranged a six-week leave, not just that they seem tired
+  - question: What was I going through at work in June?
+    reference: The user dreaded every Monday at work and felt checked out in meetings
+    expectTool: true
+    expectWhen: true

@@ -19,7 +19,7 @@ Older files that omit the chat model from their name still open in the report vi
 One JUnit file holds two kinds of result:
 
 - **Hard checks** fail the test case: retrieval returns the right entry as the top hit, Chat finishes a turn, a summary exists, memory returns a fact or event, and each event’s `sourceId` matches its seeded entry.
-- **Soft checks and judge scores** are recorded but do not fail the run: the judge’s factuality and summary scores, the check that current wording ranks above stale wording, and the check that Chat called `search_journal` or `facts__search_memories`.
+- **Soft checks and judge scores** are recorded but do not fail the run: the judge’s factuality and summary scores, the check that current wording ranks above stale wording, the check that Chat called `search_journal` or `facts__search_memories`, and the check that Chat passed `when` to `search_journal` for a question that names a time.
 
 Use hard checks to decide whether a run is broken. Compare judge scores across runs. [Eval suite](evals.md#comparing-models) explains how to run several models at once.
 
