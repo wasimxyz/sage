@@ -5,14 +5,15 @@ interface Nearest {
   before: string | null;
 }
 
-// What Sage's journal search sends back. The counts come only with a date
-// range, so a missing one reads as 0.
+// What Sage's journal search sends back. `total`, `unsummarized`, and
+// `nearest` come only with a date range, so a missing count reads as 0.
 interface Reply {
   belowCutoff: number;
   entries: unknown[];
   matched: number;
   nearest: Nearest | null;
   total: number;
+  unreadable: number;
   unsummarized: number;
 }
 
@@ -54,6 +55,7 @@ export function readReply(payload: unknown): Reply {
             before: dateOrNull(field(nearest, "before")),
           },
     total: whole(field(payload, "total")),
+    unreadable: whole(field(payload, "unreadable")),
     unsummarized: whole(field(payload, "unsummarized")),
   };
 }
@@ -61,6 +63,14 @@ export function readReply(payload: unknown): Reply {
 // "3 entries", or "3 more entries" with an adjective.
 function countEntries(count: number, adjective = ""): string {
   return count === 1 ? `1 ${adjective}entry` : `${count} ${adjective}entries`;
+}
+
+// "3 entries have a summary this search can't compare", with the place
+// ("in this range") when the search has one. A different embedding model left
+// those summaries a vector of another length.
+function unreadableNote(count: number, where = ""): string {
+  const verb = count === 1 ? "has" : "have";
+  return `${countEntries(count)}${where} ${verb} a summary this search can't compare, so it can't rank ${count === 1 ? "it" : "them"}.`;
 }
 
 function emptyRangeNote(range: DateRange, nearest: Nearest | null): string {
@@ -103,6 +113,11 @@ function searchNotes(reply: Reply, range: DateRange): string[] {
       `${countEntries(reply.unsummarized)} in this range ${one ? "has" : "have"} no summary yet, so search by meaning can't see ${one ? "it" : "them"}. Dream in the sidebar adds ${one ? "it" : "them"}.`
     );
   }
+  if (reply.unreadable > 0) {
+    notes.push(
+      `${unreadableNote(reply.unreadable, " in this range")} Leave out query to read ${reply.unreadable === 1 ? "it" : "them"}.`
+    );
+  }
   return notes;
 }
 
@@ -113,7 +128,7 @@ function listNotes(reply: Reply, range: DateRange): string[] {
   const shown = reply.entries.length;
   if (reply.total > shown) {
     return [
-      `Showing ${shown} of ${reply.total} entries from across the range. Add a query or narrow when to see more.`,
+      `Showing ${shown} of ${reply.total} entries, picked evenly in date order. Add a query or narrow when to see more.`,
     ];
   }
   return [];
@@ -139,4 +154,28 @@ export function shapeRangeResult(input: {
     range,
     today,
   };
+}
+
+// A search by meaning with no dates is a plain list of entries. When it comes
+// back empty, the note says why, so the model does not send the user to Dream
+// for entries that were summarized but matched too weakly.
+export function shapeQueryResult(payload: unknown): unknown {
+  const entries = field(payload, "entries");
+  if (!Array.isArray(entries)) {
+    return payload;
+  }
+  if (entries.length > 0) {
+    return entries;
+  }
+  const reply = readReply(payload);
+  const notes: string[] = [];
+  if (reply.belowCutoff > 0) {
+    notes.push(
+      `${countEntries(reply.belowCutoff)} didn't match closely enough to show. Try other words.`
+    );
+  }
+  if (reply.unreadable > 0) {
+    notes.push(unreadableNote(reply.unreadable));
+  }
+  return notes.length > 0 ? { entries, note: notes.join(" ") } : entries;
 }

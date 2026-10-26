@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeToday, resolveWhen, todayFromEnv } from "../agent/lib/when.ts";
+import {
+  describeToday,
+  rangeFromWhen,
+  resolveWhen,
+  todayFromEnv,
+} from "../agent/lib/when.ts";
 
 // Sunday, so the Monday-to-Sunday week edge is in play.
 const sunday = "2026-10-25";
@@ -15,6 +20,7 @@ function span(phrase: string, today = sunday): string {
   return `${result.range.from}..${result.range.to}`;
 }
 
+const couldNotReadWheneverPattern = /Couldn't read "whenever" as a date/;
 const couldNotReadPattern =
   /^error: Couldn't read ".*" as a date\. Pass when as YYYY-MM-DD\.\.YYYY-MM-DD\.$/;
 
@@ -142,11 +148,101 @@ test("a phrase that cannot be read asks for ISO dates", () => {
     "constructor",
     "toString",
     "0 days ago",
-    "march 3",
+    "march 32",
+    "february 30",
     "",
   ]) {
     assert.match(span(phrase), couldNotReadPattern);
   }
+});
+
+test("the last week, month, or year is a rolling span", () => {
+  assert.equal(span("in the last week"), "2026-10-19..2026-10-25");
+  assert.equal(span("the last week", "2026-10-28"), "2026-10-22..2026-10-28");
+  assert.equal(span("over the last month"), "2026-09-26..2026-10-25");
+  assert.equal(span("within the last year"), "2025-10-26..2026-10-25");
+  assert.equal(span("in the last 3 days"), "2026-10-23..2026-10-25");
+  // Without "the", last is the calendar unit before this one.
+  assert.equal(span("in last week"), "2026-10-12..2026-10-18");
+  assert.equal(span("last month"), "2026-09-01..2026-09-30");
+});
+
+test("a few means three", () => {
+  assert.equal(span("the last few days"), "2026-10-23..2026-10-25");
+  assert.equal(span("past few weeks"), "2026-10-05..2026-10-25");
+});
+
+test("quotes and a comma before the year do not matter", () => {
+  assert.equal(span('"last week"'), "2026-10-12..2026-10-18");
+  assert.equal(span("'in March.'"), "2026-03-01..2026-03-31");
+  assert.equal(span("march, 2025"), "2025-03-01..2025-03-31");
+  assert.equal(span("summer, 2025"), "2025-06-01..2025-08-31");
+});
+
+test("a month and a day is one day", () => {
+  assert.equal(span("March 3"), "2026-03-03..2026-03-03");
+  assert.equal(span("on march 3rd"), "2026-03-03..2026-03-03");
+  assert.equal(span("3 March"), "2026-03-03..2026-03-03");
+  assert.equal(span("the 3rd of March"), "2026-03-03..2026-03-03");
+  assert.equal(span("March 3, 2025"), "2025-03-03..2025-03-03");
+  assert.equal(span("march 3 2025"), "2025-03-03..2025-03-03");
+  // A day that has not come yet this year means last year's.
+  assert.equal(span("march 30", "2026-03-10"), "2025-03-30..2025-03-30");
+  assert.equal(span("march 10", "2026-03-10"), "2026-03-10..2026-03-10");
+  // Leap day reaches back to the last one.
+  assert.equal(span("feb 29"), "2024-02-29..2024-02-29");
+  assert.match(span("feb 29 2026"), couldNotReadPattern);
+});
+
+test("a weekend is Saturday and Sunday", () => {
+  // Sunday 2026-10-25: this week began on Monday the 19th.
+  assert.equal(span("last weekend"), "2026-10-17..2026-10-18");
+  assert.equal(span("this weekend"), "2026-10-24..2026-10-25");
+  assert.equal(span("this past weekend"), "2026-10-24..2026-10-25");
+  assert.equal(span("last weekend", monday), "2026-10-24..2026-10-25");
+  assert.equal(span("this past weekend", monday), "2026-10-24..2026-10-25");
+  // Wednesday: this weekend has not happened, last one has.
+  assert.equal(span("last weekend", "2026-10-28"), "2026-10-24..2026-10-25");
+  assert.equal(
+    span("this past weekend", "2026-10-28"),
+    "2026-10-24..2026-10-25"
+  );
+  assert.match(span("this weekend", "2026-10-28"), couldNotReadPattern);
+  // Saturday: only the Saturday has come.
+  assert.equal(span("this weekend", "2026-10-24"), "2026-10-24..2026-10-24");
+});
+
+test("this season and earlier this week", () => {
+  assert.equal(span("this summer"), "2026-06-01..2026-08-31");
+  assert.equal(span("this past summer"), "2026-06-01..2026-08-31");
+  assert.equal(span("earlier this week"), "2026-10-19..2026-10-25");
+  assert.equal(span("earlier this month"), "2026-10-01..2026-10-25");
+});
+
+test("since runs from the start of a time to today", () => {
+  assert.equal(span("since March"), "2026-03-01..2026-10-25");
+  assert.equal(span("since last month"), "2026-09-01..2026-10-25");
+  assert.equal(span("since monday"), "2026-10-19..2026-10-25");
+  assert.equal(span("since 2026-03-14"), "2026-03-14..2026-10-25");
+  assert.equal(span("since march 3"), "2026-03-03..2026-10-25");
+  assert.match(span("since 2027"), couldNotReadPattern);
+  assert.match(span("since whenever"), couldNotReadPattern);
+});
+
+test("a range with nothing after the dots is not one day", () => {
+  assert.equal(
+    span("2026-03-01.."),
+    'error: "2026-03-01.." is missing the date after "..". Pass when as YYYY-MM-DD..YYYY-MM-DD.'
+  );
+  assert.match(span("..2026-03-01"), couldNotReadPattern);
+  // A trailing full stop still does not matter.
+  assert.equal(span("2026-03-01."), "2026-03-01..2026-03-01");
+});
+
+test("a year with fewer than four real digits cannot be read", () => {
+  assert.match(span("march 0050"), couldNotReadPattern);
+  assert.match(span("summer 0050"), couldNotReadPattern);
+  assert.match(span("march 3 0050"), couldNotReadPattern);
 });
 
 test("impossible dates cannot be read", () => {
@@ -190,4 +286,18 @@ test("describeToday names the weekday", () => {
     "Today is Sunday, November 15, 2026."
   );
   assert.equal(describeToday("nope"), "");
+});
+
+test("rangeFromWhen is null for no words and throws for unreadable ones", () => {
+  assert.equal(rangeFromWhen("", sunday), null);
+  assert.equal(rangeFromWhen("   ", sunday), null);
+  assert.deepEqual(rangeFromWhen(" last week ", sunday), {
+    from: "2026-10-12",
+    label: "last week",
+    to: "2026-10-18",
+  });
+  assert.throws(
+    () => rangeFromWhen("whenever", sunday),
+    couldNotReadWheneverPattern
+  );
 });

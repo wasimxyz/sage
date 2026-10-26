@@ -43,9 +43,9 @@ pub const DateRange = struct {
     /// Stands in for a search that has no date range.
     const unbounded: DateRange = .{ .from = "0000-00-00".*, .to = "9999-99-99".* };
 
-    /// Null unless both are dates and `from` is not after `to`.
+    /// Null unless both are dates on the calendar and `from` is not after `to`.
     pub fn parse(from: []const u8, to: []const u8) ?DateRange {
-        if (!isDateText(from) or !isDateText(to)) return null;
+        if (!isRealDate(from) or !isRealDate(to)) return null;
         if (std.mem.order(u8, from, to) == .gt) return null;
         var range: DateRange = undefined;
         @memcpy(&range.from, from);
@@ -68,16 +68,19 @@ pub fn jsonDateRange(payload: []const u8) RangeField {
     return if (DateRange.parse(from, to)) |range| .{ .range = range } else .invalid;
 }
 
-fn isDateText(value: []const u8) bool {
-    if (value.len != 10) return false;
-    for (value, 0..) |ch, index| {
-        if (index == 4 or index == 7) {
-            if (ch != '-') return false;
-        } else if (ch < '0' or ch > '9') {
-            return false;
-        }
-    }
-    return true;
+/// `YYYY-MM-DD` that names a day that exists, so `2026-02-30` is not one.
+fn isRealDate(value: []const u8) bool {
+    if (!isCalendarDate(value)) return false;
+    const year = std.fmt.parseInt(std.time.epoch.Year, value[0..4], 10) catch return false;
+    const month = std.fmt.parseInt(u4, value[5..7], 10) catch return false;
+    if (month < 1 or month > 12) return false;
+    const day = std.fmt.parseInt(u5, value[8..10], 10) catch return false;
+    return day >= 1 and day <= std.time.epoch.getDaysInMonth(year, @enumFromInt(month));
+}
+
+/// Whether the payload has `field` at all, whatever its value.
+pub fn jsonHas(payload: []const u8, field: []const u8) bool {
+    return jsonRaw(payload, field) != null;
 }
 
 const chat_event_insert_sql = "INSERT INTO chat_event (conversation_id, seq, event) VALUES (?1, ?2, ?3);";
@@ -862,11 +865,15 @@ pub const Store = struct {
     /// the decrypted summary is the snippet. A summary scoring under
     /// `min_summary_score` is left out.
     ///
+    /// The answer adds counts the caller can turn into a note: `matched`
+    /// (kept before `limit`), `belowCutoff`, and `unreadable` (a summary whose
+    /// vector cannot be compared with the query, such as one from another
+    /// embedding model).
+    ///
     /// With a `range`, only entries dated inside it are ranked, and the
-    /// answer adds counts the caller can turn into a note: `matched` (kept
-    /// before `limit`), `belowCutoff`, `total` (every entry in the range),
-    /// `unsummarized` (no summary to search), and, when the range holds no
-    /// entries, the dates `nearest` to it.
+    /// answer also gives `total` (every entry in the range), `unsummarized`
+    /// (no summary to search), and, when the range holds no entries, the dates
+    /// `nearest` to it.
     pub fn semanticSearchSummaries(self: *Store, query_vector: []const f32, range: ?DateRange, limit: i64, writer: *std.Io.Writer) !void {
         const take: usize = @intCast(@max(@min(limit, 25), 1));
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -876,6 +883,7 @@ pub const Store = struct {
 
         var hits = std.ArrayList(SemanticHit).empty;
         var below_cutoff: i64 = 0;
+        var unreadable: i64 = 0;
         var last_id: i64 = 0;
         var page_size: i64 = 32;
         while (true) {
@@ -906,10 +914,16 @@ pub const Store = struct {
             for (rows.rows.items) |row| {
                 last_id = row.entry_id;
                 const vec = decodeVectorAlloc(a, row.embedding) catch |err| switch (err) {
-                    error.InvalidEmbedding => continue,
+                    error.InvalidEmbedding => {
+                        unreadable += 1;
+                        continue;
+                    },
                     else => |e| return e,
                 };
-                if (vec.len != query_vector.len) continue;
+                if (vec.len != query_vector.len) {
+                    unreadable += 1;
+                    continue;
+                }
                 const score = cosineSimilarity(query_vector, vec);
                 if (score < min_summary_score) {
                     below_cutoff += 1;
@@ -949,21 +963,20 @@ pub const Store = struct {
             try writeJsonStringStreaming(writer, snippet);
             try writer.writeByte('}');
         }
-        try writer.writeAll("]");
+        try writer.print("],\"matched\":{d},\"belowCutoff\":{d},\"unreadable\":{d}", .{ hits.items.len, below_cutoff, unreadable });
         if (range) |bounded| {
-            try writer.print(",\"matched\":{d},\"belowCutoff\":{d}", .{ hits.items.len, below_cutoff });
-            const total = try self.countEntriesInRange(bounded, false);
-            const unsummarized = try self.countEntriesInRange(bounded, true);
-            try writer.print(",\"total\":{d},\"unsummarized\":{d}", .{ total, unsummarized });
-            if (total == 0) try self.writeNearestDates(a, bounded, writer);
+            const counts = try self.countEntriesInRange(bounded);
+            try writer.print(",\"total\":{d},\"unsummarized\":{d}", .{ counts.total, counts.unsummarized });
+            if (counts.total == 0) try self.writeNearestDates(a, bounded, writer);
         }
         try writer.writeAll("}");
     }
 
     /// List the entries dated inside `range` without ranking them, for a
     /// question about a stretch of time rather than a topic. When more
-    /// entries fall in the range than `limit`, the ones shown are spread
-    /// evenly across it, oldest first. An entry with no summary shows the
+    /// entries fall in the range than `limit`, the ones shown are picked
+    /// evenly from the entries in date order, oldest first, so a stretch with
+    /// many entries gets more of them. An entry with no summary shows the
     /// start of its body instead. The answer adds `total`, the number of
     /// entries in the range, and the dates `nearest` to it when that is 0.
     pub fn listEntriesInRange(self: *Store, range: DateRange, limit: i64, writer: *std.Io.Writer) !void {
@@ -1010,7 +1023,7 @@ pub const Store = struct {
             }
         }
 
-        // Each pick is the middle of one of `shown` equal slices of the range.
+        // Each pick is the middle of one of `shown` equal slices of the entries.
         const total = ids.items.len;
         const shown = @min(total, take);
         var items = std.ArrayList(SemanticHit).empty;
@@ -1073,36 +1086,36 @@ pub const Store = struct {
         if (stored_summary.len > 0) {
             const summary = try self.decryptFromStorage(vault_mod.aad_entry_summary, stored_summary);
             defer self.allocator.free(summary);
-            return listSnippet(a, summary);
+            return homeSnippet(a, summary, list_snippet_window);
         }
         const loaded = try self.loadBody(id);
         defer self.allocator.free(loaded.body);
         defer self.allocator.free(loaded.format);
         const plain = try ollama.extractPlainText(self.allocator, loaded.body, loaded.format);
         defer self.allocator.free(plain);
-        return listSnippet(a, plain);
+        return homeSnippet(a, plain, list_snippet_window);
     }
 
-    fn countEntriesInRange(self: *Store, range: DateRange, only_unsummarized: bool) !i64 {
+    const RangeCounts = struct { total: i64, unsummarized: i64 };
+
+    /// How many entries are dated inside `range`, and how many of those have
+    /// no summary.
+    fn countEntriesInRange(self: *Store, range: DateRange) !RangeCounts {
         var counts = CountRows{};
-        const sql = if (only_unsummarized)
-            \\SELECT COUNT(*) AS n FROM journal_entry
-            \\LEFT JOIN entry_summary ON entry_summary.entry_id = journal_entry.id
-            \\WHERE journal_entry.entry_date BETWEEN ?1 AND ?2
-            \\  AND entry_summary.entry_id IS NULL;
-        else
-            \\SELECT COUNT(*) AS n FROM journal_entry
-            \\WHERE entry_date BETWEEN ?1 AND ?2;
-        ;
         const outcome = self.db.query(
-            sql,
+            \\SELECT COUNT(*) AS n,
+            \\       COALESCE(SUM(entry_summary.entry_id IS NULL), 0) AS unsummarized
+            \\FROM journal_entry
+            \\LEFT JOIN entry_summary ON entry_summary.entry_id = journal_entry.id
+            \\WHERE journal_entry.entry_date BETWEEN ?1 AND ?2;
+        ,
             &.{ .{ .text = &range.from }, .{ .text = &range.to } },
             &counts,
             CountRows.collect,
         );
         if (outcome != .ok) return error.SqliteQueryFailed;
         if (counts.failed) return error.SqlitePageFailed;
-        return counts.value;
+        return .{ .total = counts.value, .unsummarized = counts.unsummarized };
     }
 
     /// Writes `,"nearest":{"before":…,"after":…}`: the dates of the entries
@@ -5432,6 +5445,8 @@ const ChatEventRows = struct {
 
 const CountRows = struct {
     value: i64 = 0,
+    /// Set only by a query that also selects an `unsummarized` column.
+    unsummarized: i64 = 0,
     found: bool = false,
     failed: bool = false,
 
@@ -5453,13 +5468,17 @@ const CountRows = struct {
         }
         for (0..row_count) |_| {
             var row_value: i64 = 0;
+            var row_unsummarized: i64 = 0;
             for (0..column_count) |index| {
                 const cell = try readCell(bytes, &at);
                 if (std.mem.eql(u8, names[index], "n")) {
                     row_value = cellInteger(cell);
+                } else if (std.mem.eql(u8, names[index], "unsummarized")) {
+                    row_unsummarized = cellInteger(cell);
                 }
             }
             self.value = row_value;
+            self.unsummarized = row_unsummarized;
             self.found = true;
         }
     }
@@ -5738,29 +5757,6 @@ fn excerptLeadN(text: []const u8, buf: []u8, window: usize) []const u8 {
     if (text.len == 0 or buf.len == 0) return "";
     const end = utf8AlignEnd(text, 0, @min(text.len, window));
     return writeExcerptWindow(text, 0, end, buf);
-}
-
-/// The start of `text` with each run of whitespace collapsed to one space,
-/// cut at `list_snippet_window` bytes on a character boundary.
-fn listSnippet(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
-    var collapsed = std.ArrayList(u8).empty;
-    defer collapsed.deinit(allocator);
-    var pending_space = false;
-    for (text) |byte| {
-        if (std.ascii.isWhitespace(byte)) {
-            pending_space = collapsed.items.len > 0;
-            continue;
-        }
-        if (pending_space) {
-            try collapsed.append(allocator, ' ');
-            pending_space = false;
-        }
-        try collapsed.append(allocator, byte);
-        // A few bytes past the window is enough to know the text goes on.
-        if (collapsed.items.len >= list_snippet_window + excerpt_ellipsis.len) break;
-    }
-    var buf: [list_snippet_window + excerpt_ellipsis.len]u8 = undefined;
-    return allocator.dupe(u8, excerptLeadN(collapsed.items, &buf, list_snippet_window));
 }
 
 fn isCalendarDate(value: []const u8) bool {
@@ -7931,7 +7927,8 @@ test "semanticSearchSummaries ranks the entries that pass the cutoff" {
     try std.testing.expect(first < second);
     try std.testing.expect(std.mem.indexOf(u8, json, "Walked without headphones.") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"id\":3") == null);
-    // Without a range the answer is just the entries.
+    // Without a range the answer still counts what the cutoff dropped.
+    try std.testing.expect(std.mem.endsWith(u8, json, "],\"matched\":2,\"belowCutoff\":1,\"unreadable\":0}"));
     try std.testing.expect(std.mem.indexOf(u8, json, "\"total\"") == null);
 }
 
@@ -7942,7 +7939,7 @@ test "semanticSearchSummaries returns no rows when nothing is summarized" {
     var writer = std.Io.Writer.fixed(&output);
     const query = [_]f32{ 1.0, 0.0 };
     try store.semanticSearchSummaries(&query, null, 5, &writer);
-    try std.testing.expectEqualStrings("{\"entries\":[]}", writer.buffered());
+    try std.testing.expectEqualStrings("{\"entries\":[],\"matched\":0,\"belowCutoff\":0,\"unreadable\":0}", writer.buffered());
 }
 
 test "semanticSearchSummaries keeps to entries dated inside the range" {
@@ -7961,7 +7958,7 @@ test "semanticSearchSummaries keeps to entries dated inside the range" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"id\":1,") == null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"id\":2,") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"id\":3,") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "],\"matched\":2,\"belowCutoff\":0,\"total\":2,\"unsummarized\":0}") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "],\"matched\":2,\"belowCutoff\":0,\"unreadable\":0,\"total\":2,\"unsummarized\":0}") != null);
 }
 
 test "semanticSearchSummaries counts what the cutoff dropped and what has no summary" {
@@ -7978,7 +7975,7 @@ test "semanticSearchSummaries counts what the cutoff dropped and what has no sum
     const range = DateRange.parse("2026-08-01", "2026-08-31").?;
     try store.semanticSearchSummaries(&near, range, 5, &writer);
     const json = writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, json, "],\"matched\":1,\"belowCutoff\":1,\"total\":3,\"unsummarized\":1}") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "],\"matched\":1,\"belowCutoff\":1,\"unreadable\":0,\"total\":3,\"unsummarized\":1}") != null);
 }
 
 test "semanticSearchSummaries names the nearest dates when the range holds no entries" {
@@ -7990,7 +7987,7 @@ test "semanticSearchSummaries names the nearest dates when the range holds no en
     var writer = std.Io.Writer.fixed(&after_all);
     try store.semanticSearchSummaries(&vec, DateRange.parse("2026-09-01", "2026-09-30").?, 5, &writer);
     try std.testing.expectEqualStrings(
-        "{\"entries\":[],\"matched\":0,\"belowCutoff\":0,\"total\":0,\"unsummarized\":0,\"nearest\":{\"before\":\"2026-08-31\",\"after\":null}}",
+        "{\"entries\":[],\"matched\":0,\"belowCutoff\":0,\"unreadable\":0,\"total\":0,\"unsummarized\":0,\"nearest\":{\"before\":\"2026-08-31\",\"after\":null}}",
         writer.buffered(),
     );
 
@@ -8040,7 +8037,7 @@ test "listEntriesInRange stays inside the range" {
     try std.testing.expect(std.mem.endsWith(u8, json, "],\"total\":1}"));
 }
 
-test "listEntriesInRange spreads a long range evenly" {
+test "listEntriesInRange picks evenly from the entries in a long range" {
     var store = try testEmptyStore();
     defer store.deinit();
     for (1..11) |day| {
@@ -8091,22 +8088,22 @@ test "listEntriesInRange reads encrypted summaries" {
     try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "A walk in the fog.") != null);
 }
 
-test "listSnippet collapses whitespace and cuts on a character boundary" {
+test "a list snippet collapses whitespace and cuts on a character boundary" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
 
-    try std.testing.expectEqualStrings("a b c", try listSnippet(a, "  a \n\n b\t c  "));
-    try std.testing.expectEqualStrings("", try listSnippet(a, " \n "));
+    try std.testing.expectEqualStrings("a b c", try homeSnippet(a, "  a \n\n b\t c  ", list_snippet_window));
+    try std.testing.expectEqualStrings("", try homeSnippet(a, " \n ", list_snippet_window));
 
     // Two-byte characters make the window land mid-character.
     const long = "é" ** 300;
-    const cut = try listSnippet(a, long);
+    const cut = try homeSnippet(a, long, list_snippet_window);
     try std.testing.expect(std.unicode.utf8ValidateSlice(cut));
     try std.testing.expect(std.mem.endsWith(u8, cut, excerpt_ellipsis));
     try std.testing.expect(cut.len <= list_snippet_window + excerpt_ellipsis.len);
 
-    const short = try listSnippet(a, "Short text.");
+    const short = try homeSnippet(a, "Short text.", list_snippet_window);
     try std.testing.expectEqualStrings("Short text.", short);
 }
 
@@ -8130,6 +8127,55 @@ test "DateRange.parse accepts one day and rejects reversed or malformed dates" {
     try std.testing.expect(DateRange.parse("2026-03-02", "2026-03-01") == null);
     try std.testing.expect(DateRange.parse("2026-3-1", "2026-03-01") == null);
     try std.testing.expect(DateRange.parse("2026-03-01", "") == null);
+}
+
+test "DateRange.parse rejects dates that are not on the calendar" {
+    const good = "2026-03-01";
+    for ([_][]const u8{ "2026-13-01", "2026-00-10", "2026-02-30", "2026-02-29", "2026-04-31", "2026-01-00", "2026-01-32", "2026-99-99" }) |bad| {
+        try std.testing.expect(DateRange.parse(bad, "2026-12-31") == null);
+        try std.testing.expect(DateRange.parse(good, bad) == null);
+    }
+    try std.testing.expect(DateRange.parse("2028-02-29", "2028-02-29") != null);
+    try std.testing.expect(DateRange.parse("2026-01-31", "2026-12-31") != null);
+}
+
+test "semanticSearchSummaries counts summaries it cannot compare" {
+    var store = try testStore();
+    defer store.deinit();
+    const near = [_]f32{ 1.0, 0.0, 0.0 };
+    // An earlier embedding model left this vector a different length.
+    const short = [_]f32{ 1.0, 0.0 };
+    try store.replaceSummary(1, "Walked without headphones.", &near, "qwen3:8b", "nomic-embed-text:v1.5");
+    try store.replaceSummary(2, "Building Sage on this machine.", &short, "qwen3:8b", "old-embed");
+    // A blob that is not a whole number of floats.
+    const outcome = store.db.exec(&.{.{
+        .sql = "INSERT INTO entry_summary (entry_id, summary, embedding, model, embed_model) VALUES (3, 'A quiet evening in.', x'00', 'm', 'e');",
+    }});
+    try std.testing.expect(outcome == .ok);
+
+    var ranged: [8192]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&ranged);
+    const range = DateRange.parse("2026-08-01", "2026-08-31").?;
+    try store.semanticSearchSummaries(&near, range, 5, &writer);
+    try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "],\"matched\":1,\"belowCutoff\":0,\"unreadable\":2,\"total\":3,\"unsummarized\":0}") != null);
+
+    var unranged: [8192]u8 = undefined;
+    writer = std.Io.Writer.fixed(&unranged);
+    try store.semanticSearchSummaries(&near, null, 5, &writer);
+    try std.testing.expect(std.mem.endsWith(u8, writer.buffered(), "],\"matched\":1,\"belowCutoff\":0,\"unreadable\":2}"));
+}
+
+test "semanticSearchSummaries without a range says when the cutoff dropped everything" {
+    var store = try testStore();
+    defer store.deinit();
+    const far = [_]f32{ 0.0, 1.0, 0.0 };
+    try store.replaceSummary(1, "Walked without headphones.", &far, "qwen3:8b", "nomic-embed-text:v1.5");
+
+    var output: [8192]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&output);
+    const query = [_]f32{ 1.0, 0.0, 0.0 };
+    try store.semanticSearchSummaries(&query, null, 5, &writer);
+    try std.testing.expectEqualStrings("{\"entries\":[],\"matched\":0,\"belowCutoff\":1,\"unreadable\":0}", writer.buffered());
 }
 
 test "encrypted replaceSummary stores ciphertext" {

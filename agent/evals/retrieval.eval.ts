@@ -1,7 +1,7 @@
 import { defineEval } from "eve/evals";
 import { equals } from "eve/evals/expect";
 
-import { resolveWhen, todayFromEnv } from "../agent/lib/when.ts";
+import { rangeFromWhen, todayFromEnv } from "../agent/lib/when.ts";
 import {
   journalIdFor,
   loadAllCases,
@@ -14,14 +14,7 @@ import { skipEval } from "./lib/skip.ts";
 // A case that sets `when` is read the way the tool reads it, against the
 // fixed day the run script sets in SAGE_TODAY.
 function rangeFor(when: string | undefined) {
-  if (when === undefined) {
-    return;
-  }
-  const resolved = resolveWhen(when, todayFromEnv());
-  if ("error" in resolved) {
-    throw new Error(resolved.error);
-  }
-  return resolved.range;
+  return rangeFromWhen(when ?? "", todayFromEnv()) ?? undefined;
 }
 
 const cases = await loadAllCases();

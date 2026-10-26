@@ -417,39 +417,69 @@ fn handleConnection(self: *Server, stream: std.Io.net.Stream) void {
     stream.close(self.io);
 }
 
-fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, target: SearchTarget) void {
-    var used: usize = 0;
-    var string_buf: [8192]u8 = undefined;
+/// What a search request asks for.
+const SearchPlan = union(enum) {
+    bad_request,
+    /// A date range and no query: list the entries in the range.
+    list: struct { range: journal.DateRange, limit: i64 },
+    /// A query to rank by meaning, inside `range` when there is one. `query`
+    /// points into the buffer given to `planSearch`.
+    rank: struct { query: []const u8, range: ?journal.DateRange, limit: i64 },
+};
+
+fn planSearch(body: []const u8, target: SearchTarget, string_buf: []u8) SearchPlan {
     // Only the journal search takes a date range.
     const range: ?journal.DateRange = if (target == .journal) switch (journal.jsonDateRange(body)) {
         .absent => null,
         .range => |found| found,
-        .invalid => {
+        .invalid => return .bad_request,
+    } else null;
+    var used: usize = 0;
+    // A query that is there but is not text, or is too long, is a bad
+    // request. It is not the same as no query.
+    const query = if (journal.jsonHas(body, "query"))
+        (journal.jsonString(body, "query", string_buf, &used) orelse return .bad_request)
+    else
+        "";
+    const requested = journal.jsonI64(body, "limit") orelse 5;
+    const limit = if (requested < 1) 5 else requested;
+    if (query.len == 0) {
+        const bounded = range orelse return .bad_request;
+        return .{ .list = .{ .range = bounded, .limit = limit } };
+    }
+    return .{ .rank = .{ .query = query, .range = range, .limit = limit } };
+}
+
+fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, target: SearchTarget) void {
+    var string_buf: [8192]u8 = undefined;
+    switch (planSearch(body, target, &string_buf)) {
+        .bad_request => {
             replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
             stream.close(self.io);
-            return;
         },
-    } else null;
-    const query = journal.jsonString(body, "query", &string_buf, &used) orelse "";
-    const limit = journal.jsonI64(body, "limit") orelse 5;
-    if (query.len == 0) {
         // A date range alone lists the entries in it, with no embedding.
-        if (range) |bounded| {
-            enqueue(self, stream, .{
-                .kind = .journal_range,
-                .stream = stream,
-                .limit = if (limit < 1) 5 else limit,
-                .range = bounded,
-            }) catch {
-                replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
-                stream.close(self.io);
-            };
-            return;
-        }
-        replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
-        stream.close(self.io);
-        return;
+        .list => |plan| enqueue(self, stream, .{
+            .kind = .journal_range,
+            .stream = stream,
+            .limit = plan.limit,
+            .range = plan.range,
+        }) catch {
+            replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+            stream.close(self.io);
+        },
+        .rank => |plan| enqueueRanked(self, stream, body, plan.query, plan.range, plan.limit, target),
     }
+}
+
+fn enqueueRanked(
+    self: *Server,
+    stream: std.Io.net.Stream,
+    body: []const u8,
+    query: []const u8,
+    range: ?journal.DateRange,
+    limit: i64,
+    target: SearchTarget,
+) void {
     const provided = journal.jsonF32Array(body, "embedding", self.allocator) catch {
         replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
         stream.close(self.io);
@@ -472,7 +502,7 @@ fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, tar
         .kind = .search,
         .stream = stream,
         .query = owned_query,
-        .limit = if (limit < 1) 5 else limit,
+        .limit = limit,
         .target = target,
         .range = range,
     }) catch {
@@ -503,7 +533,7 @@ fn enqueueReadySearch(
         .kind = .search_ready,
         .stream = stream,
         .query = owned_query,
-        .limit = if (limit < 1) 5 else limit,
+        .limit = limit,
         .vectors = batch,
         .target = target,
         .range = range,
@@ -749,6 +779,82 @@ test "parseRequest reads a JSON POST body" {
     try std.testing.expectEqualStrings("/journal/search", parsed.path);
     try std.testing.expectEqualStrings("tok", parsed.token);
     try std.testing.expectEqualStrings("{\"query\":\"fog\"}", parsed.body);
+}
+
+const march = "\"from\":\"2026-03-01\",\"to\":\"2026-03-31\"";
+
+test "planSearch ranks a query, inside the dates when there are dates" {
+    var buf: [8192]u8 = undefined;
+
+    const plain = planSearch("{\"query\":\"fog\",\"limit\":3}", .journal, &buf).rank;
+    try std.testing.expectEqualStrings("fog", plain.query);
+    try std.testing.expect(plain.range == null);
+    try std.testing.expectEqual(@as(i64, 3), plain.limit);
+
+    const dated = planSearch("{\"query\":\"fog\"," ++ march ++ "}", .journal, &buf).rank;
+    try std.testing.expectEqualStrings("fog", dated.query);
+    try std.testing.expectEqualStrings("2026-03-01", &dated.range.?.from);
+    try std.testing.expectEqualStrings("2026-03-31", &dated.range.?.to);
+    try std.testing.expectEqual(@as(i64, 5), dated.limit);
+
+    // A limit under 1 falls back to the default.
+    try std.testing.expectEqual(@as(i64, 5), planSearch("{\"query\":\"fog\",\"limit\":0}", .journal, &buf).rank.limit);
+}
+
+test "planSearch lists the entries in a range when there is no query" {
+    var buf: [8192]u8 = undefined;
+
+    const listed = planSearch("{" ++ march ++ ",\"limit\":10}", .journal, &buf).list;
+    try std.testing.expectEqualStrings("2026-03-01", &listed.range.from);
+    try std.testing.expectEqual(@as(i64, 10), listed.limit);
+
+    try std.testing.expectEqual(@as(i64, 5), planSearch("{" ++ march ++ ",\"limit\":-2}", .journal, &buf).list.limit);
+    // An empty query is no query.
+    try std.testing.expect(planSearch("{\"query\":\"\"," ++ march ++ "}", .journal, &buf) == .list);
+}
+
+test "planSearch refuses a request it cannot read" {
+    var buf: [8192]u8 = undefined;
+
+    try std.testing.expect(planSearch("{}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"limit\":3}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"query\":\"\"}", .journal, &buf) == .bad_request);
+    // Half a range, a reversed range, and dates that are not on the calendar.
+    try std.testing.expect(planSearch("{\"query\":\"fog\",\"from\":\"2026-03-01\"}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"from\":\"2026-03-31\",\"to\":\"2026-03-01\"}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"from\":\"2026-02-30\",\"to\":\"2026-03-01\"}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"from\":\"2026-13-45\",\"to\":\"2026-14-99\"}", .journal, &buf) == .bad_request);
+}
+
+test "planSearch does not read a query that is not text as no query" {
+    var buf: [8192]u8 = undefined;
+
+    // With a range, these used to fall through to a listing.
+    try std.testing.expect(planSearch("{\"query\":5," ++ march ++ "}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"query\":null," ++ march ++ "}", .journal, &buf) == .bad_request);
+    try std.testing.expect(planSearch("{\"query\":[\"fog\"]," ++ march ++ "}", .journal, &buf) == .bad_request);
+
+    // A query longer than the buffer cannot be decoded.
+    var body: std.ArrayList(u8) = .empty;
+    defer body.deinit(std.testing.allocator);
+    try body.appendSlice(std.testing.allocator, "{\"query\":\"");
+    try body.appendNTimes(std.testing.allocator, 'a', 9000);
+    try body.appendSlice(std.testing.allocator, "\"," ++ march ++ "}");
+    try std.testing.expect(planSearch(body.items, .journal, &buf) == .bad_request);
+}
+
+test "planSearch gives memory searches no date range" {
+    var buf: [8192]u8 = undefined;
+
+    for ([_]SearchTarget{ .facts, .events }) |target| {
+        const ranked = planSearch("{\"query\":\"Sam\"," ++ march ++ "}", target, &buf).rank;
+        try std.testing.expectEqualStrings("Sam", ranked.query);
+        try std.testing.expect(ranked.range == null);
+        // Dates alone are not a request for them.
+        try std.testing.expect(planSearch("{" ++ march ++ "}", target, &buf) == .bad_request);
+        // And a bad range is not their business.
+        try std.testing.expect(planSearch("{\"query\":\"Sam\",\"from\":\"soon\",\"to\":\"later\"}", target, &buf) == .rank);
+    }
 }
 
 test "parseRequest reads a search body with an embedding" {

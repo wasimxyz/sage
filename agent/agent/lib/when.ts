@@ -27,22 +27,33 @@ const daysPerWeek = 7;
 const monthsPerYear = 12;
 const oldestYear = 1000;
 const largestCount = 1000;
+// Back far enough to pass a skipped leap year (1900, 2100) for a leap day.
+const leapDaySearchYears = 8;
 
 const digitsPattern = /^\d+$/;
 const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 const isoPartsPattern = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/;
 const rangeSeparatorPattern = /\s*\.\.\s*|\s+to\s+/;
 const whitespacePattern = /\s+/g;
-const trailingPunctuationPattern = /[.,!?;:]+$/;
-const leadingWordsPattern = /^(?:(?:in|on|during|from|over|within)\s+)+/;
+const leadingQuotesPattern = /^[\s"'`\u201c\u201d\u2018\u2019]+/;
+const trailingPunctuationPattern = /[\s.,!?;:"'`\u201c\u201d\u2018\u2019]+$/;
+const openRangePattern = /\d\.\.\s*$/;
+const leadingWordsPattern =
+  /^(?:(?:in|on|during|from|over|within|earlier)\s+)+/;
+const theLastPattern = /^the\s+last\s+(?=(?:day|week|month|year)s?$)/;
 const leadingArticlePattern = /^the\s+/;
 const couplePattern = /\b(?:a\s+)?couple(?:\s+of)?\b/g;
 const pastPattern = /^(?:this\s+)?past\s+(?:(\S+)\s+)?(day|week|month|year)s?$/;
 const lastCountPattern = /^last\s+(\S+)\s+(day|week|month|year)s?$/;
 const agoPattern = /^(\S+)\s+(day|week|month|year)s?\s+ago$/;
-const monthPattern = /^(last\s+)?([a-z]+)(?:\s+(?:of\s+)?(\d{4}))?$/;
+const monthPattern = /^(last\s+)?([a-z]+)(?:,?\s+(?:of\s+)?(\d{4}))?$/;
+const monthDayPattern =
+  /^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/;
+const dayMonthPattern =
+  /^(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]+)(?:,?\s+(\d{4}))?$/;
 const seasonPattern =
-  /^(last\s+)?(spring|summer|fall|autumn|winter)(?:\s+(?:of\s+)?(\d{4}))?$/;
+  /^(?:(last\s+)|this\s+(?:past\s+)?)?(spring|summer|fall|autumn|winter)(?:,?\s+(?:of\s+)?(\d{4}))?$/;
+const sincePattern = /^since\s+(.+)$/;
 const weekdayPattern = /^(?:last\s+)?([a-z]+)$/;
 
 const monthNumbers: Record<string, number> = {
@@ -106,6 +117,7 @@ const countWords: Record<string, number> = {
   an: 1,
   eight: 8,
   eleven: 11,
+  few: 3,
   five: 5,
   four: 4,
   nine: 9,
@@ -185,6 +197,16 @@ function singleDay(day: number): Span {
   return { from: day, to: day };
 }
 
+function isRealDate(year: number, month: number, date: number): boolean {
+  return (
+    year >= oldestYear &&
+    month >= 1 &&
+    month <= monthsPerYear &&
+    date >= 1 &&
+    date <= daysInMonth(year, month)
+  );
+}
+
 function parseDay(text: string): number | null {
   const match = isoDatePattern.exec(text);
   if (match === null) {
@@ -193,16 +215,7 @@ function parseDay(text: string): number | null {
   const year = Number(match[1]);
   const month = Number(match[2]);
   const date = Number(match[3]);
-  if (
-    year < oldestYear ||
-    month < 1 ||
-    month > monthsPerYear ||
-    date < 1 ||
-    date > daysInMonth(year, month)
-  ) {
-    return null;
-  }
-  return dayNumber(year, month, date);
+  return isRealDate(year, month, date) ? dayNumber(year, month, date) : null;
 }
 
 function parseCount(token: string | undefined): number | null {
@@ -218,15 +231,30 @@ function parseCount(token: string | undefined): number | null {
   return count;
 }
 
+// "the last week" is the 7 days up to now, like "past week". Without "the",
+// "last week" is the calendar week before this one.
 function normalize(text: string): string {
   return text
     .toLowerCase()
-    .trim()
-    .replace(whitespacePattern, " ")
+    .replace(leadingQuotesPattern, "")
     .replace(trailingPunctuationPattern, "")
+    .replace(whitespacePattern, " ")
     .replace(leadingWordsPattern, "")
+    .replace(theLastPattern, "past ")
     .replace(leadingArticlePattern, "")
     .replace(couplePattern, "2");
+}
+
+// The days of a span that have come, or null when none has.
+function untilToday(span: Span, today: number): Span | null {
+  return span.from > today
+    ? null
+    : { from: span.from, to: Math.min(span.to, today) };
+}
+
+// Saturday and Sunday of the week that starts on `monday`.
+function weekendOf(monday: number): Span {
+  return { from: monday + 5, to: monday + 6 };
 }
 
 function namedSpan(phrase: string, today: number): Span | null {
@@ -245,6 +273,16 @@ function namedSpan(phrase: string, today: number): Span | null {
       return { from: weekStart(today), to: today };
     case "last week":
       return { from: weekStart(today) - daysPerWeek, to: weekStart(today) - 1 };
+    case "last weekend":
+      return weekendOf(weekStart(today) - daysPerWeek);
+    case "this weekend":
+      return untilToday(weekendOf(weekStart(today)), today);
+    case "this past weekend":
+    case "past weekend":
+      return (
+        untilToday(weekendOf(weekStart(today)), today) ??
+        weekendOf(weekStart(today) - daysPerWeek)
+      );
     case "this month":
       return { from: dayNumber(year, month, 1), to: today };
     case "last month":
@@ -333,12 +371,54 @@ function monthNameSpan(phrase: string, today: number): Span | null {
     return null;
   }
   if (match[3] !== undefined) {
-    return monthSpan(Number(match[3]), month);
+    const year = Number(match[3]);
+    return year < oldestYear ? null : monthSpan(year, month);
   }
   const now = parts(today);
   const strict = match[1] !== undefined;
   const behind = strict ? month >= now.month : month > now.month;
   return monthSpan(behind ? now.year - 1 : now.year, month);
+}
+
+// "march 3" is the latest March 3 that has come, and a year in the phrase
+// wins.
+function datedSpan(
+  monthToken: string | undefined,
+  dayToken: string | undefined,
+  yearToken: string | undefined,
+  today: number
+): Span | null {
+  const month = lookup(monthNumbers, monthToken);
+  if (month === undefined) {
+    return null;
+  }
+  const date = Number(dayToken);
+  if (yearToken !== undefined) {
+    const year = Number(yearToken);
+    return isRealDate(year, month, date)
+      ? singleDay(dayNumber(year, month, date))
+      : null;
+  }
+  const thisYear = parts(today).year;
+  for (let year = thisYear; year > thisYear - leapDaySearchYears; year -= 1) {
+    if (
+      isRealDate(year, month, date) &&
+      dayNumber(year, month, date) <= today
+    ) {
+      return singleDay(dayNumber(year, month, date));
+    }
+  }
+  return null;
+}
+
+function monthDaySpan(phrase: string, today: number): Span | null {
+  const match = monthDayPattern.exec(phrase);
+  return match === null ? null : datedSpan(match[1], match[2], match[3], today);
+}
+
+function dayMonthSpan(phrase: string, today: number): Span | null {
+  const match = dayMonthPattern.exec(phrase);
+  return match === null ? null : datedSpan(match[2], match[1], match[3], today);
 }
 
 // Winter runs from December into the next year and belongs to the year it
@@ -359,7 +439,8 @@ function seasonSpan(phrase: string, today: number): Span | null {
   }
   const season = match[2] as Season;
   if (match[3] !== undefined) {
-    return seasonYearSpan(season, Number(match[3]));
+    const year = Number(match[3]);
+    return year < oldestYear ? null : seasonYearSpan(season, year);
   }
   const strict = match[1] !== undefined;
   const thisYear = parts(today).year;
@@ -402,10 +483,9 @@ function isoSpan(text: string): Span | null {
     return monthSpan(year, month);
   }
   const date = Number(match[3]);
-  if (date < 1 || date > daysInMonth(year, month)) {
-    return null;
-  }
-  return singleDay(dayNumber(year, month, date));
+  return isRealDate(year, month, date)
+    ? singleDay(dayNumber(year, month, date))
+    : null;
 }
 
 function isoRangeSpan(phrase: string): Span | null {
@@ -424,16 +504,46 @@ function isoRangeSpan(phrase: string): Span | null {
   return { from: first.from, to: second.to };
 }
 
-const matchers: Matcher[] = [
+const phraseMatchers: Matcher[] = [
   namedSpan,
   pastSpan,
   lastCountSpan,
   agoSpan,
   seasonSpan,
   monthNameSpan,
+  monthDaySpan,
+  dayMonthSpan,
   weekdaySpan,
   (phrase) => isoRangeSpan(phrase),
 ];
+
+function firstSpan(
+  phrase: string,
+  today: number,
+  candidates: Matcher[]
+): Span | null {
+  for (const matcher of candidates) {
+    const span = matcher(phrase, today);
+    if (span !== null) {
+      return span;
+    }
+  }
+  return null;
+}
+
+// "since March" runs from the start of March to today.
+function sinceSpan(phrase: string, today: number): Span | null {
+  const rest = sincePattern.exec(phrase)?.[1];
+  if (rest === undefined) {
+    return null;
+  }
+  const start = firstSpan(rest, today, phraseMatchers);
+  return start === null
+    ? null
+    : untilToday({ from: start.from, to: today }, today);
+}
+
+const matchers: Matcher[] = [...phraseMatchers, sinceSpan];
 
 // `today` is YYYY-MM-DD. The tool always reports the range it used, so a
 // phrase read the wrong way is easy to spot and correct.
@@ -443,24 +553,39 @@ export function resolveWhen(text: string, today: string): WhenResult {
   if (todayDay === null) {
     return { error: `Today's date "${today}" is not YYYY-MM-DD.` };
   }
-  const phrase = normalize(label);
-  for (const matcher of matchers) {
-    const span = matcher(phrase, todayDay);
-    if (span === null) {
-      continue;
-    }
-    if (span.from > span.to) {
-      return {
-        error: `"${label}" starts after it ends. Put the earlier date first.`,
-      };
-    }
+  // Checked on the label, because reading it would drop the trailing dots.
+  if (openRangePattern.test(label)) {
     return {
-      range: { from: dayString(span.from), label, to: dayString(span.to) },
+      error: `"${label}" is missing the date after "..". Pass when as YYYY-MM-DD..YYYY-MM-DD.`,
+    };
+  }
+  const span = firstSpan(normalize(label), todayDay, matchers);
+  if (span === null) {
+    return {
+      error: `Couldn't read "${label}" as a date. Pass when as YYYY-MM-DD..YYYY-MM-DD.`,
+    };
+  }
+  if (span.from > span.to) {
+    return {
+      error: `"${label}" starts after it ends. Put the earlier date first.`,
     };
   }
   return {
-    error: `Couldn't read "${label}" as a date. Pass when as YYYY-MM-DD..YYYY-MM-DD.`,
+    range: { from: dayString(span.from), label, to: dayString(span.to) },
   };
+}
+
+// The span for what the user said, or null when they named no time. Words
+// that can't be read throw, so the tool call fails with the reason.
+export function rangeFromWhen(text: string, today: string): DateRange | null {
+  if (text.trim().length === 0) {
+    return null;
+  }
+  const resolved = resolveWhen(text, today);
+  if ("error" in resolved) {
+    throw new Error(resolved.error);
+  }
+  return resolved.range;
 }
 
 function localDayString(now: Date): string {
