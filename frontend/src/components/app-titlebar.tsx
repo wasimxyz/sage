@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 export function AppTitlebar() {
   const { isMobile, open } = useSidebar();
   const rowRef = useTitlebarAlignment<HTMLElement>();
+  const sidebarCoversButton = open && !isMobile;
 
   return (
     <header
@@ -24,7 +25,13 @@ export function AppTitlebar() {
       <Hint label="Toggle sidebar" shortcut={shortcuts.toggleSidebar}>
         <SidebarTrigger
           aria-pressed={open}
-          className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent"
+          className={cn(
+            "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent",
+            // Home's cloud band sits under the button once the sidebar is out
+            // of the way, and the band is dark enough to need white.
+            sidebarCoversButton ||
+              "in-data-[titlebar=band]:text-white in-data-[titlebar=band]:hover:bg-white/15 in-data-[titlebar=band]:hover:text-white in-data-[titlebar=band]:focus-visible:ring-white/70"
+          )}
         />
       </Hint>
     </header>

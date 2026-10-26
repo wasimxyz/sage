@@ -28,7 +28,8 @@ const rowOpen = {
   overflow: "hidden",
   transitionEnd: { overflow: "visible" },
 } as const;
-const rowClassName =
+/** The button of a row. Home's rows reuse it, so every list reads the same. */
+export const listRowClassName =
   "flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
 
 function ListRowRoot({
@@ -78,7 +79,7 @@ function ListRowTrigger({
           aria-current={selected ? "true" : undefined}
           aria-keyshortcuts="Meta+Backspace"
           className={cn(
-            rowClassName,
+            listRowClassName,
             selected && "bg-foreground/10 hover:bg-foreground/10"
           )}
           onClick={onClick}

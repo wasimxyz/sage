@@ -36,9 +36,9 @@ Saving also marks the entry for the next [Dream](dream.md), which refreshes its 
 
 ## How dates read
 
-The entry list, Home, and the Chat list show recent days as Today, Yesterday, 3 days ago, or 1 week ago. A day two weeks back or earlier shows its weekday, such as Friday, Oct 2, and adds the year when it is not this year. Relative labels never show a weekday.
+The entry list and the Chat list show recent days as Today, Yesterday, 3 days ago, or 1 week ago. A day two weeks back or earlier shows its weekday, such as Friday, Oct 2, and adds the year when it is not this year. Relative labels never show a weekday.
 
-The editor shows the full date under the title, such as Friday, October 2, 2026, followed by when you last edited the entry. An open chat shows the day it last changed in lighter text next to its title, in the same full form. Memories use the same weekday in their Updated dates. The code is `frontend/src/lib/format-date.ts`.
+The editor shows the full date under the title, such as Friday, October 2, 2026, followed by when you last edited the entry. An open chat shows the day it last changed in lighter text next to its title, in the same full form. Memories use the same weekday in their Updated dates. The code is `frontend/src/lib/format-date.ts`. Home labels its rows its own way, as [The Home screen](#the-home-screen) explains.
 
 ## Importing Markdown
 
@@ -69,9 +69,29 @@ Chat finds entries a different way: it ranks entry summaries by meaning. [The ev
 
 ## The Home screen
 
-Sage opens on Home. Home shows the latest entry, plus entries and conversations from the last 14 days, through `home.feed`. The Continue writing card uses the same date and last-edited line as the editor. Snippets on Home are plain text.
+Sage opens on Home. Home shows a band of clouds, a row of squares for the month, and your recent entries and chats. The screen code is `frontend/src/components/home-screen.tsx`, and the date logic is `frontend/src/lib/home.ts`.
 
-Home and the Chat list reload when Dream finishes.
+Home has no command of its own for entries and chats. It reads the lists Sage loads at unlock. When Dream finishes, the chat list reloads, so new chat titles show up on Home.
+
+### The band
+
+The band holds today's date, a greeting, and two buttons: **New entry** and **New chat**. The greeting reads “Good morning.” from 5 AM to noon, “Good afternoon.” from noon to 5 PM, and “Good evening.” the rest of the day. The date, the greeting, and the month update at 5 AM, noon, 5 PM, and midnight, and again when you come back to the window after the Mac has slept.
+
+A line under the greeting reads A month ago today, you wrote “Title.” when you wrote an entry on the same day of last month. A **Reread** link opens it. With several entries on that day, Sage picks the newest. The line uses the saved title alone, and no model writes it. Home hides the line when there is no such entry, and when last month has no such day, as with March 31.
+
+The clouds come from the Sage website. `frontend/src/components/clouds.tsx` draws them on a canvas and lets them drift slowly, at about 12 frames a second. They hold still when Reduce motion is on, even if you turn it on while Sage is open, and they stop drawing while the window is hidden or the band is scrolled out of view. `frontend/src/index.css` sets the dot colors for light and dark. The lock screen draws the same clouds behind its card and holds them still.
+
+### The month row
+
+The row has one small square for each day of the month. A day with an entry is filled blue, today has an outline, and days still to come are empty outlines. Choosing a filled day opens its newest entry. Each square has a label, such as “October 19, entry written”. Home shows no streaks, counts, or scores.
+
+### Entries and chats
+
+Entries and chats appear together, newest first, under Today, This week, and Last week. A group with nothing in it is hidden. Each row shows an icon for its type and a title. It never shows text from the entry or the chat. The right side shows the time for Today, the weekday for This week, and a short date such as “Sat, Oct 17” for Last week. A chat belongs to the local day it last changed. Choosing a row, a day square, or Reread opens that entry or chat full screen, and the back arrow returns to the list beside it. Going to Home ends full screen, so **New entry** and **New chat** open beside their lists.
+
+A week starts on the first day of the week in System Settings > General > Language & Region. Sage reads it through `system.calendar`, and the week starts on Sunday if that fails.
+
+With no entries and no chats, the lists give way to “Your entries and chats will show up here.” When everything is older than last week, they give way to “Nothing from this week or last week. Older entries are in Journal, and older chats are in Chat.”
 
 ## Deleting entries
 
@@ -92,6 +112,6 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `journal.search`: text search over titles and bodies
 - `journal.importDialog` and `journal.readFile`: pick Markdown files and read them
 - `journal.exportDialog` and `journal.export`: pick a folder and write the export
-- `home.feed`: the entries and conversations for the Home screen
+- `system.calendar`: the first day of the week on this Mac, for Home
 - `embeddings.status`: whether Ollama is running and the embedding model is pulled
 - `embeddings.pending` and `embeddings.generate`: list entries that need embedding, and embed one

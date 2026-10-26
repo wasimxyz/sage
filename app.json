@@ -24,7 +24,6 @@
         "commands": [
             { "name": "journal.list", "origins": ["zero://app"] },
             { "name": "journal.get", "origins": ["zero://app"] },
-            { "name": "home.feed", "origins": ["zero://app"] },
             { "name": "journal.search", "origins": ["zero://app"] },
             { "name": "journal.save", "origins": ["zero://app"] },
             { "name": "journal.delete", "origins": ["zero://app"] },
@@ -82,6 +81,7 @@
             { "name": "ollama.pullCancel", "origins": ["zero://app"] },
             { "name": "ollama.delete", "origins": ["zero://app"] },
             { "name": "system.hardware", "origins": ["zero://app"] },
+            { "name": "system.calendar", "origins": ["zero://app"] },
             { "name": "onboarding.status", "origins": ["zero://app"] },
             { "name": "onboarding.save", "origins": ["zero://app"] },
             { "name": "onboarding.reminderShown", "origins": ["zero://app"] },
