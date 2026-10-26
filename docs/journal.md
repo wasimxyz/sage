@@ -75,11 +75,11 @@ Home has no command of its own for entries and chats. It reads the lists Sage lo
 
 ### The band
 
-The band holds today's date, a greeting, and two buttons: **New entry** and **New chat**. The greeting reads “Good morning.” from 5 AM to noon, “Good afternoon.” from noon to 5 PM, and “Good evening.” the rest of the day.
+The band holds today's date, a greeting, and two buttons: **New entry** and **New chat**. The greeting reads “Good morning.” from 5 AM to noon, “Good afternoon.” from noon to 5 PM, and “Good evening.” the rest of the day. The date, the greeting, and the month update at 5 AM, noon, 5 PM, and midnight, and again when you come back to the window after the Mac has slept.
 
 A line under the greeting reads A month ago today, you wrote “Title.” when you wrote an entry on the same day of last month. A **Reread** link opens it. With several entries on that day, Sage picks the newest. The line uses the saved title alone, and no model writes it. Home hides the line when there is no such entry, and when last month has no such day, as with March 31.
 
-The clouds come from the Sage website. `frontend/src/components/clouds.tsx` draws them on a canvas and lets them drift slowly, at about 12 frames a second. They hold still when Reduce motion is on, and they stop drawing while the window is hidden or the band is scrolled out of view. `frontend/src/index.css` sets the dot colors for light and dark. The lock screen draws the same clouds behind its card.
+The clouds come from the Sage website. `frontend/src/components/clouds.tsx` draws them on a canvas and lets them drift slowly, at about 12 frames a second. They hold still when Reduce motion is on, even if you turn it on while Sage is open, and they stop drawing while the window is hidden or the band is scrolled out of view. `frontend/src/index.css` sets the dot colors for light and dark. The lock screen draws the same clouds behind its card and holds them still.
 
 ### The month row
 
@@ -87,11 +87,11 @@ The row has one small square for each day of the month. A day with an entry is f
 
 ### Entries and chats
 
-Entries and chats appear together, newest first, under Today, This week, and Last week. A group with nothing in it is hidden. Each row shows an icon for its type and a title. It never shows text from the entry or the chat. The right side shows the time for Today, the weekday for This week, and a short date such as “Sat, Oct 17” for Last week. A chat belongs to the local day it last changed. Choosing a row, a day square, or Reread opens that entry or chat full screen, and the back arrow returns to the list beside it.
+Entries and chats appear together, newest first, under Today, This week, and Last week. A group with nothing in it is hidden. Each row shows an icon for its type and a title. It never shows text from the entry or the chat. The right side shows the time for Today, the weekday for This week, and a short date such as “Sat, Oct 17” for Last week. A chat belongs to the local day it last changed. Choosing a row, a day square, or Reread opens that entry or chat full screen, and the back arrow returns to the list beside it. Going to Home ends full screen, so **New entry** and **New chat** open beside their lists.
 
 A week starts on the first day of the week in System Settings > General > Language & Region. Sage reads it through `system.calendar`, and the week starts on Sunday if that fails.
 
-With no entries and no chats, the lists give way to “Your entries and chats will show up here.”
+With no entries and no chats, the lists give way to “Your entries and chats will show up here.” When everything is older than last week, they give way to “Nothing from this week or last week. Older entries are in Journal, and older chats are in Chat.”
 
 ## Deleting entries
 

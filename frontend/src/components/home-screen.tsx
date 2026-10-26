@@ -1,8 +1,10 @@
 import { MessageCircleIcon, NotebookTextIcon, PencilIcon } from "lucide-react";
 import {
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useState,
@@ -24,7 +26,6 @@ import { ProtectReminder } from "@/components/protect-reminder";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import { useHomeNow } from "@/hooks/use-home-now";
 import { useWeekStartsOn } from "@/hooks/use-week-starts-on";
 import { formatHomeHeadingDate } from "@/lib/format-date";
@@ -53,6 +54,13 @@ const groupTitles: readonly { group: HomeGroup; title: string }[] = [
 // Past the text, so the clouds never come up under it.
 const textClearancePx = 24;
 
+// Where the sidebar button ends, if the page cannot measure it.
+const sidebarButtonBottomPx = 40;
+
+// One square is 0.75 rem wide, and at most 0.5 rem apart.
+const squareRem = 0.75;
+const squareGapRem = 0.5;
+
 // White on the band, with the band's own color showing in the gap.
 const bandFocusClassName =
   "focus-visible:border-white focus-visible:ring-white/70";
@@ -69,6 +77,12 @@ function useOpenFullScreen() {
   const {
     actions: { setExpanded: setChatExpanded },
   } = useChatPanel();
+  // Full screen stays set after Journal or Chat is left. Coming back to Home
+  // ends it, so New entry and New chat open beside their lists.
+  useEffect(() => {
+    setExpanded(false);
+    setChatExpanded(false);
+  }, [setChatExpanded, setExpanded]);
   const openEntry = useCallback(
     (id: number) => {
       select(id)
@@ -99,37 +113,22 @@ function useOpenFullScreen() {
 
 export function HomeScreen() {
   const { openChat, openEntry } = useOpenFullScreen();
+  // Rows waiting out their undo window are already out of both lists.
   const { entries, loadingList } = useJournalEntries();
   const {
     state: { conversations, listLoaded },
   } = useChat();
-  const hiddenEntries = useHiddenIds("entry");
   const weekStartsOn = useWeekStartsOn();
   const now = useHomeNow();
 
-  // Rows waiting out their undo window stay out of Home. Chats are already
-  // filtered by the chat provider.
-  const visibleEntries = useMemo(
-    () =>
-      hiddenEntries.size === 0
-        ? entries
-        : entries.filter((entry) => !hiddenEntries.has(entry.id)),
-    [entries, hiddenEntries]
-  );
   const loading = loadingList || !listLoaded || weekStartsOn === null;
-  const days = useMemo(
-    () => monthDays(visibleEntries, now),
-    [visibleEntries, now]
-  );
-  const monthAgo = useMemo(
-    () => monthAgoEntry(visibleEntries, now),
-    [visibleEntries, now]
-  );
+  const days = useMemo(() => monthDays(entries, now), [entries, now]);
+  const monthAgo = useMemo(() => monthAgoEntry(entries, now), [entries, now]);
   const groups = useMemo(
-    () => groupHomeItems(visibleEntries, conversations, now, weekStartsOn ?? 0),
-    [visibleEntries, conversations, now, weekStartsOn]
+    () => groupHomeItems(entries, conversations, now, weekStartsOn ?? 0),
+    [entries, conversations, now, weekStartsOn]
   );
-  const nothingYet = visibleEntries.length === 0 && conversations.length === 0;
+  const nothingYet = entries.length === 0 && conversations.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -197,20 +196,28 @@ function CloudBand({
     return () => observer.disconnect();
   }, []);
 
-  // The sidebar button sits over the band while the sidebar is closed and the
-  // band is at the top, and it needs white there.
-  const watchBandTop = useCallback((sentinel: HTMLDivElement | null) => {
+  // The sidebar button sits over the band while the sidebar is closed, and it
+  // needs white there. That lasts until the band's bottom edge scrolls up past
+  // the button, so the observer's top edge is the button's bottom edge.
+  const watchBandBottom = useCallback((sentinel: HTMLDivElement | null) => {
     if (!sentinel) {
       return;
     }
     const root = document.documentElement;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry?.isIntersecting) {
-        root.dataset.titlebar = "band";
-      } else {
-        root.removeAttribute("data-titlebar");
-      }
-    });
+    const button = document.querySelector("[data-sidebar='trigger']");
+    const buttonBottom = Math.ceil(
+      button?.getBoundingClientRect().bottom || sidebarButtonBottomPx
+    );
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          root.dataset.titlebar = "band";
+        } else {
+          root.removeAttribute("data-titlebar");
+        }
+      },
+      { rootMargin: `-${buttonBottom}px 0px 0px 0px` }
+    );
     observer.observe(sentinel);
     return () => {
       observer.disconnect();
@@ -245,16 +252,19 @@ function CloudBand({
         className="pointer-events-none absolute inset-0 size-full"
         clearUntil={clearUntil}
       />
+      {/* Above the text column, which covers the whole band and would take
+          every press meant for the window. Nothing the strip covers is a
+          control. */}
       <div
-        className="absolute inset-x-0 top-0 h-(--titlebar-height)"
+        className="absolute inset-x-0 top-0 z-10 h-(--titlebar-height)"
         data-slot="window-drag"
         onPointerDown={onTitlebarPointerDown}
       />
-      {/* A speck at the sidebar button's height. While it is on screen, the
-          band is under the button. */}
+      {/* A speck on the band's bottom edge. While it is below the sidebar
+          button, the band is under the button. */}
       <div
-        className="pointer-events-none absolute top-6.5 left-0 size-0.5"
-        ref={watchBandTop}
+        className="pointer-events-none absolute bottom-0 left-0 h-px w-0.5"
+        ref={watchBandBottom}
       />
       <div
         className={cn(
@@ -347,8 +357,18 @@ function MonthRow({
   onOpenEntry: (id: number) => void;
 }) {
   const labelId = useId();
+  const count = days.length;
+  // A month has 28 to 31 squares, so the wide row is as long as the month and
+  // its squares still end at the right edge of the column.
+  const monthVars = {
+    "--days": count,
+    "--month-width": `${count * squareRem + (count - 1) * squareGapRem}rem`,
+  } as CSSProperties;
   return (
-    <div className="@container flex items-start justify-between gap-x-3">
+    <div
+      className="@container flex items-start justify-between gap-x-3"
+      style={monthVars}
+    >
       {/* As tall as a square's cell, so the label lines up with the first row
           of squares when the row wraps. */}
       <span
@@ -358,14 +378,14 @@ function MonthRow({
         {monthLabel}
       </span>
       {loading ? (
-        <Skeleton className="mt-1.5 h-3 max-w-[612px] flex-1" />
+        <Skeleton className="mt-1.5 h-3 max-w-(--month-width) flex-1" />
       ) : (
         // The squares end at the right edge of the column. They fill one row
         // when it fits, spaced 8 px apart at most, and two aligned rows when it
         // does not.
         <fieldset
           aria-labelledby={labelId}
-          className="grid min-w-0 @md:max-w-[612px] flex-1 @md:grid-cols-[repeat(31,0.75rem)] grid-cols-[repeat(16,0.75rem)] justify-between"
+          className="grid min-w-0 @md:max-w-(--month-width) flex-1 @md:grid-cols-[repeat(var(--days),0.75rem)] grid-cols-[repeat(16,0.75rem)] justify-between"
         >
           {days.map((day) => (
             <DaySquare day={day} key={day.date} onOpenEntry={onOpenEntry} />
@@ -431,6 +451,14 @@ function HomeLists({
     return (
       <p className="text-base text-muted-foreground">
         Your entries and chats will show up here.
+      </p>
+    );
+  }
+  if (groupTitles.every(({ group }) => groups[group].length === 0)) {
+    return (
+      <p className="text-base text-muted-foreground">
+        Nothing from this week or last week. Older entries are in Journal, and
+        older chats are in Chat.
       </p>
     );
   }

@@ -143,7 +143,10 @@ export function LockScreen() {
         } as CSSProperties
       }
     >
-      <Clouds className="pointer-events-none absolute inset-0 size-full" />
+      <Clouds
+        className="pointer-events-none absolute inset-0 size-full"
+        still
+      />
       <header
         className="absolute inset-x-0 top-0 z-10 flex h-(--titlebar-height) shrink-0 flex-col"
         data-slot="window-titlebar"

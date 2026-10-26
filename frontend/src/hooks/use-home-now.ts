@@ -13,9 +13,25 @@ const turnSlackMs = 1000;
 export function useHomeNow(): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const wait = nextHomeChange(now).getTime() - Date.now() + turnSlackMs;
-    const timer = window.setTimeout(() => setNow(new Date()), wait);
-    return () => window.clearTimeout(timer);
+    const turn = nextHomeChange(now).getTime();
+    const timer = window.setTimeout(
+      () => setNow(new Date()),
+      turn - Date.now() + turnSlackMs
+    );
+    // A timer stands still while the Mac sleeps, so it can fire hours late.
+    // Coming back to the window reads the clock again.
+    const catchUp = () => {
+      if (!document.hidden && Date.now() >= turn) {
+        setNow(new Date());
+      }
+    };
+    document.addEventListener("visibilitychange", catchUp);
+    window.addEventListener("focus", catchUp);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", catchUp);
+      window.removeEventListener("focus", catchUp);
+    };
   }, [now]);
   return now;
 }
