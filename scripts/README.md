@@ -11,7 +11,7 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 `copy-agent-into-app.sh` copies the built Chat agent into `Sage.app`. Before it finishes, it runs the two scripts below, checks that the copied Chat channel still allows `zero://app` (the address the packaged app uses to call Chat), and signs the app again so the copy still opens.
 
 1. `refuse-packaged-dev-modules.sh` stops the copy when `typescript`, `@types`, or `@vercel/blob` is still installed in the copied agent.
-2. `fetch-node.sh` downloads Node.js 24.21.0 once into `third_party/node/`, checks that the download is the expected file, and copies the `node` program into the app.
+2. `fetch-node.sh` downloads Node.js 24.22.1 once into `third_party/node/`, checks that the download is the expected file, and copies the `node` program into the app.
 
 `make package-archive` runs two more scripts after that copy. Both read the version from the app’s `Info.plist` and work on the app that already contains the Chat agent and Node.js.
 
