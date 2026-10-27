@@ -70,7 +70,15 @@ pub fn jsonDateRange(payload: []const u8) RangeField {
 
 /// `YYYY-MM-DD` that names a day that exists, so `2026-02-30` is not one.
 fn isRealDate(value: []const u8) bool {
-    if (!isCalendarDate(value)) return false;
+    if (value.len != 10) return false;
+    // parseInt would take a sign or an underscore, so the digits are checked here.
+    for (value, 0..) |ch, index| {
+        if (index == 4 or index == 7) {
+            if (ch != '-') return false;
+        } else if (ch < '0' or ch > '9') {
+            return false;
+        }
+    }
     const year = std.fmt.parseInt(std.time.epoch.Year, value[0..4], 10) catch return false;
     const month = std.fmt.parseInt(u4, value[5..7], 10) catch return false;
     if (month < 1 or month > 12) return false;
@@ -1086,14 +1094,14 @@ pub const Store = struct {
         if (stored_summary.len > 0) {
             const summary = try self.decryptFromStorage(vault_mod.aad_entry_summary, stored_summary);
             defer self.allocator.free(summary);
-            return homeSnippet(a, summary, list_snippet_window);
+            return listSnippet(a, summary);
         }
         const loaded = try self.loadBody(id);
         defer self.allocator.free(loaded.body);
         defer self.allocator.free(loaded.format);
         const plain = try ollama.extractPlainText(self.allocator, loaded.body, loaded.format);
         defer self.allocator.free(plain);
-        return homeSnippet(a, plain, list_snippet_window);
+        return listSnippet(a, plain);
     }
 
     const RangeCounts = struct { total: i64, unsummarized: i64 };
@@ -5547,6 +5555,29 @@ fn excerptLeadN(text: []const u8, buf: []u8, window: usize) []const u8 {
     return writeExcerptWindow(text, 0, end, buf);
 }
 
+/// The start of `text` with each run of whitespace collapsed to one space,
+/// cut at `list_snippet_window` bytes on a character boundary.
+fn listSnippet(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var collapsed = std.ArrayList(u8).empty;
+    defer collapsed.deinit(allocator);
+    var pending_space = false;
+    for (text) |byte| {
+        if (std.ascii.isWhitespace(byte)) {
+            pending_space = collapsed.items.len > 0;
+            continue;
+        }
+        if (pending_space) {
+            try collapsed.append(allocator, ' ');
+            pending_space = false;
+        }
+        try collapsed.append(allocator, byte);
+        // A few bytes past the window is enough to know the text goes on.
+        if (collapsed.items.len >= list_snippet_window + excerpt_ellipsis.len) break;
+    }
+    var buf: [list_snippet_window + excerpt_ellipsis.len]u8 = undefined;
+    return allocator.dupe(u8, excerptLeadN(collapsed.items, &buf, list_snippet_window));
+}
+
 fn excerptFor(title: []const u8, body: []const u8, query: []const u8, buf: []u8) []const u8 {
     if (excerptAroundMatch(title, query, buf)) |text| return text;
     if (excerptAroundMatch(body, query, buf)) |text| return text;
@@ -7793,17 +7824,17 @@ test "a list snippet collapses whitespace and cuts on a character boundary" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    try std.testing.expectEqualStrings("a b c", try homeSnippet(a, "  a \n\n b\t c  ", list_snippet_window));
-    try std.testing.expectEqualStrings("", try homeSnippet(a, " \n ", list_snippet_window));
+    try std.testing.expectEqualStrings("a b c", try listSnippet(a, "  a \n\n b\t c  "));
+    try std.testing.expectEqualStrings("", try listSnippet(a, " \n "));
 
     // Two-byte characters make the window land mid-character.
     const long = "é" ** 300;
-    const cut = try homeSnippet(a, long, list_snippet_window);
+    const cut = try listSnippet(a, long);
     try std.testing.expect(std.unicode.utf8ValidateSlice(cut));
     try std.testing.expect(std.mem.endsWith(u8, cut, excerpt_ellipsis));
     try std.testing.expect(cut.len <= list_snippet_window + excerpt_ellipsis.len);
 
-    const short = try homeSnippet(a, "Short text.", list_snippet_window);
+    const short = try listSnippet(a, "Short text.");
     try std.testing.expectEqualStrings("Short text.", short);
 }
 
