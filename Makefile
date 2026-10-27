@@ -106,8 +106,9 @@ dev:
 reset-dev:
 	@YES="$(YES)" sh scripts/reset-dev.sh
 
-# Reset the dev app, then fill its journal with the entries in SEED and run
-# Dream. Never touches the packaged app. YES=1 skips the reset prompt.
+# Reset the dev app, then fill its journal with the entries in SEED, dated up
+# to this week. Dream does not run. Never touches the packaged app. YES=1 skips
+# the reset prompt.
 SEED ?= $(CURDIR)/scripts/seed
 seed-dev:
 	@YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" sh scripts/seed-dev.sh

@@ -60,21 +60,34 @@ When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change t
 
 ## Seeding the dev app
 
-`make seed-dev` runs `seed-dev.sh`. It resets the dev app, fills its journal with sample entries, and runs Dream, so the next `make dev` opens Home with entries and summaries. It never touches the packaged app's data, and Ollama keeps its app and models.
+`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` opens Home with entries. It never touches the packaged app's data, and Ollama keeps its app and models. It does not run Dream or start a chat. Run those by hand.
 
-The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format.
+The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format.
+
+### Seed dates
+
+The dates in the files are a baseline. The entries name weekdays, such as trivia on Thursdays, so the script moves every date by the same whole number of weeks:
+
+1. The latest date across the files is the baseline.
+2. The target is the last day on or before today that falls on the same weekday.
+3. Every date moves by the days from the baseline to the target.
+
+The newest entry lands in the last 7 days, on today if today is that weekday. Each entry keeps its weekday, and the gaps between entries stay the same. Dates are calendar days in your time zone. For example, if the newest file says Sunday 2026-10-25 and today is Wednesday 2026-11-11, every date moves 14 days, so 2026-07-30 becomes 2026-08-13.
+
+To change the entries, edit the files and leave the dates as a baseline. The script works out the move each time it runs.
+
+### Steps
 
 The script runs these steps in order and stops at the first failure:
 
-1. It checks that Ollama is running and has both models, which [First-launch setup](../docs/onboarding.md#step-1-local-ai) names. If not, it stops before it deletes anything.
-2. It reads every seed file. A file with no title, a bad date, or an empty body stops the script before it builds or deletes anything.
-3. It builds an automation binary under `zig-out/seed`, so `zig-out/bin/Sage` stays a normal build. `SAGE_MEMORY=true make seed-dev` builds it with memory on, to match `SAGE_MEMORY=true make dev`.
-4. It runs `reset-dev.sh`, which asks first and refuses while the dev app or the Chat agent is running. `make seed-dev YES=1` skips the question. If you say no, the script stops and nothing is deleted.
-5. It starts the binary as the dev app, from a scratch folder with a blank page. It gives the app the Chat sessions folder `make dev` uses, so the app can finish switching memory off. It saves each entry through `journal.save`, as `make eval` does, then runs Dream and waits for it to finish. It then asks Dream to start once more. Any item that run lists did not finish, and the script exits with the count.
-6. It stops Sage, then deletes the scratch folder and `zig-out/seed`.
+1. It reads every seed file and works out the dates. A file with no title, a bad date, or an empty body stops the script before it builds or deletes anything. It prints how far the dates move.
+2. It builds an automation binary under `zig-out/seed`, so `zig-out/bin/Sage` stays a normal build. `SAGE_MEMORY=true make seed-dev` builds it with memory on, to match `SAGE_MEMORY=true make dev`.
+3. It runs `reset-dev.sh`, which asks first and refuses while the dev app or the Chat agent is running. `make seed-dev YES=1` skips the question. If you say no, the script stops and nothing is deleted. Because of the reset, a second run replaces the entries instead of adding them again.
+4. It starts the binary as the dev app, from a scratch folder with a blank page. It gives the app the Chat sessions folder `make dev` uses, so the app can finish switching memory off. It saves each entry through `journal.save`, as `make eval` does. Word counts match what Import saves for the same file.
+5. It stops Sage, then deletes the scratch folder and `zig-out/seed`.
 
 The new journal has no lock and no encryption. It has entries, so the next `make dev` skips setup, as [First-launch setup](../docs/onboarding.md#when-setup-shows) explains. Run `make reset-dev` to see setup again.
 
-If Dream cannot start, or leaves an entry unfinished, the entries stay saved and the script exits with the reason. Start Dream from the sidebar later.
+When `make dev` loads the entries, Sage embeds them, as [The journal](../docs/journal.md#writing-and-saving) explains. Start Dream from the sidebar to write summaries and memories.
 
-`make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files parse and that `--check` names a bad file.
+`make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files parse and that `--check` names a bad file, and `agent/scripts/seed-dates.test.ts`, which checks the date move.
