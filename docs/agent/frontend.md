@@ -92,6 +92,18 @@ Choosing a hit opens it:
 
 A reopened conversation waits for the token before it resumes the stream. After you send, Chat shows a pulsing leaf where the reply will start. The first text, thinking, or tool row replaces it.
 
+## Tool rows
+
+When the model searches the journal or reads an entry, Chat draws one row for the step. A row stays closed until you click it. While the step runs, its label shimmers and there is nothing to open.
+
+A search row opens to a card. The first line says what the model searched for: the words in quotes, the days when it searched by time, or both. Each entry it found follows, with its title and a short date such as “Sun, Sep 27”. A search with no matches says “No matching entries”. The note the model reads about its results stays out of the card.
+
+Reads that come one after the other share one row, such as “Read 3 entries”. Thinking or text between two reads starts a new row. An entry the model reads twice shows once. Click an entry to open it in the expanded editor.
+
+A failed step shows its error as one sentence inside the row. A failed read in a group shows as “Could not read 1 entry”. Other tools, such as `facts__search_memories`, show their parameters and result as plain text.
+
+`frontend/src/lib/chat/assistant-runs.ts` decides which parts share a row, and `frontend/src/components/chat/journal-tool-cards.tsx` draws the cards.
+
 ## When the screen saves
 
 Saving happens in the lifecycle callbacks, never in the middle of a stream:

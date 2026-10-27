@@ -1,33 +1,34 @@
-import { Markdown, MarkdownManager } from "@tiptap/markdown";
-import type { JSONContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { formatShortEntryDate, parseCalendarDate } from "../format-date.ts";
 
-import { collapseWhitespace, oneLinePlainText } from "../journal-plain-text.ts";
-
-/** How much of an entry the Chat card shows before the ellipsis. */
-export const journalPreviewChars = 300;
-
-const extensions = [StarterKit, Markdown];
-const markdownManager = new MarkdownManager({ extensions });
+const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface JournalToolSearchHit {
   date: string;
   id: number;
-  snippet: string;
   title: string;
 }
 
 export interface JournalToolEntry {
-  body: string;
-  bodyFormat: "plain" | "markdown" | "tiptap";
   date: string;
   id: number;
   title: string;
 }
 
-export type JournalBodyContent =
-  | { kind: "markdown"; text: string }
-  | { kind: "plain"; text: string };
+export interface JournalSearchRange {
+  from: string;
+  to: string;
+}
+
+/**
+ * The first row of a search card. `query` is the words searched for, which the
+ * row sets apart. The rest is plain text, so the dates read like the words
+ * around them: `lead` comes before the query and `rest` after it.
+ */
+export interface JournalSearchSummary {
+  lead: string;
+  query: string | null;
+  rest: string;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -37,114 +38,102 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+function isCalendarDate(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    calendarDate.test(value) &&
+    parseCalendarDate(value) !== null
+  );
+}
+
+/** What the user searched for, or null when the search had no words. */
 export function journalSearchQuery(input: unknown): string | null {
   if (!isRecord(input) || typeof input.query !== "string") {
     return null;
   }
-  return input.query;
+  const query = input.query.trim();
+  return query.length > 0 ? query : null;
 }
 
+/**
+ * The entries a search found. A search by meaning comes back as a list. A
+ * search with dates, or one that has a note for the model, comes back as an
+ * object with the list under `entries`.
+ */
 export function journalSearchHits(
   output: unknown
 ): JournalToolSearchHit[] | null {
-  if (!Array.isArray(output)) {
+  const list = isRecord(output) ? output.entries : output;
+  if (!Array.isArray(list)) {
     return null;
   }
 
   const hits: JournalToolSearchHit[] = [];
-  for (const item of output) {
-    if (!isRecord(item)) {
-      return null;
-    }
+  for (const item of list) {
     if (
-      !isPositiveInteger(item.id) ||
-      typeof item.title !== "string" ||
-      typeof item.date !== "string" ||
-      typeof item.snippet !== "string"
+      !(
+        isRecord(item) &&
+        isPositiveInteger(item.id) &&
+        typeof item.title === "string" &&
+        typeof item.date === "string"
+      )
     ) {
       return null;
     }
-    hits.push({
-      date: item.date,
-      id: item.id,
-      snippet: item.snippet,
-      title: item.title,
-    });
+    hits.push({ date: item.date, id: item.id, title: item.title });
   }
   return hits;
 }
 
-export function journalEntryOutput(output: unknown): JournalToolEntry | null {
-  if (!isRecord(output)) {
+/** The days a dated search covered, or null when it had no dates. */
+export function journalSearchRange(output: unknown): JournalSearchRange | null {
+  if (!(isRecord(output) && isRecord(output.range))) {
     return null;
   }
-  if (
-    !isPositiveInteger(output.id) ||
-    typeof output.title !== "string" ||
-    typeof output.date !== "string" ||
-    typeof output.body !== "string" ||
-    (output.bodyFormat !== "plain" &&
-      output.bodyFormat !== "markdown" &&
-      output.bodyFormat !== "tiptap")
-  ) {
-    return null;
+  const { from, to } = output.range;
+  return isCalendarDate(from) && isCalendarDate(to) ? { from, to } : null;
+}
+
+function rangeText(range: JournalSearchRange, now: Date): string {
+  const from = formatShortEntryDate(range.from, now);
+  if (range.from === range.to) {
+    return `on ${from}`;
   }
-  return {
-    body: output.body,
-    bodyFormat: output.bodyFormat,
-    date: output.date,
-    id: output.id,
-    title: output.title,
-  };
+  return `from ${from} to ${formatShortEntryDate(range.to, now)}`;
 }
 
 /**
- * The start of an entry as one line of plain text, cut at `limit` characters
- * with an ellipsis. Empty when the entry has no text.
+ * What the first row of a search card says: the words searched for and the
+ * days covered. Null when the search had neither.
  */
-export function journalEntryPreview(
-  content: JournalBodyContent,
-  limit = journalPreviewChars
-): string {
-  const text =
-    content.kind === "markdown"
-      ? oneLinePlainText(content.text)
-      : collapseWhitespace(content.text);
-  if (text.length <= limit) {
-    return text;
-  }
-  let end = limit;
-  // Keep a surrogate pair whole, so an emoji is not cut in half.
-  const last = text.charCodeAt(end - 1);
-  if (last >= 0xd8_00 && last <= 0xdb_ff) {
-    end -= 1;
-  }
-  return `${text.slice(0, end).trimEnd()}…`;
-}
-
-export function journalBodyContent(
-  entry: JournalToolEntry
-): JournalBodyContent | null {
-  if (entry.bodyFormat === "plain") {
-    return { kind: "plain", text: entry.body };
-  }
-  if (entry.bodyFormat === "markdown") {
-    return { kind: "markdown", text: entry.body };
-  }
-  if (entry.body.trim().length === 0) {
-    return { kind: "markdown", text: "" };
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(entry.body);
-    if (!isRecord(parsed) || typeof parsed.type !== "string") {
-      return null;
-    }
+export function journalSearchSummary(
+  query: string | null,
+  range: JournalSearchRange | null,
+  now = new Date()
+): JournalSearchSummary | null {
+  if (query !== null) {
     return {
-      kind: "markdown",
-      text: markdownManager.serialize(parsed as JSONContent),
+      lead: "Searched for ",
+      query: `“${query}”`,
+      rest: range === null ? "" : ` ${rangeText(range, now)}`,
     };
-  } catch {
+  }
+  if (range === null) {
     return null;
   }
+  return { lead: `Entries ${rangeText(range, now)}`, query: null, rest: "" };
+}
+
+export function journalEntryOutput(output: unknown): JournalToolEntry | null {
+  if (
+    !(
+      isRecord(output) &&
+      isPositiveInteger(output.id) &&
+      typeof output.title === "string" &&
+      typeof output.date === "string"
+    )
+  ) {
+    return null;
+  }
+  return { date: output.date, id: output.id, title: output.title };
 }

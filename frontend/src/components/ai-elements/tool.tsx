@@ -36,6 +36,7 @@ export const Tool = ({ className, ...props }: ToolProps) => (
 
 export type ToolHeaderProps = ComponentProps<typeof CollapsibleTrigger> & {
   isError?: boolean;
+  showChevron?: boolean;
   state: EveDynamicToolPart["state"];
   title?: string;
   toolName: string;
@@ -94,6 +95,7 @@ export const ToolHeader = ({
   children,
   className,
   isError,
+  showChevron = true,
   state,
   title,
   toolName,
@@ -120,7 +122,9 @@ export const ToolHeader = ({
           <span className="min-w-0 truncate font-sans text-sm">{label}</span>
         ))}
       {getStatusBadge(state, isError)}
-      <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-open/tool-trigger:rotate-180" />
+      {showChevron ? (
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-open/tool-trigger:rotate-180" />
+      ) : null}
     </CollapsibleTrigger>
   );
 };
