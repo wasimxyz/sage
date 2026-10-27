@@ -1,7 +1,8 @@
 #!/bin/sh
-# Reset the dev app, fill its journal with the entries in scripts/seed, and run
-# Dream. Only the dev app: the packaged app's data is never touched. Ollama and
-# its models stay.
+# Reset the dev app and fill its journal with the entries in scripts/seed,
+# moved by whole weeks so the newest is in the last 7 days. Only the dev app:
+# the packaged app's data is never touched. Ollama and its models stay. Dream
+# does not run, and no chats are made.
 #
 # The entries go in through the app's own bridge, because only the app opens
 # the database. So this builds a throwaway automation binary, starts it as the
@@ -33,20 +34,6 @@ esac
 
 for cmd in curl native node; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing $cmd."
-done
-
-# Fail on Ollama before anything is deleted. Sage matches model names by
-# prefix, so this does too.
-summary_model=${SAGE_SUMMARY_MODEL:-qwen3.5:9b}
-embed_model=${SAGE_EMBED_MODEL:-nomic-embed-text}
-tags=$(curl -sf --max-time 2 http://127.0.0.1:11434/api/tags) ||
-  fail "Ollama is not running at http://127.0.0.1:11434. Start it, then run make seed-dev again."
-tags=$(printf '%s' "$tags" | tr -d ' \n')
-for model in "$summary_model" "$embed_model"; do
-  case $tags in
-    *"\"name\":\"$model"*) ;;
-    *) fail "The model $model is not pulled. Run: ollama pull $model" ;;
-  esac
 done
 
 # Read the seed files before anything is built or deleted, so a bad file never
@@ -145,4 +132,4 @@ done
 SAGE_AUTOMATION_CWD="$work" SAGE_SEED_DIR="$seed_dir" \
   node --experimental-strip-types "$agent/scripts/seed-dev.ts"
 
-echo "Seeded the dev app. Run make dev to open it."
+echo "Seeded the dev app. Run make dev to open it, then start Dream from the sidebar."

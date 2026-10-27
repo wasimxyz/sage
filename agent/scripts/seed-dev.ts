@@ -1,28 +1,28 @@
-import {
-  errorMessage,
-  isDreamStartReady,
-  resultNumber,
-} from "../evals/lib/bridge.ts";
 import { loadEntryFiles } from "../evals/lib/dataset.ts";
 import {
-  type Automation,
   automationAt,
-  callBridge,
   saveJournalEntry,
   waitForAutomation,
-  waitForDream,
 } from "./automation.ts";
+import { localToday, moveToToday } from "./seed-dates.ts";
 
 // Drives a running automation build of Sage, as seed-dataset.ts does for
 // `make eval`. scripts/seed-dev.sh starts that build against the dev journal.
 // With --check it only reads the seed files, so the script can refuse a bad
-// file before it deletes anything.
+// file before it deletes anything. It saves the entries and stops: Dream and
+// Chat are left for you to run.
 
 async function main(): Promise<void> {
   const seedDir = requiredEnv("SAGE_SEED_DIR");
-  const entries = await loadEntryFiles(seedDir);
+  const { days, entries } = moveToToday(
+    await loadEntryFiles(seedDir),
+    localToday()
+  );
   if (process.argv.includes("--check")) {
     console.log(`${entries.length} seed entries in ${seedDir}`);
+    console.log(
+      `Dates move ${days} days, so the newest is ${newestDate(entries)}.`
+    );
     return;
   }
 
@@ -33,43 +33,13 @@ async function main(): Promise<void> {
     saveJournalEntry(automation, "seed", entry);
     console.log(`saved ${entry.date} ${entry.title}`);
   }
-
-  const total = startDream(automation, "seed-dream-start", "start");
-  if (total === 0) {
-    throw new Error("The entries are saved, but Dream had nothing to process.");
-  }
-  waitForDream(automation);
-
-  // A run ends the same way whether or not every item worked, and Dream clears
-  // its counts when it ends. An item that failed stays pending, so asking for
-  // another run lists exactly what is left.
-  const left = startDream(automation, "seed-dream-check", "finish");
-  if (left > 0) {
-    throw new Error(
-      `The entries are saved, but Dream left ${left} of ${entries.length} unfinished.`
-    );
-  }
 }
 
-function startDream(
-  automation: Automation,
-  id: string,
-  verb: "start" | "finish"
-): number {
-  const started = callBridge(
-    automation,
-    "dream.start",
-    {},
-    id,
-    isDreamStartReady
+function newestDate(entries: readonly { date: string }[]): string {
+  return entries.reduce(
+    (newest, entry) => (entry.date > newest ? entry.date : newest),
+    ""
   );
-  if (started.ok === false) {
-    const reason = errorMessage(started) ?? "dream.start failed.";
-    throw new Error(
-      `The entries are saved, but Dream did not ${verb}: ${reason}`
-    );
-  }
-  return resultNumber(started, "total");
 }
 
 function requiredEnv(name: string): string {
