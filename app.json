@@ -4,7 +4,7 @@
     "name": "Sage",
     "display_name": "Sage",
     "description": "An AI-native journal that uses local LLMs so that your private thoughts never leave your machine.",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "icons": ["assets/icon.svg"],
     "platforms": ["macos"],
     "permissions": [],
