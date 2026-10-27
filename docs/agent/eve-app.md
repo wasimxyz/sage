@@ -11,6 +11,7 @@ An eve agent is a directory of files, and `agent/agent/` follows that layout:
 - `instructions/profile.ts`: loads profile facts in a memory build
 - `instructions/user.ts`: loads extra instructions from Settings > Agent when a session starts
 - `instructions/memory.ts`: adds memory guidance in a memory build
+- `instructions/today.ts`: adds today’s date to every turn
 - `tools/`: one file per tool, `search_journal.ts` and `get_journal_entry.ts`
 - `memory/`: `facts.ts` and `episodic.ts`, which recall facts and dated events in a memory build. They only read. Dream and the Memories screen write.
 - `channels/eve.ts`: the HTTP channel the frontend talks to, with its token check
@@ -23,6 +24,8 @@ Shared code lives in `agent/agent/lib/`:
 - `local-models.ts`: checks the Ollama address and refuses cloud or missing models
 - `memory-feature.ts` and `memory-feature-state.ts`: ask Sage whether this build has memory on, and treat a failed request as off
 - `memory-text.ts`: picks the last user message, which memory recall searches with
+- `when.ts`: turns a phrase such as “last week” into a span of days, and reads today’s date
+- `search-result.ts`: adds the span, today’s date, and a plain-language note to a dated search
 
 ## Choosing the model for each request
 
@@ -50,10 +53,43 @@ Before each model call, the agent asks Ollama’s `/api/tags` about the model. I
 
 Two tools read the journal through Sage’s agent server:
 
-- **`search_journal`**: searches entry summaries by meaning. Each match has an id, title, date, score, and the summary as a snippet. Entries without a summary do not appear, and an empty result tells the model to suggest Dream in the sidebar.
+- **`search_journal`**: finds entries by meaning, by time, or both. Each entry has an id, title, date, and snippet. A search by meaning also returns a score. It ranks entry summaries, so an entry without one does not appear. An empty result with no `note` tells the model to suggest Dream in the sidebar.
 - **`get_journal_entry`**: reads one full entry by id
 
-In a memory build, the facts slot also adds **`facts__search_memories`**. It searches facts and dated events, and each result names its source with `sourceType` and `sourceId`. For an entry source, `get_journal_entry` reads the entry, and conversation sources have no fetch tool.
+A search by meaning leaves out summaries that score under 0.45 against the query. That number comes from `nomic-embed-text`, so another embedding model needs its own value (`min_summary_score` in `src/journal.zig`).
+
+### Searching by time
+
+`search_journal` takes an optional `when`: the user’s own words for a time, such as `last week`, `in March`, or `recently`. The tool turns those words into a span of days, so the model never does date math. The rules live in `lib/when.ts`:
+
+- Weeks run Monday to Sunday. `last week` is the week before this one. `past week` and `the last week` are the last 7 days. Months and years work the same way.
+- `recently` and `lately` mean the last 14 days. `a few` means 3, so `the last few days` is the last 3 days.
+- A month name with no year means the latest one that has started. `last March` means one that is over.
+- A month and a day, such as `March 3`, means the latest one that has come.
+- `last weekend` is the Saturday and Sunday of the week before this one. `this weekend` works once Saturday has come, and `this past weekend` always does.
+- `since March` runs from the start of March to today.
+- Seasons, weekdays, `3 weeks ago`, and `past 2 months` work too.
+- Dates always work: `2026-03`, `2026-03-14`, or `2026-03-01..2026-03-15`. A range needs a date on both sides.
+
+A phrase the tool can’t read returns an error that asks for `YYYY-MM-DD..YYYY-MM-DD`.
+
+Every dated result names the days it searched as `range`, and today’s date, so a wrong reading is easy to spot. What comes back depends on the arguments:
+
+- **`when` and `query`**: only entries dated in the span are ranked by meaning.
+- **`when` alone**: entries picked evenly from the ones in the span, oldest first, 10 by default. A stretch with many entries gets more of them. An entry without a summary shows the start of its body.
+- **`query` alone**: the same as before, a plain list of entries. When the list is empty because every summary scored under the cutoff, or none could be compared, the result adds a `note` that says so.
+
+When the entries don’t tell the whole story, the result adds a `note` in plain words:
+
+- Matches under the cutoff were left out, with how many.
+- Only some of the matches or entries are shown, with the total.
+- Entries in the span have no summary yet, so a search by meaning can’t see them.
+- Entries have a summary the search can’t compare with the query, such as one made with another embedding model. Leave out `query` to read them.
+- Nothing is dated in the span. The result also gives `nearest`, the dates of the entries on either side, so the model can offer them.
+
+Every turn also starts with a line from `instructions/today.ts`, such as “Today is Sunday, October 25, 2026.” Both read the date through `todayFromEnv()`, which uses the Mac’s clock. Evals set `SAGE_TODAY` to pin it. Packaged Chat never does.
+
+In a memory build, the facts slot also adds **`facts__search_memories`**. It searches facts and dated events, and each result names its source with `sourceType` and `sourceId`. For an entry source, `get_journal_entry` reads the entry, and conversation sources have no fetch tool. `search_journal` never searches conversations, in any build.
 
 All tools reach the agent server through `lib/sage.ts`, over a Unix socket with the bearer token. `agent.ts` sets `defaultTools: false`, so eve’s built-in tools stay off.
 

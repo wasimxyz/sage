@@ -109,6 +109,20 @@ test("loadAllCases loads the round-one timelines and standalones", async () => {
   assert.equal(grief.chat[1]?.expectTool, true);
 });
 
+test("loadAllCases reads when and expectWhen", async () => {
+  const cases = await loadAllCases();
+  const portugal = cases.find((item) => item.id === "portugal-trip");
+  assert.ok(portugal);
+  assert.equal(portugal.retrieval[0]?.when, undefined);
+  assert.equal(portugal.retrieval[2]?.query, "my Portugal trip");
+  assert.equal(portugal.retrieval[2]?.when, "June");
+  assert.equal(portugal.retrieval[3]?.when, "August");
+  const burnout = cases.find((item) => item.id === "career-burnout");
+  assert.ok(burnout);
+  assert.equal(burnout.chat[0]?.expectWhen, false);
+  assert.equal(burnout.chat[1]?.expectWhen, true);
+});
+
 test("journalIdFor maps 1-based entry indexes onto seeded ids", () => {
   const manifest: EvalManifest = {
     cases: { "sam-example": { journalIds: [10, 11, 12, 13] } },

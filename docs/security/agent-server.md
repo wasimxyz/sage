@@ -25,7 +25,9 @@ How the agent gets the token depends on how it started:
 
 - `GET /health`: confirms the server is up. It still needs the token.
 - `GET /features`: reports whether this build has memory on
-- `POST /journal/search`: searches entry summaries by meaning. The body is `{ "query", "limit" }`, and an optional `embedding` array skips Ollama and ranks with that vector.
+- `POST /journal/search`: searches entry summaries by meaning. The body is `{ "query", "limit" }`, and an optional `embedding` array skips Ollama and ranks with that vector. Summaries that score under 0.45 are left out. The answer adds `matched`, `belowCutoff`, and `unreadable`: the matches kept before `limit`, the summaries under the cutoff, and the summaries whose vector can’t be compared with the query’s. A `query` that isn’t text, or is too long, is a 400.
+  - `from` and `to` (`YYYY-MM-DD`, both or neither) keep the search to entries dated in that span. Both must be real days, and `from` can’t be after `to`, or the route returns 400. The answer also gives `total` and `unsummarized`, plus `nearest` when no entry falls in the span.
+  - With `from` and `to` and no `query`, the route lists the entries in the span without ranking them or calling Ollama. It picks up to `limit` entries evenly from the entries in the span, oldest first, so a stretch with many entries gets more of them. It adds `total`, plus `nearest` when no entry falls in the span. An entry with no summary shows the start of its body.
 - `GET /journal/entry/{id}`: one decrypted entry
 - `GET /agent/instructions`: the extra Chat instructions saved in Settings > Agent, as `{ "user" }`. Missing text is an empty string.
 - `GET /memory/profile`: the newest profile facts, up to 50. Each fact includes `sourceType` and `sourceId`.

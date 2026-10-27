@@ -65,7 +65,7 @@ Search runs once you stop typing for 300 ms. The last results stay up until the 
 
 With encryption on, SQL cannot match text inside ciphertext. Sage decrypts each entry in memory and matches there instead, as [Encryption at rest](security/encryption.md#searching-encrypted-entries) explains.
 
-Chat finds entries a different way: it ranks entry summaries by meaning. [The eve app](agent/eve-app.md#tools) covers that tool.
+Chat finds entries a different way: it ranks entry summaries by meaning, and it can limit the search to a time such as “last week” or “in March”. [The eve app](agent/eve-app.md#tools) covers that tool.
 
 ## The Home screen
 

@@ -2411,11 +2411,29 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
             var body = std.Io.Writer.Allocating.init(allocator);
             defer body.deinit();
             const search = switch (job.target) {
-                .journal => self.store.semanticSearchSummaries(job.vectors[0], job.limit, &body.writer),
+                .journal => self.store.semanticSearchSummaries(job.vectors[0], job.range, job.limit, &body.writer),
                 .facts => self.store.semanticSearchFacts(job.vectors[0], job.limit, &body.writer),
                 .events => self.store.semanticSearchEvents(job.vectors[0], job.limit, &body.writer),
             };
             search catch {
+                agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+                return;
+            };
+            agent_server.replyJson(io, job.stream, 200, "OK", body.written());
+        },
+        .journal_range => {
+            defer agent_server.closeJob(allocator, io, job);
+            if (journalAccessBlocked(self)) {
+                agent_server.replyLocked(io, job.stream);
+                return;
+            }
+            const range = job.range orelse {
+                agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+                return;
+            };
+            var body = std.Io.Writer.Allocating.init(allocator);
+            defer body.deinit();
+            self.store.listEntriesInRange(range, job.limit, &body.writer) catch {
                 agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
                 return;
             };

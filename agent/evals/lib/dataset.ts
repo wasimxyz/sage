@@ -55,10 +55,14 @@ export interface SummaryRef {
 export interface RetrievalRef {
   expectEntry: number;
   query: string;
+  /** A time in a person's words, such as "in March". Narrows the search. */
+  when?: string;
 }
 
 export interface ChatRef {
   expectTool?: boolean;
+  /** The answer should come from a search that passed `when`. */
+  expectWhen?: boolean;
   question: string;
   reference: string;
 }
@@ -411,7 +415,10 @@ function parseRetrieval(
       `${id} retrieval ${index + 1}`
     );
     requireEntryIndex(expectEntry, entryCount, `${id} retrieval ${index + 1}`);
-    return { expectEntry, query };
+    const when = optionalString(row, "when");
+    return when === undefined
+      ? { expectEntry, query }
+      : { expectEntry, query, when };
   });
 }
 
@@ -434,8 +441,20 @@ function parseChat(value: unknown, id: string, _entryCount: number): ChatRef[] {
       `${id} chat ${index + 1}`
     );
     const expectTool = row.expectTool === true;
-    return { expectTool, question, reference };
+    const expectWhen = row.expectWhen === true;
+    return { expectTool, expectWhen, question, reference };
   });
+}
+
+function optionalString(
+  row: Record<string, unknown>,
+  key: string
+): string | undefined {
+  const value = row[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+  return value.trim();
 }
 
 function requiredString(

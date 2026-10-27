@@ -20,6 +20,12 @@ retrieval:
     expectEntry: 1
   - query: when I missed my flight in Madrid
     expectEntry: 2
+  - query: my Portugal trip
+    when: June
+    expectEntry: 1
+  - query: my Portugal trip
+    when: August
+    expectEntry: 2
 chat:
   - question: Did anything go wrong on my Portugal trip?
     reference: "Yes. The user missed a connecting flight in Madrid, not just that they were excited to plan the trip"

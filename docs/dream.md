@@ -9,7 +9,7 @@ Dream does different work depending on whether the build has memory on. [Memorie
 In every build, Dream:
 
 - Refreshes stale embeddings for each changed entry
-- Writes a short summary of each changed entry and embeds it. Chat search ranks these summaries, so an entry with no summary cannot show up in Chat.
+- Writes a short summary of each changed entry and embeds it. Chat ranks these summaries when it searches by meaning, so an entry with no summary cannot show up in that search. A search by date still lists it.
 - Writes a short title for each changed chat from its last four User and Sage messages. It skips chats you renamed.
 
 In a memory build, Dream also:
