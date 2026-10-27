@@ -1,20 +1,29 @@
 "use client";
 
-import { Fragment, useCallback, useMemo } from "react";
+import type { EveDynamicToolPart } from "eve/client";
+import { Fragment, type ReactNode, useCallback } from "react";
 
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import { useJournalActions } from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import {
-  type JournalBodyContent,
   type JournalToolEntry,
-  type JournalToolSearchHit,
-  journalEntryPreview,
+  journalEntryOutput,
+  journalSearchHits,
+  journalSearchQuery,
+  journalSearchRange,
+  journalSearchSummary,
 } from "@/lib/chat/journal-tool-output";
-import { formatEntryDate } from "@/lib/format-date";
-import { oneLinePlainText } from "@/lib/journal-plain-text";
+import {
+  readEntryToolName,
+  searchJournalToolName,
+  toolErrorText,
+  toolPartFailed,
+  toolPartRunning,
+} from "@/lib/chat/tool-part";
+import { formatEntryDate, formatShortEntryDate } from "@/lib/format-date";
+import { cn } from "@/lib/utils";
 
 const toolHeaderClassName = "h-8 w-full justify-start";
 
@@ -27,126 +36,269 @@ function useOpenEntryExpanded(id: number) {
   }, [id, select, setExpanded]);
 }
 
-export function JournalSearchToolCard({
-  query,
-  hits,
-}: {
-  query: string;
-  hits: JournalToolSearchHit[];
-}) {
+function entriesLabel(count: number): string {
+  return count === 1 ? "1 entry" : `${count} entries`;
+}
+
+interface ListRow {
+  key: string;
+  node: ReactNode;
+}
+
+// The open card: rows in a rounded box, as in a list in Journal.
+function JournalToolList({ rows }: { rows: ListRow[] }) {
   return (
-    <Tool data-tool-name="search_journal" data-tool-state="output-available">
-      <ToolHeader
-        className={toolHeaderClassName}
-        state="output-available"
-        title="Searched the journal"
-        toolName="search_journal"
-      >
-        <span className="min-w-0 truncate">Searched journal for “{query}”</span>
-      </ToolHeader>
-      <ToolContent className="border-0 bg-transparent p-0 text-foreground">
-        {hits.length === 0 ? (
-          <Empty className="min-h-24 gap-2 rounded-2xl border border-input border-solid bg-surface p-5">
-            <EmptyHeader>
-              <EmptyTitle className="text-muted-foreground">
-                No matching entries
-              </EmptyTitle>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-input bg-surface">
-            {hits.map((hit, index) => (
-              <Fragment key={hit.id}>
-                {index > 0 ? <Separator /> : null}
-                <JournalSearchRow hit={hit} />
-              </Fragment>
-            ))}
-          </div>
-        )}
-      </ToolContent>
-    </Tool>
+    <ToolContent className="border-0 bg-transparent p-0 text-foreground">
+      <div className="overflow-hidden rounded-2xl border border-input bg-surface">
+        {rows.map((row, index) => (
+          <Fragment key={row.key}>
+            {index > 0 ? <Separator /> : null}
+            {row.node}
+          </Fragment>
+        ))}
+      </div>
+    </ToolContent>
   );
 }
 
-function JournalSearchRow({ hit }: { hit: JournalToolSearchHit }) {
-  const date = formatEntryDate(hit.date);
-  const snippet = oneLinePlainText(hit.snippet);
-  const openEntry = useOpenEntryExpanded(hit.id);
+// A line of the card that is not an entry, so it is muted and not a button.
+function JournalToolNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="flex min-h-9 items-center px-4 py-2 text-muted-foreground text-sm">
+      {children}
+    </p>
+  );
+}
+
+function JournalEntryRow({ date, id, title }: JournalToolEntry) {
+  const openEntry = useOpenEntryExpanded(id);
+  const name = title.trim() || "Untitled";
 
   return (
     <Button
-      aria-label={`Open journal entry: ${hit.title}, ${date}`}
-      className="h-auto w-full justify-between gap-3 rounded-none px-4 py-2.5 text-left text-muted-foreground"
-      data-entry-id={hit.id}
+      aria-label={`Open journal entry: ${name}, ${formatEntryDate(date)}`}
+      className="h-10 w-full justify-between gap-3 rounded-none px-4 text-left font-normal text-sm"
+      data-entry-id={id}
       onClick={openEntry}
       type="button"
       variant="ghost"
     >
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
-        <span className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className="truncate text-foreground">{hit.title}</span>
-          <time className="shrink-0" dateTime={hit.date}>
-            {date}
-          </time>
-        </span>
-        <span className="line-clamp-1">{snippet}</span>
-      </span>
+      <span className="min-w-0 truncate text-foreground">{name}</span>
+      <time className="shrink-0 text-muted-foreground" dateTime={date}>
+        {formatShortEntryDate(date)}
+      </time>
     </Button>
   );
 }
 
-export function JournalEntryToolCard({
-  bodyContent,
-  entry,
+function entryRows(entries: JournalToolEntry[]): ListRow[] {
+  return entries.map((entry) => ({
+    key: `entry-${entry.id}`,
+    node: <JournalEntryRow {...entry} />,
+  }));
+}
+
+// A step that has not finished has nothing to open yet, so it is a shimmering
+// label with no chevron.
+function JournalRunningRow({
+  label,
+  state,
+  toolName,
 }: {
-  bodyContent: JournalBodyContent;
-  entry: JournalToolEntry;
+  label: string;
+  state: EveDynamicToolPart["state"];
+  toolName: string;
 }) {
   return (
-    <Tool
-      className="mb-0"
-      data-entry-id={entry.id}
-      data-tool-name="get_journal_entry"
-      data-tool-state="output-available"
-    >
+    <Tool data-tool-name={toolName} data-tool-state={state}>
       <ToolHeader
-        className={toolHeaderClassName}
-        state="output-available"
-        title={`Read “${entry.title}”`}
-        toolName="get_journal_entry"
-      >
-        <span className="min-w-0 truncate">Read “{entry.title}”</span>
-      </ToolHeader>
-      <ToolContent className="p-0">
-        <JournalEntryPreview bodyContent={bodyContent} entry={entry} />
-      </ToolContent>
+        className={cn(toolHeaderClassName, "cursor-default")}
+        disabled
+        showChevron={false}
+        state={state}
+        title={label}
+        toolName={toolName}
+      />
     </Tool>
   );
 }
 
-function JournalEntryPreview({
-  bodyContent,
-  entry,
+function JournalFailedRow({
+  messages,
+  state,
+  title,
+  toolName,
 }: {
-  bodyContent: JournalBodyContent;
-  entry: JournalToolEntry;
+  messages: string[];
+  state: EveDynamicToolPart["state"];
+  title: string;
+  toolName: string;
 }) {
-  const { kind, text } = bodyContent;
-  const preview = useMemo(
-    () => journalEntryPreview({ kind, text }),
-    [kind, text]
+  return (
+    <Tool data-tool-name={toolName} data-tool-state={state}>
+      <ToolHeader
+        className={toolHeaderClassName}
+        isError
+        state={state}
+        title={title}
+        toolName={toolName}
+      />
+      <JournalToolList
+        rows={messages.map((message) => ({
+          key: message,
+          node: <JournalToolNote>{message}</JournalToolNote>,
+        }))}
+      />
+    </Tool>
   );
-  const openEntry = useOpenEntryExpanded(entry.id);
+}
+
+/**
+ * One `search_journal` call: what was searched for, then the entries found.
+ * Null when the result is not one this card knows, so the caller can show the
+ * raw call instead. It is a function and not a component for that reason.
+ */
+export function renderJournalSearchCard(
+  part: EveDynamicToolPart
+): ReactNode | null {
+  if (toolPartRunning(part)) {
+    return (
+      <JournalRunningRow
+        label="Searching journal…"
+        state={part.state}
+        toolName={searchJournalToolName}
+      />
+    );
+  }
+  if (toolPartFailed(part)) {
+    return (
+      <JournalFailedRow
+        messages={[toolErrorText(part) ?? "The search did not finish."]}
+        state={part.state}
+        title="Journal search failed"
+        toolName={searchJournalToolName}
+      />
+    );
+  }
+  if (part.state !== "output-available") {
+    return null;
+  }
+  const hits = journalSearchHits(part.output);
+  if (hits === null) {
+    return null;
+  }
+
+  const summary = journalSearchSummary(
+    journalSearchQuery(part.input),
+    journalSearchRange(part.output)
+  );
+  const rows: ListRow[] = [];
+  if (summary !== null) {
+    rows.push({
+      key: "summary",
+      node: (
+        <JournalToolNote>
+          <span className="min-w-0 truncate">
+            {summary.lead}
+            {summary.query === null ? null : (
+              <span className="text-foreground">{summary.query}</span>
+            )}
+            {summary.rest}
+          </span>
+        </JournalToolNote>
+      ),
+    });
+  }
+  if (hits.length === 0) {
+    rows.push({
+      key: "empty",
+      node: <JournalToolNote>No matching entries</JournalToolNote>,
+    });
+  } else {
+    rows.push(...entryRows(hits));
+  }
 
   return (
-    <Button
-      aria-label={`Open journal entry: ${entry.title}, ${formatEntryDate(entry.date)}`}
-      className="h-auto w-full justify-start whitespace-normal rounded-none px-4 py-3 text-left font-normal text-muted-foreground text-xs"
-      onClick={openEntry}
-      type="button"
-      variant="ghost"
-    >
-      {preview.length > 0 ? preview : "This entry is empty."}
-    </Button>
+    <Tool data-tool-name={searchJournalToolName} data-tool-state={part.state}>
+      <ToolHeader
+        className={toolHeaderClassName}
+        state={part.state}
+        title="Searched journal"
+        toolName={searchJournalToolName}
+      />
+      <JournalToolList rows={rows} />
+    </Tool>
+  );
+}
+
+/**
+ * Reads of journal entries that came one after the other, as one row. An entry
+ * read twice shows once.
+ */
+export function JournalReadToolCard({
+  parts,
+}: {
+  parts: EveDynamicToolPart[];
+}) {
+  if (parts.some(toolPartRunning)) {
+    return (
+      <JournalRunningRow
+        label={`Reading ${entriesLabel(parts.length)}…`}
+        state="input-available"
+        toolName={readEntryToolName}
+      />
+    );
+  }
+
+  const entries = new Map<number, JournalToolEntry>();
+  const errors = new Set<string>();
+  let failed = 0;
+  for (const part of parts) {
+    const entry =
+      !toolPartFailed(part) && part.state === "output-available"
+        ? journalEntryOutput(part.output)
+        : null;
+    if (entry === null) {
+      failed += 1;
+      errors.add(toolErrorText(part) ?? "The entry could not be read.");
+    } else if (!entries.has(entry.id)) {
+      entries.set(entry.id, entry);
+    }
+  }
+
+  if (entries.size === 0) {
+    return (
+      <JournalFailedRow
+        messages={[...errors]}
+        state="output-error"
+        title={
+          failed === 1
+            ? "Could not read that entry"
+            : `Could not read ${entriesLabel(failed)}`
+        }
+        toolName={readEntryToolName}
+      />
+    );
+  }
+
+  const rows = entryRows([...entries.values()]);
+  if (failed > 0) {
+    rows.push({
+      key: "failed",
+      node: (
+        <JournalToolNote>Could not read {entriesLabel(failed)}</JournalToolNote>
+      ),
+    });
+  }
+  return (
+    <Tool data-tool-name={readEntryToolName} data-tool-state="output-available">
+      <ToolHeader
+        className={toolHeaderClassName}
+        state="output-available"
+        title={`Read ${entriesLabel(entries.size)}`}
+        toolName={readEntryToolName}
+      />
+      <JournalToolList rows={rows} />
+    </Tool>
   );
 }

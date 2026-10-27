@@ -17,20 +17,20 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import {
-  JournalEntryToolCard,
-  JournalSearchToolCard,
+  JournalReadToolCard,
+  renderJournalSearchCard,
 } from "@/components/chat/journal-tool-cards";
 import {
   ASSISTANT_PROSE_INSET,
   ASSISTANT_PROSE_SPACING,
 } from "@/components/chat/transcript-column";
 import { assistantPartIsVisible } from "@/lib/chat/assistant-pending";
+import { assistantRuns } from "@/lib/chat/assistant-runs";
 import {
-  journalBodyContent,
-  journalEntryOutput,
-  journalSearchHits,
-  journalSearchQuery,
-} from "@/lib/chat/journal-tool-output";
+  searchJournalToolName,
+  toolPartFailed,
+  toolPartName,
+} from "@/lib/chat/tool-part";
 import { cn } from "@/lib/utils";
 
 export interface MessageBubbleProps {
@@ -74,52 +74,33 @@ function UserMessage({ message }: { message: EveMessage }) {
 
 function AssistantMessage({ message }: { message: EveMessage }) {
   const nodes: ReactNode[] = [];
-  // Consecutive reasoning parts become one thinking row so a streamed
-  // trace does not stack multiple "Thinking..." triggers.
-  let reasoningRun: {
-    index: number;
-    streaming: boolean;
-    texts: string[];
-  } | null = null;
 
-  const flushReasoning = () => {
-    if (!reasoningRun) {
-      return;
-    }
-    nodes.push(
-      <Reasoning
-        className={ASSISTANT_PROSE_INSET}
-        isStreaming={reasoningRun.streaming}
-        key={`${message.id}-reasoning-${reasoningRun.index}`}
-      >
-        <ReasoningTrigger />
-        <ReasoningContent>{reasoningRun.texts.join("\n\n")}</ReasoningContent>
-      </Reasoning>
-    );
-    reasoningRun = null;
-  };
-
-  for (const [index, part] of message.parts.entries()) {
-    if (part.type === "reasoning") {
-      if (!assistantPartIsVisible(part)) {
-        continue;
+  for (const run of assistantRuns(message.parts)) {
+    if (run.kind === "reasoning") {
+      nodes.push(
+        <Reasoning
+          className={ASSISTANT_PROSE_INSET}
+          isStreaming={run.streaming}
+          key={`${message.id}-reasoning-${run.index}`}
+        >
+          <ReasoningTrigger />
+          <ReasoningContent>{run.texts.join("\n\n")}</ReasoningContent>
+        </Reasoning>
+      );
+    } else if (run.kind === "reads") {
+      nodes.push(
+        <JournalReadToolCard
+          key={`${message.id}-reads-${run.parts[0].toolCallId}`}
+          parts={run.parts}
+        />
+      );
+    } else {
+      const node = renderAssistantPart(run.part, message.id, run.index);
+      if (node) {
+        nodes.push(node);
       }
-      const streaming = part.state === "streaming";
-      if (reasoningRun) {
-        reasoningRun.texts.push(part.text);
-        reasoningRun.streaming = streaming;
-      } else {
-        reasoningRun = { index, streaming, texts: [part.text] };
-      }
-      continue;
-    }
-    flushReasoning();
-    const node = renderAssistantPart(part, message.id, index);
-    if (node) {
-      nodes.push(node);
     }
   }
-  flushReasoning();
   if (nodes.length === 0) {
     return null;
   }
@@ -171,17 +152,19 @@ function renderAssistantPart(
 }
 
 function ToolCallBlock({ part }: { part: EveDynamicToolPart }) {
-  const journalTool = renderJournalToolCard(part);
-  if (journalTool) {
-    return journalTool;
+  if (toolPartName(part) === searchJournalToolName) {
+    const card = renderJournalSearchCard(part);
+    if (card) {
+      return card;
+    }
   }
 
-  const isError = partHasError(part);
+  const isError = toolPartFailed(part);
   const title = toolLabel(part);
   return (
     <Tool
       className={cn("mb-0", isError && "border-dragon/40")}
-      data-tool-name={part.toolMetadata?.eve?.name ?? part.toolName}
+      data-tool-name={toolPartName(part)}
       data-tool-state={part.state}
     >
       <ToolHeader
@@ -205,31 +188,6 @@ function ToolCallBlock({ part }: { part: EveDynamicToolPart }) {
   );
 }
 
-function renderJournalToolCard(part: EveDynamicToolPart): ReactNode | null {
-  if (part.state !== "output-available" || partHasError(part)) {
-    return null;
-  }
-  const name = part.toolMetadata?.eve?.name ?? part.toolName;
-  if (name === "search_journal") {
-    const query = journalSearchQuery(part.input);
-    const hits = journalSearchHits(part.output);
-    return query === null || hits === null ? null : (
-      <JournalSearchToolCard hits={hits} query={query} />
-    );
-  }
-  if (name === "get_journal_entry") {
-    const entry = journalEntryOutput(part.output);
-    if (!entry) {
-      return null;
-    }
-    const bodyContent = journalBodyContent(entry);
-    return bodyContent ? (
-      <JournalEntryToolCard bodyContent={bodyContent} entry={entry} />
-    ) : null;
-  }
-  return null;
-}
-
 function userText(message: EveMessage): string {
   const chunks: string[] = [];
   for (const part of message.parts) {
@@ -240,32 +198,8 @@ function userText(message: EveMessage): string {
   return chunks.join("");
 }
 
-function partHasError(part: EveDynamicToolPart): boolean {
-  if (part.state === "output-error") {
-    return true;
-  }
-  return part.state === "output-available" && isMcpErrorOutput(part.output);
-}
-
-function isMcpErrorOutput(output: unknown): boolean {
-  if (typeof output !== "object" || output === null) {
-    return false;
-  }
-  return (output as { isError?: unknown }).isError === true;
-}
-
 function toolLabel(part: EveDynamicToolPart): string {
-  const name = part.toolMetadata?.eve?.name ?? part.toolName;
-  if (name === "search_journal") {
-    return part.state === "output-error"
-      ? "Journal search failed"
-      : "Searched the journal";
-  }
-  if (name === "get_journal_entry") {
-    return part.state === "output-error"
-      ? "Could not read that entry"
-      : "Read an entry";
-  }
+  const name = toolPartName(part);
   if (name === "facts__search_memories") {
     return part.state === "output-error"
       ? "Memory search failed"

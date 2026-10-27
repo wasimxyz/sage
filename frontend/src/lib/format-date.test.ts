@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   formatEntryDate,
   formatJournalListDate,
+  formatShortEntryDate,
   localDateKey,
   msUntilNextDay,
 } from "./format-date.ts";
@@ -68,4 +69,15 @@ test("a relative date in the list has no weekday", () => {
 test("msUntilNextDay counts down to the next local midnight", () => {
   assert.equal(msUntilNextDay(new Date(2026, 9, 18, 23, 59, 30)), 30_000);
   assert.equal(msUntilNextDay(new Date(2026, 9, 18, 0, 0, 0)), 24 * 3_600_000);
+});
+
+test("formatShortEntryDate gives a weekday and day, and a year when it is not this one", () => {
+  const now = new Date(2026, 9, 26, 9, 0);
+  assert.equal(formatShortEntryDate("2026-09-27", now), "Sun, Sep 27");
+  assert.equal(formatShortEntryDate("2025-09-27", now), "Sat, Sep 27, 2025");
+  assert.equal(
+    formatShortEntryDate("2026-09-27T08:00:00Z", now),
+    "Sun, Sep 27"
+  );
+  assert.equal(formatShortEntryDate("last week", now), "last week");
 });

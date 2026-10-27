@@ -166,3 +166,20 @@ export function formatJournalListDate(value: string, now = new Date()): string {
     year: "numeric",
   });
 }
+
+/**
+ * A date for a row that has little room, such as "Sun, Sep 27". The year
+ * follows when the date is not in the year of `now`.
+ */
+export function formatShortEntryDate(value: string, now = new Date()): string {
+  const date = parseCalendarDate(value);
+  if (!date) {
+    return value;
+  }
+  return intlFormat(date, {
+    day: "numeric",
+    month: "short",
+    weekday: "short",
+    year: isSameYear(date, now) ? undefined : "numeric",
+  });
+}
