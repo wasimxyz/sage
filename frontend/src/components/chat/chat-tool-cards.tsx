@@ -12,7 +12,7 @@ import {
   type ListRow,
   toolHeaderClassName,
 } from "@/components/chat/journal-tool-cards";
-import { useChat } from "@/components/chat-provider";
+import { useOpenConversation } from "@/components/chat-provider";
 import { useJournalActions } from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,12 +41,15 @@ function chatsLabel(count: number): string {
 // A row opens its chat at the message the tool found, or at its end.
 function PastChatRow({ date, id, seq, title }: ChatToolHit) {
   const { showChat } = useJournalActions();
-  const {
-    actions: { openConversation },
-  } = useChat();
-  const open = useCallback(async () => {
-    await showChat();
-    openConversation(id, seq === null ? undefined : { seq });
+  const openConversation = useOpenConversation();
+  const open = useCallback(() => {
+    showChat()
+      .then(() => {
+        openConversation(id, seq === null ? undefined : { seq });
+      })
+      .catch(() => {
+        // showChat flushes the editor; openers toast their own errors.
+      });
   }, [id, openConversation, seq, showChat]);
   const name = title.trim() || "New chat";
 

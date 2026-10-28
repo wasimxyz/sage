@@ -17,6 +17,7 @@ Later migrations add to `chat_conversation`:
 - `0015_chat_title_locked.sql`: `title_locked`, so Dream can write a title without overwriting a rename
 - `0016_chat_index_skip.sql`: marks chats with no User or Sage text, so Dream skips them until the transcript changes
 - `0019_chat_message_index.sql`: adds `saved_at` to `chat_event`, `role` to `chat_embedding`, and the `chat_index_state` table, for [the message index](#the-message-index)
+- `0020_chat_time_bounds.sql`: adds `unstamped_until`, and an index on `chat_event` by `conversation_id` and `saved_at`, so a search or listing by time can place events from before `0019`
 
 Each conversation row has:
 
@@ -30,6 +31,7 @@ Each conversation row has:
 - `context_length`: the context length chosen before the first message. A later save fills in a missing value once and then leaves it.
 - `events`: unused. It held the transcript before `0007`, and Sage leaves it empty, as [Older conversations](#older-conversations) explains.
 - `created_at` and `updated_at`: readable timestamps. The sidebar sorts by `updated_at`, which changes only when the transcript changes.
+- `unstamped_until`: the last moment an event with no `saved_at` could have been saved. `0020` sets it to the chat’s `updated_at` when the chat has such events, or to the earliest `saved_at` if a later save has already moved `updated_at`. It stays empty for a chat with none.
 
 Reopening a chat, renaming it, a Dream title, and saving only the session or the model all leave `updated_at` alone.
 
@@ -37,7 +39,7 @@ Each event row has:
 
 - `conversation_id` and `seq`: the conversation and the event’s position in the transcript
 - `event`: the eve stream event, encrypted per row
-- `saved_at`: when a save added the event. Events from before `0019` have none.
+- `saved_at`: when a save added the event. Events from before `0019` have none. A search by time places them between the chat’s `created_at` and `unstamped_until`, so a chat that started before `0019` and went on later does not match the months between.
 
 One event can be at most 128 KiB. Reads fetch rows in 256 KiB pages, so a save with a larger event fails instead of storing a row that reads cannot return.
 
@@ -100,12 +102,14 @@ Chat’s `search_chats` tool ranks User and Sage messages by meaning, in every b
 Messages get their rows at three points:
 
 1. **After a reply**: when a turn finishes and its events save, the Chat screen calls `embeddings.generate` with the chat’s id. Sage embeds the messages that have no row, up to 32 at a time, and answers `more` until none are left.
-2. **When Sage loads your entries**: the same pass that embeds stale entries also indexes chats that need it, such as one saved while Ollama was down. If Ollama is down, it tries again every 15 seconds.
+2. **When Sage loads your entries**: the same pass that embeds stale entries also indexes chats that need it, such as one saved while Ollama was down. Entries go first, and the pass does not wait for the chats. It lists at most 4,096 chats, and the rest wait for the next pass or Dream. If Ollama is down, it tries again every 15 seconds. A chat that fails for another reason, such as one deleted during the pass, is skipped without a retry.
 3. **During Dream**: Dream indexes up to 1,024 messages of each chat that needs it, in every build.
 
 Rows are only removed from the end of a chat or all at once, so every message after the newest row is new. When a save replaces events from `baseSeq` on, it deletes their rows in the same write. A chat saved while its messages were being embedded drops that batch, and the next pass reads the new transcript.
 
 `0019` deleted the 8,000-byte chunks earlier builds stored, which no search read. Each chat is indexed again the next time one of the three points reaches it.
+
+`get_chat` counts the messages on each side of what it shows. Only the encrypted event says who wrote it, so Sage takes the messages the index has caught up with from `chunk_index`, which is readable, and decrypts only the events after the newest row. It then reads only the events it shows, 5 at most.
 
 ## What is encrypted
 
@@ -160,7 +164,7 @@ Settings > Data counts journal entries, conversations, index rows, and visible m
 | Memories | `data.deleteMemories` | Every profile sentence, fact, and event, including rows you added and hidden rows, plus Dream times | Entries and conversations |
 | Delete all data | `data.deleteAll` | Every entry, conversation, embedding, summary, and memory | The lock password, Touch ID, encryption settings, and Chat instructions |
 
-After the Embeddings wipe, Sage embeds entries and indexes chat messages again, and the next Dream rebuilds summaries. Dream times stay, so Dream does not extract memories again. If Ollama is down, Sage embeds the entries once Ollama is back.
+After the Embeddings wipe, Sage embeds entries and indexes chat messages again, and the next Dream rebuilds summaries. The confirmation closes once the entries are embedded, and the chats are indexed in the background after them. Dream times stay, so Dream does not extract memories again. If Ollama is down, Sage embeds the entries and indexes the chats once Ollama is back.
 
 The Memories count includes visible rows only. If only hidden rows remain, the count is zero and the action stays off.
 

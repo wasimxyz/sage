@@ -2580,6 +2580,12 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
                     agent_server.replyJson(io, job.stream, 404, "Not Found", "{\"error\":\"not_found\"}");
                     return;
                 },
+                // The chat is there, and the message number is not one of its
+                // messages. Chat tells the model which of the two happened.
+                error.MessageNotFound => {
+                    agent_server.replyJson(io, job.stream, 404, "Not Found", "{\"error\":\"message_not_found\"}");
+                    return;
+                },
                 else => {
                     agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
                     return;

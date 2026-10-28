@@ -26,7 +26,7 @@ In a memory build, profile facts and the top matching facts and events also ente
 
 ## What Chat searches
 
-Chat searches short summaries of your entries, not the full entries. [Dream](../dream.md) writes those summaries, so an entry Dream has not reached yet does not show up in Chat. Dream also writes chat titles, and in a memory build it extracts the facts and events Chat can recall.
+Chat searches short summaries of your entries, not the full entries. [Dream](../dream.md) writes those summaries, so an entry Dream has not reached yet does not show up in Chat. Dream also writes chat summaries and titles, and in a memory build it extracts the facts and events Chat can recall.
 
 ## What is stored
 

@@ -35,7 +35,8 @@ export function readId(value: unknown): SourceId | null {
   }
   const text = value.trim().toLowerCase();
   if (plainId.test(text)) {
-    return { id: Number(text), kind: "entry" };
+    const id = Number(text);
+    return Number.isSafeInteger(id) ? { id, kind: "entry" } : null;
   }
   const match = prefixedId.exec(text);
   if (match === null) {
@@ -100,5 +101,6 @@ export function currentChatId(ctx: AttributesContext): number | null {
   if (typeof value !== "string" || !plainId.test(value)) {
     return null;
   }
-  return Number(value);
+  const id = Number(value);
+  return Number.isSafeInteger(id) ? id : null;
 }

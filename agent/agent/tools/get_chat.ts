@@ -1,15 +1,15 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { shapeChatWindow } from "../lib/chat-result";
-import { chatId, entryId, readId } from "../lib/ids";
+import { missingChatText, shapeChatWindow } from "../lib/chat-result";
+import { entryId, readId } from "../lib/ids";
 import { readSageJson, sageFetch } from "../lib/sage";
 
 const entryPrefix = /^\s*entry-/i;
 
 export default defineTool({
   description:
-    "Read part of an earlier chat by its id, such as chat-12. Pass the message number from a search_chats hit to read the messages around it. Leave out message to get the chat's summary and its last messages. Use search_chats first when you don't already have an id.",
+    "Read part of an earlier chat by its id, such as chat-12. Pass a message number from a search_chats hit or an earlier get_chat result to read the messages around it. Message numbers have gaps, so don't guess one. Leave out message to get the chat's summary and its last messages. Use search_chats first when you don't already have an id.",
   async execute({ id, message }) {
     const source = readId(id);
     // A plain number may be a chat id that lost its prefix, so only an id
@@ -29,13 +29,11 @@ export default defineTool({
         ? `/chats/${source.id}`
         : `/chats/${source.id}?message=${message}`;
     const response = await sageFetch(path);
-    const payload = await readSageJson(
-      response,
-      message === undefined
-        ? `No chat has the id ${chatId(source.id)}.`
-        : `${chatId(source.id)} has no message ${message}. Use a message number from search_chats, or leave it out.`
-    );
-    return shapeChatWindow(payload);
+    if (response.status === 404) {
+      const body: unknown = await response.json().catch(() => null);
+      throw new Error(missingChatText(body, source.id, message));
+    }
+    return shapeChatWindow(await readSageJson(response));
   },
   inputSchema: z.object({
     id: z
@@ -46,6 +44,8 @@ export default defineTool({
       .int()
       .min(0)
       .optional()
-      .describe("The message number of a search_chats hit to read around."),
+      .describe(
+        "A message number from a search_chats hit or an earlier get_chat result, to read around it."
+      ),
   }),
 });

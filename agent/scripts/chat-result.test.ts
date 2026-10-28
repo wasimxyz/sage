@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  missingChatText,
   shapeChatList,
   shapeChatSearch,
   shapeChatWindow,
@@ -12,6 +13,8 @@ import { instantsFromRange, localDayOf } from "../agent/lib/when.ts";
 // saving time. Node reads TZ again when it changes.
 process.env.TZ = "America/Los_Angeles";
 
+const missingMessageStart = /^chat-12 has no message 39\./;
+const missingMessageAdvice = /shown by search_chats or an earlier get_chat/;
 const week = { from: "2026-10-19", label: "last week", to: "2026-10-25" };
 const today = "2026-10-27";
 
@@ -217,7 +220,7 @@ test("shapeChatWindow names the chat, its messages, and what is left out", () =>
       { date: "2026-10-20", from: "user", message: 5, text: "Hi" },
       { cut: true, from: "sage", message: 6, text: "A long reply" },
     ],
-    note: "2 earlier messages and 1 later message aren't shown. Call get_chat with a nearby message number to read more. Long messages are cut short.",
+    note: "2 earlier messages and 1 later message aren't shown. To read more, call get_chat with the first or last message number shown. Long messages are cut short.",
     summary: "They talked about sleep.",
     title: "Sleep",
   });
@@ -232,4 +235,39 @@ test("shapeChatWindow names the chat, its messages, and what is left out", () =>
   });
   assert.equal(whole.note, undefined);
   assert.equal(whole.summary, undefined);
+});
+
+test("shapeChatWindow points at the edge message on the side that has more", () => {
+  const window = (before: number, after: number) =>
+    shapeChatWindow({
+      after,
+      before,
+      chatId: 4,
+      messages: [],
+      summary: null,
+      title: "Sleep",
+    }).note;
+  assert.equal(
+    window(2, 0),
+    "2 earlier messages aren't shown. To read more, call get_chat with the first message number shown."
+  );
+  assert.equal(
+    window(0, 1),
+    "1 later message isn't shown. To read more, call get_chat with the last message number shown."
+  );
+});
+
+test("missingChatText tells a missing chat from a missing message", () => {
+  assert.equal(
+    missingChatText({ error: "not_found" }, 12, 39),
+    "No chat has the id chat-12."
+  );
+  assert.equal(
+    missingChatText({ error: "not_found" }, 12, undefined),
+    "No chat has the id chat-12."
+  );
+  assert.equal(missingChatText(null, 12, 39), "No chat has the id chat-12.");
+  const message = missingChatText({ error: "message_not_found" }, 12, 39);
+  assert.match(message, missingMessageStart);
+  assert.match(message, missingMessageAdvice);
 });

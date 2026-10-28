@@ -7,7 +7,7 @@ Sage is a private journal for macOS with a built-in AI agent. Your entries, chat
 - **Journal**: write entries in a Markdown editor. Import Markdown files from apps such as Notion, and export entries as Markdown.
 - **Chat**: ask an agent about your journal and your earlier chats. It runs local models through Ollama, and you pick the model, context length, and Thinking for each conversation.
 - **Search**: local embeddings let Chat find entries by meaning, not only by matching words.
-- **Dream**: a job you start from the sidebar. It summarizes entries and titles chats, and in a memory build it also extracts memories.
+- **Dream**: a job you start from the sidebar. It summarizes entries and chats, titles chats, and indexes chat messages, and in a memory build it also extracts memories.
 - **Memories**: an opt-in build feature that keeps facts about you and dated events. It is off by default.
 - **Lock and encryption**: lock Sage with a password or Touch ID, and encrypt entries, chats, and memories inside the database file.
 

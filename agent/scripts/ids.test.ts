@@ -33,6 +33,11 @@ test("readId refuses anything that is not an id", () => {
     "chat-",
     "chat-12x",
     "memo-3",
+    // Too big to be exact. The text form must refuse it as the prefixed form does.
+    "9999999999999999",
+    "entry-9999999999999999",
+    "chat-9999999999999999",
+    9_007_199_254_740_992,
     "",
     null,
     undefined,
@@ -74,6 +79,7 @@ test("currentChatId reads the saved chat id attribute", () => {
   assert.equal(currentChatId(ctx({ chatId: "9" })), 9);
   assert.equal(currentChatId(ctx({ chatId: "0" })), null);
   assert.equal(currentChatId(ctx({ chatId: "chat-9" })), null);
+  assert.equal(currentChatId(ctx({ chatId: "9999999999999999" })), null);
   assert.equal(currentChatId(ctx({})), null);
   assert.equal(currentChatId(ctx()), null);
 });

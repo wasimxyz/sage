@@ -72,6 +72,105 @@ const chat_index_due_sql =
     \\  ))
 ;
 
+/// `embeddings.pending` lists at most this many chats that are due for
+/// indexing. The store refuses a result of more than 8,192 rows, which would
+/// fail the whole call, entries included. Chats past the cap stay due, and a
+/// later pass or Dream picks them up.
+pub const pending_chat_limit: usize = 4096;
+
+/// Whether chat `chat_conversation` may have had an event with no saved_at
+/// saved inside `[from, to)`. Those events are from before saved_at existed,
+/// so all that is known is that each was saved between the chat's `created_at`
+/// and `unstamped_until`. A chat with no `unstamped_until` falls back to its
+/// `updated_at`. `from` and `to` name SQL parameters.
+fn chatUnstampedSpanSql(comptime from: []const u8, comptime to: []const u8) []const u8 {
+    return std.fmt.comptimePrint(
+        "(chat_conversation.created_at < {s} AND COALESCE(chat_conversation.unstamped_until, chat_conversation.updated_at) >= {s})",
+        .{ to, from },
+    );
+}
+
+/// Whether the chat has events with no saved_at that could have been saved
+/// inside `[from, to)`.
+fn chatUnstampedActiveSql(comptime from: []const u8, comptime to: []const u8) []const u8 {
+    return std.fmt.comptimePrint(
+        \\({s} AND EXISTS (
+        \\    SELECT 1 FROM chat_event
+        \\    WHERE chat_event.conversation_id = chat_conversation.id
+        \\      AND chat_event.saved_at IS NULL
+        \\  ))
+    ,
+        .{comptime chatUnstampedSpanSql(from, to)},
+    );
+}
+
+/// Whether the chat in `chat_conversation` was active inside `[from, to)`:
+/// an event saved inside it, or an event with no saved_at that could have
+/// been (see `chatUnstampedSpanSql`).
+fn chatActiveInRangeSql(comptime from: []const u8, comptime to: []const u8) []const u8 {
+    return std.fmt.comptimePrint(
+        \\(EXISTS (
+        \\    SELECT 1 FROM chat_event
+        \\    WHERE chat_event.conversation_id = chat_conversation.id
+        \\      AND chat_event.saved_at >= {s} AND chat_event.saved_at < {s}
+        \\  ) OR {s})
+    ,
+        .{ from, to, comptime chatUnstampedActiveSql(from, to) },
+    );
+}
+
+/// One page of chats for `listChatsInRange`, after the last id read. Each
+/// answers with the first and last event saved inside the range, and, when
+/// events with no saved_at could have been saved inside it, the span they
+/// stand in for. Parameters: ?1 and ?2 the range, ?3 a chat to leave out,
+/// ?4 the last chat id read.
+const chat_list_page_sql = std.fmt.comptimePrint(
+    \\SELECT chat_conversation.id AS conversation_id,
+    \\       (SELECT MIN(saved_at) FROM chat_event
+    \\        WHERE chat_event.conversation_id = chat_conversation.id
+    \\          AND saved_at >= ?1 AND saved_at < ?2) AS first_at,
+    \\       (SELECT MAX(saved_at) FROM chat_event
+    \\        WHERE chat_event.conversation_id = chat_conversation.id
+    \\          AND saved_at >= ?1 AND saved_at < ?2) AS last_at,
+    \\       CASE WHEN {[unstamped]s} THEN chat_conversation.created_at END AS legacy_first,
+    \\       CASE WHEN {[unstamped]s}
+    \\            THEN COALESCE(chat_conversation.unstamped_until, chat_conversation.updated_at) END AS legacy_last
+    \\FROM chat_conversation
+    \\WHERE chat_conversation.id > ?4
+    \\  AND chat_conversation.id != ?3
+    \\  AND {[active]s}
+    \\ORDER BY chat_conversation.id
+    \\LIMIT 256;
+,
+    .{ .unstamped = chatUnstampedActiveSql("?1", "?2"), .active = chatActiveInRangeSql("?1", "?2") },
+);
+
+/// One page of indexed chat messages for `semanticSearchChats`, after the
+/// last one read, that were saved inside a range. Parameters: ?1 chat to
+/// leave out, ?2 and ?3 the last chat id and message read, ?4 and ?5 the
+/// range, ?6 the page size.
+const chat_search_page_sql =
+    \\SELECT chat_embedding.conversation_id, chat_embedding.chunk_index AS seq,
+    \\       chat_embedding.role, chat_embedding.embedding, chat_event.saved_at,
+    \\       chat_conversation.created_at, chat_conversation.updated_at
+    \\FROM chat_embedding
+    \\INNER JOIN chat_conversation ON chat_conversation.id = chat_embedding.conversation_id
+    \\LEFT JOIN chat_event
+    \\  ON chat_event.conversation_id = chat_embedding.conversation_id
+    \\ AND chat_event.seq = chat_embedding.chunk_index
+    \\WHERE chat_embedding.conversation_id != ?1
+    \\  AND (chat_embedding.conversation_id > ?2
+    \\    OR (chat_embedding.conversation_id = ?2 AND chat_embedding.chunk_index > ?3))
+    \\  AND (
+    \\    (chat_event.saved_at IS NOT NULL AND chat_event.saved_at >= ?4 AND chat_event.saved_at < ?5)
+    \\    OR (chat_event.saved_at IS NULL AND
+++ chatUnstampedSpanSql("?4", "?5") ++
+    \\)
+    \\  )
+    \\ORDER BY chat_embedding.conversation_id, chat_embedding.chunk_index
+    \\LIMIT ?6;
+;
+
 /// A half-open span of time, `[from, to)`, each as the ISO UTC timestamp
 /// SQLite writes: `YYYY-MM-DDTHH:MM:SS.sssZ`. Chat searches use it because
 /// a chat's events carry times, while entries carry only a day. The caller
@@ -236,6 +335,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 17, .name = "remove_sample_entries", .sql = @embedFile("schema/0017_remove_sample_entries.sql") },
     .{ .version = 18, .name = "clear_eve_sessions", .sql = @embedFile("schema/0018_clear_eve_sessions.sql") },
     .{ .version = 19, .name = "chat_message_index", .sql = @embedFile("schema/0019_chat_message_index.sql") },
+    .{ .version = 20, .name = "chat_time_bounds", .sql = @embedFile("schema/0020_chat_time_bounds.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -508,6 +608,7 @@ pub const Store = struct {
 
     /// Entries with no embeddings, or whose newest embedding is older than the
     /// last save, as `ids`, and chats whose message index is due, as `chatIds`.
+    /// `chatIds` holds the first `pending_chat_limit` chats by id.
     pub fn listPendingEmbeddings(self: *Store, output: []u8) ![]const u8 {
         var rows = QueryRows.init(self.allocator);
         defer rows.deinit();
@@ -536,7 +637,7 @@ pub const Store = struct {
             "SELECT chat_conversation.id FROM chat_conversation " ++
                 chat_index_state_join ++
                 " WHERE " ++ chat_index_due_sql ++
-                " ORDER BY chat_conversation.id;",
+                std.fmt.comptimePrint(" ORDER BY chat_conversation.id LIMIT {d};", .{pending_chat_limit}),
             &.{},
             &chat_rows,
             QueryRows.collect,
@@ -838,8 +939,9 @@ pub const Store = struct {
     /// `exclude` is a chat to leave out, such as the one being answered, or 0.
     ///
     /// A message counts as inside `range` when it was saved inside it. A
-    /// message saved before saved_at existed counts when its chat's
-    /// `created_at`..`updated_at` overlaps the range.
+    /// message saved before saved_at existed counts when the span in which it
+    /// could have been saved overlaps the range: the chat's `created_at` to
+    /// its `unstamped_until`.
     ///
     /// The answer adds `matched` (messages kept before `limit`),
     /// `belowCutoff`, `unreadable` (a vector that cannot be compared with
@@ -869,25 +971,7 @@ pub const Store = struct {
             var rows = ChatIndexRows.init(self.allocator);
             defer rows.deinit();
             const outcome = self.db.query(
-                \\SELECT chat_embedding.conversation_id, chat_embedding.chunk_index AS seq,
-                \\       chat_embedding.role, chat_embedding.embedding, chat_event.saved_at,
-                \\       chat_conversation.created_at, chat_conversation.updated_at
-                \\FROM chat_embedding
-                \\INNER JOIN chat_conversation ON chat_conversation.id = chat_embedding.conversation_id
-                \\LEFT JOIN chat_event
-                \\  ON chat_event.conversation_id = chat_embedding.conversation_id
-                \\ AND chat_event.seq = chat_embedding.chunk_index
-                \\WHERE chat_embedding.conversation_id != ?1
-                \\  AND (chat_embedding.conversation_id > ?2
-                \\    OR (chat_embedding.conversation_id = ?2 AND chat_embedding.chunk_index > ?3))
-                \\  AND (
-                \\    (chat_event.saved_at IS NOT NULL AND chat_event.saved_at >= ?4 AND chat_event.saved_at < ?5)
-                \\    OR (chat_event.saved_at IS NULL
-                \\      AND chat_conversation.created_at < ?5 AND chat_conversation.updated_at >= ?4)
-                \\  )
-                \\ORDER BY chat_embedding.conversation_id, chat_embedding.chunk_index
-                \\LIMIT ?6;
-            ,
+                chat_search_page_sql,
                 &.{
                     .{ .integer = exclude },
                     .{ .integer = last_chat },
@@ -951,8 +1035,12 @@ pub const Store = struct {
 
         try writer.writeAll("{\"hits\":[");
         var written: usize = 0;
+        // A chat can have two hits. Read its title and times once.
+        var metas = std.AutoHashMap(i64, ?ChatMeta).init(a);
         for (shown.items) |hit| {
-            const meta = try self.loadChatMeta(a, hit.conversation_id) orelse continue;
+            const cached = try metas.getOrPut(hit.conversation_id);
+            if (!cached.found_existing) cached.value_ptr.* = try self.loadChatMeta(a, hit.conversation_id);
+            const meta = cached.value_ptr.* orelse continue;
             const text = try self.loadChatIndexText(a, hit.conversation_id, hit.seq);
             if (written > 0) try writer.writeAll(",");
             written += 1;
@@ -983,9 +1071,10 @@ pub const Store = struct {
     /// are picked evenly, oldest first, the way `listEntriesInRange` picks
     /// entries. Each chat shows its summary, or the start of its first User
     /// message when Dream has not summarized it. `firstAt` and `lastAt` are
-    /// its first and last message inside the range, or its `created_at` and
-    /// `updated_at` for messages saved before saved_at existed. The answer
-    /// adds `total`, the number of chats in the range.
+    /// its first and last message inside the range. Messages saved before
+    /// saved_at existed count as the chat's `created_at` to `unstamped_until`
+    /// when that span overlaps the range. The answer adds `total`, the
+    /// number of chats in the range.
     pub fn listChatsInRange(self: *Store, range: InstantRange, exclude: i64, limit: i64, writer: *std.Io.Writer) !void {
         const take: usize = @intCast(@max(@min(limit, 25), 1));
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -998,29 +1087,7 @@ pub const Store = struct {
             var rows = ChatIndexRows.init(self.allocator);
             defer rows.deinit();
             const outcome = self.db.query(
-                \\SELECT chat_conversation.id AS conversation_id, chat_conversation.created_at,
-                \\       chat_conversation.updated_at,
-                \\       (SELECT MIN(saved_at) FROM chat_event
-                \\        WHERE chat_event.conversation_id = chat_conversation.id
-                \\          AND saved_at >= ?1 AND saved_at < ?2) AS first_at,
-                \\       (SELECT MAX(saved_at) FROM chat_event
-                \\        WHERE chat_event.conversation_id = chat_conversation.id
-                \\          AND saved_at >= ?1 AND saved_at < ?2) AS last_at
-                \\FROM chat_conversation
-                \\WHERE chat_conversation.id > ?4
-                \\  AND chat_conversation.id != ?3
-                \\  AND (EXISTS (
-                \\      SELECT 1 FROM chat_event
-                \\      WHERE chat_event.conversation_id = chat_conversation.id
-                \\        AND saved_at >= ?1 AND saved_at < ?2
-                \\    ) OR (EXISTS (
-                \\      SELECT 1 FROM chat_event
-                \\      WHERE chat_event.conversation_id = chat_conversation.id
-                \\        AND saved_at IS NULL
-                \\    ) AND chat_conversation.created_at < ?2 AND chat_conversation.updated_at >= ?1))
-                \\ORDER BY chat_conversation.id
-                \\LIMIT 256;
-            ,
+                chat_list_page_sql,
                 &.{
                     .{ .text = &range.from },
                     .{ .text = &range.to },
@@ -1036,9 +1103,9 @@ pub const Store = struct {
             for (rows.rows.items) |row| {
                 last_id = row.conversation_id;
                 try active.append(a, .{
-                    .first_at = try a.dupe(u8, row.first_at orelse row.created_at),
+                    .first_at = try a.dupe(u8, earlierInstant(row.first_at, row.legacy_first) orelse continue),
                     .id = row.conversation_id,
-                    .last_at = try a.dupe(u8, row.last_at orelse row.updated_at),
+                    .last_at = try a.dupe(u8, laterInstant(row.last_at, row.legacy_last) orelse continue),
                 });
             }
         }
@@ -1076,50 +1143,20 @@ pub const Store = struct {
     /// (`chat_window_side` on each side), or the last `chat_window_tail`
     /// messages when `seq` is null. Each message is cut at
     /// `chat_window_message_bytes` and says so with `cut`. `before` and
-    /// `after` count the messages left out on each side. A missing chat, or
-    /// a `seq` that is not a message of it, is `NotFound`.
+    /// `after` count the messages left out on each side. A missing chat is
+    /// `NotFound`. A `seq` that is not a message of it is `MessageNotFound`.
     pub fn chatWindow(self: *Store, id: i64, seq: ?i64, writer: *std.Io.Writer) !void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         const a = arena.allocator();
         const meta = try self.loadChatMeta(a, id) orelse return error.NotFound;
 
-        var messages = std.ArrayList(WindowMessage).empty;
-        var last_seq: i64 = -1;
-        while (true) {
-            var rows = ChatIndexRows.init(self.allocator);
-            defer rows.deinit();
-            const outcome = self.db.query(
-                "SELECT seq, event, saved_at FROM chat_event WHERE conversation_id = ?1 AND seq > ?2 ORDER BY seq LIMIT 32;",
-                &.{ .{ .integer = id }, .{ .integer = last_seq } },
-                &rows,
-                ChatIndexRows.collect,
-            );
-            if (outcome != .ok) return error.SqliteQueryFailed;
-            if (rows.failed) return error.SqlitePageFailed;
-            if (rows.rows.items.len == 0) break;
-            for (rows.rows.items) |row| {
-                last_seq = row.seq;
-                var aad_buf: [80]u8 = undefined;
-                const plaintext = try self.decryptFromStorage(chatEventAad(&aad_buf, id, row.seq), row.event);
-                defer self.allocator.free(plaintext);
-                const message = try chatEventMessage(a, plaintext) orelse continue;
-                try messages.append(a, .{
-                    .role = message.role,
-                    .saved_at = if (row.saved_at) |value| try a.dupe(u8, value) else null,
-                    .seq = row.seq,
-                    .text = message.text,
-                });
-            }
-        }
-
-        const count = messages.items.len;
+        const message_seqs = try self.chatMessageSeqs(a, id);
+        const count = message_seqs.len;
         var start: usize = 0;
         var end: usize = count;
         if (seq) |target| {
-            const at = for (messages.items, 0..) |message, index| {
-                if (message.seq == target) break index;
-            } else return error.NotFound;
+            const at = std.mem.indexOfScalar(i64, message_seqs, target) orelse return error.MessageNotFound;
             start = at -| chat_window_side;
             end = @min(count, at + chat_window_side + 1);
         } else {
@@ -1135,8 +1172,11 @@ pub const Store = struct {
         try writer.writeAll(",\"summary\":");
         if (try self.loadChatSummary(a, id)) |summary| try writeJsonStringStreaming(writer, summary) else try writer.writeAll("null");
         try writer.writeAll(",\"messages\":[");
-        for (messages.items[start..end], 0..) |message, index| {
-            if (index > 0) try writer.writeAll(",");
+        var written: usize = 0;
+        for (message_seqs[start..end]) |message_seq| {
+            const message = try self.loadWindowMessage(a, id, message_seq) orelse continue;
+            if (written > 0) try writer.writeAll(",");
+            written += 1;
             const cut_at = utf8AlignEnd(message.text, 0, @min(message.text.len, chat_window_message_bytes));
             try writer.print("{{\"message\":{d},\"role\":", .{message.seq});
             try writeJsonStringStreaming(writer, message.role.json());
@@ -1149,6 +1189,81 @@ pub const Store = struct {
             try writer.writeByte('}');
         }
         try writer.print("],\"before\":{d},\"after\":{d}}}", .{ start, count - end });
+    }
+
+    /// The seq of every User and Sage message of chat `id`, oldest first.
+    /// Counting them needs each event's role, which only the encrypted event
+    /// holds. The message index lists the messages it has caught up with in
+    /// plain columns (`chat_embedding.chunk_index`), so only the events after
+    /// its newest row are decrypted, and none when the index is current.
+    fn chatMessageSeqs(self: *Store, a: std.mem.Allocator, id: i64) ![]const i64 {
+        var seqs = std.ArrayList(i64).empty;
+        var last_seq: i64 = -1;
+        while (true) {
+            var rows = ChatIndexRows.init(self.allocator);
+            defer rows.deinit();
+            const outcome = self.db.query(
+                "SELECT chunk_index AS seq FROM chat_embedding WHERE conversation_id = ?1 AND chunk_index > ?2 ORDER BY chunk_index LIMIT 1024;",
+                &.{ .{ .integer = id }, .{ .integer = last_seq } },
+                &rows,
+                ChatIndexRows.collect,
+            );
+            if (outcome != .ok) return error.SqliteQueryFailed;
+            if (rows.failed) return error.SqlitePageFailed;
+            if (rows.rows.items.len == 0) break;
+            for (rows.rows.items) |row| {
+                last_seq = row.seq;
+                try seqs.append(a, row.seq);
+            }
+        }
+        while (true) {
+            var rows = ChatEventRows.init(self.allocator);
+            defer rows.deinit();
+            const outcome = self.db.query(
+                "SELECT seq, event FROM chat_event WHERE conversation_id = ?1 AND seq > ?2 ORDER BY seq LIMIT 32;",
+                &.{ .{ .integer = id }, .{ .integer = last_seq } },
+                &rows,
+                ChatEventRows.collect,
+            );
+            if (outcome != .ok) return error.SqliteQueryFailed;
+            if (rows.failed) return error.SqlitePageFailed;
+            if (rows.rows.items.len == 0) break;
+            for (rows.rows.items) |row| {
+                last_seq = row.seq;
+                var aad_buf: [80]u8 = undefined;
+                const plaintext = try self.decryptFromStorage(chatEventAad(&aad_buf, id, row.seq), row.event);
+                defer self.allocator.free(plaintext);
+                if (try chatEventIsMessage(self.allocator, plaintext)) try seqs.append(a, row.seq);
+            }
+        }
+        return seqs.items;
+    }
+
+    /// Message `seq` of chat `id` with its text and time, or null when that
+    /// event is gone or is not a message.
+    fn loadWindowMessage(self: *Store, a: std.mem.Allocator, id: i64, seq: i64) !?WindowMessage {
+        var rows = ChatIndexRows.init(self.allocator);
+        defer rows.deinit();
+        const outcome = self.db.query(
+            "SELECT seq, event, saved_at FROM chat_event WHERE conversation_id = ?1 AND seq = ?2;",
+            &.{ .{ .integer = id }, .{ .integer = seq } },
+            &rows,
+            ChatIndexRows.collect,
+        );
+        if (outcome != .ok) return error.SqliteQueryFailed;
+        if (rows.failed) return error.SqlitePageFailed;
+        if (rows.rows.items.len == 0) return null;
+        const row = rows.rows.items[0];
+        var aad_buf: [80]u8 = undefined;
+        const plaintext = try self.decryptFromStorage(chatEventAad(&aad_buf, id, row.seq), row.event);
+        defer self.allocator.free(plaintext);
+        const message = try chatEventMessage(a, plaintext) orelse return null;
+        return .{
+            .role = message.role,
+            .saved_at = if (row.saved_at) |value| try a.dupe(u8, value) else null,
+            .seq = row.seq,
+            .text = message.text,
+        };
     }
 
     const ChatMeta = struct { created_at: []const u8, title: []const u8, updated_at: []const u8 };
@@ -1249,8 +1364,8 @@ pub const Store = struct {
         const outcome = self.db.query(
             "SELECT COUNT(*) AS n FROM chat_conversation " ++
                 chat_index_state_join ++
-                " WHERE chat_conversation.id != ?1" ++
-                " AND chat_conversation.created_at < ?3 AND chat_conversation.updated_at >= ?2" ++
+                " WHERE chat_conversation.id != ?1 AND " ++
+                comptime chatActiveInRangeSql("?2", "?3") ++
                 " AND " ++ chat_index_due_sql ++ ";",
             &.{ .{ .integer = exclude }, .{ .text = &span.from }, .{ .text = &span.to } },
             &counts,
@@ -4949,6 +5064,20 @@ const ChatHit = struct {
     }
 };
 
+/// The earlier of two optional ISO instants, which sort as text.
+fn earlierInstant(first: ?[]const u8, second: ?[]const u8) ?[]const u8 {
+    const left = first orelse return second;
+    const right = second orelse return first;
+    return if (std.mem.order(u8, left, right) == .gt) right else left;
+}
+
+/// The later of two optional ISO instants.
+fn laterInstant(first: ?[]const u8, second: ?[]const u8) ?[]const u8 {
+    const left = first orelse return second;
+    const right = second orelse return first;
+    return if (std.mem.order(u8, left, right) == .lt) right else left;
+}
+
 /// A chat with messages inside a listed range, and its first and last.
 const ActiveChat = struct {
     first_at: []const u8,
@@ -5245,6 +5374,16 @@ fn chatEventMessage(allocator: std.mem.Allocator, raw: []const u8) !?ChatEventMe
     defer parsed.deinit();
     const extracted = readChatEventText(parsed.value) orelse return null;
     return .{ .role = extracted.role, .text = try allocator.dupe(u8, extracted.text) };
+}
+
+/// Whether a decrypted chat event is a User or Sage message with text. Most
+/// events are not, so a look for the two type names skips parsing them.
+fn chatEventIsMessage(allocator: std.mem.Allocator, raw: []const u8) !bool {
+    if (std.mem.indexOf(u8, raw, "message.received") == null and
+        std.mem.indexOf(u8, raw, "message.completed") == null) return false;
+    const message = try chatEventMessage(allocator, raw) orelse return false;
+    allocator.free(message.text);
+    return true;
 }
 
 fn readChatEventText(value: std.json.Value) ?struct { role: ChatEventRole, text: []const u8 } {
@@ -5988,6 +6127,8 @@ const ChatIndexRows = struct {
         saved_at: ?[]u8 = null,
         first_at: ?[]u8 = null,
         last_at: ?[]u8 = null,
+        legacy_first: ?[]u8 = null,
+        legacy_last: ?[]u8 = null,
         created_at: []u8 = &.{},
         updated_at: []u8 = &.{},
 
@@ -5998,6 +6139,8 @@ const ChatIndexRows = struct {
             if (row.saved_at) |value| allocator.free(value);
             if (row.first_at) |value| allocator.free(value);
             if (row.last_at) |value| allocator.free(value);
+            if (row.legacy_first) |value| allocator.free(value);
+            if (row.legacy_last) |value| allocator.free(value);
             allocator.free(row.created_at);
             allocator.free(row.updated_at);
         }
@@ -6057,6 +6200,10 @@ const ChatIndexRows = struct {
                     row.first_at = try optionalText(self.allocator, cell);
                 } else if (std.mem.eql(u8, name, "last_at")) {
                     row.last_at = try optionalText(self.allocator, cell);
+                } else if (std.mem.eql(u8, name, "legacy_first")) {
+                    row.legacy_first = try optionalText(self.allocator, cell);
+                } else if (std.mem.eql(u8, name, "legacy_last")) {
+                    row.legacy_last = try optionalText(self.allocator, cell);
                 } else if (std.mem.eql(u8, name, "created_at")) {
                     row.created_at = try dupeCell(self.allocator, cell);
                 } else if (std.mem.eql(u8, name, "updated_at")) {
@@ -9709,6 +9856,108 @@ test "semanticSearchChats reads each message's saved_at and falls back to the ch
     try std.testing.expect(std.mem.indexOf(u8, march_writer.buffered(), "\"savedAt\":null") != null);
 }
 
+/// Opens a store at version 19, runs `setup` SQL on it, then applies migration 20,
+/// the way an install that already ran migration 19 is upgraded.
+fn upgradedStore(setup: []const []const u8) !Store {
+    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, migrations[0..19]);
+    var db = switch (open_result.outcome) {
+        .ok => open_result.database.?,
+        else => return error.SqliteMigrationFailed,
+    };
+    errdefer db.deinit();
+    for (setup) |sql| {
+        try std.testing.expectEqual(native_sdk.relational_store.Outcome.ok, db.exec(&.{.{ .sql = sql }}));
+    }
+    const upgraded = db.applyMigrations(&migrations);
+    try std.testing.expectEqual(native_sdk.relational_store.OpenOutcome.ok, upgraded.outcome);
+    return Store.init(std.testing.allocator, db);
+}
+
+test "migration 20 bounds the events saved before saved_at existed and indexes saved_at" {
+    var store = try upgradedStore(&.{
+        // Chat 1 has only old events. Chat 2 has old events and a save since.
+        // Chat 3 has none that are old. Chat 4 has no events.
+        "INSERT INTO chat_conversation (id, title, events, created_at, updated_at) VALUES (1, 'Old', '', '2026-03-01T10:00:00.000Z', '2026-03-02T10:00:00.000Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event) VALUES (1, 0, '{}');",
+        "INSERT INTO chat_conversation (id, title, events, created_at, updated_at) VALUES (2, 'Continued', '', '2026-03-01T10:00:00.000Z', '2026-11-01T10:00:00.000Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event) VALUES (2, 0, '{}');",
+        "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (2, 1, '{}', '2026-10-26T09:00:00.000Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (2, 2, '{}', '2026-11-01T10:00:00.000Z');",
+        "INSERT INTO chat_conversation (id, title, events, created_at, updated_at) VALUES (3, 'New', '', '2026-10-27T10:00:00.000Z', '2026-10-27T10:00:00.000Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (3, 0, '{}', '2026-10-27T10:00:00.000Z');",
+        "INSERT INTO chat_conversation (id, title, events, created_at, updated_at) VALUES (4, 'Empty', '', '2026-10-27T10:00:00.000Z', '2026-10-27T10:00:00.000Z');",
+    });
+    defer store.deinit();
+
+    // The chat's own updated_at while nothing has moved it, and the first
+    // later save when something has.
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_conversation WHERE id = 1 AND unstamped_until = '2026-03-02T10:00:00.000Z';"));
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_conversation WHERE id = 2 AND unstamped_until = '2026-10-26T09:00:00.000Z';"));
+    try std.testing.expectEqual(@as(i64, 2), try store.countDataRows("SELECT count(*) AS n FROM chat_conversation WHERE unstamped_until IS NULL;"));
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM sqlite_master WHERE type = 'index' AND name = 'chat_event_saved_at';"));
+}
+
+test "a chat picked up after the upgrade keeps its old messages out of the months between" {
+    // Started 2026-03-01 and last used 2026-03-02, before saved_at existed.
+    var store = try upgradedStore(&.{
+        "INSERT INTO chat_conversation (id, title, events, created_at, updated_at) VALUES (1, 'Old chat', '', '2026-03-01T10:00:00.000Z', '2026-03-02T10:00:00.000Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event) VALUES (1, 0, '{\"type\":\"message.received\",\"data\":{\"message\":\"I keep waking at 4am.\"}}');",
+        "INSERT INTO chat_event (conversation_id, seq, event) VALUES (1, 1, '{\"type\":\"message.completed\",\"data\":{\"message\":\"That sounds tiring.\"}}');",
+    });
+    defer store.deinit();
+    // The chat goes on 2026-10-26, which moves its updated_at.
+    _ = try saveChatEventsAt(&store, 1, "Old chat", 2,
+        \\[{"type":"message.received","data":{"message":"Mostly the move to Lisbon."}}]
+    );
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "UPDATE chat_event SET saved_at = '2026-10-26T09:00:00.000Z' WHERE seq >= 2;" },
+        .{ .sql = "UPDATE chat_conversation SET updated_at = '2026-10-26T09:00:00.000Z';" },
+    }) == .ok);
+    const vec = [_]f32{ 1, 0, 0 };
+    try indexChatWith(&store, 1, &vec);
+
+    const june = InstantRange.parse("2026-06-01T07:00:00.000Z", "2026-06-08T07:00:00.000Z").?;
+    var june_out: [8192]u8 = undefined;
+    var june_search = std.Io.Writer.fixed(&june_out);
+    try store.semanticSearchChats(&vec, june, 0, 10, &june_search);
+    try std.testing.expectEqualStrings("{\"hits\":[],\"matched\":0,\"belowCutoff\":0,\"unreadable\":0,\"unindexed\":0}", june_search.buffered());
+    var june_list_out: [8192]u8 = undefined;
+    var june_list = std.Io.Writer.fixed(&june_list_out);
+    try store.listChatsInRange(june, 0, 10, &june_list);
+    try std.testing.expectEqualStrings("{\"chats\":[],\"total\":0}", june_list.buffered());
+
+    // Its old messages still turn up in the days they were said.
+    const march = InstantRange.parse("2026-03-01T00:00:00.000Z", "2026-03-03T00:00:00.000Z").?;
+    var march_out: [8192]u8 = undefined;
+    var march_search = std.Io.Writer.fixed(&march_out);
+    try store.semanticSearchChats(&vec, march, 0, 10, &march_search);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, march_search.buffered(), "\"savedAt\":null"));
+    try std.testing.expect(std.mem.indexOf(u8, march_search.buffered(), "Mostly the move") == null);
+    var march_list_out: [8192]u8 = undefined;
+    var march_list = std.Io.Writer.fixed(&march_list_out);
+    try store.listChatsInRange(march, 0, 10, &march_list);
+    try std.testing.expect(std.mem.indexOf(u8, march_list.buffered(), "\"firstAt\":\"2026-03-01T10:00:00.000Z\",\"lastAt\":\"2026-03-02T10:00:00.000Z\"") != null);
+
+    // A week around the new message finds only the new message.
+    const october = InstantRange.parse("2026-10-19T07:00:00.000Z", "2026-10-26T20:00:00.000Z").?;
+    var october_out: [8192]u8 = undefined;
+    var october_search = std.Io.Writer.fixed(&october_out);
+    try store.semanticSearchChats(&vec, october, 0, 10, &october_search);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, october_search.buffered(), "\"message\":"));
+    try std.testing.expect(std.mem.indexOf(u8, october_search.buffered(), "\"savedAt\":\"2026-10-26T09:00:00.000Z\"") != null);
+    var october_list_out: [8192]u8 = undefined;
+    var october_list = std.Io.Writer.fixed(&october_list_out);
+    try store.listChatsInRange(october, 0, 10, &october_list);
+    try std.testing.expect(std.mem.indexOf(u8, october_list.buffered(), "\"firstAt\":\"2026-10-26T09:00:00.000Z\",\"lastAt\":\"2026-10-26T09:00:00.000Z\"") != null);
+
+    // A range that holds both spans lists the chat from its start to its end.
+    const year = InstantRange.parse("2026-01-01T00:00:00.000Z", "2027-01-01T00:00:00.000Z").?;
+    var year_out: [8192]u8 = undefined;
+    var year_list = std.Io.Writer.fixed(&year_out);
+    try store.listChatsInRange(year, 0, 10, &year_list);
+    try std.testing.expect(std.mem.indexOf(u8, year_list.buffered(), "\"firstAt\":\"2026-03-01T10:00:00.000Z\",\"lastAt\":\"2026-10-26T09:00:00.000Z\"") != null);
+}
+
 test "semanticSearchChats counts chats whose index is behind" {
     var store = try testStore();
     defer store.deinit();
@@ -9785,8 +10034,120 @@ test "chatWindow reads two messages on each side, the last five, or NotFound" {
 
     var missing_out: [256]u8 = undefined;
     var missing = std.Io.Writer.fixed(&missing_out);
-    try std.testing.expectError(error.NotFound, store.chatWindow(id, 3, &missing));
+    // Seq 3 is an action, not a message. The chat itself is there.
+    try std.testing.expectError(error.MessageNotFound, store.chatWindow(id, 3, &missing));
     try std.testing.expectError(error.NotFound, store.chatWindow(99, null, &missing));
+    try std.testing.expectError(error.NotFound, store.chatWindow(99, 0, &missing));
+}
+
+/// Fifteen events as Chat saves them: a message now and then among the turn,
+/// step, reasoning, and action events around it. The messages are seqs
+/// 0, 3, 4, 8, 10, 11, and 14.
+const busy_chat =
+    \\[{"type":"message.received","data":{"message":"m0"}},
+    \\{"type":"turn.started","data":{"turnId":"t0"}},
+    \\{"type":"step.started","data":{"stepIndex":0}},
+    \\{"type":"message.received","data":{"message":"m3"}},
+    \\{"type":"message.completed","data":{"message":"m4"}},
+    \\{"type":"reasoning.appended","data":{"delta":"hm"}},
+    \\{"type":"actions.requested","data":{"actions":[]}},
+    \\{"type":"action.result","data":{"status":"ok"}},
+    \\{"type":"message.completed","data":{"message":"m8"}},
+    \\{"type":"step.completed","data":{"stepIndex":0}},
+    \\{"type":"message.received","data":{"message":"m10"}},
+    \\{"type":"message.completed","data":{"message":"m11"}},
+    \\{"type":"turn.completed","data":{"turnId":"t0"}},
+    \\{"type":"session.waiting","data":{}},
+    \\{"type":"message.received","data":{"message":"m14"}}]
+;
+
+fn chatWindowJson(store: *Store, id: i64, seq: ?i64, out: []u8) ![]const u8 {
+    var writer = std.Io.Writer.fixed(out);
+    try store.chatWindow(id, seq, &writer);
+    return writer.buffered();
+}
+
+test "chatWindow counts messages, not events, and gives the same answer however much is indexed" {
+    var store = try testStore();
+    defer store.deinit();
+    const id = try saveChatEvents(&store, "Busy", busy_chat);
+
+    // No index yet: every event is read.
+    var none_out: [4096]u8 = undefined;
+    const none = try chatWindowJson(&store, id, 8, &none_out);
+    try std.testing.expect(std.mem.indexOf(u8, none, "\"messages\":[{\"message\":3,") != null);
+    try std.testing.expect(std.mem.indexOf(u8, none, "\"text\":\"m0\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, none, "\"text\":\"m14\"") == null);
+    try std.testing.expect(std.mem.endsWith(u8, none, "],\"before\":1,\"after\":1}"));
+
+    // The first three messages are indexed, and the rest are read.
+    var first = try store.chatMessagesToIndex(id, 3);
+    defer first.deinit(store.allocator);
+    const vec = [_]f32{ 1, 0, 0 };
+    const vectors = [_][]const f32{ &vec, &vec, &vec };
+    try std.testing.expect(try store.addChatMessageEmbeddings(id, first, &vectors, "nomic-embed-text:v1.5"));
+    var partial_out: [4096]u8 = undefined;
+    try std.testing.expectEqualStrings(none, try chatWindowJson(&store, id, 8, &partial_out));
+
+    // All are indexed.
+    try indexChatWith(&store, id, &vec);
+    var full_out: [4096]u8 = undefined;
+    try std.testing.expectEqualStrings(none, try chatWindowJson(&store, id, 8, &full_out));
+
+    // The last messages, and a number that is an event but not a message.
+    var tail_out: [4096]u8 = undefined;
+    const tail = try chatWindowJson(&store, id, null, &tail_out);
+    try std.testing.expect(std.mem.indexOf(u8, tail, "\"messages\":[{\"message\":4,") != null);
+    try std.testing.expect(std.mem.endsWith(u8, tail, "],\"before\":2,\"after\":0}"));
+    var missing_out: [256]u8 = undefined;
+    var missing = std.Io.Writer.fixed(&missing_out);
+    for ([_]i64{ 1, 2, 5, 7, 9, 12, 13, 15, 99 }) |seq| {
+        try std.testing.expectError(error.MessageNotFound, store.chatWindow(id, seq, &missing));
+    }
+}
+
+test "chatWindow decrypts only the window's events once the index is current" {
+    var rig: EncRig = undefined;
+    try rig.init("correct horse");
+    defer rig.deinit();
+    const id = try saveChatEvents(&rig.store, "Busy", busy_chat);
+    var plain_out: [4096]u8 = undefined;
+    const plain = try chatWindowJson(&rig.store, id, 8, &plain_out);
+    try std.testing.expect(std.mem.endsWith(u8, plain, "],\"before\":1,\"after\":1}"));
+
+    const vec = [_]f32{ 1, 0, 0 };
+    try indexChatWith(&rig.store, id, &vec);
+    // Seq 1 is neither in the window nor a message. Garbage there fails any
+    // read of it, so reading around seq 8 shows it is never read.
+    try std.testing.expect(rig.store.db.exec(&.{.{
+        .sql = "UPDATE chat_event SET event = 'sage:v1:AAAA' WHERE conversation_id = 1 AND seq = 1;",
+    }}) == .ok);
+    var indexed_out: [4096]u8 = undefined;
+    try std.testing.expectEqualStrings(plain, try chatWindowJson(&rig.store, id, 8, &indexed_out));
+
+    // With no index, the same chat has to read every event.
+    try std.testing.expect(rig.store.db.exec(&.{.{ .sql = "DELETE FROM chat_embedding;" }}) == .ok);
+    var scan_out: [4096]u8 = undefined;
+    var scan = std.Io.Writer.fixed(&scan_out);
+    try std.testing.expect(std.meta.isError(rig.store.chatWindow(id, 8, &scan)));
+}
+
+test "embeddings.pending lists a bounded number of due chats and still lists entries" {
+    var store = try testStore();
+    defer store.deinit();
+    // More chats than the store returns in one result.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 8200) INSERT INTO chat_conversation (id, title, events) SELECT i, 'Chat', '' FROM n;" },
+        .{ .sql = "INSERT INTO chat_event (conversation_id, seq, event) SELECT id, 0, '{}' FROM chat_conversation;" },
+    }) == .ok);
+
+    var output: [64 * 1024]u8 = undefined;
+    const json = try store.listPendingEmbeddings(&output);
+    try std.testing.expect(std.mem.startsWith(u8, json, "{\"ids\":[1,2,3],\"chatIds\":[1,2,3,4,"));
+    const chat_ids = json[std.mem.indexOf(u8, json, "\"chatIds\":[").? + "\"chatIds\":[".len ..];
+    try std.testing.expectEqual(pending_chat_limit, std.mem.count(u8, chat_ids, ",") + 1);
+    // The ones left over are still due.
+    try std.testing.expect(try store.chatIndexDue(8200));
 }
 
 test "chatWindow cuts a long message and says so" {

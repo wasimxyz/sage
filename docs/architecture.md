@@ -48,8 +48,8 @@ The agent server listens on its own background thread and gives each connection 
 
 Ollama is a local model server at `127.0.0.1:11434`. Sage uses it for these jobs:
 
-- **Embeddings**: `nomic-embed-text` turns entries, summaries, and memories into vectors, so Chat can find them by meaning. Any pulled tag works, and `SAGE_EMBED_MODEL` changes the name Sage looks for.
-- **Dream**: the summary model writes entry summaries and chat titles, and in a memory build it extracts memories. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
+- **Embeddings**: `nomic-embed-text` turns entries, chat messages, summaries, and memories into vectors, so Chat can find them by meaning. Any pulled tag works, and `SAGE_EMBED_MODEL` changes the name Sage looks for.
+- **Dream**: the summary model writes entry and chat summaries and chat titles, and in a memory build it extracts memories. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
 - **Chat**: the eve agent calls the chat model you pick. The Chat screen lists pulled chat models through `ollama.models`.
 - **Model management**: Settings > Models downloads and deletes models, as [Models](models.md) explains.
 

@@ -239,6 +239,26 @@ export function shapeChatList(input: {
   return withContext(chats, notes, range, today);
 }
 
+// Says how many messages a window leaves out, and which message number reads
+// more. Message numbers have gaps, so only a number shown is sure to be a
+// message. The first and last shown lead to the messages beside them.
+function leftOutNote(before: number, after: number): string | null {
+  if (before === 0 && after === 0) {
+    return null;
+  }
+  const parts = [
+    before > 0 ? plural(before, "earlier message", "earlier messages") : "",
+    after > 0 ? plural(after, "later message", "later messages") : "",
+  ].filter((part) => part.length > 0);
+  let reach = "the first or last message number shown";
+  if (after === 0) {
+    reach = "the first message number shown";
+  } else if (before === 0) {
+    reach = "the last message number shown";
+  }
+  return `${parts.join(" and ")} ${before + after === 1 ? "isn't" : "aren't"} shown. To read more, call get_chat with ${reach}.`;
+}
+
 // One part of a chat: a few messages around a hit, or its last few.
 export function shapeChatWindow(payload: unknown): ChatWindow {
   const id = field(payload, "chatId");
@@ -260,19 +280,13 @@ export function shapeChatWindow(payload: unknown): ChatWindow {
     });
   }
 
-  const before = whole(field(payload, "before"));
-  const after = whole(field(payload, "after"));
   const notes: string[] = [];
-  if (before > 0 || after > 0) {
-    const parts = [
-      before > 0
-        ? `${plural(before, "earlier message", "earlier messages")}`
-        : "",
-      after > 0 ? `${plural(after, "later message", "later messages")}` : "",
-    ].filter((part) => part.length > 0);
-    notes.push(
-      `${parts.join(" and ")} ${before + after === 1 ? "isn't" : "aren't"} shown. Call get_chat with a nearby message number to read more.`
-    );
+  const leftOut = leftOutNote(
+    whole(field(payload, "before")),
+    whole(field(payload, "after"))
+  );
+  if (leftOut !== null) {
+    notes.push(leftOut);
   }
   if (cut) {
     notes.push("Long messages are cut short.");
@@ -289,4 +303,18 @@ export function shapeChatWindow(payload: unknown): ChatWindow {
     ...(typeof summary === "string" && summary.length > 0 ? { summary } : {}),
     title: text(field(payload, "title")),
   };
+}
+
+// What to tell the model when `get_chat` finds nothing. Sage answers 404 for a
+// chat that is gone and for a message number that is not a message of a chat
+// that is there. Message numbers have gaps, so it says which one happened.
+export function missingChatText(
+  body: unknown,
+  id: number,
+  message: number | undefined
+): string {
+  if (message !== undefined && field(body, "error") === "message_not_found") {
+    return `${chatId(id)} has no message ${message}. Use a message number shown by search_chats or an earlier get_chat, or leave message out to read the end of the chat.`;
+  }
+  return `No chat has the id ${chatId(id)}.`;
 }

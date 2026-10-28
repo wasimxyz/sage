@@ -114,7 +114,7 @@ Sage keeps one embedding for each User and Sage message, so a search ranks both 
 - **`when` alone**: the chats from that time, picked evenly, oldest first, 10 by default. Each shows Dream’s summary, or its first message when Dream hasn’t summarized it.
 - **`when` and `query`**: only messages from that time are ranked.
 
-`when` takes the same words as in `search_journal`. A message counts as inside the time when it was saved inside it. A message saved before Sage kept that time counts when its chat started before the time ended and changed after it began. The tool turns the days into times on this Mac’s clock, so a day that starts or ends daylight saving time still runs midnight to midnight.
+`when` takes the same words as in `search_journal`. A message counts as inside the time when it was saved inside it. A message saved before Sage kept that time counts when it could have been saved inside the time, as [Chat storage](storage.md) explains. The tool turns the days into times on this Mac’s clock, so a day that starts or ends daylight saving time still runs midnight to midnight.
 
 The chat you are in is left out. The Chat screen names it with `x-sage-chat-id`, and a new chat that hasn’t saved yet has nothing to leave out.
 
@@ -123,7 +123,7 @@ The chat you are in is left out. The Chat screen names it with `x-sage-chat-id`,
 - **With a message number**: that message and up to 2 User and Sage messages on each side
 - **Without one**: the chat’s summary, when Dream wrote one, and its last 5 messages
 
-Each message is cut at 4,000 bytes. A `note` says how many messages are left out on each side and whether any were cut.
+Each message is cut at 4,000 bytes. A `note` says how many messages are left out on each side, which message number to use to read more, and whether any were cut. Message numbers have gaps, so the tool asks the model to use only a number it was shown. A message number that isn’t one gets a different error from a chat that doesn’t exist.
 
 The instructions tell the model to use `search_chats` when you point back to an earlier conversation, such as “last time” or “we talked about”, or ask what you’ve discussed.
 
