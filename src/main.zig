@@ -1130,7 +1130,7 @@ fn handleDreamStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocati
     const last = self.store.lastDreamedAt() catch null;
     defer if (last) |text| self.store.allocator.free(text);
     // The same rows dream.start works through, so the dot matches what a Dream would do.
-    const pending = self.store.countPendingDream(build_options.memory_enabled) catch 0;
+    const pending = self.store.countPendingDream() catch 0;
     return self.dream_runner.writeStatus(if (last) |text| text else "", pending, output);
 }
 
@@ -1774,8 +1774,11 @@ const EmbedJob = struct {
     memory_occurred_at: []u8 = &.{},
     memory_subject: []u8 = &.{},
     memory_text: []u8 = &.{},
+    chat_id: i64 = 0,
+    /// The chat messages a `generate_chat` job embeds, read on the loop thread.
+    chat_batch: journal.ChatIndexBatch = .{},
 
-    const Kind = enum { status, generate, models, start, delete, memory_save, setup_status };
+    const Kind = enum { status, generate, generate_chat, models, start, delete, memory_save, setup_status };
 };
 
 fn handleEmbeddingsStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) anyerror!void {
@@ -1797,6 +1800,17 @@ fn handleEmbeddingsGenerate(context: *anyopaque, invocation: native_sdk.bridge.I
     }
     if (isSecuring(self)) {
         respondFail(responder, invocation.request.id, "Sage is securing your journal.");
+        return;
+    }
+    if (journal.jsonHas(invocation.request.payload, "chatId")) {
+        startGenerateChatJob(self, invocation, responder) catch |err| {
+            const message = switch (err) {
+                error.InvalidRequest => "Missing chat id.",
+                error.NotFound => "Chat not found.",
+                else => "Could not start embedding.",
+            };
+            respondFail(responder, invocation.request.id, message);
+        };
         return;
     }
     startGenerateJob(self, invocation, responder) catch |err| {
@@ -2116,6 +2130,42 @@ fn startGenerateJob(self: *App, invocation: native_sdk.bridge.Invocation, respon
     chunks_owned = false;
 }
 
+/// Index the next chat messages that have no row, up to one batch. The
+/// answer's `more` asks the caller to call again: the chat has more messages
+/// to index, or it was saved while this batch was being embedded.
+fn startGenerateChatJob(self: *App, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) !void {
+    const services = self.services orelse return error.RuntimeUnavailable;
+    const allocator = self.store.allocator;
+    const chat_id = journal.jsonI64(invocation.request.payload, "chatId") orelse return error.InvalidRequest;
+
+    // Decrypting the new messages keeps the database on the loop thread; only
+    // the Ollama round-trip moves to a worker.
+    var batch = try self.store.chatMessagesToIndex(chat_id, journal.chat_index_batch_messages);
+    var batch_owned = true;
+    defer if (batch_owned) batch.deinit(allocator);
+
+    if (batch.messages.len == 0) {
+        _ = try self.store.addChatMessageEmbeddings(chat_id, batch, &.{}, "");
+        try responder.success(invocation.request.id, "{\"chunks\":0,\"dimensions\":0,\"model\":\"\",\"more\":false}");
+        return;
+    }
+
+    const job = try allocator.create(EmbedJob);
+    errdefer allocator.destroy(job);
+    job.* = .{
+        .kind = .generate_chat,
+        .responder = responder,
+        .request_id = try allocator.dupe(u8, invocation.request.id),
+        .chat_id = chat_id,
+        .chat_batch = batch,
+        .generation = self.store.data_generation,
+    };
+    errdefer allocator.free(job.request_id);
+    const thread = try std.Thread.spawn(.{}, runGenerateChatJob, .{ self.io, allocator, self.embed_queue, services, job, self.models });
+    thread.detach();
+    batch_owned = false;
+}
+
 fn runStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, models: ollama.ModelPrefixes) void {
     var abort: ollama.Abort = .{ .io = io };
     const watchdog = ollama.startWatchdog(&abort, status_timeout_ms);
@@ -2145,6 +2195,35 @@ fn runGenerateJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, 
     ollama.finishWatchdog(&abort, watchdog);
     queue.push(io, job);
     services.wake() catch {};
+}
+
+fn runGenerateChatJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, models: ollama.ModelPrefixes) void {
+    defer {
+        queue.push(io, job);
+        services.wake() catch {};
+    }
+    var abort: ollama.Abort = .{ .io = io };
+    const watchdog = ollama.startWatchdog(&abort, status_timeout_ms);
+    const status = ollama.checkStatus(io, allocator, &abort, models);
+    ollama.finishWatchdog(&abort, watchdog);
+    job.model_name = status.model_name;
+    if (!status.running) {
+        job.err = error.OllamaNotRunning;
+        return;
+    }
+    if (!status.model_pulled or status.model_name.len == 0) {
+        job.err = error.ModelNotPulled;
+        return;
+    }
+    const texts = job.chat_batch.texts(allocator) catch |err| {
+        job.err = err;
+        return;
+    };
+    defer allocator.free(texts);
+    job.vectors = ollama.embedInBatches(io, allocator, texts, job.model_name, journal.chat_index_batch_messages, generate_timeout_ms) catch |err| {
+        job.err = err;
+        return;
+    };
 }
 
 fn runModelsJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, models: ollama.ModelPrefixes) void {
@@ -2224,6 +2303,7 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
         if (job.memory_occurred_at.len > 0) allocator.free(job.memory_occurred_at);
         if (job.memory_subject.len > 0) allocator.free(job.memory_subject);
         if (job.memory_text.len > 0) allocator.free(job.memory_text);
+        job.chat_batch.deinit(allocator);
         for (job.chat_models.names) |name| allocator.free(name);
         if (job.chat_models.names.len > 0) allocator.free(job.chat_models.names);
         allocator.destroy(job);
@@ -2275,6 +2355,34 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
             writer.writeAll(",\"model\":") catch return;
             writeJsonStringToWriter(&writer, job.model_name) catch return;
             writer.writeAll("}") catch return;
+            job.responder.success(job.request_id, writer.buffered()) catch {};
+        },
+        .generate_chat => {
+            if (job.err) |err| {
+                var pulled_buf: [256]u8 = undefined;
+                const message = switch (err) {
+                    error.OllamaNotRunning => "Ollama is not running.",
+                    error.ModelNotPulled => ollama.embedNotPulledMessage(&pulled_buf, self.models.embed),
+                    error.OllamaTimeout => "Ollama did not answer in time.",
+                    else => "Embedding failed.",
+                };
+                respondFail(job.responder, job.request_id, message);
+                return;
+            }
+            if (job.generation != self.store.data_generation) {
+                respondFail(job.responder, job.request_id, "Journal data was deleted.");
+                return;
+            }
+            const written = self.store.addChatMessageEmbeddings(job.chat_id, job.chat_batch, job.vectors, job.model_name) catch {
+                respondFail(job.responder, job.request_id, "Could not store the embeddings.");
+                return;
+            };
+            const dimensions = if (job.vectors.len > 0) job.vectors[0].len else 0;
+            var buffer: [256]u8 = undefined;
+            var writer = std.Io.Writer.fixed(&buffer);
+            writer.print("{{\"chunks\":{d},\"dimensions\":{d},\"model\":", .{ if (written) job.chat_batch.messages.len else 0, dimensions }) catch return;
+            writeJsonStringToWriter(&writer, job.model_name) catch return;
+            writer.print(",\"more\":{}}}", .{!written or !job.chat_batch.last}) catch return;
             job.responder.success(job.request_id, writer.buffered()) catch {};
         },
         .delete => {
@@ -2379,7 +2487,7 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
                 agent_server.closeJob(allocator, io, job);
                 return;
             }
-            if (!build_options.memory_enabled and job.target != .journal) {
+            if (!build_options.memory_enabled and job.target.needsMemory()) {
                 agent_server.replyJson(io, job.stream, 404, "Not Found", "{\"error\":\"not_found\"}");
                 agent_server.closeJob(allocator, io, job);
                 return;
@@ -2392,7 +2500,7 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
                 agent_server.replyLocked(io, job.stream);
                 return;
             }
-            if (!build_options.memory_enabled and job.target != .journal) {
+            if (!build_options.memory_enabled and job.target.needsMemory()) {
                 agent_server.replyJson(io, job.stream, 404, "Not Found", "{\"error\":\"not_found\"}");
                 return;
             }
@@ -2403,6 +2511,7 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
             if (job.vectors.len == 0) {
                 const empty = switch (job.target) {
                     .journal => "{\"entries\":[]}",
+                    .chats => "{\"hits\":[]}",
                     .facts, .events => "{\"results\":[]}",
                 };
                 agent_server.replyJson(io, job.stream, 200, "OK", empty);
@@ -2412,6 +2521,7 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
             defer body.deinit();
             const search = switch (job.target) {
                 .journal => self.store.semanticSearchSummaries(job.vectors[0], job.range, job.limit, &body.writer),
+                .chats => self.store.semanticSearchChats(job.vectors[0], job.chat_range, job.exclude, job.limit, &body.writer),
                 .facts => self.store.semanticSearchFacts(job.vectors[0], job.limit, &body.writer),
                 .events => self.store.semanticSearchEvents(job.vectors[0], job.limit, &body.writer),
             };
@@ -2436,6 +2546,44 @@ fn completeAgentJob(self: *App, job: *agent_server.Job) void {
             self.store.listEntriesInRange(range, job.limit, &body.writer) catch {
                 agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
                 return;
+            };
+            agent_server.replyJson(io, job.stream, 200, "OK", body.written());
+        },
+        .chat_range => {
+            defer agent_server.closeJob(allocator, io, job);
+            if (journalAccessBlocked(self)) {
+                agent_server.replyLocked(io, job.stream);
+                return;
+            }
+            const range = job.chat_range orelse {
+                agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+                return;
+            };
+            var body = std.Io.Writer.Allocating.init(allocator);
+            defer body.deinit();
+            self.store.listChatsInRange(range, job.exclude, job.limit, &body.writer) catch {
+                agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+                return;
+            };
+            agent_server.replyJson(io, job.stream, 200, "OK", body.written());
+        },
+        .get_chat => {
+            defer agent_server.closeJob(allocator, io, job);
+            if (journalAccessBlocked(self)) {
+                agent_server.replyLocked(io, job.stream);
+                return;
+            }
+            var body = std.Io.Writer.Allocating.init(allocator);
+            defer body.deinit();
+            self.store.chatWindow(job.chat_id, job.message, &body.writer) catch |err| switch (err) {
+                error.NotFound => {
+                    agent_server.replyJson(io, job.stream, 404, "Not Found", "{\"error\":\"not_found\"}");
+                    return;
+                },
+                else => {
+                    agent_server.replyJson(io, job.stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+                    return;
+                },
             };
             agent_server.replyJson(io, job.stream, 200, "OK", body.written());
         },
@@ -3887,7 +4035,7 @@ test "stale embed jobs do not write after deleteAllData" {
     };
     completeEmbedJob(&rig.app, stale_embed);
     try std.testing.expect(std.mem.indexOf(u8, rig.capture.body(), "Journal data was deleted.") != null);
-    try std.testing.expectEqualStrings("{\"ids\":[1]}", try rig.app.store.listPendingEmbeddings(&output));
+    try std.testing.expectEqualStrings("{\"ids\":[1],\"chatIds\":[]}", try rig.app.store.listPendingEmbeddings(&output));
 
     rig.capture = .{};
     const fresh_embed = try allocator.create(EmbedJob);
@@ -3911,7 +4059,7 @@ test "stale embed jobs do not write after deleteAllData" {
         .generation = rig.app.store.data_generation,
     };
     completeEmbedJob(&rig.app, fresh_embed);
-    try std.testing.expectEqualStrings("{\"ids\":[]}", try rig.app.store.listPendingEmbeddings(&output));
+    try std.testing.expectEqualStrings("{\"ids\":[],\"chatIds\":[]}", try rig.app.store.listPendingEmbeddings(&output));
 }
 
 test "journal.export refuses while locked" {

@@ -17,10 +17,10 @@ Chat involves three processes on your Mac:
 1. You type a question in the Chat screen.
 2. The frontend sends it to the eve agent: through the Vite `/eve` proxy to port 2000 during `make dev`, or straight to `127.0.0.1:2001` in a packaged app.
 3. The agent calls the chat model you picked, served by Ollama.
-4. When the model wants to look something up, it calls `search_journal` or `get_journal_entry`, and in a memory build `facts__search_memories`.
-5. The tool asks Sage’s local agent server, which searches entry summaries or reads one entry and returns decrypted text.
+4. When the model wants to look something up, it calls `search_journal` or `get_journal_entry`, `search_chats` or `get_chat` for earlier chats, and in a memory build `facts__search_memories`.
+5. The tool asks Sage’s local agent server, which searches entry summaries or chat messages, or reads one entry or part of a chat, and returns decrypted text.
 6. The answer streams back to the Chat screen.
-7. When the turn finishes, the frontend saves the transcript through the `chat.save` bridge command.
+7. When the turn finishes, the frontend saves the transcript through the `chat.save` bridge command, then indexes the new messages for `search_chats`.
 
 In a memory build, profile facts and the top matching facts and events also enter the prompt before the model runs.
 

@@ -114,4 +114,4 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `journal.exportDialog` and `journal.export`: pick a folder and write the export
 - `system.calendar`: the first day of the week on this Mac, for Home
 - `embeddings.status`: whether Ollama is running and the embedding model is pulled
-- `embeddings.pending` and `embeddings.generate`: list entries that need embedding, and embed one
+- `embeddings.pending` and `embeddings.generate`: list entries and chats that need embedding, and embed one entry, or the next messages of one chat with `{ "chatId" }`

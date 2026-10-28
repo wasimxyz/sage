@@ -770,6 +770,41 @@ pub fn deleteModel(io: std.Io, allocator: std.mem.Allocator, name: []const u8, a
     if (!statusIs2xx(response.items)) return error.OllamaRequestFailed;
 }
 
+/// Embed `texts` with one `embed` call per `per_call` texts, each under its
+/// own `timeout_ms` watchdog, so a long list does not race one time limit.
+/// Returns one `[]f32` per text, owned by `allocator` like `embed`.
+pub fn embedInBatches(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    texts: []const []const u8,
+    model_name: []const u8,
+    per_call: usize,
+    timeout_ms: i64,
+) ![][]f32 {
+    const vectors = try allocator.alloc([]f32, texts.len);
+    var filled: usize = 0;
+    errdefer {
+        for (vectors[0..filled]) |vec| allocator.free(vec);
+        allocator.free(vectors);
+    }
+    while (filled < texts.len) {
+        const end = @min(texts.len, filled + per_call);
+        var abort: Abort = .{ .io = io };
+        const watchdog = startWatchdog(&abort, timeout_ms);
+        const result = embed(io, allocator, texts[filled..end], model_name, &abort);
+        finishWatchdog(&abort, watchdog);
+        const owned = try result;
+        defer allocator.free(owned);
+        if (owned.len != end - filled) {
+            for (owned) |vec| allocator.free(vec);
+            return error.EmbeddingCountMismatch;
+        }
+        @memcpy(vectors[filled..end], owned);
+        filled = end;
+    }
+    return vectors;
+}
+
 /// Embed a batch of text chunks via `POST /api/embed`. Returns one `[]f32` per
 /// input chunk. Caller owns the returned slices (and the outer slice) via
 /// `allocator`. When `abort` is given, the socket is published to it and a

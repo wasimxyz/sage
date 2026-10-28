@@ -1,7 +1,11 @@
 import type { EveDynamicToolPart, EveMessagePart } from "eve/client";
 
 import { assistantPartIsVisible } from "./assistant-pending.ts";
-import { readEntryToolName, toolPartName } from "./tool-part.ts";
+import {
+  readChatToolName,
+  readEntryToolName,
+  toolPartName,
+} from "./tool-part.ts";
 
 interface ReasoningRun {
   index: number;
@@ -13,7 +17,11 @@ interface ReasoningRun {
 interface ReadsRun {
   kind: "reads";
   parts: EveDynamicToolPart[];
+  /** `get_journal_entry` or `get_chat`. A run holds reads of one kind. */
+  toolName: string;
 }
+
+const readToolNames = new Set([readChatToolName, readEntryToolName]);
 
 interface PartRun {
   index: number;
@@ -26,9 +34,10 @@ export type AssistantRun = PartRun | ReadsRun | ReasoningRun;
 /**
  * Groups an assistant message's parts into what Chat draws as one row each.
  * Consecutive reasoning parts become one thinking row, so a streamed trace
- * does not stack several "Thinking..." triggers. Reads of journal entries with
- * nothing visible between them become one row. Parts that show nothing, such
- * as a step start or an empty text, do not split a group of reads.
+ * does not stack several "Thinking..." triggers. Reads of journal entries, or
+ * of past chats, with nothing visible between them become one row. Parts that
+ * show nothing, such as a step start or an empty text, do not split a group of
+ * reads.
  */
 export function assistantRuns(
   parts: readonly EveMessagePart[]
@@ -59,14 +68,12 @@ export function assistantRuns(
     if (!visible) {
       continue;
     }
-    if (
-      part.type === "dynamic-tool" &&
-      toolPartName(part) === readEntryToolName
-    ) {
-      if (reads) {
+    const toolName = part.type === "dynamic-tool" ? toolPartName(part) : "";
+    if (part.type === "dynamic-tool" && readToolNames.has(toolName)) {
+      if (reads !== null && reads.toolName === toolName) {
         reads.parts.push(part);
       } else {
-        reads = { kind: "reads", parts: [part] };
+        reads = { kind: "reads", parts: [part], toolName };
         runs.push(reads);
       }
       continue;

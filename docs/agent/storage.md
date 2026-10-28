@@ -1,6 +1,6 @@
 # Chat storage
 
-This page explains how chats are stored in Sage’s SQLite file and how a saved conversation resumes. It also covers export and the Settings > Data actions that delete journal and chat data. The code is the chat section of `src/journal.zig` and the `chat.*` and `data.*` handlers in `src/main.zig`.
+This page explains how chats are stored in Sage’s SQLite file, how a saved conversation resumes, and how Chat’s chat search indexes messages. It also covers export and the Settings > Data actions that delete journal and chat data. The code is the chat section of `src/journal.zig` and the `chat.*` and `data.*` handlers in `src/main.zig`.
 
 ## The tables
 
@@ -16,6 +16,7 @@ Later migrations add to `chat_conversation`:
 - `0011_chat_context_length_default.sql`: fills in `32768` on older rows with no context length
 - `0015_chat_title_locked.sql`: `title_locked`, so Dream can write a title without overwriting a rename
 - `0016_chat_index_skip.sql`: marks chats with no User or Sage text, so Dream skips them until the transcript changes
+- `0019_chat_message_index.sql`: adds `saved_at` to `chat_event`, `role` to `chat_embedding`, and the `chat_index_state` table, for [the message index](#the-message-index)
 
 Each conversation row has:
 
@@ -36,6 +37,7 @@ Each event row has:
 
 - `conversation_id` and `seq`: the conversation and the event’s position in the transcript
 - `event`: the eve stream event, encrypted per row
+- `saved_at`: when a save added the event. Events from before `0019` have none.
 
 One event can be at most 128 KiB. Reads fetch rows in 256 KiB pages, so a save with a larger event fails instead of storing a row that reads cannot return.
 
@@ -84,6 +86,27 @@ Reopening a conversation restores the transcript, the eve session, and the picke
 
 Each message hit includes the conversation id and the event `seq`, so the Chat screen can open the transcript and scroll to the matching message.
 
+## The message index
+
+Chat’s `search_chats` tool ranks User and Sage messages by meaning, in every build. Each message with text has one row in `chat_embedding`:
+
+- `chunk_index`: the message’s event `seq`
+- `chunk_text`: the message text, cut at 8,000 bytes and encrypted with the label `chat_embedding:<conversation_id>:<seq>`
+- `embedding` and `model`: the vector and the embedding model that made it
+- `role`: `user` or `assistant`
+
+`chat_index_state` records when each chat’s index last caught up. A chat needs indexing when it has events, isn’t marked in `chat_index_skip`, and its `indexed_at` is missing or older than its `updated_at`.
+
+Messages get their rows at three points:
+
+1. **After a reply**: when a turn finishes and its events save, the Chat screen calls `embeddings.generate` with the chat’s id. Sage embeds the messages that have no row, up to 32 at a time, and answers `more` until none are left.
+2. **When Sage loads your entries**: the same pass that embeds stale entries also indexes chats that need it, such as one saved while Ollama was down. If Ollama is down, it tries again every 15 seconds.
+3. **During Dream**: Dream indexes up to 1,024 messages of each chat that needs it, in every build.
+
+Rows are only removed from the end of a chat or all at once, so every message after the newest row is new. When a save replaces events from `baseSeq` on, it deletes their rows in the same write. A chat saved while its messages were being embedded drops that batch, and the next pass reads the new transcript.
+
+`0019` deleted the 8,000-byte chunks earlier builds stored, which no search read. Each chat is indexed again the next time one of the three points reaches it.
+
 ## What is encrypted
 
 When encryption is on, titles and events are encrypted:
@@ -91,7 +114,7 @@ When encryption is on, titles and events are encrypted:
 - Titles use the label `chat_conversation:title`.
 - Each event uses `chat_event:<conversation_id>:<seq>`, so an encrypted row cannot be moved to another conversation or position.
 
-Session ids, timestamps, `seq`, the model name, the Thinking setting, and the context length stay readable. That lets the chat list and resume work without decrypting every row. [Encryption at rest](../security/encryption.md) covers the passes that encrypt and decrypt these rows.
+Session ids, timestamps, `seq`, the model name, the Thinking setting, and the context length stay readable. That lets the chat list and resume work without decrypting every row. Each event’s `saved_at` and each index row’s `role` stay readable too, so a chat search by time can filter rows before it decrypts any. [Encryption at rest](../security/encryption.md) covers the passes that encrypt and decrypt these rows.
 
 ## Exporting conversations
 
@@ -137,7 +160,7 @@ Settings > Data counts journal entries, conversations, index rows, and visible m
 | Memories | `data.deleteMemories` | Every profile sentence, fact, and event, including rows you added and hidden rows, plus Dream times | Entries and conversations |
 | Delete all data | `data.deleteAll` | Every entry, conversation, embedding, summary, and memory | The lock password, Touch ID, encryption settings, and Chat instructions |
 
-After the Embeddings wipe, Sage embeds entries again, and the next Dream rebuilds summaries and chat indexes. Dream times stay, so Dream does not extract memories again. If Ollama is down, Sage embeds the entries once Ollama is back.
+After the Embeddings wipe, Sage embeds entries and indexes chat messages again, and the next Dream rebuilds summaries. Dream times stay, so Dream does not extract memories again. If Ollama is down, Sage embeds the entries once Ollama is back.
 
 The Memories count includes visible rows only. If only hidden rows remain, the count is zero and the action stays off.
 

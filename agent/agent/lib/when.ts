@@ -594,6 +594,32 @@ function localDayString(now: Date): string {
   return `${now.getFullYear()}-${month}-${date}`;
 }
 
+function localMidnight(day: string, laterDays: number): Date {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date + laterDays);
+}
+
+// The instants that bound a span of days on this Mac's clock: midnight at the
+// start of `from`, and midnight after `to`, as ISO UTC times. Chat messages
+// carry a time, not a day, so a chat search sends these instead of the days.
+// A day that starts or ends daylight saving time keeps its local midnights.
+export function instantsFromRange(range: { from: string; to: string }): {
+  from: string;
+  to: string;
+} {
+  return {
+    from: localMidnight(range.from, 0).toISOString(),
+    to: localMidnight(range.to, 1).toISOString(),
+  };
+}
+
+// The day on this Mac's clock that an ISO time falls on, or null when the
+// text is not a time.
+export function localDayOf(instant: string): string | null {
+  const time = Date.parse(instant);
+  return Number.isNaN(time) ? null : localDayString(new Date(time));
+}
+
 // Today's date on this Mac. `SAGE_TODAY` (YYYY-MM-DD) pins it so evals run
 // against a fixed day. Packaged Chat never sets it.
 export function todayFromEnv(

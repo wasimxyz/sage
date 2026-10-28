@@ -1,6 +1,6 @@
 # Local agent server
 
-Sage’s Chat tools need to read journal entries, but the eve agent is a separate Node.js process that cannot open the SQLite file itself. Sage runs a small HTTP server inside the app so those tools can ask for a search or one entry. This page covers how that server and the Chat port check who is calling, and [The eve app](../agent/eve-app.md) covers the agent.
+Sage’s Chat tools need to read journal entries and past chats, but the eve agent is a separate Node.js process that cannot open the SQLite file itself. Sage runs a small HTTP server inside the app so those tools can ask for a search, one entry, or part of a chat. This page covers how that server and the Chat port check who is calling, and [The eve app](../agent/eve-app.md) covers the agent.
 
 The server only answers read requests. It never writes entries or chats.
 
@@ -29,12 +29,18 @@ How the agent gets the token depends on how it started:
   - `from` and `to` (`YYYY-MM-DD`, both or neither) keep the search to entries dated in that span. Both must be real days, and `from` can’t be after `to`, or the route returns 400. The answer also gives `total` and `unsummarized`, plus `nearest` when no entry falls in the span.
   - With `from` and `to` and no `query`, the route lists the entries in the span without ranking them or calling Ollama. It picks up to `limit` entries evenly from the entries in the span, oldest first, so a stretch with many entries gets more of them. It adds `total`, plus `nearest` when no entry falls in the span. An entry with no summary shows the start of its body.
 - `GET /journal/entry/{id}`: one decrypted entry
+- `POST /chats/search`: searches chat messages by meaning. The body is `{ "query", "limit" }`, with the same optional `embedding` as journal search. Messages that score under 0.45 are left out, and each chat shows at most 2. The answer adds `matched`, `belowCutoff`, and `unreadable`, as journal search does, plus `unindexed`: chats with messages that have no embedding yet.
+  - `from` and `to` are ISO UTC times such as `2026-10-19T07:00:00.000Z`, both or neither, with `from` before `to`. They keep the search to messages saved from `from` up to, but not including, `to`. A message saved before Sage kept that time counts when its chat’s `created_at` is before `to` and its `updated_at` is not before `from`.
+  - `exclude` is a chat id to leave out, such as the one being answered.
+  - With `from` and `to` and no `query`, the route lists the chats active in that time without calling Ollama. It picks up to `limit` chats evenly, oldest first, and adds `total`. Each chat has its summary, or the start of its first User message.
+  - A bad time, an `exclude` that isn’t an id, or a `query` that isn’t text is a 400.
+- `GET /chats/{id}`: part of one decrypted chat: its title, times, and summary, and its last 5 User and Sage messages. `?message={seq}` returns that message and up to 2 on each side instead. An unknown chat or message is a 404.
 - `GET /agent/instructions`: the extra Chat instructions saved in Settings > Agent, as `{ "user" }`. Missing text is an empty string.
 - `GET /memory/profile`: the newest profile facts, up to 50. Each fact includes `sourceType` and `sourceId`.
 - `POST /memory/facts/search`: ranked search over facts, with the same body as journal search. Each result includes `sourceType` and `sourceId`.
 - `POST /memory/events/search`: ranked search over dated events, with the same body as journal search. Each result includes `sourceType` and `sourceId`.
 
-While Sage is locked, the search, fetch, memory, and instruction routes return `409` with `{ "error": "locked" }`. The agent then asks you to unlock Sage.
+While Sage is locked, the search, fetch, chat, memory, and instruction routes return `409` with `{ "error": "locked" }`. The agent then asks you to unlock Sage.
 
 ## Limits and threads
 

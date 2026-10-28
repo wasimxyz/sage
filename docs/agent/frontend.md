@@ -90,19 +90,23 @@ Choosing a hit opens it:
 - Lifecycle callbacks that save the turn
 - A `host`: empty during `make dev` so `/eve` goes through the Vite proxy, or `http://127.0.0.1:2001` in a packaged app
 
+Once a chat has saved, each request also sends `x-sage-chat-id`, so `search_chats` leaves that chat out.
+
 A reopened conversation waits for the token before it resumes the stream. After you send, Chat shows a pulsing leaf where the reply will start. The first text, thinking, or tool row replaces it.
 
 ## Tool rows
 
-When the model searches the journal or reads an entry, Chat draws one row for the step. A row stays closed until you click it. While the step runs, its label shimmers and there is nothing to open.
+When the model searches the journal or past chats, or reads an entry or a chat, Chat draws one row for the step. A row stays closed until you click it. While the step runs, its label shimmers and there is nothing to open.
 
 A search row opens to a card. The first line says what the model searched for: the words in quotes, the days when it searched by time, or both. Each entry it found follows, with its title and a short date such as “Sun, Sep 27”. A search with no matches says “No matching entries”. The note the model reads about its results stays out of the card.
 
 Reads that come one after the other share one row, such as “Read 3 entries”. Thinking or text between two reads starts a new row. An entry the model reads twice shows once. Click an entry to open it in the expanded editor.
 
+A search of past chats works the same way. Its row says “Searched past chats”, and each chat it found shows its title and the date of its best match. Reads of chats share a row such as “Read 2 past chats”, apart from reads of entries. Click a chat to open it, scrolled to the message the model found. A search with no matches says “No matching chats”.
+
 A failed step shows its error as one sentence inside the row. A failed read in a group shows as “Could not read 1 entry”. Other tools, such as `facts__search_memories`, show their parameters and result as plain text.
 
-`frontend/src/lib/chat/assistant-runs.ts` decides which parts share a row, and `frontend/src/components/chat/journal-tool-cards.tsx` draws the cards.
+`frontend/src/lib/chat/assistant-runs.ts` decides which parts share a row. `frontend/src/components/chat/journal-tool-cards.tsx` and `chat-tool-cards.tsx` draw the cards.
 
 ## When the screen saves
 
@@ -111,6 +115,7 @@ Saving happens in the lifecycle callbacks, never in the middle of a stream:
 1. `onSessionChange` saves the eve session id and stream index when eve assigns them.
 2. `onFinish` saves the events added since the last successful save, when a turn completes.
 3. The first save of a new conversation also sets the title from the first message, cut to 60 characters.
+4. After a save that adds events, the screen calls `embeddings.generate` with the chat’s id until Sage has indexed every new message for `search_chats`. It does not wait, so the next save is not held up. [Chat storage](storage.md#the-message-index) covers what happens when that fails.
 
 Later saves leave the title alone. [Dream](../dream.md) may replace it with a generated title unless you renamed the chat. The Chat list and Home reload when Dream finishes.
 

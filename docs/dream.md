@@ -11,10 +11,11 @@ In every build, Dream:
 - Refreshes stale embeddings for each changed entry
 - Writes a short summary of each changed entry and embeds it. Chat ranks these summaries when it searches by meaning, so an entry with no summary cannot show up in that search. A search by date still lists it.
 - Writes a short title for each changed chat from its last four User and Sage messages. It skips chats you renamed.
+- Writes a summary of each changed chat and embeds it. Chat lists these summaries when it looks up the chats from a time.
+- Embeds the User and Sage messages of each chat that the Chat screen hasn’t indexed yet, up to 1,024 per chat. [Chat storage](agent/storage.md#the-message-index) explains the index.
 
 In a memory build, Dream also:
 
-- Embeds each changed chat and writes a summary of it
 - Extracts up to 8 profile sentences, 12 facts, and 12 events from each changed entry and chat
 - Embeds each new fact and event. Profile sentences are not embedded.
 

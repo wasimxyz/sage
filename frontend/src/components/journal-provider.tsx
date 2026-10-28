@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import {
   countWords,
   deleteEntry,
+  generateChatEmbeddings,
   generateEmbeddings,
   getEntry,
   getOllamaStatus,
@@ -18,6 +19,7 @@ import {
   type JournalEntryMeta,
   listEntries,
   listPendingEmbeddings,
+  type PendingEmbeddings,
   saveEntry,
   todayDate,
   waitForNativeBridge,
@@ -37,6 +39,7 @@ import {
 } from "@/components/journal-context";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
+import { indexChatMessages } from "@/lib/chat/index-chat";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
 import type { ParsedImport } from "@/lib/parse-markdown";
@@ -350,14 +353,14 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       scheduleStaleEmbeddingRetry();
       return false;
     }
-    let ids: number[];
+    let pending: PendingEmbeddings;
     try {
-      ids = await listPendingEmbeddings();
+      pending = await listPendingEmbeddings();
     } catch {
       scheduleStaleEmbeddingRetry();
       return false;
     }
-    if (ids.length === 0) {
+    if (pending.entryIds.length === 0 && pending.chatIds.length === 0) {
       clearStaleEmbeddingRetry();
       return true;
     }
@@ -372,9 +375,16 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return false;
     }
     clearStaleEmbeddingRetry();
-    for (const id of ids) {
+    for (const id of pending.entryIds) {
       pendingEmbedIdsRef.current.add(id);
       enqueueEmbed(id);
+    }
+    // Chats whose messages the chat search can't see yet, such as one saved
+    // while Ollama was down, join the same queue.
+    for (const id of pending.chatIds) {
+      embedChainRef.current = embedChainRef.current
+        .then(() => indexChatMessages(id, generateChatEmbeddings))
+        .catch(() => scheduleStaleEmbeddingRetry());
     }
     await embedChainRef.current;
     return staleEmbeddingRetryTimerRef.current === null;
