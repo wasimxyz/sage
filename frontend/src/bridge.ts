@@ -532,13 +532,32 @@ export async function generateEmbeddings(id: number): Promise<EmbeddingResult> {
   };
 }
 
-export async function listPendingEmbeddings(): Promise<number[]> {
+/** Indexes up to one batch of a chat's new messages for Chat's chat search. */
+export async function generateChatEmbeddings(
+  chatId: number
+): Promise<{ more: boolean }> {
+  const response = asRecord(await invoke("embeddings.generate", { chatId }));
+  return { more: asBoolean(response.more) };
+}
+
+export interface PendingEmbeddings {
+  /** Chats with messages the chat search can't see yet. */
+  chatIds: number[];
+  entryIds: number[];
+}
+
+export async function listPendingEmbeddings(): Promise<PendingEmbeddings> {
   const response = asRecord(await invoke("embeddings.pending", {}));
-  const { ids } = response;
+  const { chatIds, ids } = response;
   if (!Array.isArray(ids)) {
     throw new Error("Unexpected bridge response.");
   }
-  return ids.map((item) => asNumber(item));
+  return {
+    chatIds: Array.isArray(chatIds)
+      ? chatIds.map((item) => asNumber(item))
+      : [],
+    entryIds: ids.map((item) => asNumber(item)),
+  };
 }
 
 export interface DreamStatus {

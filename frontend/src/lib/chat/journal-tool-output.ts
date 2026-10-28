@@ -34,8 +34,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const prefixedEntryId = /^entry-([1-9]\d{0,15})$/;
+
+/**
+ * The entry id in a tool result. Chat names entries `entry-12`. Chats saved
+ * before that show a plain number. Null for anything else.
+ */
+export function readEntryId(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const match = prefixedEntryId.exec(value);
+  return match === null ? null : Number(match[1]);
 }
 
 function isCalendarDate(value: unknown): value is string {
@@ -70,17 +83,18 @@ export function journalSearchHits(
 
   const hits: JournalToolSearchHit[] = [];
   for (const item of list) {
+    const id = isRecord(item) ? readEntryId(item.id) : null;
     if (
       !(
         isRecord(item) &&
-        isPositiveInteger(item.id) &&
+        id !== null &&
         typeof item.title === "string" &&
         typeof item.date === "string"
       )
     ) {
       return null;
     }
-    hits.push({ date: item.date, id: item.id, title: item.title });
+    hits.push({ date: item.date, id, title: item.title });
   }
   return hits;
 }
@@ -104,12 +118,14 @@ function rangeText(range: JournalSearchRange, now: Date): string {
 
 /**
  * What the first row of a search card says: the words searched for and the
- * days covered. Null when the search had neither.
+ * days covered. Null when the search had neither. `things` names what a
+ * search by dates alone lists, such as Entries or Chats.
  */
 export function journalSearchSummary(
   query: string | null,
   range: JournalSearchRange | null,
-  now = new Date()
+  now = new Date(),
+  things = "Entries"
 ): JournalSearchSummary | null {
   if (query !== null) {
     return {
@@ -121,19 +137,20 @@ export function journalSearchSummary(
   if (range === null) {
     return null;
   }
-  return { lead: `Entries ${rangeText(range, now)}`, query: null, rest: "" };
+  return { lead: `${things} ${rangeText(range, now)}`, query: null, rest: "" };
 }
 
 export function journalEntryOutput(output: unknown): JournalToolEntry | null {
+  const id = isRecord(output) ? readEntryId(output.id) : null;
   if (
     !(
       isRecord(output) &&
-      isPositiveInteger(output.id) &&
+      id !== null &&
       typeof output.title === "string" &&
       typeof output.date === "string"
     )
   ) {
     return null;
   }
-  return { date: output.date, id: output.id, title: output.title };
+  return { date: output.date, id, title: output.title };
 }

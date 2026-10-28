@@ -124,7 +124,9 @@ export function DataSettings() {
     await deleteEmbeddings();
     const rebuilt = await runStaleEmbeddingPass();
     if (!rebuilt) {
-      toast.info("Entries will be re-embedded when Ollama is available.");
+      toast.info(
+        "Entries and conversations will be indexed again when Ollama is available."
+      );
     }
     await refreshCounts();
   }, [refreshCounts, runStaleEmbeddingPass]);
@@ -197,16 +199,14 @@ export function DataSettings() {
   }, [deleteChats, showConfirmation]);
 
   const embeddingsConfirmation = useCallback(() => {
-    const rebuildDescription = memoryEnabled
-      ? "Sage re-embeds entries when Ollama is available. The next Dream rebuilds summaries and Chat indexes."
-      : "Sage re-embeds entries when Ollama is available. The next Dream rebuilds summaries.";
     showConfirmation({
       confirmLabel: "Delete embeddings",
-      description: `This permanently deletes the journal and Chat index embeddings. Journal entries, conversations, and memories stay. ${rebuildDescription} This cannot be undone.`,
+      description:
+        "This permanently deletes the journal and Chat index embeddings. Journal entries, conversations, and memories stay. Sage indexes entries and conversations again when Ollama is available. The next Dream rebuilds summaries. This cannot be undone.",
       onConfirm: deleteIndexes,
       title: "Delete embeddings?",
     });
-  }, [deleteIndexes, memoryEnabled, showConfirmation]);
+  }, [deleteIndexes, showConfirmation]);
 
   const memoriesConfirmation = useCallback(() => {
     showConfirmation({

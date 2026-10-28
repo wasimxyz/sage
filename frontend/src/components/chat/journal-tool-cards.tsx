@@ -25,7 +25,7 @@ import {
 import { formatEntryDate, formatShortEntryDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 
-const toolHeaderClassName = "h-8 w-full justify-start";
+export const toolHeaderClassName = "h-8 w-full justify-start";
 
 // A card opens its entry in the expanded editor, not beside the list.
 function useOpenEntryExpanded(id: number) {
@@ -40,13 +40,13 @@ function entriesLabel(count: number): string {
   return count === 1 ? "1 entry" : `${count} entries`;
 }
 
-interface ListRow {
+export interface ListRow {
   key: string;
   node: ReactNode;
 }
 
 // The open card: rows in a rounded box, as in a list in Journal.
-function JournalToolList({ rows }: { rows: ListRow[] }) {
+export function JournalToolList({ rows }: { rows: ListRow[] }) {
   return (
     <ToolContent className="border-0 bg-transparent p-0 text-foreground">
       <div className="overflow-hidden rounded-2xl border border-input bg-surface">
@@ -62,7 +62,7 @@ function JournalToolList({ rows }: { rows: ListRow[] }) {
 }
 
 // A line of the card that is not an entry, so it is muted and not a button.
-function JournalToolNote({ children }: { children: ReactNode }) {
+export function JournalToolNote({ children }: { children: ReactNode }) {
   return (
     <p className="flex min-h-9 items-center px-4 py-2 text-muted-foreground text-sm">
       {children}
@@ -100,7 +100,7 @@ function entryRows(entries: JournalToolEntry[]): ListRow[] {
 
 // A step that has not finished has nothing to open yet, so it is a shimmering
 // label with no chevron.
-function JournalRunningRow({
+export function JournalRunningRow({
   label,
   state,
   toolName,
@@ -123,7 +123,7 @@ function JournalRunningRow({
   );
 }
 
-function JournalFailedRow({
+export function JournalFailedRow({
   messages,
   state,
   title,
