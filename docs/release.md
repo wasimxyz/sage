@@ -30,6 +30,15 @@ base64 -i ~/.keys/sage-update.key | gh secret set UPDATE_PRIVATE_KEY
 
 Copies built with the old key do not update to builds signed with the new one.
 
+## Bump the bundled Ollama
+
+The packaged app carries a pinned Ollama. `scripts/fetch-ollama.sh` holds its version and the SHA-256 values for the download and its LICENSE. To move to a new version:
+
+1. Open the [Ollama releases page](https://github.com/ollama/ollama/releases) and find the new release. Take the SHA-256 of `ollama-darwin.tgz` from that release’s `sha256sum.txt`, and the SHA-256 of `LICENSE` at its tag.
+2. Change `OLLAMA_VERSION`, `expected_sha`, and `license_sha` in `scripts/fetch-ollama.sh`.
+3. Run `make package`, then check that `Sage.app/Contents/Resources/ollama/ollama --version` prints the new version and that `lipo -archs` on that file still says `arm64`.
+4. Send the change as a small PR of its own, as the Node.js bump was.
+
 ## Cut a release
 
 A release starts with a version bump and ends with a tag on `main`.
@@ -52,7 +61,7 @@ To rehearse a release, push a tag such as `v0.1.1-rc.1`. An `rc` tag builds the 
 1. Checks that the tag is on `main` and that its version matches `app.json`.
 2. Installs Zig, Node.js, the pinned Native SDK CLI, and the dependencies.
 3. Runs `native validate app.json`, `make check`, and `make test`.
-4. Runs `make package-archive`, which builds the `.app` with Chat and Node.js inside, then the DMG and the update ZIP.
+4. Runs `make package-archive`, which builds the `.app` with Chat, Node.js, and Ollama inside, then the DMG and the update ZIP.
 5. Signs the ZIP into `native-update.json`. The signer also checks that the ZIP holds an arm64 app with the right bundle ID and version.
 6. Creates a draft release with the three files, then publishes it. Publishing last means “latest” never points at a release that is missing its ZIP.
 
@@ -84,5 +93,5 @@ When a newer version exists, Sage offers **Install Update**. It checks the feed 
 Some limits to know:
 
 - The folder that holds Sage must be writable. Otherwise Sage asks you to move it or update by hand.
-- Every update downloads the full app. There are no delta updates, channels, or staged rollouts.
+- Every update downloads the full app. There are no delta updates, channels, or staged rollouts. Measured with Ollama 0.40.15 in Sage 0.2.2, the installed app is 758 MB, the DMG is 326 MB, and the update ZIP is 237 MB. The bundled Ollama accounts for 494 MB of the app, 168 MB of the DMG, and 148 MB of the ZIP.
 - Updates run only from a packaged `.app`, not from `make dev`.

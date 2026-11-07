@@ -659,10 +659,10 @@ fn emitFailed(host: Host, message: []const u8) void {
 
 fn statusMessage(err: anyerror, models: ollama.ModelPrefixes, buffer: []u8) []const u8 {
     return switch (err) {
-        error.OllamaNotRunning => "Ollama is not running.",
+        error.OllamaNotRunning => "Local AI is not running.",
         error.SummaryModelNotPulled => ollama.summaryNotPulledMessage(buffer, models.summary),
         error.ModelNotPulled => ollama.embedNotPulledMessage(buffer, models.embed),
-        error.OllamaTimeout => "Ollama did not answer in time.",
+        error.OllamaTimeout => "Local AI did not answer in time.",
         else => "Could not start dreaming.",
     };
 }

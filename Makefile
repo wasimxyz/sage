@@ -80,8 +80,10 @@ fe-build:
 build: fe-build
 	native build $(NATIVE_SDK_FLAG) $(MEMORY_FLAG) -Doptimize=$(NATIVE_OPTIMIZE)
 
+# The dev app runs the pinned Ollama CLI from third_party/ollama/ on port 11436.
 dev:
-	@agent_pid=""; \
+	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
+	agent_pid=""; \
 	if curl -sf -o /dev/null --max-time 1 http://127.0.0.1:2000/eve/v1/health; then \
 		echo "Chat agent already running on port 2000"; \
 	else \
@@ -99,7 +101,7 @@ dev:
 		done; \
 	fi; \
 	trap 'if [ -n "$$agent_pid" ]; then kill $$agent_pid 2>/dev/null; pkill -P $$agent_pid 2>/dev/null; fi' EXIT INT TERM; \
-	SAGE_DEV_EVE_WORKFLOW_DIR="$(CURDIR)/agent/.eve/.workflow-data" native dev $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)
+	SAGE_OLLAMA_PATH="$$ollama_bin" SAGE_DEV_EVE_WORKFLOW_DIR="$(CURDIR)/agent/.eve/.workflow-data" native dev $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)
 
 # Delete the dev app's data so the next `make dev` opens first-launch setup.
 # Never touches the packaged app. YES=1 skips the prompt.
@@ -111,7 +113,8 @@ reset-dev:
 # the reset prompt.
 SEED ?= $(CURDIR)/scripts/seed
 seed-dev:
-	@YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" sh scripts/seed-dev.sh
+	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
+	YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" SAGE_OLLAMA_PATH="$$ollama_bin" sh scripts/seed-dev.sh
 
 package:
 	npm --prefix frontend run build

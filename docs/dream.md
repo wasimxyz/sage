@@ -47,11 +47,11 @@ Hover Dream to see when it last finished.
 
 ## When Dream cannot run
 
-- **Ollama is down**: Dream reads the same Ollama check as Chat, every 4 seconds. When that check says Ollama is down, clicking Dream opens a dialog that says Ollama isn’t running, with a Start Ollama button. Once Ollama answers, the dialog asks you to confirm the Dream.
-- **A model is missing**: Dream stops with a message such as “The summary model is not pulled. Run: ollama pull qwen3.5:9b”.
+- **Local AI is down**: Dream reads the same check as Chat, every 4s. When that check says local AI is down, clicking Dream opens a dialog titled “Local AI isn’t running”, with a “Start local AI” button. Once local AI answers, the dialog asks you to confirm the Dream.
+- **A model is missing**: Dream stops with a message such as “The summary model is not downloaded. Download qwen3.5:9b in Settings › Models.”
 - **Sage is locked**: `dream.start` and `dream.status` answer “Sage is locked.”
 
-The Dream dialog, the Chat screen, and Settings > Models can start Ollama for you, as [Models](models.md#when-ollama-is-not-running) explains.
+The Dream dialog, the Chat screen, and Settings > Models can start local AI for you, as [Models](models.md#when-ollama-is-not-running) explains.
 
 ## When data is deleted
 

@@ -80,15 +80,7 @@ function OllamaEmptyNotice() {
         <TriangleAlertIcon aria-hidden />
       </OllamaNoticeIcon>
       <OllamaNoticeCopy
-        description={
-          <>
-            Pull a model with{" "}
-            <code className="font-mono text-current">
-              ollama pull qwen3.5:9b
-            </code>
-            .
-          </>
-        }
+        description="Download one in Settings › Models."
         title="No chat models"
       />
     </OllamaNotice>

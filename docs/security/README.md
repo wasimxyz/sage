@@ -2,7 +2,7 @@
 
 This page explains what Sage protects, what it leaves readable on purpose, and where each protection lives in the code. Read it first, then the linked pages for each part.
 
-Sage stores the journal, chats, and memories in one SQLite file named `app.db` on your Mac. Chat and Dream call Ollama’s local `/api` routes, which do not keep a copy of that data. Sage skips models Ollama marks as cloud-hosted, and the Chat agent refuses one even if a request names it.
+Sage stores the journal, chats, and memories in one SQLite file named `app.db` on your Mac. Chat and Dream call Ollama’s local `/api` routes, which do not keep a copy of that data. Sage skips models Ollama marks as cloud-hosted, and the Chat agent refuses one even if a request names it. Sage runs its own Ollama server. It listens on `127.0.0.1` only, so other computers cannot reach it. Any program on this Mac can reach it, and the server does not check the lock. [The app lock](lock.md#local-ai-and-the-lock) covers the details.
 
 Two protections guard `app.db`:
 
@@ -26,6 +26,7 @@ With encryption on, a person who copies the database file cannot read your entri
 - `src/touchid.zig`: the Touch ID prompt, through Apple’s LocalAuthentication framework
 - `src/vault.zig`: the data key, its password and recovery key slots, and field encryption
 - `src/keychain.zig`: the Keychain copy of the data key for Touch ID
+- `src/ollama_server.zig`: starts, restarts, and stops the bundled Ollama server, and sets its environment
 - `src/journal.zig`: encrypts on write and decrypts on read
 - `src/agent_server.zig`: the Unix socket server that lets the Chat agent search and read the journal
 - `src/eve_sidecar.zig`: starts the packaged Chat agent and, with encryption on, gives it a separate key for its session files

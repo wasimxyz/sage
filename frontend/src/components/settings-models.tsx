@@ -139,7 +139,7 @@ export function ModelsSettings() {
   const [dataPromise] = useState(loadModelsOpenState);
   return (
     <SettingsSection
-      description="Download and manage local models through Ollama."
+      description="Download and manage the models local AI uses on this Mac."
       title="Models"
     >
       <Suspense fallback={modelsSettingsFallback}>
@@ -271,7 +271,7 @@ function ModelsSettingsBody({
       {ollamaRunning ? null : (
         <div className="mt-4">
           <OllamaStartNotice
-            description="Start it to download or delete models."
+            description="Start local AI to download or delete models."
             onStart={startOllama}
             start={ollamaStart}
           />
@@ -503,8 +503,8 @@ function DeleteModelDialog({
         <DialogHeader>
           <DialogTitle>Delete {name}?</DialogTitle>
           <DialogDescription>
-            This removes the model from Ollama on this Mac.{sageHint} Chat
-            conversations that used it stay in Sage.
+            This removes the model from this Mac, including for other apps that
+            use it.{sageHint} Chat conversations that used it stay in Sage.
           </DialogDescription>
         </DialogHeader>
         <DialogActions>
@@ -603,8 +603,8 @@ function ollamaActionError(error: unknown, fallback: string): string {
   if (message.includes("DownloadInProgress")) {
     return "A model is already downloading.";
   }
-  if (message.includes("Ollama is not running")) {
-    return "Ollama is not running.";
+  if (message.includes("Local AI is not running")) {
+    return "Local AI is not running.";
   }
   return message.length > 0 ? message : fallback;
 }

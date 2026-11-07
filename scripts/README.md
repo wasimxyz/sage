@@ -8,17 +8,20 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 
 `make package` builds the app, then runs `copy-agent-into-app.sh`. `zig build package` runs that same script and passes the app path.
 
-`copy-agent-into-app.sh` copies the built Chat agent into `Sage.app`. Before it finishes, it runs the two scripts below, checks that the copied Chat channel still allows `zero://app` (the address the packaged app uses to call Chat), and signs the app again so the copy still opens.
+`copy-agent-into-app.sh` copies the built Chat agent into `Sage.app`, along with the pinned Node.js and Ollama. Before it finishes, it runs the scripts below, checks that the copied Chat channel still allows `zero://app` (the address the packaged app uses to call Chat), and signs the app again so the copy still opens. The scripts it runs first are:
 
 1. `refuse-packaged-dev-modules.sh` stops the copy when `typescript`, `@types`, or `@vercel/blob` is still installed in the copied agent.
 2. `fetch-node.sh` downloads Node.js 24.22.1 once into `third_party/node/`, checks that the download is the expected file, and copies the `node` program into the app.
+3. `fetch-ollama.sh` downloads Ollama 0.40.15 once into `third_party/ollama/`, checks the archive and its LICENSE against pinned SHA-256 values, keeps only the arm64 code, and copies the tree into `Contents/Resources/ollama/`.
 
 `make package-archive` runs two more scripts after that copy. Both read the version from the app’s `Info.plist` and work on the app that already contains the Chat agent and Node.js.
 
 - `archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos.dmg`.
-- `update-archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos-update.zip`, the file installed copies download. It stands in for `native package --update-archive`, which zips the app before the Chat agent is copied in.
+- `update-archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos-update.zip`, the file installed copies download. It stands in for `native package --update-archive`, which zips the app before the Chat agent is copied in. It also refuses an app with no executable `Resources/ollama/ollama`.
 
 `zig build package` runs `update-archive-packaged-app.sh` itself when `app.json` has an `updates` block.
+
+`fetch-ollama.sh` with no argument fills the same cache and prints the path of the binary. `make dev`, `make seed-dev`, and `make eval` pass that path to Sage as `SAGE_OLLAMA_PATH`. A Sage outside an app bundle runs that copy on port 11436, and `make eval` also uses it for its pulls.
 
 ## Releasing
 
@@ -28,7 +31,7 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 
 ## Eval
 
-`make eval` runs `eval-run.sh`. The runner loads settings, grades Dream and Chat, writes reports under `agent/evals/reports/`, and then asks whether to upload them. The full sequence is in [Eval suite internals](../agent/evals/README.md).
+`make eval` runs `eval-run.sh`. It gets the pinned Ollama from `fetch-ollama.sh`, and it stops if port 11436 is in use, which `make dev` also uses. The runner loads settings, grades Dream and Chat, writes reports under `agent/evals/reports/`, and then asks whether to upload them. The full sequence is in [Eval suite internals](../agent/evals/README.md).
 
 `eval-run.sh` and `eval-upload.sh` both load settings through `eval-env.sh`, which reads `agent/.env`, then `agent/.env.local`. A variable already set in the shell keeps its value.
 
@@ -38,7 +41,7 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 
 ## Resetting the dev app
 
-`make reset-dev` runs `reset-dev.sh`. It deletes what the dev app keeps, so the next `make dev` opens [first-launch setup](../docs/onboarding.md) the way a new user sees it. It never touches the packaged app’s data in `com.wasimxyz.sage`, and Ollama keeps its app and models.
+`make reset-dev` runs `reset-dev.sh`. It deletes what the dev app keeps, so the next `make dev` opens [first-launch setup](../docs/onboarding.md) the way a new user sees it. It never touches the packaged app’s data in `com.wasimxyz.sage`, and the models in `~/.ollama` stay.
 
 The script deletes these:
 
@@ -60,7 +63,7 @@ When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change t
 
 ## Seeding the dev app
 
-`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` opens Home with entries. It never touches the packaged app's data, and Ollama keeps its app and models. It does not run Dream or start a chat. Run those by hand.
+`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` opens Home with entries. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand.
 
 The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format.
 

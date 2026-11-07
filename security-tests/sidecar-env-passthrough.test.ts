@@ -21,7 +21,12 @@ test("packaged Chat must pin Ollama to 127.0.0.1, not inherit OLLAMA_BASE_URL", 
   assert.match(agent, /OLLAMA_BASE_URL/);
   assert.match(
     sidecar,
-    /child_env\.put\("OLLAMA_BASE_URL", "http:\/\/127\.0\.0\.1:11434/,
+    /"http:\/\/\{s\}:\{d\}\/api", \.\{ ollama\.host, ollama\.port \}/,
+    "desired: the Chat agent's Ollama URL is built from the loopback host and the runtime port, so eve always calls local Ollama."
+  );
+  assert.match(
+    sidecar,
+    /child_env\.put\("OLLAMA_BASE_URL", ollama_base\)/,
     "desired: eve start always calls local Ollama. Today a parent OLLAMA_BASE_URL is inherited and Chat will send prompts there."
   );
 });

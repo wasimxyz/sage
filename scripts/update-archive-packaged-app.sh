@@ -22,6 +22,11 @@ if [ ! -d "$app/Contents/Resources/agent/.output" ] || [ ! -x "$app/Contents/Res
   exit 1
 fi
 
+if [ ! -x "$app/Contents/Resources/ollama/ollama" ]; then
+  echo "update-archive-packaged-app: $app has no bundled Ollama (Contents/Resources/ollama/ollama); run copy-agent-into-app.sh first" >&2
+  exit 1
+fi
+
 version="$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")"
 out="$root/zig-out/package/Sage-$version-macos-update.zip"
 

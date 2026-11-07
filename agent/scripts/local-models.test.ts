@@ -11,9 +11,9 @@ const onThisMacPattern = /on this Mac/;
 const cloudModelMessagePattern =
   /gpt-oss:120b-cloud runs in the cloud\. Pick a model on this Mac\./;
 const runsInTheCloudPattern = /runs in the cloud/;
-const notPulledMessagePattern =
-  /qwen3:8b is not pulled\. Pick a model on this Mac\./;
-const ollamaIsNotRunningPattern = /Ollama is not running\./;
+const notDownloadedMessagePattern =
+  /qwen3:8b is not downloaded\. Pick a model on this Mac\./;
+const localAiIsNotRunningPattern = /Local AI is not running\./;
 
 const tags = {
   models: [
@@ -35,9 +35,9 @@ function tagsFetch(body: unknown, ok = true) {
 }
 
 test("localOllamaBaseURL accepts loopback hosts", () => {
-  assert.equal(localOllamaBaseURL(undefined), "http://127.0.0.1:11434/api");
-  assert.equal(localOllamaBaseURL(""), "http://127.0.0.1:11434/api");
-  assert.equal(localOllamaBaseURL("  "), "http://127.0.0.1:11434/api");
+  assert.equal(localOllamaBaseURL(undefined), "http://127.0.0.1:11436/api");
+  assert.equal(localOllamaBaseURL(""), "http://127.0.0.1:11436/api");
+  assert.equal(localOllamaBaseURL("  "), "http://127.0.0.1:11436/api");
   assert.equal(
     localOllamaBaseURL("http://127.0.0.1:11434/api"),
     "http://127.0.0.1:11434/api"
@@ -110,10 +110,10 @@ test("assertLocalModel refuses a cloud model", async () => {
   );
 });
 
-test("assertLocalModel refuses a model that is not pulled", async () => {
+test("assertLocalModel refuses a model that is not downloaded", async () => {
   await assert.rejects(
     assertLocalModel("http://localhost:11434/api", "qwen3:8b", tagsFetch(tags)),
-    notPulledMessagePattern
+    notDownloadedMessagePattern
   );
 });
 
@@ -122,7 +122,7 @@ test("assertLocalModel fails closed when /api/tags is unreachable", async () => 
     assertLocalModel("http://localhost:11434/api", "qwen3.5:9b", () =>
       Promise.reject(new Error("ECONNREFUSED"))
     ),
-    ollamaIsNotRunningPattern
+    localAiIsNotRunningPattern
   );
   await assert.rejects(
     assertLocalModel(
@@ -130,6 +130,6 @@ test("assertLocalModel fails closed when /api/tags is unreachable", async () => 
       "qwen3.5:9b",
       tagsFetch({}, false)
     ),
-    ollamaIsNotRunningPattern
+    localAiIsNotRunningPattern
   );
 });

@@ -202,8 +202,8 @@ function ModelPickerUnavailable() {
   } = useChat();
   const hint =
     models.kind === "down"
-      ? "Start Ollama so Sage can list local models."
-      : "No chat models. Run ollama pull qwen3.5:9b.";
+      ? "Start local AI so Sage can list local models."
+      : "No chat models. Download one in Settings › Models.";
   return (
     <Hint label={hint}>
       <PromptInputButton

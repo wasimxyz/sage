@@ -31,25 +31,26 @@ import { Spinner } from "@/components/ui/spinner";
 import { handlerErrorMessage } from "@/lib/handler-errors";
 import { ollamaScreen } from "@/lib/onboarding";
 
-const ollamaDownloadUrl = "https://ollama.com/download";
-// How often the Install and Start screens look for Ollama. The text says "every
-// few seconds".
+// How often the Start screen checks whether local AI came up on its own. The
+// text says "every few seconds".
 const recheckMs = 4000;
 const skipNote =
   "Chat and Dream won't work until you finish this in Settings › Models.";
+const missingSkipNote = "Chat and Dream won't work until you reinstall Sage.";
 
 type LocalAiScreen =
   | { kind: "checking"; starting: boolean }
   | { kind: "downloads"; models: SetupModelNames }
-  | { kind: "install"; models: SetupModelNames }
+  | { kind: "missing" }
   | { kind: "start"; models: SetupModelNames; reason: string | null };
 
-const startFailedReason = "Sage couldn't start Ollama.";
+const startFailedReason = "Sage couldn't start local AI.";
 
 /**
- * Step 1: get Ollama running and the two models downloading. The screen follows
- * what Ollama is doing right now, so a refresh or a return from a later step
- * finds the right one.
+ * Step 1: get local AI running and the two models downloading. Sage starts local
+ * AI itself, so the person only sees a start when that did not work. The screen
+ * follows what local AI is doing right now, so a refresh or a return from a
+ * later step finds the right one.
  */
 export function SetupLocalAi() {
   const {
@@ -78,7 +79,7 @@ export function SetupLocalAi() {
       show({
         kind: "start",
         models: defaultModelNames,
-        reason: "Sage couldn't check for Ollama.",
+        reason: "Sage couldn't check for local AI.",
       });
       return;
     }
@@ -88,8 +89,8 @@ export function SetupLocalAi() {
       show({ kind: "downloads", models });
       return;
     }
-    if (next === "install") {
-      show({ kind: "install", models });
+    if (next === "missing") {
+      show({ kind: "missing" });
       return;
     }
     show({ kind: "checking", starting: true });
@@ -109,9 +110,9 @@ export function SetupLocalAi() {
     resolve().catch(() => undefined);
   }, [resolve]);
 
-  // Opening or installing Ollama by hand moves the screen along by itself.
-  const watching = screen.kind === "install" || screen.kind === "start";
-  const watchingInstall = screen.kind === "install";
+  // A failed start moves on by itself once local AI answers. The person does
+  // not have to press Try again.
+  const watching = screen.kind === "start";
   useEffect(() => {
     if (!watching) {
       return;
@@ -125,12 +126,7 @@ export function SetupLocalAi() {
       busy = true;
       try {
         const setup = await getOllamaSetupStatus();
-        // An installed Ollama that is not running gets one start, from the
-        // same check. A start screen only waits for the person.
-        if (
-          !cancelled &&
-          (setup.running || (watchingInstall && setup.installed))
-        ) {
+        if (!cancelled && setup.running) {
           await resolve();
         }
       } catch {
@@ -146,7 +142,7 @@ export function SetupLocalAi() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [resolve, watching, watchingInstall]);
+  }, [resolve, watching]);
 
   const handleBack = useCallback(() => goTo("welcome"), [goTo]);
   const handleNext = useCallback(() => goTo("protect"), [goTo]);
@@ -180,8 +176,8 @@ function LocalAiScreenView({
   switch (screen.kind) {
     case "downloads":
       return <DownloadsScreen onBack={onBack} onNext={onNext} />;
-    case "install":
-      return <InstallScreen onBack={onBack} onSkip={onNext} />;
+    case "missing":
+      return <MissingScreen onBack={onBack} onSkip={onNext} />;
     case "start":
       return (
         <StartScreen
@@ -202,8 +198,7 @@ function LocalAiIntro() {
     <SetupIntro>
       <SetupTitle>Set up local AI</SetupTitle>
       <SetupText>
-        Sage runs AI models on this Mac with Ollama. Your writing is never sent
-        anywhere.
+        Sage runs AI models on this Mac. Your writing is never sent anywhere.
       </SetupText>
     </SetupIntro>
   );
@@ -233,7 +228,7 @@ function CheckingScreen({ starting }: { starting: boolean }) {
       <LocalAiIntro />
       <StatusCard>
         <Spinner aria-hidden />
-        {starting ? "Starting Ollama…" : "Checking for Ollama…"}
+        {starting ? "Starting local AI…" : "Checking for local AI…"}
       </StatusCard>
     </>
   );
@@ -259,7 +254,7 @@ function DownloadsScreen({
       .catch(() => undefined);
   }, []);
 
-  // Queue what Ollama lacks, embedding model first, once. The screen always
+  // Queue what local AI lacks, embedding model first, once. The screen always
   // shows, even when both models are ready, and the person clicks through. A
   // model that failed or was cancelled earlier waits for the person to try
   // again.
@@ -296,7 +291,7 @@ function DownloadsScreen({
         }
       >
         <span aria-hidden className="size-2 rounded-full bg-primary" />
-        Ollama is running
+        Local AI is running
       </StatusCard>
       <div className="flex flex-col gap-2">
         <h2 className="font-medium text-sm">Sage needs these two models</h2>
@@ -364,16 +359,15 @@ function StartScreen({
             variant="outline"
           >
             {starting ? <Spinner data-icon="inline-start" /> : null}
-            {starting ? "Starting…" : "Start Ollama"}
+            {starting ? "Starting…" : "Try again"}
           </Button>
         }
       >
         <span aria-hidden className="size-2 rounded-full bg-muted-foreground" />
-        Ollama isn&apos;t running
+        Local AI isn&apos;t running
       </StatusCard>
       <SetupText>
-        Ollama is installed, but Sage couldn&apos;t start it on its own. Try
-        again here, or open the Ollama app yourself.
+        Sage starts local AI for you when it opens. Try again to start it now.
       </SetupText>
       {reason ? (
         <p className="text-destructive text-sm" role="alert">
@@ -381,16 +375,16 @@ function StartScreen({
         </p>
       ) : null}
       <SetupText>
-        Once Ollama is running, Sage downloads two models:{" "}
+        Once local AI is running, Sage downloads two models:{" "}
         <span className="font-mono">{models.summary}</span> and{" "}
         <span className="font-mono">{models.embed}</span>.
       </SetupText>
-      <SkipFooter onBack={onBack} onSkip={onSkip} />
+      <SkipFooter note={skipNote} onBack={onBack} onSkip={onSkip} />
     </>
   );
 }
 
-function InstallScreen({
+function MissingScreen({
   onBack,
   onSkip,
 }: {
@@ -399,63 +393,25 @@ function InstallScreen({
 }) {
   return (
     <>
-      <SetupIntro>
-        <SetupTitle>Install Ollama</SetupTitle>
-        <SetupText>
-          Sage uses the free Ollama app to run AI on this Mac. It isn&apos;t
-          installed yet.
-        </SetupText>
-      </SetupIntro>
-      <SetupList>
-        <ol className="contents">
-          <li className="flex items-center justify-between gap-3 p-3 text-sm">
-            <span className="flex items-center gap-3">
-              <StepNumber>1</StepNumber>
-              Download Ollama from ollama.com.
-            </span>
-            <Button
-              nativeButton={false}
-              render={
-                <a href={ollamaDownloadUrl} rel="noreferrer" target="_blank" />
-              }
-            >
-              Download Ollama
-            </Button>
-          </li>
-          <li className="flex items-center gap-3 p-3 text-sm">
-            <StepNumber>2</StepNumber>
-            Move Ollama to your Applications folder.
-          </li>
-          <li className="flex items-center gap-3 p-3 text-sm">
-            <StepNumber>3</StepNumber>
-            Open Ollama once.
-          </li>
-        </ol>
-      </SetupList>
+      <LocalAiIntro />
       <StatusCard>
-        <Spinner aria-hidden />
-        <span className="font-normal">
-          Waiting for Ollama. Sage checks every few seconds and moves on by
-          itself.
-        </span>
+        <span aria-hidden className="size-2 rounded-full bg-destructive" />
+        Local AI isn&apos;t available
       </StatusCard>
-      <SkipFooter onBack={onBack} onSkip={onSkip} />
+      <SetupText>
+        Sage&apos;s local AI files are missing. Reinstall Sage.
+      </SetupText>
+      <SkipFooter note={missingSkipNote} onBack={onBack} onSkip={onSkip} />
     </>
   );
 }
 
-function StepNumber({ children }: { children: string }) {
-  return (
-    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
-      {children}
-    </span>
-  );
-}
-
 function SkipFooter({
+  note,
   onBack,
   onSkip,
 }: {
+  note: string;
   onBack: () => void;
   onSkip: () => void;
 }) {
@@ -465,7 +421,7 @@ function SkipFooter({
         Back
       </Button>
       <SetupFooterEnd>
-        <SetupNote>{skipNote}</SetupNote>
+        <SetupNote>{note}</SetupNote>
         <Button onClick={onSkip} variant="outline">
           Skip this step
         </Button>

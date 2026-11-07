@@ -18,7 +18,7 @@ Sage is a native desktop app built with the Vercel Native SDK and eve.
 - macOS
 - Node.js 24, for `make setup` and `make dev`
 - Native SDK CLI: `npm install -g @native-sdk/cli@0.11.0`
-- Ollama with a chat model and the embedding model: `ollama pull qwen3.5:9b` and `ollama pull nomic-embed-text`
+- Chat and Dream models: `qwen3.5:9b` and `nomic-embed-text` by default. Setup and Settings > Models download them. You don’t install Ollama, because Sage ships a pinned copy and runs it itself.
 
 The pinned CLI version is in `.native-sdk-version`, and CI installs exactly that version. Keep the two in step when you upgrade. The first build downloads Zig 0.16 if it is not already installed.
 
@@ -27,18 +27,18 @@ The pinned CLI version is in `.native-sdk-version`, and CI installs exactly that
 1. Install dependencies: `make setup`
 2. Start the app and the Chat agent: `make dev`
 
-`make dev` starts the Chat agent on port 2000, then opens the app window. If the agent is already running, Sage leaves it alone. Stopping `make dev` stops only the agent it started.
+`make dev` starts the Chat agent on port 2000, then opens the app window. It also fetches the pinned copy of Ollama into `third_party/ollama/` and runs it on port 11436 for the dev app. If the agent is already running, Sage leaves it alone. Stopping `make dev` stops only the agent it started.
 
 Memory is off by default. To build with memory on, add `SAGE_MEMORY=true` in front of `make dev`, `make build`, or `make package`. [Memories](docs/agent/memories.md) explains the feature.
 
-A packaged app starts the agent itself on port 2001, using the Node.js bundled inside the app. If the agent cannot start, the Chat screen says why, and the journal still works.
+A packaged app starts the agent itself on port 2001, using the Node.js bundled inside the app. It also starts the bundled Ollama on port 11435. If the agent cannot start, the Chat screen says why, and the journal still works.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `make setup` | Install frontend, agent, and eval-viewer dependencies |
-| `make dev` | Start the Chat agent and the app window for development |
+| `make dev` | Start the Chat agent, the bundled Ollama, and the app window for development |
 | `make seed-dev` | Reset the dev app and fill its journal with the entries in `scripts/seed`, dated up to this week |
 | `make build` | Build the frontend and the release binary in `zig-out/bin/` |
 | `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the lint and types for the frontend, agent, and eval viewer |
@@ -50,7 +50,7 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | `make eval-viewer-dev` | Start the eval report viewer in development |
 | `make eval-viewer-build` | Build the eval report viewer for production |
 | `make eval-viewer-start` | Serve the production eval report viewer (run `make eval-viewer-build` first) |
-| `make package` | Build a Mac `.app` bundle with the Chat agent and Node.js inside. The first run downloads Node.js into `third_party/node/` and reuses it after that. |
+| `make package` | Build a Mac `.app` bundle with the Chat agent, Node.js, and Ollama inside. The first run downloads Node.js into `third_party/node/` and Ollama into `third_party/ollama/`, and reuses both after that. |
 | `make package-archive` | Package the `.app`, then build a `.dmg` and the update `.zip` from it |
 
 ## Project structure

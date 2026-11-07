@@ -43,12 +43,13 @@ export function launchScreen(
   return { kind: "home" };
 }
 
-export type OllamaScreen = "downloads" | "install" | "start";
+export type OllamaScreen = "downloads" | "missing" | "start";
 
 /**
- * Which Local AI screen to show. A running Ollama goes straight to the
- * downloads. One that is installed but not running gets a start first, and
- * one that is not installed gets the install steps.
+ * Which Local AI screen to show. A running server goes straight to the
+ * downloads. Bundled files that are present but not running get a start, since
+ * Sage starts local AI itself. Missing files mean Sage is damaged, so the
+ * person has to reinstall it.
  */
 export function ollamaScreen(
   status: Pick<OllamaSetupStatus, "installed" | "running">
@@ -56,7 +57,7 @@ export function ollamaScreen(
   if (status.running) {
     return "downloads";
   }
-  return status.installed ? "start" : "install";
+  return status.installed ? "start" : "missing";
 }
 
 export type ProtectScreen = "choose" | "done" | "encrypt";

@@ -969,8 +969,8 @@ export async function listOllamaModels(): Promise<string[]> {
   return models.map((item) => asString(item));
 }
 
-// Ollama is down: the core launches it and answers once `/api/tags` replies,
-// so a resolved call means the server is up.
+// Local AI is down: the core starts Sage's bundled server and answers once
+// `/api/tags` replies, so a resolved call means the server is up.
 export async function startOllamaServer(): Promise<void> {
   await invoke("ollama.start", {});
 }
@@ -1046,9 +1046,12 @@ export async function deleteOllamaModel(name: string): Promise<void> {
 export interface OllamaSetupStatus {
   /** The embedding model name Sage looks for, from `SAGE_EMBED_MODEL` or the default. */
   embedModel: string;
-  /** The Ollama app or an `ollama` command is on this Mac, running or not. */
+  /**
+   * Sage's bundled local AI files are present, running or not. `false` means
+   * the app is damaged, and the person has to reinstall Sage.
+   */
   installed: boolean;
-  /** Ollama answers `/api/tags`. */
+  /** Local AI answers `/api/tags`. */
   running: boolean;
   /** The summary and chat model name Sage looks for, from `SAGE_SUMMARY_MODEL` or the default. */
   summaryModel: string;

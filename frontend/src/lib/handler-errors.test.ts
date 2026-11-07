@@ -10,9 +10,9 @@ import {
 test("handlerErrorMessage drops the handler_failed code", () => {
   assert.equal(
     handlerErrorMessage(
-      new Error("handler_failed: Ollama did not start in time.")
+      new Error("handler_failed: Local AI did not start in time.")
     ),
-    "Ollama did not start in time."
+    "Local AI did not start in time."
   );
 });
 
@@ -29,8 +29,8 @@ test("handlerErrorMessage preserves the Touch ID Keychain fallback", () => {
 
 test("handlerErrorMessage keeps a message that has no code", () => {
   assert.equal(
-    handlerErrorMessage(new Error("Ollama is locked.")),
-    "Ollama is locked."
+    handlerErrorMessage(new Error("Local AI is locked.")),
+    "Local AI is locked."
   );
 });
 

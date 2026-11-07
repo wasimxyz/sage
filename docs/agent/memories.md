@@ -75,7 +75,7 @@ Rows you add or edit are treated differently from rows Dream wrote:
 - Deleting a Dream row hides it instead of removing it, so the same extraction does not come back.
 - Deleting a row you added removes it.
 
-Facts and events are embedded when you save them, so Ollama must be running. Otherwise the save fails with “Ollama is not running.” Profile sentences save without Ollama.
+Facts and events are embedded when you save them, so the Ollama server must be running. Otherwise the save fails with “Local AI is not running.” Profile sentences save without Ollama.
 
 ## How your edits stay after Dream
 

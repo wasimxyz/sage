@@ -6,3 +6,4 @@ frontend/dist/
 .DS_Store
 agent/evals/.cache/
 third_party/node/
+third_party/ollama/
