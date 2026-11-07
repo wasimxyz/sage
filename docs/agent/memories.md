@@ -8,7 +8,7 @@ A memory build keeps profile facts about you, topic facts about people and subje
 
 Memory is off by default. Add `SAGE_MEMORY=true` in front of `make dev`, `make build`, or `make package` to build with memory on. The value is compiled into Sage, so changing it takes a new build.
 
-With memory off, Sage hides the Memories screen and rejects memory commands. Dream skips chat embeddings, chat summaries, and memory extraction.
+With memory off, Sage hides the Memories screen and rejects memory commands. Dream skips memory extraction. Chat summaries and the message index that `search_chats` reads stay on in every build.
 
 When a new build turns memory off:
 
@@ -45,7 +45,7 @@ A memory build reads memories in three ways, and leaves out hidden rows:
 
 - When a session starts, Chat adds up to 50 profile sentences to the system prompt, newest first.
 - When you send a message, Chat searches facts and events by meaning and adds the top five of each to the turn.
-- The agent can call `facts__search_memories` to search facts and events together. Each hit names its source, and for a journal source the agent can read the entry with `get_journal_entry`.
+- The agent can call `facts__search_memories` to search facts and events together. Each hit names its source as `entry-12`, `chat-12`, or `you`. The agent can read an entry source with `get_journal_entry` and a chat source with `get_chat`.
 
 ## The Memories screen
 

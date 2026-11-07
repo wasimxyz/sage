@@ -102,6 +102,9 @@ pub const Job = struct {
     need_title: bool = false,
     extract_memory: bool = false,
     chunks: [][]const u8 = &.{},
+    /// A chat's messages that have no index row yet. `vectors` holds one
+    /// vector per message for a chat, or per chunk for an entry.
+    chat_batch: journal.ChatIndexBatch = .{},
     vectors: [][]f32 = &.{},
     summary: []u8 = &.{},
     summary_vector: []f32 = &.{},
@@ -241,14 +244,23 @@ fn runItemJob(
 
 fn runItemPhases(io: std.Io, allocator: std.mem.Allocator, job: *Job) !void {
     if (job.need_embed) {
-        const chunks = try ollama.chunkText(allocator, job.text);
-        job.chunks = chunks;
-        if (chunks.len > 0) {
-            var embed_abort: ollama.Abort = .{ .io = io };
-            const embed_watchdog = ollama.startWatchdog(&embed_abort, generate_timeout_ms);
-            const vectors = ollama.embed(io, allocator, chunks, job.model_name, &embed_abort);
-            ollama.finishWatchdog(&embed_abort, embed_watchdog);
-            job.vectors = try vectors;
+        switch (job.source) {
+            .entry => {
+                const chunks = try ollama.chunkText(allocator, job.text);
+                job.chunks = chunks;
+                if (chunks.len > 0) {
+                    var embed_abort: ollama.Abort = .{ .io = io };
+                    const embed_watchdog = ollama.startWatchdog(&embed_abort, generate_timeout_ms);
+                    const vectors = ollama.embed(io, allocator, chunks, job.model_name, &embed_abort);
+                    ollama.finishWatchdog(&embed_abort, embed_watchdog);
+                    job.vectors = try vectors;
+                }
+            },
+            .conversation => {
+                const texts = try job.chat_batch.texts(allocator);
+                defer allocator.free(texts);
+                job.vectors = try ollama.embedInBatches(io, allocator, texts, job.model_name, journal.chat_index_batch_messages, generate_timeout_ms);
+            },
         }
     }
 
@@ -338,7 +350,7 @@ fn completeStatus(host: Host, job: *Job) void {
         failStart(host, statusMessage(err, host.models, &pulled_buf));
         return;
     }
-    const items = host.store.listPendingDream(host.memory_enabled) catch {
+    const items = host.store.listPendingDream() catch {
         failStart(host, "Could not look up what to dream.");
         return;
     };
@@ -452,16 +464,14 @@ fn spawnItem(host: Host, item: journal.DreamItem) SpawnResult {
             date = loaded.date;
             recent = loaded.recent;
             need_title = item.needs_memory_extraction and !loaded.title_locked;
-            if (host.memory_enabled) {
-                need_embed = host.store.chatEmbeddingsStale(item.id) catch {
-                    freeLoaded(allocator, text, date, recent);
-                    return .failed;
-                };
-                need_summary = host.store.chatSummaryStale(item.id) catch {
-                    freeLoaded(allocator, text, date, recent);
-                    return .failed;
-                };
-            }
+            need_embed = host.store.chatIndexDue(item.id) catch {
+                freeLoaded(allocator, text, date, recent);
+                return .failed;
+            };
+            need_summary = host.store.chatSummaryStale(item.id) catch {
+                freeLoaded(allocator, text, date, recent);
+                return .failed;
+            };
         },
     }
 
@@ -481,6 +491,23 @@ fn spawnItem(host: Host, item: journal.DreamItem) SpawnResult {
         need_title = false;
     }
 
+    var chat_batch: journal.ChatIndexBatch = .{};
+    if (item.source == .conversation and need_embed) {
+        chat_batch = host.store.chatMessagesToIndex(item.id, journal.chat_index_dream_messages) catch {
+            freeLoaded(allocator, text, date, recent);
+            return .failed;
+        };
+        // Every message already has a row, so only the index state is behind.
+        if (chat_batch.messages.len == 0) {
+            defer chat_batch.deinit(allocator);
+            _ = host.store.addChatMessageEmbeddings(item.id, chat_batch, &.{}, "") catch {
+                freeLoaded(allocator, text, date, recent);
+                return .failed;
+            };
+            need_embed = false;
+        }
+    }
+
     if (!extract_memory and !need_embed and !need_summary and !need_title) {
         freeLoaded(allocator, text, date, recent);
         host.store.markDreamed(item.source, item.id) catch return .failed;
@@ -488,6 +515,7 @@ fn spawnItem(host: Host, item: journal.DreamItem) SpawnResult {
     }
 
     const job = allocator.create(Job) catch {
+        chat_batch.deinit(allocator);
         freeLoaded(allocator, text, date, recent);
         return .failed;
     };
@@ -499,6 +527,7 @@ fn spawnItem(host: Host, item: journal.DreamItem) SpawnResult {
         .source_date = date,
         .text = text,
         .recent_text = recent,
+        .chat_batch = chat_batch,
         .need_embed = need_embed,
         .need_summary = need_summary,
         .need_title = need_title,
@@ -528,10 +557,15 @@ fn writeItem(store: *journal.Store, job: *Job) !struct { facts: usize, events: u
     if (job.source == .conversation and job.title.len > 0) {
         store.applyDreamChatTitle(job.source_id, job.title) catch {};
     }
-    if (job.need_embed and job.chunks.len > 0) {
+    if (job.need_embed) {
         switch (job.source) {
-            .entry => try store.replaceEmbeddings(job.source_id, job.chunks, job.vectors, job.model_name),
-            .conversation => try store.replaceChatEmbeddings(job.source_id, job.chunks, job.vectors, job.model_name),
+            .entry => if (job.chunks.len > 0) {
+                try store.replaceEmbeddings(job.source_id, job.chunks, job.vectors, job.model_name);
+            },
+            // A save since the batch was read leaves the chat due for the next pass.
+            .conversation => {
+                _ = try store.addChatMessageEmbeddings(job.source_id, job.chat_batch, job.vectors, job.model_name);
+            },
         }
     }
     if (job.need_summary and job.summary.len > 0 and job.summary_vector.len > 0) {
@@ -678,6 +712,7 @@ fn destroyJob(allocator: std.mem.Allocator, job: *Job) void {
     if (job.recent_text.len > 0) allocator.free(job.recent_text);
     for (job.chunks) |chunk| allocator.free(chunk);
     if (job.chunks.len > 0) allocator.free(job.chunks);
+    job.chat_batch.deinit(allocator);
     for (job.vectors) |vec| allocator.free(vec);
     if (job.vectors.len > 0) allocator.free(job.vectors);
     if (job.summary.len > 0) allocator.free(job.summary);

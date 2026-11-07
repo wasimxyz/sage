@@ -2,6 +2,8 @@ import type { EveDynamicToolPart } from "eve/client";
 
 export const searchJournalToolName = "search_journal";
 export const readEntryToolName = "get_journal_entry";
+export const searchChatsToolName = "search_chats";
+export const readChatToolName = "get_chat";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

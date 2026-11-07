@@ -3,6 +3,7 @@ import { byPrincipal } from "eve/memory/scope";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
+import { sourceLabel } from "../lib/ids";
 import { memoryFeatureEnabled } from "../lib/memory-feature";
 import { lastUserText } from "../lib/memory-text";
 import { readSageJson, sageFetch } from "../lib/sage";
@@ -51,7 +52,7 @@ const provider = defineMemoryProvider({
     return {
       search_memories: defineTool({
         description:
-          'Search durable facts and dated events by meaning. Each result names its source as sourceType and sourceId. When sourceType is "entry", call get_journal_entry with that sourceId to read the full journal text. Sources of type "conversation" have no fetch tool.',
+          'Search durable facts and dated events by meaning. Each result names its source: an entry id such as entry-12, a chat id such as chat-12, or "you" for a memory the user added. Call get_journal_entry with an entry id to read the full entry, or get_chat with a chat id to read that chat.',
         async execute({ query, limit }) {
           if (!(await memoryFeatureEnabled())) {
             return [];
@@ -78,8 +79,7 @@ const provider = defineMemoryProvider({
               fact: row.fact,
               kind: "fact" as const,
               score: row.score,
-              sourceId: row.sourceId,
-              sourceType: row.sourceType,
+              source: sourceLabel(row.sourceType, row.sourceId),
               subject: row.subject,
             })),
             ...eventHits.map((row) => ({
@@ -87,8 +87,7 @@ const provider = defineMemoryProvider({
               kind: "event" as const,
               occurredAt: row.occurredAt,
               score: row.score,
-              sourceId: row.sourceId,
-              sourceType: row.sourceType,
+              source: sourceLabel(row.sourceType, row.sourceId),
             })),
           ];
           merged.sort(byScoreDescending);
@@ -133,8 +132,7 @@ type MemorySearchHit =
       fact: string;
       kind: "fact";
       score: number;
-      sourceId: number;
-      sourceType: string;
+      source: string;
       subject: string;
     }
   | {
@@ -142,8 +140,7 @@ type MemorySearchHit =
       kind: "event";
       occurredAt: string;
       score: number;
-      sourceId: number;
-      sourceType: string;
+      source: string;
     };
 
 function byScoreDescending(

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import {
   countWords,
   deleteEntry,
+  generateChatEmbeddings,
   generateEmbeddings,
   getEntry,
   getOllamaStatus,
@@ -18,6 +19,7 @@ import {
   type JournalEntryMeta,
   listEntries,
   listPendingEmbeddings,
+  type PendingEmbeddings,
   saveEntry,
   todayDate,
   waitForNativeBridge,
@@ -37,6 +39,7 @@ import {
 } from "@/components/journal-context";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
+import { indexChats } from "@/lib/chat/index-chat";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
 import type { ParsedImport } from "@/lib/parse-markdown";
@@ -148,6 +151,10 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const loadedKeyRef = useRef<string | null>(null);
   const persistChainRef = useRef(Promise.resolve());
   const embedChainRef = useRef(Promise.resolve());
+  // Chat indexing has its own queue, which waits for the entries and never
+  // holds them up. The set keeps a retry from queueing a chat twice.
+  const chatIndexChainRef = useRef(Promise.resolve());
+  const queuedChatIdsRef = useRef(new Set<number>());
   const adapterRef = useRef<EditorAdapter | null>(null);
   const persistRef = useRef<() => Promise<void>>(async () => undefined);
   const embedEntryRef = useRef<(id: number) => Promise<void>>(
@@ -345,19 +352,47 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, []);
 
+  const queueChatIndexing = useCallback(
+    (ids: number[], after: Promise<void>) => {
+      const fresh = ids.filter((id) => !queuedChatIdsRef.current.has(id));
+      if (fresh.length === 0) {
+        return;
+      }
+      for (const id of fresh) {
+        queuedChatIdsRef.current.add(id);
+      }
+      chatIndexChainRef.current = chatIndexChainRef.current
+        .then(() => after)
+        .then(() => indexChats(fresh, generateChatEmbeddings))
+        .then((finished) => {
+          // Only Ollama being down is worth another pass.
+          if (!finished) {
+            scheduleStaleEmbeddingRetry();
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          for (const id of fresh) {
+            queuedChatIdsRef.current.delete(id);
+          }
+        });
+    },
+    [scheduleStaleEmbeddingRetry]
+  );
+
   const embedStaleEntries = useCallback(async (): Promise<boolean> => {
     if (!hasNativeBridge()) {
       scheduleStaleEmbeddingRetry();
       return false;
     }
-    let ids: number[];
+    let pending: PendingEmbeddings;
     try {
-      ids = await listPendingEmbeddings();
+      pending = await listPendingEmbeddings();
     } catch {
       scheduleStaleEmbeddingRetry();
       return false;
     }
-    if (ids.length === 0) {
+    if (pending.entryIds.length === 0 && pending.chatIds.length === 0) {
       clearStaleEmbeddingRetry();
       return true;
     }
@@ -372,13 +407,23 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       return false;
     }
     clearStaleEmbeddingRetry();
-    for (const id of ids) {
+    for (const id of pending.entryIds) {
       pendingEmbedIdsRef.current.add(id);
       enqueueEmbed(id);
     }
-    await embedChainRef.current;
+    // Chats whose messages the chat search can't see yet, such as one saved
+    // while Ollama was down, start once the entries are done. The pass does
+    // not wait for them, so its answer is about the entries alone.
+    const entriesDone = embedChainRef.current;
+    queueChatIndexing(pending.chatIds, entriesDone);
+    await entriesDone;
     return staleEmbeddingRetryTimerRef.current === null;
-  }, [clearStaleEmbeddingRetry, enqueueEmbed, scheduleStaleEmbeddingRetry]);
+  }, [
+    clearStaleEmbeddingRetry,
+    enqueueEmbed,
+    queueChatIndexing,
+    scheduleStaleEmbeddingRetry,
+  ]);
 
   const scheduleEmbed = useCallback(() => {
     clearEmbedTimer();

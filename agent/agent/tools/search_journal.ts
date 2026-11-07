@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
+import { labelEntryIds } from "../lib/ids";
 import { readSageJson, sageFetch } from "../lib/sage";
 import { shapeQueryResult, shapeRangeResult } from "../lib/search-result";
 import { rangeFromWhen, todayFromEnv } from "../lib/when";
@@ -10,7 +11,7 @@ const listLimit = 10;
 
 export default defineTool({
   description:
-    'Find journal entries by meaning, by time, or both. Pass query to search by meaning. Pass when to pick a time: copy the user\'s own words, such as "last week", "in March", or "recently". With when and no query, you get what they wrote in that time. Each entry has an id, title, date, and snippet; call get_journal_entry with an id to read one in full. Search by meaning covers only entries Dream has summarized, and it leaves out weak matches. If a search comes back empty with no note and the user expects a match, suggest Dream in the sidebar.',
+    'Find journal entries by meaning, by time, or both. Pass query to search by meaning. Pass when to pick a time: copy the user\'s own words, such as "last week", "in March", or "recently". With when and no query, you get what they wrote in that time. Each entry has an id such as entry-12, a title, a date, and a snippet; call get_journal_entry with an id to read one in full. Search by meaning covers only entries Dream has summarized, and it leaves out weak matches. If a search comes back empty with no note and the user expects a match, suggest Dream in the sidebar.',
   async execute({ limit, query, when }) {
     const text = query?.trim() ?? "";
     const today = todayFromEnv();
@@ -29,7 +30,7 @@ export default defineTool({
       headers: { "content-type": "application/json" },
       method: "POST",
     });
-    const payload = await readSageJson(response);
+    const payload = labelEntryIds(await readSageJson(response));
     if (range !== null) {
       return shapeRangeResult({
         hasQuery: text.length > 0,

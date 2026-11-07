@@ -23,7 +23,12 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import { type ChatConversation, chatSave, isMissingRowError } from "@/bridge";
+import {
+  type ChatConversation,
+  chatSave,
+  generateChatEmbeddings,
+  isMissingRowError,
+} from "@/bridge";
 import {
   PromptInput,
   PromptInputBody,
@@ -87,6 +92,7 @@ import {
   eveHost,
   withChatAuthorization,
 } from "@/lib/chat/eve-host";
+import { indexChatMessages } from "@/lib/chat/index-chat";
 import {
   type ChatLoadPromise,
   loadConversation,
@@ -541,6 +547,10 @@ function ChatTurnSession({
       const model = normalizeChatModelId(selectedModelRef.current);
       if (model.length > 0) {
         headers["x-sage-model"] = model;
+      }
+      // A saved chat names itself, so the chat search leaves it out.
+      if (idRef.current !== null) {
+        headers["x-sage-chat-id"] = String(idRef.current);
       }
       return withChatAuthorization(headers, agentTokenRef.current);
     },
@@ -1230,6 +1240,12 @@ async function applyPersistPatch(
     refs.persistedEventsRef.current = nextEvents;
     if (created) {
       refs.recordCreated(id, refs.titleRef.current || "New chat");
+    }
+    // New events come from a finished reply. Index its messages for the chat
+    // search without holding up the next save. A failure leaves them for the
+    // next reply or the pending pass.
+    if (baseSeq < nextEvents.length) {
+      indexChatMessages(id, generateChatEmbeddings).catch(() => undefined);
     }
     await refs.refreshList();
   } catch (error) {

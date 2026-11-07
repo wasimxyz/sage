@@ -32,7 +32,17 @@ pub const Wake = struct {
     }
 };
 
-pub const SearchTarget = enum { journal, facts, events };
+pub const SearchTarget = enum {
+    journal,
+    facts,
+    events,
+    chats,
+
+    /// Facts and events exist only in a memory build.
+    pub fn needsMemory(self: SearchTarget) bool {
+        return self == .facts or self == .events;
+    }
+};
 
 pub const Job = struct {
     kind: Kind,
@@ -47,8 +57,16 @@ pub const Job = struct {
     /// Journal searches only: keeps the search, or the listing, to entries
     /// dated inside it.
     range: ?journal.DateRange = null,
+    /// Chat searches only: keeps the search, or the listing, to messages
+    /// saved inside it.
+    chat_range: ?journal.InstantRange = null,
+    /// Chat searches only: a chat to leave out, or 0.
+    exclude: i64 = 0,
+    /// `get_chat` only: the chat id, and the message to read around.
+    chat_id: i64 = 0,
+    message: ?i64 = null,
 
-    pub const Kind = enum { get_entry, search, search_ready, journal_range, memory_profile, agent_instructions };
+    pub const Kind = enum { get_entry, get_chat, search, search_ready, journal_range, chat_range, memory_profile, agent_instructions };
 };
 
 pub const Queue = struct {
@@ -372,6 +390,24 @@ fn handleConnection(self: *Server, stream: std.Io.net.Stream) void {
         return;
     }
 
+    if (std.mem.eql(u8, parsed.method, "POST") and std.mem.eql(u8, parsed.path, "/chats/search")) {
+        enqueueChatSearch(self, stream, parsed.body);
+        return;
+    }
+
+    if (std.mem.eql(u8, parsed.method, "GET") and std.mem.startsWith(u8, parsed.path, "/chats/")) {
+        const target = parseChatPath(parsed.path) orelse {
+            replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
+            stream.close(self.io);
+            return;
+        };
+        enqueue(self, stream, .{ .kind = .get_chat, .stream = stream, .chat_id = target.id, .message = target.message }) catch {
+            replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+            stream.close(self.io);
+        };
+        return;
+    }
+
     if (std.mem.eql(u8, parsed.method, "GET") and std.mem.eql(u8, parsed.path, "/memory/profile")) {
         if (!self.memory_enabled) {
             replyJson(self.io, stream, 404, "Not Found", "{\"error\":\"not_found\"}");
@@ -450,6 +486,97 @@ fn planSearch(body: []const u8, target: SearchTarget, string_buf: []u8) SearchPl
     return .{ .rank = .{ .query = query, .range = range, .limit = limit } };
 }
 
+/// What a chat search request asks for. Its times are instants, not days.
+const ChatSearchPlan = union(enum) {
+    bad_request,
+    /// A time range and no query: list the chats active in the range.
+    list: struct { range: journal.InstantRange, exclude: i64, limit: i64 },
+    /// A query to rank by meaning, inside `range` when there is one. `query`
+    /// points into the buffer given to `planChatSearch`.
+    rank: struct { query: []const u8, range: ?journal.InstantRange, exclude: i64, limit: i64 },
+};
+
+fn planChatSearch(body: []const u8, string_buf: []u8) ChatSearchPlan {
+    const range: ?journal.InstantRange = switch (journal.jsonInstantRange(body)) {
+        .absent => null,
+        .range => |found| found,
+        .invalid => return .bad_request,
+    };
+    // `exclude` is the chat being answered. One that is there must be an id.
+    const exclude: i64 = if (journal.jsonHas(body, "exclude")) blk: {
+        const value = journal.jsonI64(body, "exclude") orelse return .bad_request;
+        if (value < 1) return .bad_request;
+        break :blk value;
+    } else 0;
+    var used: usize = 0;
+    const query = if (journal.jsonHas(body, "query"))
+        (journal.jsonString(body, "query", string_buf, &used) orelse return .bad_request)
+    else
+        "";
+    const requested = journal.jsonI64(body, "limit") orelse 5;
+    const limit = if (requested < 1) 5 else requested;
+    if (query.len == 0) {
+        const bounded = range orelse return .bad_request;
+        return .{ .list = .{ .range = bounded, .exclude = exclude, .limit = limit } };
+    }
+    return .{ .rank = .{ .query = query, .range = range, .exclude = exclude, .limit = limit } };
+}
+
+const ChatPath = struct { id: i64, message: ?i64 };
+
+/// Reads `/chats/{id}` with an optional `?message={seq}`. Null for anything
+/// else, including an id under 1 or a message under 0.
+fn parseChatPath(path: []const u8) ?ChatPath {
+    const rest = path["/chats/".len..];
+    const query_start = std.mem.indexOfScalar(u8, rest, '?');
+    const id_text = if (query_start) |at| rest[0..at] else rest;
+    const id = parsePositive(id_text) orelse return null;
+    const query = if (query_start) |at| rest[at + 1 ..] else return .{ .id = id, .message = null };
+    const prefix = "message=";
+    if (!std.mem.startsWith(u8, query, prefix)) return null;
+    const message_text = query[prefix.len..];
+    if (message_text.len == 0 or message_text.len > 18) return null;
+    for (message_text) |ch| if (ch < '0' or ch > '9') return null;
+    const message = std.fmt.parseInt(i64, message_text, 10) catch return null;
+    return .{ .id = id, .message = message };
+}
+
+fn parsePositive(text: []const u8) ?i64 {
+    if (text.len == 0 or text.len > 18) return null;
+    for (text) |ch| if (ch < '0' or ch > '9') return null;
+    const value = std.fmt.parseInt(i64, text, 10) catch return null;
+    return if (value >= 1) value else null;
+}
+
+fn enqueueChatSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8) void {
+    var string_buf: [8192]u8 = undefined;
+    switch (planChatSearch(body, &string_buf)) {
+        .bad_request => {
+            replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
+            stream.close(self.io);
+        },
+        // A time range alone lists the chats in it, with no embedding.
+        .list => |plan| enqueue(self, stream, .{
+            .kind = .chat_range,
+            .stream = stream,
+            .limit = plan.limit,
+            .chat_range = plan.range,
+            .exclude = plan.exclude,
+        }) catch {
+            replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
+            stream.close(self.io);
+        },
+        .rank => |plan| enqueueRanked(self, stream, body, plan.query, .{
+            .kind = .search,
+            .stream = stream,
+            .limit = plan.limit,
+            .target = .chats,
+            .chat_range = plan.range,
+            .exclude = plan.exclude,
+        }),
+    }
+}
+
 fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, target: SearchTarget) void {
     var string_buf: [8192]u8 = undefined;
     switch (planSearch(body, target, &string_buf)) {
@@ -467,18 +594,24 @@ fn enqueueSearch(self: *Server, stream: std.Io.net.Stream, body: []const u8, tar
             replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
             stream.close(self.io);
         },
-        .rank => |plan| enqueueRanked(self, stream, body, plan.query, plan.range, plan.limit, target),
+        .rank => |plan| enqueueRanked(self, stream, body, plan.query, .{
+            .kind = .search,
+            .stream = stream,
+            .limit = plan.limit,
+            .target = target,
+            .range = plan.range,
+        }),
     }
 }
 
+/// Queue a ranked search described by `search`, which carries the target,
+/// limit, and ranges. With an `embedding` in the body the search skips Ollama.
 fn enqueueRanked(
     self: *Server,
     stream: std.Io.net.Stream,
     body: []const u8,
     query: []const u8,
-    range: ?journal.DateRange,
-    limit: i64,
-    target: SearchTarget,
+    search: Job,
 ) void {
     const provided = journal.jsonF32Array(body, "embedding", self.allocator) catch {
         replyJson(self.io, stream, 400, "Bad Request", "{\"error\":\"bad_request\"}");
@@ -493,19 +626,15 @@ fn enqueueRanked(
     };
     if (provided) |vec| {
         if (vec.len > 0) {
-            enqueueReadySearch(self, stream, owned_query, vec, limit, target, range);
+            enqueueReadySearch(self, stream, owned_query, vec, search);
             return;
         }
         self.allocator.free(vec);
     }
-    enqueue(self, stream, .{
-        .kind = .search,
-        .stream = stream,
-        .query = owned_query,
-        .limit = limit,
-        .target = target,
-        .range = range,
-    }) catch {
+    var job = search;
+    job.kind = .search;
+    job.query = owned_query;
+    enqueue(self, stream, job) catch {
         self.allocator.free(owned_query);
         replyJson(self.io, stream, 500, "Internal Server Error", "{\"error\":\"internal\"}");
         stream.close(self.io);
@@ -517,9 +646,7 @@ fn enqueueReadySearch(
     stream: std.Io.net.Stream,
     owned_query: []u8,
     vec: []f32,
-    limit: i64,
-    target: SearchTarget,
-    range: ?journal.DateRange,
+    search: Job,
 ) void {
     const batch = self.allocator.alloc([]f32, 1) catch {
         self.allocator.free(vec);
@@ -529,15 +656,11 @@ fn enqueueReadySearch(
         return;
     };
     batch[0] = vec;
-    enqueue(self, stream, .{
-        .kind = .search_ready,
-        .stream = stream,
-        .query = owned_query,
-        .limit = limit,
-        .vectors = batch,
-        .target = target,
-        .range = range,
-    }) catch {
+    var job = search;
+    job.kind = .search_ready;
+    job.query = owned_query;
+    job.vectors = batch;
+    enqueue(self, stream, job) catch {
         self.allocator.free(vec);
         self.allocator.free(batch);
         self.allocator.free(owned_query);
@@ -855,6 +978,57 @@ test "planSearch gives memory searches no date range" {
         // And a bad range is not their business.
         try std.testing.expect(planSearch("{\"query\":\"Sam\",\"from\":\"soon\",\"to\":\"later\"}", target, &buf) == .rank);
     }
+}
+
+const october_week = "\"from\":\"2026-10-19T07:00:00.000Z\",\"to\":\"2026-10-26T07:00:00.000Z\"";
+
+test "planChatSearch ranks a query inside a time range and leaves out a chat" {
+    var buf: [8192]u8 = undefined;
+
+    const plain = planChatSearch("{\"query\":\"sleep\",\"limit\":3}", &buf).rank;
+    try std.testing.expectEqualStrings("sleep", plain.query);
+    try std.testing.expect(plain.range == null);
+    try std.testing.expectEqual(@as(i64, 0), plain.exclude);
+    try std.testing.expectEqual(@as(i64, 3), plain.limit);
+
+    const dated = planChatSearch("{\"query\":\"sleep\",\"exclude\":7," ++ october_week ++ "}", &buf).rank;
+    try std.testing.expectEqualStrings("2026-10-19T07:00:00.000Z", &dated.range.?.from);
+    try std.testing.expectEqualStrings("2026-10-26T07:00:00.000Z", &dated.range.?.to);
+    try std.testing.expectEqual(@as(i64, 7), dated.exclude);
+
+    const listed = planChatSearch("{" ++ october_week ++ ",\"limit\":10,\"exclude\":2}", &buf).list;
+    try std.testing.expectEqual(@as(i64, 10), listed.limit);
+    try std.testing.expectEqual(@as(i64, 2), listed.exclude);
+}
+
+test "planChatSearch refuses a request it cannot read" {
+    var buf: [8192]u8 = undefined;
+
+    try std.testing.expect(planChatSearch("{}", &buf) == .bad_request);
+    try std.testing.expect(planChatSearch("{\"query\":5}", &buf) == .bad_request);
+    // Chat searches take instants, so a range of days is not one.
+    try std.testing.expect(planChatSearch("{\"query\":\"sleep\"," ++ march ++ "}", &buf) == .bad_request);
+    try std.testing.expect(planChatSearch("{\"from\":\"2026-10-26T07:00:00.000Z\",\"to\":\"2026-10-19T07:00:00.000Z\"}", &buf) == .bad_request);
+    try std.testing.expect(planChatSearch("{\"query\":\"sleep\",\"exclude\":0}", &buf) == .bad_request);
+    try std.testing.expect(planChatSearch("{\"query\":\"sleep\",\"exclude\":\"chat-2\"}", &buf) == .bad_request);
+}
+
+test "parseChatPath reads an id and an optional message" {
+    const plain = parseChatPath("/chats/12").?;
+    try std.testing.expectEqual(@as(i64, 12), plain.id);
+    try std.testing.expect(plain.message == null);
+
+    const at = parseChatPath("/chats/12?message=0").?;
+    try std.testing.expectEqual(@as(i64, 12), at.id);
+    try std.testing.expectEqual(@as(?i64, 0), at.message);
+
+    try std.testing.expect(parseChatPath("/chats/") == null);
+    try std.testing.expect(parseChatPath("/chats/0") == null);
+    try std.testing.expect(parseChatPath("/chats/chat-12") == null);
+    try std.testing.expect(parseChatPath("/chats/-1") == null);
+    try std.testing.expect(parseChatPath("/chats/12?message=") == null);
+    try std.testing.expect(parseChatPath("/chats/12?message=-3") == null);
+    try std.testing.expect(parseChatPath("/chats/12?seq=3") == null);
 }
 
 test "parseRequest reads a search body with an embedding" {

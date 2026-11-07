@@ -6,7 +6,7 @@ These pages explain how Sage works once you are past the [README](../README.md).
 
 - [Architecture](architecture.md): the Zig core, the web view, the bridge, SQLite, threads, Ollama, and the eve agent
 - [The journal](journal.md): writing, saving, importing, exporting, and searching entries, and the Home screen
-- [Dream](dream.md): the job that summarizes entries, titles chats, and extracts memories
+- [Dream](dream.md): the job that summarizes entries and chats, titles chats, and extracts memories
 - [Models](models.md): Settings > Models, recommended models, and starting Ollama
 - [First-launch setup](onboarding.md): the setup screens, the rows they save, and the reminders to protect your journal
 
