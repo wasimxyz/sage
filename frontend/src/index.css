@@ -88,8 +88,7 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar-solid: oklch(0.94 0 0);
-  --sidebar: oklch(0.94 0 0 / 68%);
+  --sidebar: oklch(0.94 0 0);
   --sidebar-foreground: oklch(0.205 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -142,8 +141,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar-solid: oklch(0.26 0 0);
-  --sidebar: oklch(0.26 0 0 / 58%);
+  --sidebar: oklch(0.26 0 0);
   --sidebar-foreground: oklch(0.9 0 0);
   --sidebar-primary: oklch(0.9 0 0);
   --sidebar-primary-foreground: oklch(0.21 0 0);
@@ -163,14 +161,6 @@
     0 0 0 1px rgb(255 255 255 / 0.1), 0 30px 60px -12px rgb(0 0 0 / 0.6);
 }
 
-html[data-fullscreen] {
-  --sidebar: var(--sidebar-solid);
-}
-
-[data-slot="sidebar"][data-mobile="true"] {
-  --sidebar: var(--sidebar-solid);
-}
-
 /* System accessibility settings. These sit outside @layer so they beat
    utilities of equal specificity. */
 @media (prefers-contrast: more) {
@@ -178,7 +168,6 @@ html[data-fullscreen] {
     --border: oklch(0.55 0 0);
     --input: oklch(0.55 0 0);
     --muted-foreground: oklch(0.35 0 0);
-    --sidebar: var(--sidebar-solid);
     --sidebar-border: oklch(0.55 0 0);
   }
   .dark {
@@ -190,9 +179,6 @@ html[data-fullscreen] {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  :root {
-    --sidebar: var(--sidebar-solid);
-  }
   [data-slot="dialog-overlay"],
   [data-slot="sheet-overlay"],
   [data-slot="chat-composer-bar"] {

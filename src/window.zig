@@ -8,23 +8,15 @@ const ns_window_close_button: i64 = 0;
 const ns_window_miniaturize_button: i64 = 1;
 const ns_window_zoom_button: i64 = 2;
 const ns_window_full_screen: i64 = 1 << 14;
-const ns_window_below: i64 = -1;
-const ns_visual_effect_material_sidebar: i64 = 7;
-const ns_visual_effect_blending_behind_window: i64 = 0;
-const ns_visual_effect_state_follows_window: i64 = 0;
-const ns_visual_effect_state_inactive: i64 = 2;
-const ns_view_width_sizable: u64 = 2;
-const ns_view_height_sizable: u64 = 16;
-const sage_vibrancy_id: [:0]const u8 = "sage-sidebar-vibrancy";
 const appearance_observer_class: [:0]const u8 = "SageTitlebarObserver";
 const appearance_changed_name: [:0]const u8 = "AppleInterfaceThemeChangedNotification";
 const frame_changed_name: [:0]const u8 = "NSViewFrameDidChangeNotification";
 const reapply_after_appearance_s: f64 = 0.16;
 const webview_search_depth: u8 = 6;
-const layer_search_depth: u8 = 8;
 
 var last_height: f64 = 36;
 var last_leading: ?f64 = null;
+var app_window: ?*anyopaque = null;
 var appearance_target: ?*anyopaque = null;
 var appearance_observer_installed = false;
 var frame_observer_installed = false;
@@ -32,10 +24,25 @@ var applying_alignment = false;
 var measured_pitch: ?f64 = null;
 const default_button_pitch: f64 = 20;
 
-fn keyWindow(api: objc.Api) ?*anyopaque {
+/// The window that holds the web view. `keyWindow` and `mainWindow` are nil
+/// while Sage is not the active app, which happens at launch when focus moves
+/// away or the Touch ID prompt is up. Looking the window up by its web view
+/// works either way. The window lives until Sage quits, so keep it.
+fn appWindow(api: objc.Api) ?*anyopaque {
+    if (app_window) |window| return window;
     const ns_app_class = api.get_class("NSApplication") orelse return null;
     const app = objc.msg(api, ns_app_class, objc.sel(api, "sharedApplication")) orelse return null;
-    return objc.msg(api, app, objc.sel(api, "keyWindow")) orelse objc.msg(api, app, objc.sel(api, "mainWindow"));
+    const windows = objc.msg(api, app, objc.sel(api, "windows")) orelse return null;
+    const count = objc.msgInt(api, windows, objc.sel(api, "count"));
+    var index: i64 = 0;
+    while (index < count) : (index += 1) {
+        const window = objc.msg1i(api, windows, objc.sel(api, "objectAtIndex:"), index) orelse continue;
+        const content = objc.msg(api, window, objc.sel(api, "contentView")) orelse continue;
+        if (findWebView(api, content, webview_search_depth) == null) continue;
+        app_window = window;
+        return window;
+    }
+    return null;
 }
 
 fn sameRect(a: objc.CGRect, b: objc.CGRect) bool {
@@ -57,7 +64,7 @@ fn centerTrafficLights(height: f64, leading: ?f64) void {
     applying_alignment = true;
     defer applying_alignment = false;
     const api = objc.load() orelse return;
-    const window = keyWindow(api) orelse return;
+    const window = appWindow(api) orelse return;
     if (objc.msgInt(api, window, objc.sel(api, "styleMask")) & ns_window_full_screen != 0) return;
 
     const close = objc.msg1i(api, window, objc.sel(api, "standardWindowButton:"), ns_window_close_button) orelse return;
@@ -165,30 +172,8 @@ fn jsonF64(payload: []const u8, field: []const u8) ?f64 {
 fn isMacosFullscreen() bool {
     if (builtin.os.tag != .macos) return false;
     const api = objc.load() orelse return false;
-    const window = keyWindow(api) orelse return false;
+    const window = appWindow(api) orelse return false;
     return objc.msgInt(api, window, objc.sel(api, "styleMask")) & ns_window_full_screen != 0;
-}
-
-fn viewIdentifierIs(api: objc.Api, view: *anyopaque, expected: [:0]const u8) bool {
-    const identifier = objc.msg(api, view, objc.sel(api, "identifier")) orelse return false;
-    const utf8 = objc.msg(api, identifier, objc.sel(api, "UTF8String")) orelse return false;
-    const bytes: [*:0]const u8 = @ptrCast(utf8);
-    return std.mem.eql(u8, std.mem.span(bytes), expected);
-}
-
-fn existingVibrancyView(api: objc.Api, content: *anyopaque) ?*anyopaque {
-    const subviews = objc.msg(api, content, objc.sel(api, "subviews")) orelse return null;
-    const count = objc.msgInt(api, subviews, objc.sel(api, "count"));
-    var index: i64 = 0;
-    while (index < count) : (index += 1) {
-        const view = objc.msg1i(api, subviews, objc.sel(api, "objectAtIndex:"), index) orelse continue;
-        if (viewIdentifierIs(api, view, sage_vibrancy_id)) return view;
-    }
-    return null;
-}
-
-fn existingWebView(api: objc.Api, content: *anyopaque) ?*anyopaque {
-    return findWebView(api, content, webview_search_depth);
 }
 
 fn findWebView(api: objc.Api, view: *anyopaque, depth: u8) ?*anyopaque {
@@ -203,106 +188,6 @@ fn findWebView(api: objc.Api, view: *anyopaque, depth: u8) ?*anyopaque {
         if (findWebView(api, child, depth - 1)) |found| return found;
     }
     return null;
-}
-
-fn setKvcBool(api: objc.Api, object: *anyopaque, key: [:0]const u8, value: bool) void {
-    const ns_number = api.get_class("NSNumber") orelse return;
-    const boxed = objc.msgBool(api, ns_number, objc.sel(api, "numberWithBool:"), value) orelse return;
-    const name = objc.nsString(api, key) orelse return;
-    _ = objc.msg2(api, object, objc.sel(api, "setValue:forKey:"), boxed, name);
-}
-
-fn clearCgColor(api: objc.Api) ?*anyopaque {
-    const ns_color = api.get_class("NSColor") orelse return null;
-    const clear = objc.msg(api, ns_color, objc.sel(api, "clearColor")) orelse return null;
-    return objc.msg(api, clear, objc.sel(api, "CGColor"));
-}
-
-fn clearLayerFill(api: objc.Api, layer: *anyopaque, clear_cg: ?*anyopaque) void {
-    objc.msgVoidBool(api, layer, objc.sel(api, "setOpaque:"), false);
-    _ = objc.msg1(api, layer, objc.sel(api, "setBackgroundColor:"), clear_cg);
-}
-
-fn clearFullSizeLayers(api: objc.Api, layer: *anyopaque, full: objc.CGRect, clear_cg: ?*anyopaque, depth: u8) void {
-    const bounds = objc.msgRect(api, layer, objc.sel(api, "bounds"));
-    if (@abs(bounds.size.width - full.size.width) < 1.5 and @abs(bounds.size.height - full.size.height) < 1.5) {
-        clearLayerFill(api, layer, clear_cg);
-    }
-    if (depth == 0) return;
-    const sublayers = objc.msg(api, layer, objc.sel(api, "sublayers")) orelse return;
-    const count = objc.msgInt(api, sublayers, objc.sel(api, "count"));
-    var index: i64 = 0;
-    while (index < count) : (index += 1) {
-        const child = objc.msg1i(api, sublayers, objc.sel(api, "objectAtIndex:"), index) orelse continue;
-        clearFullSizeLayers(api, child, full, clear_cg, depth - 1);
-    }
-}
-
-/// WebKit adds an opaque overhang layer after reload. Clearing the view
-/// fill is not enough; full-size compositor layers have to be cleared too.
-fn clearWebViewBackdrop(api: objc.Api, content: *anyopaque) void {
-    const webview = existingWebView(api, content) orelse return;
-    objc.msgVoidBool(api, webview, objc.sel(api, "setOpaque:"), false);
-    setKvcBool(api, webview, "drawsBackground", false);
-    setKvcBool(api, webview, "drawsTransparentBackground", true);
-    const under_sel = objc.sel(api, "setUnderPageBackgroundColor:");
-    if (objc.msgRespondsToSelector(api, webview, under_sel)) {
-        if (api.get_class("NSColor")) |ns_color| {
-            if (objc.msg(api, ns_color, objc.sel(api, "clearColor"))) |clear| {
-                _ = objc.msg1(api, webview, under_sel, clear);
-            }
-        }
-    }
-    const layer = objc.msg(api, webview, objc.sel(api, "layer")) orelse return;
-    const clear_cg = clearCgColor(api);
-    clearLayerFill(api, layer, clear_cg);
-    const bounds = objc.msgRect(api, layer, objc.sel(api, "bounds"));
-    clearFullSizeLayers(api, layer, bounds, clear_cg, layer_search_depth);
-}
-
-fn syncVibrancyState(api: objc.Api, window: *anyopaque, effect: *anyopaque) void {
-    const fullscreen = objc.msgInt(api, window, objc.sel(api, "styleMask")) & ns_window_full_screen != 0;
-    objc.msgVoidInt(
-        api,
-        effect,
-        objc.sel(api, "setState:"),
-        if (fullscreen) ns_visual_effect_state_inactive else ns_visual_effect_state_follows_window,
-    );
-}
-
-/// Sidebar blur behind the web view. Translucent sidebar CSS lets the
-/// desktop show through. Full screen turns this effect off, and the
-/// frontend also paints the sidebar opaque then.
-fn installSidebarVibrancy() void {
-    const api = objc.load() orelse return;
-    const window = keyWindow(api) orelse return;
-    const content = objc.msg(api, window, objc.sel(api, "contentView")) orelse return;
-    clearWebViewBackdrop(api, content);
-
-    if (existingVibrancyView(api, content)) |effect| {
-        syncVibrancyState(api, window, effect);
-        return;
-    }
-
-    const class = api.get_class("NSVisualEffectView") orelse return;
-    const allocated = objc.msg(api, class, objc.sel(api, "alloc")) orelse return;
-    const bounds = objc.msgRect(api, content, objc.sel(api, "bounds"));
-    const effect = objc.msgInitRect(api, allocated, objc.sel(api, "initWithFrame:"), bounds) orelse return;
-
-    objc.msgVoidInt(api, effect, objc.sel(api, "setMaterial:"), ns_visual_effect_material_sidebar);
-    objc.msgVoidInt(api, effect, objc.sel(api, "setBlendingMode:"), ns_visual_effect_blending_behind_window);
-    const identifier = objc.nsString(api, sage_vibrancy_id) orelse return;
-    _ = objc.msg1(api, effect, objc.sel(api, "setIdentifier:"), identifier);
-    objc.msgVoidUInt(api, effect, objc.sel(api, "setAutoresizingMask:"), ns_view_width_sizable | ns_view_height_sizable);
-    objc.msgVoidIdIntId(
-        api,
-        content,
-        objc.sel(api, "addSubview:positioned:relativeTo:"),
-        effect,
-        ns_window_below,
-        null,
-    );
-    syncVibrancyState(api, window, effect);
 }
 
 fn writeAlignTitlebarJson(output: []u8, fullscreen: bool) ![]const u8 {
@@ -333,7 +218,6 @@ pub fn drag(output: []u8) ![]const u8 {
 }
 
 fn applyLastAlignment() void {
-    installSidebarVibrancy();
     centerTrafficLights(last_height, last_leading);
 }
 
