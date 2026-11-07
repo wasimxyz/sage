@@ -118,8 +118,7 @@
             "width": 1440,
             "height": 900,
             "restore_state": true,
-            "titlebar": "hidden_inset",
-            "transparent": true
+            "titlebar": "hidden_inset"
         }
     ]
 }
