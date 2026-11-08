@@ -31,7 +31,11 @@ export function readChatId(value: unknown): number | null {
     return null;
   }
   const match = prefixedChatId.exec(value);
-  return match === null ? null : Number(match[1]);
+  if (match === null) {
+    return null;
+  }
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) ? id : null;
 }
 
 function messageNumber(value: unknown): number | null {

@@ -48,7 +48,11 @@ export function readEntryId(value: unknown): number | null {
     return null;
   }
   const match = prefixedEntryId.exec(value);
-  return match === null ? null : Number(match[1]);
+  if (match === null) {
+    return null;
+  }
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) ? id : null;
 }
 
 function isCalendarDate(value: unknown): value is string {

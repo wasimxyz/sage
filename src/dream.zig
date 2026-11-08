@@ -355,7 +355,9 @@ fn completeStatus(host: Host, job: *Job) void {
         return;
     };
     runner.items = items;
-    runner.total = items.len;
+    // The first batch holds at most `journal.dream_pending_limit` sources. The
+    // total counts them all, so the percent does not fall back between batches.
+    runner.total = @max(items.len, host.store.countPendingDream() catch 0);
     runner.done = 0;
     runner.facts = 0;
     runner.events = 0;
@@ -363,8 +365,8 @@ fn completeStatus(host: Host, job: *Job) void {
     runner.next_index = 0;
     runner.generation = host.store.data_generation;
     runner.running = true;
-    emitStarted(host, items.len);
-    succeedStart(host, items.len);
+    emitStarted(host, runner.total);
+    succeedStart(host, runner.total);
     processNext(host);
 }
 
@@ -398,6 +400,14 @@ fn processNext(host: Host) void {
     const runner = host.runner;
     while (runner.running and !runner.in_flight) {
         if (runner.next_index >= runner.items.len) {
+            const listed_more = listNextBatch(host) catch {
+                finish(host, false, "Could not look up what to dream.");
+                return;
+            };
+            if (listed_more) {
+                emitProgress(host);
+                continue;
+            }
             finish(host, true, "");
             return;
         }
@@ -416,6 +426,26 @@ fn processNext(host: Host) void {
             },
         }
     }
+}
+
+/// A batch holds at most `journal.dream_pending_limit` sources. When the one
+/// just worked through was full, more may be pending, so list the next batch
+/// after its last source. Returns false when none is left.
+fn listNextBatch(host: Host) !bool {
+    const runner = host.runner;
+    if (runner.items.len < journal.dream_pending_limit) return false;
+    const allocator = host.allocator();
+    const next = try host.store.listPendingDreamAfter(runner.items[runner.items.len - 1]);
+    if (next.len == 0) {
+        allocator.free(next);
+        return false;
+    }
+    allocator.free(runner.items);
+    runner.items = next;
+    runner.next_index = 0;
+    // Sources that appeared during the run add to the total.
+    runner.total = @max(runner.total, runner.done + next.len);
+    return true;
 }
 
 fn spawnItem(host: Host, item: journal.DreamItem) SpawnResult {
@@ -797,6 +827,42 @@ test "index-only Dream repairs a summary without replacing memories" {
     var profile_writer = std.Io.Writer.fixed(&profile_out);
     try store.listProfile(journal.profile_recall_limit, &profile_writer);
     try std.testing.expect(std.mem.indexOf(u8, profile_writer.buffered(), "Keeps a journal") != null);
+}
+
+test "a Dream run lists the next batch after a full one and works through every source" {
+    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, &journal.migrations);
+    const db = switch (open_result.outcome) {
+        .ok => open_result.database.?,
+        else => return error.SqliteMigrationFailed,
+    };
+    var store = journal.Store.init(std.testing.allocator, db);
+    defer store.deinit();
+    // Chats with nothing to summarize, so each is marked and skipped without
+    // a model. There are more than one batch holds.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 4100) INSERT INTO chat_conversation (id, title, events) SELECT i, 'Chat', '' FROM n;" },
+        .{ .sql = "INSERT INTO chat_event (conversation_id, seq, event) SELECT id, 0, '{\"type\":\"actions.requested\",\"data\":{\"actions\":[]}}' FROM chat_conversation;" },
+    }) == .ok);
+    try std.testing.expectEqual(@as(usize, 4100), try store.countPendingDream());
+
+    var queue: Queue = .{};
+    var runner: Runner = .{ .running = true };
+    const host: Host = .{
+        .store = &store,
+        .io = std.testing.io,
+        .queue = &queue,
+        .runner = &runner,
+        .services = .{},
+        .runtime = null,
+    };
+    runner.items = try store.listPendingDream();
+    runner.total = runner.items.len;
+    try std.testing.expectEqual(journal.dream_pending_limit, runner.items.len);
+    processNext(host);
+
+    // The run reached the chats past the first batch and finished.
+    try std.testing.expect(!runner.running);
+    try std.testing.expectEqual(@as(usize, 0), try store.countPendingDream());
 }
 
 test "status json names running done total and lastDreamedAt" {

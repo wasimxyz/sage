@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   indexChatMessages,
   indexChats,
+  isDataDeleted,
   isOllamaUnavailable,
 } from "./index-chat.ts";
 
@@ -91,4 +92,84 @@ test("indexChats finishes a chat's batches before the next chat", async () => {
     return Promise.resolve({ more: rounds[id] > 0 });
   });
   assert.deepEqual(calls, [1, 1, 2]);
+});
+
+test("isDataDeleted knows the delete message and nothing else", () => {
+  assert.equal(
+    isDataDeleted(new Error("handler_failed: Journal data was deleted.")),
+    true
+  );
+  assert.equal(
+    isDataDeleted(new Error("handler_failed: Local AI is not running.")),
+    false
+  );
+  assert.equal(
+    isDataDeleted(new Error("handler_failed: Chat not found.")),
+    false
+  );
+  assert.equal(isDataDeleted("Journal data was deleted."), false);
+  assert.equal(isDataDeleted(null), false);
+});
+
+test("indexChats tries a chat again when a delete cut its call off", async () => {
+  const seen: number[] = [];
+  const finished = await indexChats([1, 2], (id) => {
+    seen.push(id);
+    const cutOff = id === 1 && seen.filter((call) => call === 1).length === 1;
+    return cutOff
+      ? Promise.reject(new Error("handler_failed: Journal data was deleted."))
+      : Promise.resolve({ more: false });
+  });
+  assert.equal(finished, true);
+  assert.deepEqual(seen, [1, 1, 2]);
+});
+
+test("indexChats gives up on a chat after three cut-off calls and goes on", async () => {
+  const seen: number[] = [];
+  const finished = await indexChats([1, 2], (id) => {
+    seen.push(id);
+    return id === 1
+      ? Promise.reject(new Error("handler_failed: Journal data was deleted."))
+      : Promise.resolve({ more: false });
+  });
+  assert.equal(finished, true);
+  assert.deepEqual(seen, [1, 1, 1, 2]);
+});
+
+test("indexChats does not try a chat again for its own failure", async () => {
+  const seen: number[] = [];
+  await indexChats([1], (id) => {
+    seen.push(id);
+    return Promise.reject(new Error("handler_failed: Chat not found."));
+  });
+  assert.deepEqual(seen, [1]);
+});
+
+test("indexChats says each chat is settled as soon as it is, whatever the result", async () => {
+  const events: string[] = [];
+  const finished = await indexChats(
+    [1, 2, 3, 4],
+    (id) => {
+      events.push(`call ${id}`);
+      if (id === 2) {
+        return Promise.reject(new Error("handler_failed: Chat not found."));
+      }
+      if (id === 3) {
+        return Promise.reject(
+          new Error("handler_failed: Local AI is not running.")
+        );
+      }
+      return Promise.resolve({ more: false });
+    },
+    (id) => events.push(`settled ${id}`)
+  );
+  assert.equal(finished, false);
+  assert.deepEqual(events, [
+    "call 1",
+    "settled 1",
+    "call 2",
+    "settled 2",
+    "call 3",
+    "settled 3",
+  ]);
 });

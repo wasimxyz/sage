@@ -38,24 +38,64 @@ export function isOllamaUnavailable(error: unknown): boolean {
   return ollamaDownMessages.some((text) => message.includes(text));
 }
 
+// What Sage says when a delete in Settings > Data ran while a batch was out.
+// The batch is dropped, and the chat still needs indexing.
+const dataDeletedMessage = "Journal data was deleted";
+
+/**
+ * True when a delete in Settings > Data ran while this call was out. Sage
+ * dropped the batch and left the chat as it was, so calling again picks it up.
+ */
+export function isDataDeleted(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return message.includes(dataDeletedMessage);
+}
+
+/** A chat is tried this many times when deletes keep landing on its calls. */
+const maxAttempts = 3;
+
+type ChatOutcome = "indexed" | "ollama-down" | "skipped";
+
+async function indexChat(
+  id: number,
+  generate: (id: number) => Promise<{ more: boolean }>
+): Promise<ChatOutcome> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: a retry starts after the call it repeats has failed
+      await indexChatMessages(id, generate);
+      return "indexed";
+    } catch (error) {
+      if (isOllamaUnavailable(error)) {
+        return "ollama-down";
+      }
+      if (!isDataDeleted(error)) {
+        return "skipped";
+      }
+    }
+  }
+  return "skipped";
+}
+
 /**
  * Indexes each chat in turn. Returns false when Ollama stopped the run, so
  * the caller can try again later, and true when every chat was tried. A chat
  * that fails for another reason is skipped, because the next chat can still
- * work.
+ * work. A chat whose call a data delete cut off is tried again, since it is
+ * still due and no later pass is guaranteed to list it. `onSettled` hears of
+ * each chat as soon as it is done, whatever the result.
  */
 export async function indexChats(
   ids: readonly number[],
-  generate: (id: number) => Promise<{ more: boolean }>
+  generate: (id: number) => Promise<{ more: boolean }>,
+  onSettled?: (id: number) => void
 ): Promise<boolean> {
   for (const id of ids) {
-    try {
-      // biome-ignore lint/performance/noAwaitInLoops: chats go one at a time so Ollama embeds one batch at a time
-      await indexChatMessages(id, generate);
-    } catch (error) {
-      if (isOllamaUnavailable(error)) {
-        return false;
-      }
+    // biome-ignore lint/performance/noAwaitInLoops: chats go one at a time so Ollama embeds one batch at a time
+    const outcome = await indexChat(id, generate);
+    onSettled?.(id);
+    if (outcome === "ollama-down") {
+      return false;
     }
   }
   return true;

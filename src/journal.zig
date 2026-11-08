@@ -78,6 +78,12 @@ const chat_index_due_sql =
 /// later pass or Dream picks them up.
 pub const pending_chat_limit: usize = 4096;
 
+/// One Dream lists at most this many sources at a time. The store refuses a
+/// result of more than 8,192 rows, and every chat with no summary counts as
+/// pending, so a long history can pass that. Dream lists again after each
+/// batch, so a run still reaches all of them.
+pub const dream_pending_limit: usize = 4096;
+
 /// Whether chat `chat_conversation` may have had an event with no saved_at
 /// saved inside `[from, to)`. Those events are from before saved_at existed,
 /// so all that is known is that each was saved between the chat's `created_at`
@@ -151,7 +157,7 @@ const chat_list_page_sql = std.fmt.comptimePrint(
 /// range, ?6 the page size.
 const chat_search_page_sql =
     \\SELECT chat_embedding.conversation_id, chat_embedding.chunk_index AS seq,
-    \\       chat_embedding.role, chat_embedding.embedding, chat_event.saved_at,
+    \\       chat_embedding.embedding, chat_event.saved_at,
     \\       chat_conversation.created_at, chat_conversation.updated_at
     \\FROM chat_embedding
     \\INNER JOIN chat_conversation ON chat_conversation.id = chat_embedding.conversation_id
@@ -227,7 +233,6 @@ fn isIsoInstant(value: []const u8) bool {
 /// One User or Sage message that has no index row yet.
 pub const ChatIndexMessage = struct {
     seq: i64,
-    role: ChatEventRole,
     text: []u8,
 };
 
@@ -336,6 +341,8 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 18, .name = "clear_eve_sessions", .sql = @embedFile("schema/0018_clear_eve_sessions.sql") },
     .{ .version = 19, .name = "chat_message_index", .sql = @embedFile("schema/0019_chat_message_index.sql") },
     .{ .version = 20, .name = "chat_time_bounds", .sql = @embedFile("schema/0020_chat_time_bounds.sql") },
+    .{ .version = 21, .name = "chat_id_counter", .sql = @embedFile("schema/0021_chat_id_counter.sql") },
+    .{ .version = 22, .name = "chat_index_no_role", .sql = @embedFile("schema/0022_chat_index_no_role.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -702,15 +709,26 @@ pub const Store = struct {
         , output);
     }
 
-    /// Sources with pending Dream work or stale indexes. `needs_memory_extraction`
+    /// The first `dream_pending_limit` sources with pending Dream work or
+    /// stale indexes: entries by id, then chats by id. `needs_memory_extraction`
     /// distinguishes changed sources from index-only repairs so wiping indexes
     /// does not rerun memory extraction. Caller frees the slice via the store allocator.
     pub fn listPendingDream(self: *Store) ![]DreamItem {
+        return self.listPendingDreamAfter(null);
+    }
+
+    /// The next `dream_pending_limit` pending sources in that order after
+    /// `after`, which is the last one of the batch before. A source that was
+    /// listed and could not be dreamed stays pending but is not listed again
+    /// by the run that listed it.
+    pub fn listPendingDreamAfter(self: *Store, after: ?DreamItem) ![]DreamItem {
         var rows = DreamPendingRows.init(self.allocator);
         defer rows.deinit();
+        const after_rank: i64 = if (after) |item| dreamSourceRank(item.source) else -1;
+        const after_id: i64 = if (after) |item| item.id else 0;
         const outcome = self.db.query(
-            dream_pending_select ++ "\nORDER BY 1, 2;",
-            &.{},
+            dream_pending_batch_sql,
+            &.{ .{ .integer = after_rank }, .{ .integer = after_id } },
             &rows,
             DreamPendingRows.collect,
         );
@@ -849,7 +867,7 @@ pub const Store = struct {
                 defer self.allocator.free(message.text);
                 const end = utf8AlignEnd(message.text, 0, @min(message.text.len, ollama.max_chunk_bytes));
                 const text = try self.allocator.dupe(u8, message.text[0..end]);
-                messages.append(self.allocator, .{ .seq = row.seq, .role = message.role, .text = text }) catch |err| {
+                messages.append(self.allocator, .{ .seq = row.seq, .text = text }) catch |err| {
                     self.allocator.free(text);
                     return err;
                 };
@@ -906,15 +924,14 @@ pub const Store = struct {
                     try v.encryptField(a, aad, message.text)
                 else
                     message.text;
-                const params = try a.alloc(relational.Value, 6);
+                const params = try a.alloc(relational.Value, 5);
                 params[0] = .{ .integer = id };
                 params[1] = .{ .integer = message.seq };
                 params[2] = .{ .text = stored_text };
                 params[3] = .{ .blob = try encodeVector(a, vec) };
                 params[4] = .{ .text = model_name };
-                params[5] = .{ .text = message.role.json() };
                 try statements.append(a, .{
-                    .sql = "INSERT OR REPLACE INTO chat_embedding (conversation_id, chunk_index, chunk_text, embedding, model, role) VALUES (?1, ?2, ?3, ?4, ?5, ?6);",
+                    .sql = "INSERT OR REPLACE INTO chat_embedding (conversation_id, chunk_index, chunk_text, embedding, model) VALUES (?1, ?2, ?3, ?4, ?5);",
                     .params = params,
                 });
             }
@@ -1013,7 +1030,6 @@ pub const Store = struct {
                 }
                 try hits.append(a, .{
                     .conversation_id = row.conversation_id,
-                    .role = try a.dupe(u8, row.role),
                     .saved_at = if (row.saved_at) |value| try a.dupe(u8, value) else null,
                     .score = score,
                     .seq = row.seq,
@@ -1041,13 +1057,16 @@ pub const Store = struct {
             const cached = try metas.getOrPut(hit.conversation_id);
             if (!cached.found_existing) cached.value_ptr.* = try self.loadChatMeta(a, hit.conversation_id);
             const meta = cached.value_ptr.* orelse continue;
+            // Nothing in the index says who sent a message. Only the hits kept
+            // read their event, which holds the sender.
+            const sent = try self.loadWindowMessage(a, hit.conversation_id, hit.seq) orelse continue;
             const text = try self.loadChatIndexText(a, hit.conversation_id, hit.seq);
             if (written > 0) try writer.writeAll(",");
             written += 1;
             try writer.print("{{\"chatId\":{d},\"title\":", .{hit.conversation_id});
             try writeJsonStringStreaming(writer, meta.title);
             try writer.print(",\"message\":{d},\"role\":", .{hit.seq});
-            try writeJsonStringStreaming(writer, hit.role);
+            try writeJsonStringStreaming(writer, sent.role.json());
             try writer.writeAll(",\"savedAt\":");
             if (hit.saved_at) |value| try writeJsonStringStreaming(writer, value) else try writer.writeAll("null");
             try writer.writeAll(",\"chatCreatedAt\":");
@@ -2600,8 +2619,10 @@ pub const Store = struct {
     ) !i64 {
         const stored_title = try self.encryptForStorage(vault_mod.aad_chat_title, title);
         defer self.allocator.free(stored_title);
+        // The id comes from chat_id_counter, not from SQLite's MAX(id) + 1, so
+        // it is never an id a deleted chat had. The insert moves the counter.
         const insert_outcome = self.db.exec(&.{.{
-            .sql = "INSERT INTO chat_conversation (title, eve_session_id, stream_index, events, model, thinking, context_length) VALUES (?1, ?2, ?3, '', ?4, ?5, ?6);",
+            .sql = "INSERT INTO chat_conversation (id, title, eve_session_id, stream_index, events, model, thinking, context_length) VALUES ((SELECT last_id + 1 FROM chat_id_counter WHERE slot = 1), ?1, ?2, ?3, '', ?4, ?5, ?6);",
             .params = &.{
                 .{ .text = stored_title },
                 if (session_id) |value| .{ .text = value } else .null_value,
@@ -2616,7 +2637,7 @@ pub const Store = struct {
         var rows = ChatRows.init(self.allocator);
         defer rows.deinit();
         const outcome = self.db.query(
-            "SELECT MAX(id) AS id FROM chat_conversation;",
+            "SELECT last_id AS id FROM chat_id_counter WHERE slot = 1;",
             &.{},
             &rows,
             ChatRows.collect,
@@ -5054,7 +5075,6 @@ const SemanticHit = struct {
 
 const ChatHit = struct {
     conversation_id: i64,
-    role: []const u8,
     saved_at: ?[]const u8,
     score: f32,
     seq: i64,
@@ -5701,6 +5721,25 @@ const dream_pending_select =
     \\   ))
 ;
 
+/// Entries come before chats, so a long chat history cannot hold back the
+/// journal.
+fn dreamSourceRank(source: DreamSource) i64 {
+    return switch (source) {
+        .entry => 0,
+        .conversation => 1,
+    };
+}
+
+const dream_source_rank_sql = "CASE source_type WHEN 'entry' THEN 0 ELSE 1 END";
+
+/// One batch of `dream_pending_select` after a source. Parameters: ?1 the
+/// rank of the last source read (-1 for none) and ?2 its id.
+const dream_pending_batch_sql = std.fmt.comptimePrint(
+    "SELECT source_type, source_id, needs_memory_extraction FROM (\n{s}\n)\n" ++
+        "WHERE ({s}, source_id) > (?1, ?2)\nORDER BY {s}, source_id LIMIT {d};",
+    .{ dream_pending_select, dream_source_rank_sql, dream_source_rank_sql, dream_pending_limit },
+);
+
 const DreamPendingRows = struct {
     allocator: std.mem.Allocator,
     rows: std.ArrayList(DreamItem) = .empty,
@@ -6121,7 +6160,6 @@ const ChatIndexRows = struct {
     const Row = struct {
         conversation_id: i64 = 0,
         seq: i64 = 0,
-        role: []u8 = &.{},
         embedding: []u8 = &.{},
         event: []u8 = &.{},
         saved_at: ?[]u8 = null,
@@ -6133,7 +6171,6 @@ const ChatIndexRows = struct {
         updated_at: []u8 = &.{},
 
         fn free(row: Row, allocator: std.mem.Allocator) void {
-            allocator.free(row.role);
             allocator.free(row.embedding);
             allocator.free(row.event);
             if (row.saved_at) |value| allocator.free(value);
@@ -6188,8 +6225,6 @@ const ChatIndexRows = struct {
                     row.conversation_id = cellInteger(cell);
                 } else if (std.mem.eql(u8, name, "seq")) {
                     row.seq = cellInteger(cell);
-                } else if (std.mem.eql(u8, name, "role")) {
-                    row.role = try dupeCell(self.allocator, cell);
                 } else if (std.mem.eql(u8, name, "embedding")) {
                     row.embedding = try dupeCell(self.allocator, cell);
                 } else if (std.mem.eql(u8, name, "event")) {
@@ -8923,6 +8958,62 @@ test "countPendingDream matches listPendingDream" {
     try std.testing.expectEqual(after.len, try store.countPendingDream());
 }
 
+test "listPendingDream still answers when more sources are pending than the store returns" {
+    var store = try testStore();
+    defer store.deinit();
+    // 8,200 chats that Dream has already visited but that have no summary and
+    // no index yet, the way a build without memory leaves them. The store
+    // refuses a result of more than 8,192 rows.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 8200) INSERT INTO chat_conversation (id, title, events) SELECT i, 'Chat', '' FROM n;" },
+        .{ .sql = "INSERT INTO chat_event (conversation_id, seq, event) SELECT id, 0, '{\"type\":\"message.received\",\"data\":{\"message\":\"hello\"}}' FROM chat_conversation;" },
+        .{ .sql = "INSERT INTO dream_state (source_type, source_id, dreamed_at) SELECT 'conversation', id, '2999-01-01T00:00:00.000Z' FROM chat_conversation;" },
+    }) == .ok);
+
+    // The count reads every pending source, so the Dream dot stays on.
+    try std.testing.expectEqual(@as(usize, 8203), try store.countPendingDream());
+
+    // A batch is capped, with entries first and then chats by id.
+    const first = try store.listPendingDream();
+    defer store.allocator.free(first);
+    try std.testing.expectEqual(dream_pending_limit, first.len);
+    for (first[0..3]) |item| try std.testing.expectEqual(DreamSource.entry, item.source);
+    try std.testing.expectEqual(DreamSource.conversation, first[3].source);
+    try std.testing.expectEqual(@as(i64, 1), first[3].id);
+    try std.testing.expectEqual(@as(i64, 4093), first[first.len - 1].id);
+
+    // Each next batch starts after the last source of the one before.
+    const second = try store.listPendingDreamAfter(first[first.len - 1]);
+    defer store.allocator.free(second);
+    try std.testing.expectEqual(dream_pending_limit, second.len);
+    try std.testing.expectEqual(@as(i64, 4094), second[0].id);
+    const third = try store.listPendingDreamAfter(second[second.len - 1]);
+    defer store.allocator.free(third);
+    try std.testing.expectEqual(@as(usize, 8203 - 2 * dream_pending_limit), third.len);
+    const last = try store.listPendingDreamAfter(third[third.len - 1]);
+    defer store.allocator.free(last);
+    try std.testing.expectEqual(@as(usize, 0), last.len);
+}
+
+test "listPendingDreamAfter lists entries before chats whatever their ids" {
+    var store = try testStore();
+    defer store.deinit();
+    _ = try saveChatEvents(&store, "Chat", two_turn_chat);
+    const all = try store.listPendingDream();
+    defer store.allocator.free(all);
+    try std.testing.expectEqual(@as(usize, 4), all.len);
+    try std.testing.expectEqual(DreamSource.entry, all[2].source);
+    try std.testing.expectEqual(DreamSource.conversation, all[3].source);
+
+    const after_entry = try store.listPendingDreamAfter(all[0]);
+    defer store.allocator.free(after_entry);
+    try std.testing.expectEqual(@as(usize, 3), after_entry.len);
+    const after_last_entry = try store.listPendingDreamAfter(all[2]);
+    defer store.allocator.free(after_last_entry);
+    try std.testing.expectEqual(@as(usize, 1), after_last_entry.len);
+    try std.testing.expectEqual(DreamSource.conversation, after_last_entry[0].source);
+}
+
 test "listPendingDream schedules stale chat indexes in every build" {
     var store = try testStore();
     defer store.deinit();
@@ -9682,6 +9773,124 @@ test "chat saves stamp each new event with saved_at" {
     try std.testing.expectEqual(@as(i64, 1), id);
 }
 
+test "a new chat never takes the id of a deleted one" {
+    var store = try testEmptyStore();
+    defer store.deinit();
+    const first = try saveChatEvents(&store, "First", two_turn_chat);
+    const second = try saveChatEvents(&store, "Second", two_turn_chat);
+    try std.testing.expectEqual(@as(i64, 1), first);
+    try std.testing.expectEqual(@as(i64, 2), second);
+
+    // Delete the newest chat. SQLite hands out MAX(id) + 1, which is its id.
+    var out: [256]u8 = undefined;
+    var session_buf: [128]u8 = undefined;
+    _ = try store.chatDelete("{\"id\":2}", &out, &session_buf);
+    const third = try saveChatEvents(&store, "Third", two_turn_chat);
+    try std.testing.expectEqual(@as(i64, 3), third);
+
+    // The old id opens nothing, not the chat that came after it.
+    var window_out: [256]u8 = undefined;
+    var window = std.Io.Writer.fixed(&window_out);
+    try std.testing.expectError(error.NotFound, store.chatWindow(second, null, &window));
+
+    // Deleting every chat does not start the ids over either.
+    _ = try store.deleteConversations(&out);
+    try std.testing.expectEqual(@as(i64, 4), try saveChatEvents(&store, "Fourth", two_turn_chat));
+}
+
+test "an insert that names a chat id moves the counter up and never down" {
+    var store = try testEmptyStore();
+    defer store.deinit();
+    // A row put in by name, the way a restore or a test would.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "INSERT INTO chat_conversation (id, title, events) VALUES (40, 'Named', '');" },
+    }) == .ok);
+    try std.testing.expectEqual(@as(i64, 41), try saveChatEvents(&store, "After named", two_turn_chat));
+
+    // A lower id does not pull the counter back.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "INSERT INTO chat_conversation (id, title, events) VALUES (7, 'Lower', '');" },
+    }) == .ok);
+    var out: [256]u8 = undefined;
+    var session_buf: [128]u8 = undefined;
+    _ = try store.chatDelete("{\"id\":41}", &out, &session_buf);
+    _ = try store.chatDelete("{\"id\":40}", &out, &session_buf);
+    try std.testing.expectEqual(@as(i64, 42), try saveChatEvents(&store, "Next", two_turn_chat));
+}
+
+test "migration 21 starts the chat id counter at the highest id" {
+    var store = try upgradedStoreFrom(20, &.{
+        "INSERT INTO chat_conversation (id, title, events) VALUES (1, 'One', '');",
+        "INSERT INTO chat_conversation (id, title, events) VALUES (2, 'Two', '');",
+        "INSERT INTO chat_conversation (id, title, events) VALUES (5, 'Five', '');",
+    });
+    defer store.deinit();
+    try std.testing.expectEqual(@as(i64, 5), try store.countDataRows("SELECT last_id AS n FROM chat_id_counter;"));
+    try std.testing.expectEqual(@as(i64, 6), try saveChatEvents(&store, "Six", two_turn_chat));
+
+    var empty = try upgradedStoreFrom(20, &.{});
+    defer empty.deinit();
+    try std.testing.expectEqual(@as(i64, 0), try empty.countDataRows("SELECT last_id AS n FROM chat_id_counter;"));
+    try std.testing.expectEqual(@as(i64, 1), try saveChatEvents(&empty, "One", two_turn_chat));
+}
+
+test "migration 22 drops the sender column and keeps the index rows" {
+    var store = try upgradedStoreFrom(21, &.{
+        "INSERT INTO chat_conversation (id, title, events) VALUES (1, 'One', '');",
+        "INSERT INTO chat_embedding (conversation_id, chunk_index, chunk_text, embedding, model, role) VALUES (1, 0, 'hello', x'03', 'test-model', 'user');",
+        "INSERT INTO chat_embedding (conversation_id, chunk_index, chunk_text, embedding, model, role) VALUES (1, 2, 'hi there', x'04', 'test-model', 'assistant');",
+    });
+    defer store.deinit();
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM sqlite_master WHERE name = 'chat_embedding' AND sql LIKE '%role%';"));
+    try std.testing.expectEqual(@as(i64, 2), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding WHERE model = 'test-model';"));
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding WHERE chunk_index = 2 AND chunk_text = 'hi there';"));
+}
+
+/// Searching for `match` finds message 0 (User) and message 2 (Sage) of a
+/// chat made by `indexSenderChat`, and says who sent each.
+fn expectSearchNamesSenders(store: *Store) !void {
+    const match = [_]f32{ 1, 0, 0 };
+    var out: [4096]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&out);
+    try store.semanticSearchChats(&match, null, 0, 5, &writer);
+    const json = writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"message\":0,\"role\":\"user\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"message\":2,\"role\":\"assistant\"") != null);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, json, "\"role\":"));
+}
+
+/// Saves and indexes `two_turn_chat` so that only its first User message and
+/// first Sage message match `[1, 0, 0]`.
+fn indexSenderChat(store: *Store) !void {
+    const id = try saveChatEvents(store, "Sleep", two_turn_chat);
+    const match = [_]f32{ 1, 0, 0 };
+    const unrelated = [_]f32{ 0, 1, 0 };
+    try indexChatWith(store, id, &match);
+    try setChatVector(store, id, 3, &unrelated);
+    try setChatVector(store, id, 4, &unrelated);
+}
+
+test "the chat index stores nothing that says who sent a message" {
+    var store = try testStore();
+    defer store.deinit();
+    try indexSenderChat(&store);
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM sqlite_master WHERE name = 'chat_embedding' AND sql LIKE '%role%';"));
+    // Search still says who sent each hit, from the chat's own events.
+    try expectSearchNamesSenders(&store);
+}
+
+test "search names the sender of each hit with encryption on, off, and on again" {
+    var rig: EncRig = undefined;
+    try rig.init("correct horse");
+    defer rig.deinit();
+    try indexSenderChat(&rig.store);
+    try expectSearchNamesSenders(&rig.store);
+    try rig.store.setRowsEncrypted(false);
+    try expectSearchNamesSenders(&rig.store);
+    try rig.store.setRowsEncrypted(true);
+    try expectSearchNamesSenders(&rig.store);
+}
+
 test "chatMessagesToIndex returns new User and Sage messages until the index catches up" {
     var store = try testStore();
     defer store.deinit();
@@ -9695,16 +9904,14 @@ test "chatMessagesToIndex returns new User and Sage messages until the index cat
     try std.testing.expectEqual(@as(usize, 4), batch.messages.len);
     try std.testing.expect(batch.last);
     try std.testing.expectEqual(@as(i64, 0), batch.messages[0].seq);
-    try std.testing.expectEqual(ChatEventRole.user, batch.messages[0].role);
     try std.testing.expectEqual(@as(i64, 2), batch.messages[1].seq);
-    try std.testing.expectEqual(ChatEventRole.assistant, batch.messages[1].role);
     try std.testing.expectEqualStrings("Moving is a lot to carry.", batch.messages[3].text);
 
     const vec = [_]f32{ 1, 0, 0 };
     try indexChatWith(&store, id, &vec);
     try std.testing.expect(!(try store.chatIndexDue(id)));
     try std.testing.expectEqualStrings("{\"ids\":[1,2,3],\"chatIds\":[]}", try store.listPendingEmbeddings(&output));
-    try std.testing.expectEqual(@as(i64, 4), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding WHERE role IN ('user', 'assistant');"));
+    try std.testing.expectEqual(@as(i64, 4), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding;"));
 
     // strftime fractional seconds are milliseconds; wait so the save is later.
     std.Io.sleep(std.testing.io, .fromMilliseconds(20), .awake) catch {};
@@ -9856,10 +10063,16 @@ test "semanticSearchChats reads each message's saved_at and falls back to the ch
     try std.testing.expect(std.mem.indexOf(u8, march_writer.buffered(), "\"savedAt\":null") != null);
 }
 
-/// Opens a store at version 19, runs `setup` SQL on it, then applies migration 20,
-/// the way an install that already ran migration 19 is upgraded.
+/// Opens a store at version 19, runs `setup` SQL on it, then applies the
+/// migrations after it, the way an install that already ran migration 19 is
+/// upgraded.
 fn upgradedStore(setup: []const []const u8) !Store {
-    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, migrations[0..19]);
+    return upgradedStoreFrom(19, setup);
+}
+
+/// Like `upgradedStore`, for an install at any version.
+fn upgradedStoreFrom(version: usize, setup: []const []const u8) !Store {
+    const open_result = try native_sdk.RelationalStore.openMemoryMigrated(std.testing.allocator, migrations[0..version]);
     var db = switch (open_result.outcome) {
         .ok => open_result.database.?,
         else => return error.SqliteMigrationFailed,

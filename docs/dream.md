@@ -33,10 +33,12 @@ Dream also repairs sources whose embeddings or summaries are missing, for exampl
 
 1. You click Dream in the sidebar and confirm.
 2. `dream.start` checks that Ollama is running and that the summary and embedding models are pulled.
-3. Sage lists the pending entries and chats and answers with the total.
+3. Sage lists the pending entries and chats, entries first, and answers with how many there are in all.
 4. A worker thread handles one item at a time, and the loop thread saves each result.
 5. The sidebar shows Dreaming… and the percent complete, from `dream:progress` events.
 6. A message reports how many facts and events Dream saved, and how many items failed.
+
+Sage lists at most 4,096 sources at a time, because the store refuses a longer list. When a batch runs out, it lists the next one after the last source of the batch, so one run reaches every pending source. A source that fails stays pending for the next Dream.
 
 The summary model is `qwen3.5:9b` unless `SAGE_SUMMARY_MODEL` names another one. Each call has its own time limit: 10 seconds for the status check, 2 minutes for an embedding or a title, and 5 minutes for a summary or an extraction.
 
