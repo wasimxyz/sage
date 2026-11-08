@@ -24,7 +24,11 @@ npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-
 
 ## Ollama
 
-Sage calls Ollama at `127.0.0.1:11434` on the native `/api` prefix. Do not switch Chat or Dream to `/v1`.
+Sage ships a pinned Ollama and runs it itself. `scripts/fetch-ollama.sh` holds the version and its SHA-256 checks, and `src/ollama_server.zig` starts, restarts, and stops the server. The mode follows where the executable sits. A Sage inside an app bundle runs its own copy on `127.0.0.1:11435` and never reads `SAGE_OLLAMA_PATH`. Every other launch (`make dev`, `make eval`, `make seed-dev`) runs the copy named by `SAGE_OLLAMA_PATH` on `127.0.0.1:11436`. Sage never uses `127.0.0.1:11434`, where an Ollama you run yourself listens.
+
+Chat and Dream call Ollama on the native `/api` prefix. Do not switch Chat or Dream to `/v1`.
+
+Packaged Chat gets its Ollama address from `src/eve_sidecar.zig`. The dev Chat agent reads `OLLAMA_BASE_URL` from `agent/.env.local` and defaults to `http://127.0.0.1:11436/api`.
 
 On any Ollama question or change, fetch the current docs. Start at [llms.txt](https://docs.ollama.com/llms.txt), then open the page that matches the work:
 

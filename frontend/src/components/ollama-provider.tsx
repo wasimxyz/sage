@@ -97,7 +97,7 @@ export function OllamaProvider({ children }: { children: ReactNode }) {
     land({ kind: "down" });
   }, [land]);
 
-  // The Start button in Chat and Settings: the core launches Ollama and
+  // The Start button in Chat and Settings: the core starts local AI and
   // answers once the server replies, so the starting notice holds until this
   // resolves.
   const startOllama = useCallback(async () => {

@@ -3,16 +3,16 @@ import test from "node:test";
 
 import { formatDreamError, ollamaDownDreamMessage } from "./dream-errors.ts";
 
-test("formatDreamError strips the bridge code from an Ollama-down start error", () => {
+test("formatDreamError strips the bridge code from a local AI down start error", () => {
   assert.equal(
-    formatDreamError(new Error("handler_failed: Ollama is not running.")),
+    formatDreamError(new Error("handler_failed: Local AI is not running.")),
     ollamaDownDreamMessage
   );
 });
 
-test("formatDreamError maps a mid-run Ollama-down message", () => {
+test("formatDreamError maps a mid-run local AI down message", () => {
   assert.equal(
-    formatDreamError("Ollama is not running."),
+    formatDreamError("Local AI is not running."),
     ollamaDownDreamMessage
   );
 });
@@ -21,10 +21,10 @@ test("formatDreamError keeps other Dream messages without the bridge code", () =
   assert.equal(
     formatDreamError(
       new Error(
-        "handler_failed: The summary model is not pulled. Run: ollama pull qwen3.5:9b"
+        "handler_failed: The summary model is not downloaded. Download qwen3.5:9b in Settings › Models."
       )
     ),
-    "The summary model is not pulled. Run: ollama pull qwen3.5:9b"
+    "The summary model is not downloaded. Download qwen3.5:9b in Settings › Models."
   );
 });
 

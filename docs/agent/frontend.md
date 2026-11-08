@@ -163,7 +163,7 @@ Each saved conversation keeps its own model, Thinking setting, and context lengt
 
 ## When Ollama is down
 
-OllamaProvider checks `embeddings.status` every 4 seconds while the window is visible, then lists chat models with `ollama.models` when Ollama is running. A hidden window skips the check and runs it once when it comes back. If Ollama is down, or has no local chat models, Chat shows a notice above the prompt and turns off the composer. The model list reloads as soon as Start Ollama succeeds, as [Models](../models.md#when-ollama-is-not-running) explains.
+OllamaProvider checks `embeddings.status` every 4 seconds while the window is visible, then lists chat models with `ollama.models` when local AI is running. A hidden window skips the check and runs it once when it comes back. If local AI is down, Chat shows a notice above the prompt with “Local AI isn’t running” and a “Start local AI” button. If there are no local chat models, the notice says “No chat models” and asks you to download one in Settings › Models. Either way the composer stays off. The model list reloads as soon as the start succeeds, as [Models](../models.md#when-ollama-is-not-running) explains.
 
 ## When the agent is down
 

@@ -7,7 +7,7 @@ import {
   isOllamaUnavailable,
 } from "./index-chat.ts";
 
-const ollamaDown = /Ollama is not running/;
+const ollamaDown = /Local AI is not running/;
 
 test("indexChatMessages calls again while Sage asks for more", async () => {
   const answers = [true, true, false];
@@ -31,7 +31,7 @@ test("indexChatMessages stops after a bounded number of calls", async () => {
 test("indexChatMessages passes a failure on", async () => {
   await assert.rejects(
     indexChatMessages(7, () =>
-      Promise.reject(new Error("Ollama is not running."))
+      Promise.reject(new Error("Local AI is not running."))
     ),
     ollamaDown
   );
@@ -39,9 +39,9 @@ test("indexChatMessages passes a failure on", async () => {
 
 test("isOllamaUnavailable knows the core's Ollama failures and nothing else", () => {
   for (const message of [
-    "handler_failed: Ollama is not running.",
-    "handler_failed: Ollama did not answer in time.",
-    "handler_failed: The embedding model is not pulled. Run: ollama pull nomic-embed-text",
+    "handler_failed: Local AI is not running.",
+    "handler_failed: Local AI did not answer in time.",
+    "handler_failed: The embedding model is not downloaded. Download nomic-embed-text in Settings › Models.",
     "handler_failed: Embedding failed.",
   ]) {
     assert.equal(isOllamaUnavailable(new Error(message)), true, message);
@@ -54,7 +54,7 @@ test("isOllamaUnavailable knows the core's Ollama failures and nothing else", ()
   ]) {
     assert.equal(isOllamaUnavailable(new Error(message)), false, message);
   }
-  assert.equal(isOllamaUnavailable("Ollama is not running."), false);
+  assert.equal(isOllamaUnavailable("Local AI is not running."), false);
   assert.equal(isOllamaUnavailable(null), false);
 });
 
@@ -75,7 +75,7 @@ test("indexChats stops and says so when Ollama is down", async () => {
   const finished = await indexChats([1, 2, 3], (id) => {
     seen.push(id);
     return id === 2
-      ? Promise.reject(new Error("handler_failed: Ollama is not running."))
+      ? Promise.reject(new Error("handler_failed: Local AI is not running."))
       : Promise.resolve({ more: false });
   });
   assert.equal(finished, false);

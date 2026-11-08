@@ -20,9 +20,10 @@ export function chatModels(): string[] {
 }
 
 export function ollamaBaseURL(): string {
-  // An empty value, such as `OLLAMA_BASE_URL=` in .env.local, uses the default.
+  // An empty value, such as `OLLAMA_BASE_URL=` in .env.local, uses the default:
+  // the dev Ollama that `make dev` runs on 11436.
   const raw =
-    process.env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434/api";
+    process.env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11436/api";
   return raw.replace(trailingV1Pattern, "/api");
 }
 

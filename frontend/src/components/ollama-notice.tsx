@@ -73,7 +73,7 @@ function OllamaStartButton({ onStart }: { onStart: () => void }) {
       type="button"
       variant="outline"
     >
-      Start Ollama
+      Start local AI
     </Button>
   );
 }
@@ -105,11 +105,11 @@ function OllamaDownNotice({
         <PauseIcon aria-hidden />
       </OllamaNoticeIcon>
       {description === undefined ? (
-        <OllamaNoticeTitle>Ollama isn't running</OllamaNoticeTitle>
+        <OllamaNoticeTitle>Local AI isn't running</OllamaNoticeTitle>
       ) : (
         <OllamaNoticeCopy
           description={description}
-          title="Ollama isn't running"
+          title="Local AI isn't running"
         />
       )}
       <OllamaNoticeAction>
@@ -125,7 +125,7 @@ function OllamaStartingNotice() {
       <OllamaNoticeIcon>
         <Spinner aria-hidden role="presentation" />
       </OllamaNoticeIcon>
-      <OllamaNoticeTitle>Starting Ollama…</OllamaNoticeTitle>
+      <OllamaNoticeTitle>Starting local AI…</OllamaNoticeTitle>
       <OllamaNoticeAction>
         <OllamaStartingButton />
       </OllamaNoticeAction>
@@ -145,7 +145,7 @@ function OllamaStartFailedNotice({
       <OllamaNoticeIcon>
         <TriangleAlertIcon aria-hidden />
       </OllamaNoticeIcon>
-      <OllamaNoticeCopy description={message} title="Ollama isn't running" />
+      <OllamaNoticeCopy description={message} title="Local AI isn't running" />
       <OllamaNoticeAction>
         <OllamaStartButton onStart={onStart} />
       </OllamaNoticeAction>
@@ -154,7 +154,7 @@ function OllamaStartFailedNotice({
 }
 
 /**
- * The notice for a down Ollama, with the Start Ollama button. `start` is the
+ * The notice for a down local AI, with the Start local AI button. `start` is the
  * state of the last start; a failed start shows its reason in place of
  * `description`.
  */

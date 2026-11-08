@@ -1,6 +1,7 @@
 const std = @import("std");
 const native_sdk = @import("native_sdk");
 const agent_server = @import("agent_server.zig");
+const ollama = @import("ollama.zig");
 
 pub const host = "127.0.0.1";
 pub const port: u16 = 2001;
@@ -30,7 +31,7 @@ const hex_digits = "0123456789abcdef";
 
 /// Parent variables copied into packaged Chat. Ollama settings stay out:
 /// the child always uses the local URL set in `fillChatChildEnv`.
-const chat_env_allowlist = [_][]const u8{
+pub const chat_env_allowlist = [_][]const u8{
     "HOME",
     "USER",
     "LOGNAME",
@@ -343,7 +344,9 @@ fn fillChatChildEnv(
     try child_env.put("NITRO_HOST", host);
     try child_env.put("NITRO_PORT", port_text);
     try child_env.put("PORT", port_text);
-    try child_env.put("OLLAMA_BASE_URL", "http://127.0.0.1:11434/api");
+    var ollama_base_buf: [64]u8 = undefined;
+    const ollama_base = try std.fmt.bufPrint(&ollama_base_buf, "http://{s}:{d}/api", .{ ollama.host, ollama.port });
+    try child_env.put("OLLAMA_BASE_URL", ollama_base);
 }
 
 pub fn deriveWorldKey(data_key: *const [world_key_len]u8) [world_key_len]u8 {
@@ -1261,7 +1264,7 @@ fn bundleComplete(io: std.Io, resource_dir: []const u8) bool {
         fileExists(io, guard);
 }
 
-fn portIsFree(io: std.Io, listen_port: u16) bool {
+pub fn portIsFree(io: std.Io, listen_port: u16) bool {
     const addr = std.Io.net.IpAddress.parseIp4(host, listen_port) catch return false;
     var listener = std.Io.net.IpAddress.listen(&addr, io, .{ .reuse_address = true }) catch return false;
     listener.deinit(io);
@@ -1400,7 +1403,9 @@ test "fillChatChildEnv pins Ollama and drops secrets" {
     try std.testing.expectEqualStrings("/Users/sage", child_env.get("HOME").?);
     try std.testing.expectEqualStrings("en_US.UTF-8", child_env.get("LANG").?);
     try std.testing.expectEqualStrings("/app/node/bin:/usr/bin", child_env.get("PATH").?);
-    try std.testing.expectEqualStrings("http://127.0.0.1:11434/api", child_env.get("OLLAMA_BASE_URL").?);
+    var expected_base_buf: [64]u8 = undefined;
+    const expected_base = try std.fmt.bufPrint(&expected_base_buf, "http://{s}:{d}/api", .{ ollama.host, ollama.port });
+    try std.testing.expectEqualStrings(expected_base, child_env.get("OLLAMA_BASE_URL").?);
     try std.testing.expectEqualStrings("1", child_env.get("EVE_TELEMETRY_DISABLED").?);
     try std.testing.expectEqualStrings("/tmp/sage-sock", child_env.get(agent_server.socket_env).?);
     try std.testing.expectEqualStrings(host, child_env.get("HOST").?);

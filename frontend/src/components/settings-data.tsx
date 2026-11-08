@@ -125,7 +125,7 @@ export function DataSettings() {
     const rebuilt = await runStaleEmbeddingPass();
     if (!rebuilt) {
       toast.info(
-        "Entries and conversations will be indexed again when Ollama is available."
+        "Entries and conversations will be indexed again when local AI is available."
       );
     }
     await refreshCounts();
@@ -202,7 +202,7 @@ export function DataSettings() {
     showConfirmation({
       confirmLabel: "Delete embeddings",
       description:
-        "This permanently deletes the journal and Chat index embeddings. Journal entries, conversations, and memories stay. Sage indexes entries and conversations again when Ollama is available. The next Dream rebuilds summaries. This cannot be undone.",
+        "This permanently deletes the journal and Chat index embeddings. Journal entries, conversations, and memories stay. Sage indexes entries and conversations again when local AI is available. The next Dream rebuilds summaries. This cannot be undone.",
       onConfirm: deleteIndexes,
       title: "Delete embeddings?",
     });

@@ -1,8 +1,8 @@
 import { handlerErrorMessage } from "./handler-errors.ts";
 
-const ollamaStartFailedMessage = "Could not start Ollama.";
+const ollamaStartFailedMessage = "Could not start local AI.";
 
-/// A Start Ollama button: `starting` holds until a status read reports the
+/// A Start local AI button: `starting` holds until a status read reports the
 /// server, and `failed` carries the reason it did not.
 export type OllamaStartLoad =
   | { kind: "failed"; message: string }

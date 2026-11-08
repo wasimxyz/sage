@@ -1,5 +1,5 @@
 // A failed bridge command rejects with an Error that carries the handler code
-// and the message, for example `handler_failed: Ollama did not start in time.`
+// and the message, for example `handler_failed: Local AI did not start in time.`
 // The UI shows the message alone.
 
 const handlerFailedPrefix = "handler_failed: ";

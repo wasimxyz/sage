@@ -1,9 +1,22 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const objc = @import("objc.zig");
+const ollama_server = @import("ollama_server.zig");
 
 pub const host = "127.0.0.1";
-pub const port: u16 = 11434;
+/// The port a Sage that carries its own Ollama binds. Every other launch (the
+/// dev app, the eval runner, the seed script) uses `dev_port`, so a packaged
+/// Sage and a dev Sage can run at the same time.
+pub const packaged_port: u16 = 11435;
+pub const dev_port: u16 = 11436;
+/// The port every call uses. `main` sets it once, before any thread starts.
+pub var port: u16 = packaged_port;
+
+/// `bundled` is true when the executable sits inside an app bundle that has
+/// its own Ollama (see `ollama_server.runsFromBundle`).
+pub fn portForMode(bundled: bool) u16 {
+    return if (bundled) packaged_port else dev_port;
+}
+
 /// Any pulled tag of the embedding model counts (e.g. `nomic-embed-text:latest`);
 /// the status check reports the exact name it found. Override with `SAGE_EMBED_MODEL`.
 pub const model_prefix = "nomic-embed-text";
@@ -32,22 +45,22 @@ pub fn modelPrefixFrom(env_value: ?[]const u8, fallback: []const u8) []const u8 
     return fallback;
 }
 
-/// "pull this model" hint when the summary model is missing.
+/// Tells the user to download the summary model when it is missing.
 pub fn summaryNotPulledMessage(buffer: []u8, prefix: []const u8) []const u8 {
     return std.fmt.bufPrint(
         buffer,
-        "The summary model is not pulled. Run: ollama pull {s}",
+        "The summary model is not downloaded. Download {s} in Settings › Models.",
         .{prefix},
-    ) catch "The summary model is not pulled.";
+    ) catch "The summary model is not downloaded.";
 }
 
-/// "pull this model" hint when the embedding model is missing.
+/// Tells the user to download the embedding model when it is missing.
 pub fn embedNotPulledMessage(buffer: []u8, prefix: []const u8) []const u8 {
     return std.fmt.bufPrint(
         buffer,
-        "The embedding model is not pulled. Run: ollama pull {s}",
+        "The embedding model is not downloaded. Download {s} in Settings › Models.",
         .{prefix},
-    ) catch "The embedding model is not pulled.";
+    ) catch "The embedding model is not downloaded.";
 }
 pub const max_chunk_bytes: usize = 8000;
 pub const max_summary_input_bytes: usize = 24 * 1024;
@@ -383,164 +396,35 @@ pub fn listChatModels(
     return .{ .running = true, .names = slice };
 }
 
-/// Chat's Ollama warning offers a Start button; this is what it runs. Sage
-/// asks LaunchServices to open the macOS app, and falls back to an `ollama
-/// serve` CLI install. Both paths then wait for `/api/tags`, so the warning
-/// clears only once a local model server really answers.
+/// Start and the setup screen wait this long for `/api/tags` once the server
+/// is running.
 pub const start_timeout_ms: i64 = 30_000;
 pub const start_poll_ms: i64 = 500;
 /// A wedged server must not hold the worker that is waiting for it.
 pub const status_timeout_ms: i64 = 10_000;
-pub const macos_app_name = "Ollama";
-const macos_open_path = "/usr/bin/open";
-const macos_env_path = "/usr/bin/env";
-const cli_name = "ollama";
-/// A packaged app inherits launchd's PATH, which holds neither Homebrew
-/// prefix, so the usual install locations are checked directly.
-const cli_search_dirs = [_][]const u8{
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/Applications/Ollama.app/Contents/Resources",
-};
-/// `open` normally exits as soon as LaunchServices accepts the launch, so this
-/// deadline only covers a stuck LaunchServices. It is not the server wait:
-/// that budget is `start_timeout_ms`, inside `waitUntilRunning`.
-const open_wait_ms: i64 = 3_000;
-/// How often the wait for `open` re-checks whether it exited, and how often it
-/// re-checks the elapsed budget.
-const open_poll_ms: i64 = 50;
 
 pub const StartError = error{
-    /// Neither the app nor an `ollama` CLI is on this Mac.
-    OllamaNotInstalled,
-    /// Something launched but never answered `/api/tags`.
+    /// The bundled binary is not in this copy of Sage.
+    OllamaMissing,
+    /// Another app holds the port.
+    OllamaPortBusy,
+    /// The server started but never answered `/api/tags`.
     OllamaStartTimeout,
+    /// The server could not be launched, or its last launch failed.
+    OllamaSpawnFailed,
 };
 
-/// Start Ollama and wait until it answers. An already running server is not
-/// an error. `path_env` is the parent PATH; it may be empty.
-pub fn startServer(io: std.Io, allocator: std.mem.Allocator, path_env: ?[]const u8) !void {
-    if (isRunning(io, allocator)) return;
-    if (launchApp(io, macos_app_name)) {
-        return waitUntilRunning(io, allocator);
+/// Start the bundled server if it is not running, then wait until it answers.
+/// An already running server is not an error.
+pub fn startServer(io: std.Io, allocator: std.mem.Allocator, server: *ollama_server.Server) !void {
+    server.ensureRunning(io);
+    switch (server.currentKind(io)) {
+        .ready => {},
+        .missing => return StartError.OllamaMissing,
+        .port_busy => return StartError.OllamaPortBusy,
+        .down => return StartError.OllamaSpawnFailed,
     }
-    const cli = findCli(io, allocator, path_env) orelse return StartError.OllamaNotInstalled;
-    defer allocator.free(cli);
-    try launchServe(io, cli);
     return waitUntilRunning(io, allocator);
-}
-
-/// The first `ollama` executable on `path_env`, then in the usual install
-/// locations. Caller owns the returned path.
-pub fn findCli(io: std.Io, allocator: std.mem.Allocator, path_env: ?[]const u8) ?[]const u8 {
-    if (path_env) |path| {
-        var dirs = std.mem.splitScalar(u8, path, ':');
-        while (dirs.next()) |dir| {
-            if (dir.len == 0) continue;
-            if (cliIn(io, allocator, dir)) |found| return found;
-        }
-    }
-    for (cli_search_dirs) |dir| {
-        if (cliIn(io, allocator, dir)) |found| return found;
-    }
-    return null;
-}
-
-fn cliIn(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) ?[]const u8 {
-    const path = std.fs.path.join(allocator, &.{ dir, cli_name }) catch return null;
-    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch {
-        allocator.free(path);
-        return null;
-    };
-    if (stat.kind != .file) {
-        allocator.free(path);
-        return null;
-    }
-    return path;
-}
-
-/// `open -a <name>` hands the launch to LaunchServices, which finds the app
-/// wherever it is installed. `false` means no app by that name.
-fn launchApp(io: std.Io, app_name: []const u8) bool {
-    const argv = [_][]const u8{ macos_open_path, "-a", app_name };
-    var child = std.process.spawn(io, .{
-        .argv = &argv,
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    }) catch return false;
-    const term = waitForOpen(io, &child, open_wait_ms) orelse return false;
-    return switch (term) {
-        .exited => |code| code == 0,
-        else => false,
-    };
-}
-
-/// Waits up to `timeout_ms` for `open` and reports its term; a child that
-/// outlives the budget is signalled, so its term reads as the signal. A hung
-/// `open` would otherwise hold the start worker, and the notice with it, until
-/// the bridge call returned.
-fn waitForOpen(io: std.Io, child: *std.process.Child, timeout_ms: i64) ?std.process.Child.Term {
-    var watch: OpenWatch = .{
-        .io = io,
-        .pid = child.id orelse return null,
-        .timeout_ms = timeout_ms,
-    };
-    // No watchdog means no way to bound the wait, so report no app instead of
-    // blocking; the child is dropped the way the server Sage starts is.
-    const watchdog: ?std.Thread = if (builtin.os.tag == .windows)
-        null
-    else
-        std.Thread.spawn(.{}, OpenWatch.run, .{&watch}) catch return null;
-    const term = child.wait(io) catch null;
-    if (watchdog) |thread| {
-        watch.done.store(true, .release);
-        thread.join();
-    }
-    return term;
-}
-
-/// Signals `open` once it outlives its budget. Only the waiting thread reaps:
-/// `std.process.Child.kill` waits for the child itself, and a second waiter on
-/// one pid is a double free inside the std implementation.
-const OpenWatch = struct {
-    io: std.Io,
-    pid: std.process.Child.Id,
-    timeout_ms: i64,
-    done: std.atomic.Value(bool) = .init(false),
-
-    fn run(self: *OpenWatch) void {
-        var waited_ms: i64 = 0;
-        while (waited_ms < self.timeout_ms) {
-            std.Io.sleep(self.io, .fromMilliseconds(open_poll_ms), .awake) catch return;
-            if (self.done.load(.acquire)) return;
-            waited_ms += open_poll_ms;
-        }
-        std.posix.kill(self.pid, .TERM) catch {};
-    }
-};
-
-/// `ollama serve` stays in the foreground, so it gets its own process group
-/// and ignored stdio: the server keeps running after Sage quits. `/usr/bin/env`
-/// pins the bind address, so an inherited `OLLAMA_HOST` cannot move the server
-/// off the loopback interface Sage calls.
-fn launchServe(io: std.Io, cli: []const u8) !void {
-    var host_var_buf: [64]u8 = undefined;
-    const host_var = try std.fmt.bufPrint(
-        &host_var_buf,
-        "OLLAMA_HOST={s}:{d}",
-        .{ host, port },
-    );
-    const argv = [_][]const u8{ macos_env_path, host_var, cli, "serve" };
-    // The handle is dropped on purpose: Sage does not own the server it
-    // started, and a later Start finds it running and returns at once.
-    _ = try std.process.spawn(io, .{
-        .argv = &argv,
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-        .pgid = if (builtin.os.tag == .windows) null else 0,
-    });
 }
 
 fn waitUntilRunning(io: std.Io, allocator: std.mem.Allocator) !void {
@@ -559,54 +443,134 @@ fn waitUntilRunning(io: std.Io, allocator: std.mem.Allocator) !void {
 
 /// What setup needs to know before it picks a screen.
 pub const SetupStatus = struct {
-    /// Ollama is on this Mac, running or not.
+    /// The bundled local AI binary is in this copy of Sage.
     installed: bool,
-    /// Ollama answers `/api/tags`.
+    /// Local AI answers `/api/tags`.
     running: bool,
 };
 
-/// The Ollama Mac app's bundle id. LaunchServices knows the app by it wherever
-/// it is installed, the way `open -a Ollama` finds it.
-const macos_bundle_id = "com.electron.ollama";
-const macos_app_path = "/Applications/Ollama.app";
+/// Check without starting anything. `installed` says whether the bundled
+/// binary is on disk. `running` says whether the server answers.
+pub fn setupStatus(io: std.Io, allocator: std.mem.Allocator, server: *const ollama_server.Server) SetupStatus {
+    return .{
+        .installed = server.binaryPresent(io),
+        .running = isRunning(io, allocator),
+    };
+}
 
-/// Check without starting anything. A running server counts as installed. So
-/// does the app, which LaunchServices finds by bundle id with the usual folder
-/// as a fallback, and an `ollama` file in the usual command line folders. A
-/// packaged app has no shell PATH, so `findCli` checks those folders directly.
-pub fn setupStatus(io: std.Io, allocator: std.mem.Allocator, path_env: ?[]const u8) SetupStatus {
-    const running = isRunning(io, allocator);
-    if (running) return .{ .installed = true, .running = true };
-    if (appInstalled(io)) return .{ .installed = true, .running = false };
-    if (findCli(io, allocator, path_env)) |cli| {
-        allocator.free(cli);
-        return .{ .installed = true, .running = false };
+/// Set while Sage is locked. A generate or embed call that finishes with the
+/// flag set unloads its model, and unlock clears it.
+pub var unload_after_request = std.atomic.Value(bool).init(false);
+
+/// Unload every model the server has loaded. It makes network calls, so it
+/// runs on a worker thread, never on the window loop.
+pub fn unloadAll(io: std.Io, allocator: std.mem.Allocator) void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const body = getLoadedModelsBody(io, a) orelse return;
+    for (loadedNamesFromPs(a, body)) |name| {
+        unloadModel(io, a, name) catch {};
     }
-    return .{ .installed = false, .running = false };
 }
 
-fn appInstalled(io: std.Io) bool {
-    if (builtin.os.tag != .macos) return false;
-    if (launchServicesKnowsApp()) return true;
-    const stat = std.Io.Dir.cwd().statFile(io, macos_app_path, .{}) catch return false;
-    return stat.kind == .directory;
+/// The `GET /api/ps` body, or null when the server does not answer.
+fn getLoadedModelsBody(io: std.Io, a: std.mem.Allocator) ?[]const u8 {
+    var abort: Abort = .{ .io = io };
+    const watchdog = startWatchdog(&abort, status_timeout_ms);
+    defer finishWatchdog(&abort, watchdog);
+    const response = httpExchange(io, a, "GET", "/api/ps", "", &abort) catch return null;
+    if (!statusIs2xx(response)) return null;
+    return httpBody(response, a);
 }
 
-/// `[NSWorkspace URLForApplicationWithBundleIdentifier:]` answers nil when no
-/// app has that id. It never launches the app, which is why this is not
-/// `launchApp`. A worker thread has no autorelease pool of its own, so this
-/// makes one for the objects the call hands back.
-fn launchServicesKnowsApp() bool {
-    const api = objc.load() orelse return false;
-    const pool_class = api.get_class("NSAutoreleasePool") orelse return false;
-    const pool_memory = objc.msg(api, pool_class, objc.sel(api, "alloc"));
-    const pool = objc.msg(api, pool_memory, objc.sel(api, "init"));
-    defer if (pool) |made| objc.msgVoid(api, made, objc.sel(api, "drain"));
-    const workspace_class = api.get_class("NSWorkspace") orelse return false;
-    const workspace = objc.msg(api, workspace_class, objc.sel(api, "sharedWorkspace")) orelse return false;
-    const bundle_id = objc.nsString(api, macos_bundle_id) orelse return false;
-    defer objc.msgVoid(api, bundle_id, objc.sel(api, "release"));
-    return objc.msg1(api, workspace, objc.sel(api, "URLForApplicationWithBundleIdentifier:"), bundle_id) != null;
+/// Unload one model with `POST /api/generate`, `keep_alive: 0`, and no prompt.
+/// The API docs show this for chat models. The server runs the same check
+/// before it reads the model's capabilities, so it also unloads an embedding
+/// model without loading it first. `/api/embed` only expires a model after a
+/// real embed call, and an empty input just loads the model.
+fn unloadModel(io: std.Io, a: std.mem.Allocator, name: []const u8) !void {
+    const body = try buildUnloadRequestBody(a, name);
+    var abort: Abort = .{ .io = io };
+    const watchdog = startWatchdog(&abort, status_timeout_ms);
+    defer finishWatchdog(&abort, watchdog);
+    const response = try httpExchange(io, a, "POST", "/api/generate", body, &abort);
+    if (!statusIs2xx(response)) return error.OllamaRequestFailed;
+}
+
+fn buildUnloadRequestBody(a: std.mem.Allocator, name: []const u8) ![]u8 {
+    var body = std.ArrayList(u8).empty;
+    try body.appendSlice(a, "{\"model\":");
+    try writeJsonString(&body, a, name);
+    try body.appendSlice(a, ",\"keep_alive\":0}");
+    return body.toOwnedSlice(a);
+}
+
+/// Called when a generate or embed call returns. A Dream or search that was
+/// running when Sage locked lets go of its model here.
+fn unloadIfRequested(io: std.Io, a: std.mem.Allocator, model_name: []const u8) void {
+    if (!unload_after_request.load(.acquire)) return;
+    unloadModel(io, a, model_name) catch {};
+}
+
+/// The model names in a `/api/ps` body, one per loaded model.
+pub fn loadedNamesFromPs(a: std.mem.Allocator, body: []const u8) []const []const u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, a, body, .{ .allocate = .alloc_always }) catch
+        return &.{};
+    const root = parsed.value;
+    if (root != .object) return &.{};
+    const models = root.object.get("models") orelse return &.{};
+    if (models != .array) return &.{};
+
+    var names = std.ArrayList([]const u8).empty;
+    for (models.array.items) |item| {
+        if (item != .object) continue;
+        const value = item.object.get("model") orelse item.object.get("name") orelse continue;
+        if (value != .string or value.string.len == 0) continue;
+        names.append(a, value.string) catch continue;
+    }
+    return names.toOwnedSlice(a) catch &.{};
+}
+
+/// One HTTP request to the local server. Returns the raw response, allocated
+/// in `a`. The watchdog in `abort` closes the socket when the wait runs long.
+fn httpExchange(
+    io: std.Io,
+    a: std.mem.Allocator,
+    method: []const u8,
+    path: []const u8,
+    body: []const u8,
+    abort: *Abort,
+) ![]u8 {
+    const address = try std.Io.net.IpAddress.resolve(io, host, port);
+    const stream = try std.Io.net.IpAddress.connect(&address, io, .{ .mode = .stream, .protocol = .tcp });
+    defer stream.close(io);
+    abort.arm(stream);
+    defer abort.disarm();
+
+    const header = try std.fmt.allocPrint(
+        a,
+        "{s} {s} HTTP/1.1\r\nHost: {s}\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n",
+        .{ method, path, host, body.len },
+    );
+    var write_buffer: [4096]u8 = undefined;
+    var stream_writer = std.Io.net.Stream.writer(stream, io, &write_buffer);
+    try stream_writer.interface.writeAll(header);
+    try stream_writer.interface.writeAll(body);
+    try stream_writer.interface.flush();
+
+    var response = std.ArrayList(u8).empty;
+    var reader_buffer: [8192]u8 = undefined;
+    var dest_buffer: [8192]u8 = undefined;
+    var stream_reader = std.Io.net.Stream.reader(stream, io, &reader_buffer);
+    while (true) {
+        const len = stream_reader.interface.readSliceShort(&dest_buffer) catch break;
+        if (len == 0) break;
+        try response.appendSlice(a, dest_buffer[0..len]);
+    }
+    if (abort.fired.load(.acquire)) return error.OllamaTimeout;
+    return response.items;
 }
 
 /// True when Ollama answers `/api/tags`.
@@ -821,6 +785,7 @@ pub fn embed(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const a = arena.allocator();
+    defer unloadIfRequested(io, a, model_name);
 
     var request_body = std.ArrayList(u8).empty;
     try request_body.appendSlice(a, "{\"model\":");
@@ -1615,6 +1580,7 @@ fn generateText(
     model_name: []const u8,
     abort: ?*Abort,
 ) ![]const u8 {
+    defer unloadIfRequested(io, a, model_name);
     const request_body = try buildGenerateRequestBody(a, model_name, prompt);
 
     const address = try std.Io.net.IpAddress.resolve(io, host, port);
@@ -2311,71 +2277,60 @@ test "ModelPrefixes.fromEnv reads SAGE_EMBED_MODEL and SAGE_SUMMARY_MODEL" {
     try std.testing.expectEqualStrings(model_prefix, ModelPrefixes.fromEnv(&env).embed);
 }
 
-test "findCli takes the first ollama on PATH" {
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = cli_name, .data = "" });
-    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const dir_len = try tmp.dir.realPath(std.testing.io, &path_buf);
-    const dir = path_buf[0..dir_len];
-    const expected = try std.fs.path.join(std.testing.allocator, &.{ dir, cli_name });
-    defer std.testing.allocator.free(expected);
+test "portForMode picks 11435 for a bundled app and 11436 for any other launch" {
+    try std.testing.expectEqual(@as(u16, 11435), portForMode(true));
+    try std.testing.expectEqual(@as(u16, 11436), portForMode(false));
+}
 
-    const path_env = try std.fmt.allocPrint(
-        std.testing.allocator,
-        "/nonexistent-sage-dir:{s}",
-        .{dir},
+test "the unload request names the model with keep_alive 0" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const body = try buildUnloadRequestBody(arena.allocator(), "nomic-embed-text:latest");
+    try std.testing.expectEqualStrings(
+        "{\"model\":\"nomic-embed-text:latest\",\"keep_alive\":0}",
+        body,
     );
-    defer std.testing.allocator.free(path_env);
-    const found = findCli(std.testing.io, std.testing.allocator, path_env) orelse
-        return error.TestUnexpectedResult;
-    defer std.testing.allocator.free(found);
-    try std.testing.expectEqualStrings(expected, found);
 }
 
-test "launchApp reports an app that is not installed" {
-    // A name no Mac has: `open` exits non-zero, so `startServer` falls back
-    // to the CLI instead of waiting for a server that was never launched.
-    try std.testing.expect(!launchApp(std.testing.io, "SageMissingOllamaTest"));
+test "loadedNamesFromPs lists each running model" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const body =
+        \\{"models":[
+        \\{"name":"qwen3.5:9b","model":"qwen3.5:9b","size":6000000000,"expires_at":"2026-11-07T10:00:00Z"},
+        \\{"name":"nomic-embed-text:latest","model":"nomic-embed-text:latest"},
+        \\{"name":"","model":""}
+        \\]}
+    ;
+    const names = loadedNamesFromPs(arena.allocator(), body);
+    try std.testing.expectEqual(@as(usize, 2), names.len);
+    try std.testing.expectEqualStrings("qwen3.5:9b", names[0]);
+    try std.testing.expectEqualStrings("nomic-embed-text:latest", names[1]);
 }
 
-test "waitForOpen reads a quick child's exit code" {
-    const argv = [_][]const u8{"/usr/bin/true"};
-    var child = try std.process.spawn(std.testing.io, .{
-        .argv = &argv,
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    });
-
-    const term = waitForOpen(std.testing.io, &child, open_wait_ms) orelse
-        return error.TestUnexpectedResult;
-    switch (term) {
-        .exited => |code| try std.testing.expect(code == 0),
-        else => return error.TestUnexpectedResult,
-    }
+test "loadedNamesFromPs returns empty for no models or garbage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectEqual(@as(usize, 0), loadedNamesFromPs(arena.allocator(), "{\"models\":[]}").len);
+    try std.testing.expectEqual(@as(usize, 0), loadedNamesFromPs(arena.allocator(), "{}").len);
+    try std.testing.expectEqual(@as(usize, 0), loadedNamesFromPs(arena.allocator(), "not json").len);
 }
 
-test "waitForOpen signals a child that outlives its deadline" {
-    // A hung `open` must not hold the start worker: the deadline signals it,
-    // and the wait reports the signal rather than the child's own exit.
-    const argv = [_][]const u8{ "/bin/sleep", "30" };
-    var child = try std.process.spawn(std.testing.io, .{
-        .argv = &argv,
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    });
+test "unloadAll does nothing when no server answers" {
+    const saved_port = port;
+    port = 19556;
+    defer port = saved_port;
+    unloadAll(std.testing.io, std.testing.allocator);
+}
 
-    const started = std.Io.Clock.Timestamp.now(std.testing.io, .awake);
-    const term = waitForOpen(std.testing.io, &child, 300) orelse
-        return error.TestUnexpectedResult;
-    const elapsed_ms = started.untilNow(std.testing.io).raw.toMilliseconds();
-
-    // The signal ends the wait; the 30 second sleep does not.
-    try std.testing.expect(elapsed_ms < 5_000);
-    switch (term) {
-        .signal => |signal| try std.testing.expect(signal == std.posix.SIG.TERM),
-        else => return error.TestUnexpectedResult,
-    }
+test "startServer reports a missing binary before it waits" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var server: ollama_server.Server = .{};
+    server.start(std.testing.allocator, std.testing.io, "", &env, false);
+    try std.testing.expectError(
+        StartError.OllamaMissing,
+        startServer(std.testing.io, std.testing.allocator, &server),
+    );
 }

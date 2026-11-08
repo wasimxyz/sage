@@ -30,25 +30,77 @@ test("the Chat agent must pin Ollama to 127.0.0.1, not inherit a remote URL", ()
   );
   assert.match(
     sidecar,
-    /child_env\.put\("OLLAMA_BASE_URL", "http:\/\/127\.0\.0\.1:11434/,
-    "eve_sidecar copies the whole process environment into the Chat agent. OLLAMA_BASE_URL is not pinned to 127.0.0.1, so Chat can send journal text to a remote host."
+    /"http:\/\/\{s\}:\{d\}\/api", \.\{ ollama\.host, ollama\.port \}/,
+    "eve_sidecar does not build OLLAMA_BASE_URL from the loopback host and the runtime port, so Chat can be pointed at a remote host."
+  );
+  assert.match(
+    sidecar,
+    /child_env\.put\("OLLAMA_BASE_URL", ollama_base\)/,
+    "eve_sidecar copies the whole process environment into the Chat agent. OLLAMA_BASE_URL is not pinned to the local URL, so Chat can send journal text to a remote host."
+  );
+});
+
+// The server's environment is built by `fillServeEnv`, and `attempt` spawns the
+// child with exactly that map. Slice the builder so the checks read its body and
+// nothing else. A missing marker would widen the slice silently, so each one is
+// checked first.
+test("the bundled Ollama server gets loopback, no cloud, no prune, and no other OLLAMA_* setting", () => {
+  const server = readFileSync(join(repoRoot, "src/ollama_server.zig"), "utf8");
+  const start = server.indexOf("pub fn fillServeEnv(");
+  const end = server.indexOf("\n}\n", start);
+  assert.ok(
+    start >= 0 && end > start,
+    "could not slice `fillServeEnv`: an index marker is missing or moved, so this check is reading the wrong region."
+  );
+  const fill = server.slice(start, end);
+
+  assert.match(
+    fill,
+    /child_env\.put\("OLLAMA_HOST", host_value\)/,
+    "fillServeEnv does not set OLLAMA_HOST from the server port, so the server can bind to any interface."
+  );
+  assert.match(
+    fill,
+    /ollama\.host/,
+    "fillServeEnv does not take the server host from the loopback constant in ollama.zig."
+  );
+  assert.match(
+    fill,
+    /"OLLAMA_NO_CLOUD", "1"/,
+    "fillServeEnv does not turn cloud models off for the server."
+  );
+  assert.match(
+    fill,
+    /"OLLAMA_NOPRUNE", "1"/,
+    "fillServeEnv does not turn off blob pruning, so a shared model folder can lose blobs another app still uses."
+  );
+  assert.match(
+    fill,
+    /parent\.get\("OLLAMA_MODELS"\)/,
+    "fillServeEnv does not pass OLLAMA_MODELS through, so a user's model folder is ignored."
+  );
+  assert.match(
+    fill,
+    /eve_sidecar\.chat_env_allowlist/,
+    "fillServeEnv does not start from the shared allowlist, so the whole parent environment may reach the server."
   );
 
-  // Slice the function that starts `ollama serve`, so the two checks below
-  // read its argv and nothing else. A missing or reordered marker used to
-  // widen the slice silently — with no `fn waitUntilRunning` the range ran to
-  // the end of the file and the checks passed on strings outside it.
-  const serveStart = ollama.indexOf("fn launchServe");
-  const serveEnd = ollama.indexOf("fn waitUntilRunning");
-  assert.ok(
-    serveStart >= 0 && serveEnd > serveStart,
-    "could not slice `launchServe`: an index marker is missing or moved, so this check is reading the wrong region."
+  // Every OLLAMA_* name the builder writes or reads, and nothing else.
+  const names = new Set(fill.match(/"OLLAMA_[A-Z_]+"/g) ?? []);
+  assert.deepEqual(
+    [...names].sort(),
+    ['"OLLAMA_HOST"', '"OLLAMA_MODELS"', '"OLLAMA_NOPRUNE"', '"OLLAMA_NO_CLOUD"'],
+    "fillServeEnv names an OLLAMA_* variable outside the four it may pass to the server."
   );
-  const serve = ollama.slice(serveStart, serveEnd);
-  assert.match(serve, /macos_env_path/);
+
   assert.match(
-    serve,
-    /OLLAMA_HOST=\{s\}:\{d\}/,
-    "launchServe starts `ollama serve` with the inherited environment. Unless OLLAMA_HOST is pinned, a parent value can bind the server to another port or expose it off the loopback interface."
+    server,
+    /fillServeEnv\(&env, self\.env_map\.\?, self\.port\)/,
+    "the server child is not started with the map from fillServeEnv."
+  );
+  assert.match(
+    server,
+    /\.environ_map = &env/,
+    "the server child inherits the parent environment instead of the map from fillServeEnv."
   );
 });

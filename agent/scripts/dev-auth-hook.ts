@@ -22,7 +22,7 @@ function isChatPath(pathname: string): boolean {
   return pathname.startsWith(routePrefix) && pathname !== healthRoute;
 }
 
-// Ollama runs on loopback too, at 127.0.0.1:11434/api/…, so the path decides.
+// Ollama runs on loopback too, at 127.0.0.1:11436/api/…, so the path decides.
 export function isSageChatUrl(rawUrl: string): boolean {
   const url = parseLoopbackUrl(rawUrl);
   return url !== null && isChatPath(url.pathname);

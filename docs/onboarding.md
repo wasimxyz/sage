@@ -2,7 +2,7 @@
 
 This page explains when Sage shows setup, what each screen does, which rows it saves, how a restart picks setup up again, and when Sage reminds you to protect your journal. The screens are in `frontend/src/components/setup/`, the rows and their checks are `src/onboarding.zig`, and the decisions that pick a screen are `frontend/src/lib/onboarding.ts`.
 
-Setup fills the whole window, with no sidebar. It helps you install Ollama and download the models Sage needs, turn on a lock and encryption, and import entries you already have. Every step can be skipped.
+Setup fills the whole window, with no sidebar. It helps you download the models Sage needs, turn on a lock and encryption, and import entries you already have. Every step can be skipped.
 
 ## When setup shows
 
@@ -30,16 +30,16 @@ Welcome explains Write, Chat, and Dream, and has **Get started**. It has no step
 The screen depends on `ollama.setupStatus`, which returns `{ installed, running, embedModel, summaryModel }`:
 
 - `running` means `/api/tags` answers.
-- `installed` means Sage finds the Ollama app through LaunchServices by its bundle id, finds `/Applications/Ollama.app`, or finds an `ollama` file in the usual command line folders. A packaged app has no shell `PATH`, so Sage checks those folders directly. The check never launches anything.
+- `installed` means the bundled Ollama file is in the app and can run. The check never starts anything.
 - The two names are the models Sage looks for: `nomic-embed-text` or `SAGE_EMBED_MODEL`, and `qwen3.5:9b` or `SAGE_SUMMARY_MODEL`.
 
 Then Sage picks a screen:
 
-- **Ollama is running**: the downloads screen.
-- **Installed but not running**: Sage calls `ollama.start`. If it works, the downloads screen shows. If it fails, the “not running” screen shows the reason and a **Start Ollama** button.
-- **Not installed**: the Install Ollama screen has a **Download Ollama** button that opens `https://ollama.com/download` in your browser. Sage checks every 4 seconds and moves on by itself. When Ollama becomes installed but not running, Sage calls `ollama.start` once.
+- **Local AI is running**: the downloads screen.
+- **Installed but not running**: Sage calls `ollama.start` once, and the screen reads “Starting local AI…” while it waits. If the start works, the downloads screen shows. If it fails, the **Local AI isn’t running** screen shows the reason and a **Try again** button. That screen checks every 4s. Each check also tries to start the server again, at most once every 10s, so the screen moves on by itself once local AI answers.
+- **Not installed**: the **Local AI isn’t available** screen says “Sage’s local AI files are missing. Reinstall Sage.” It has no download link, and reinstalling Sage is the fix.
 
-The “not running” and Install screens have **Skip this step**, which goes to Protect. Chat and Dream do not work until you finish in Settings > Models.
+Both of those screens have **Skip this step**, which goes to Protect. Chat and Dream do not work until you finish in Settings > Models, or reinstall Sage for the missing-files screen.
 
 ### The downloads screen
 
@@ -50,7 +50,7 @@ Downloads follow the rules in [Models](models.md#downloading-and-deleting): one 
 The queue lives in `ModelDownloadsProvider`, above both setup and Home, so downloads keep going after setup ends or is skipped. The provider saves the queued names in `onboarding.downloads`:
 
 - A restart, a refresh, or an unlock picks the queue up again until each model is ready or you cancel it.
-- The provider starts a model only while Ollama runs. With Ollama closed, the queue waits and looks again every 4 seconds.
+- The provider starts a model only while the server runs. While the server is down, the queue waits and looks again every 4s.
 - A cancelled or failed model leaves the queue, and the queue moves on. **Continue** stays on.
 
 Settings > Models uses the same provider, so a download started there and one started here never collide.
@@ -89,9 +89,9 @@ All set writes `onboarding.state = done`. Its rows show the real state: whether 
 
 ## Testing setup
 
-To see setup as a new user does, quit the dev app and run `make reset-dev`, then `make dev`. The script deletes the dev journal, its Keychain item, and the web view’s local storage, and leaves the packaged app and Ollama alone. [Scripts](../scripts/README.md#resetting-the-dev-app) lists every path it deletes.
+To see setup as a new user does, quit the dev app and run `make reset-dev`, then `make dev`. The script deletes the dev journal, its Keychain item, and the web view’s local storage, and leaves the packaged app and the models in `~/.ollama` alone. [Scripts](../scripts/README.md#resetting-the-dev-app) lists every path it deletes.
 
-Ollama keeps its models, so if Ollama is running and has both, the Local AI step goes straight to Protect.
+Models stay in `~/.ollama/models`, so if the server is running and has both, the Local AI step goes straight to Protect.
 
 To start with sample entries instead, run `make seed-dev`. It resets the dev app and saves the entries in `scripts/seed/`, with dates moved so the newest is in the last week. It does not run Dream. The journal is no longer empty, so the next `make dev` skips setup. [Scripts](../scripts/README.md#seeding-the-dev-app) has the steps.
 
@@ -147,4 +147,4 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `onboarding.save`: a partial update of `state`, `step`, `method`, `encrypt`, and `downloads`. The core refuses a bad value and writes nothing
 - `onboarding.reminderShown`: counts a reminder and saves the time
 - `onboarding.remindersOff`: stops reminders
-- `ollama.setupStatus`: whether Ollama is installed and running, and the two model names
+- `ollama.setupStatus`: whether the bundled Ollama is in the app and running, and the two model names

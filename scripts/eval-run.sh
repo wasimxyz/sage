@@ -34,14 +34,63 @@ need_cmd() {
 }
 
 need_cmd curl
-need_cmd ollama
 need_cmd native
 need_cmd node
 
-if ! curl -sf --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null; then
-  echo "Ollama is not running at http://127.0.0.1:11434." >&2
+# The pinned Ollama CLI. fetch-ollama.sh prints the binary's path on stdout and
+# sends its progress to stderr.
+ollama_bin=$(sh "$root/scripts/fetch-ollama.sh") || {
+  echo "Could not get the pinned Ollama build." >&2
+  exit 1
+}
+
+# The eval Sage is a bare binary, not an app bundle, so it runs the Ollama named
+# by SAGE_OLLAMA_PATH on the dev port, 11436, and starts it at launch. Pulls
+# need a server too, so this block starts a short-lived one on that port, pulls
+# through it, and stops it before the first Sage starts. The eval Sage then
+# binds the port itself. Models live in ~/.ollama/models, so a pull through any
+# server shows up for all of them.
+ollama_host=127.0.0.1:11436
+ollama_pull_pid=""
+ollama_pull_log=""
+
+ollama_up() {
+  curl -sf --max-time 2 "http://$ollama_host/api/version" >/dev/null
+}
+
+stop_pull_server() {
+  if [ -n "$ollama_pull_pid" ]; then
+    kill -TERM "$ollama_pull_pid" 2>/dev/null || true
+    wait "$ollama_pull_pid" 2>/dev/null || true
+    ollama_pull_pid=""
+  fi
+  if [ -n "$ollama_pull_log" ]; then
+    rm -f "$ollama_pull_log"
+    ollama_pull_log=""
+  fi
+}
+
+if ollama_up; then
+  echo "Port 11436 is already in use. Stop make dev, or another eval, then run make eval again." >&2
   exit 1
 fi
+
+ollama_pull_log=$(mktemp "${TMPDIR:-/tmp}/sage-eval-ollama.XXXXXX")
+trap 'stop_pull_server; exit 1' INT TERM
+OLLAMA_HOST=$ollama_host OLLAMA_NO_CLOUD=1 OLLAMA_NOPRUNE=1 \
+  "$ollama_bin" serve >"$ollama_pull_log" 2>&1 &
+ollama_pull_pid=$!
+i=0
+while ! ollama_up; do
+  if [ "$i" -ge 60 ] || ! kill -0 "$ollama_pull_pid" 2>/dev/null; then
+    echo "Ollama did not start on $ollama_host. Log:" >&2
+    cat "$ollama_pull_log" >&2 || true
+    stop_pull_server
+    exit 1
+  fi
+  i=$((i + 1))
+  sleep 0.5
+done
 
 pull_models() {
   old_ifs=$IFS
@@ -50,16 +99,25 @@ pull_models() {
     model=$(printf '%s' "$model" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     if [ -n "$model" ]; then
       echo "Pulling $model"
-      ollama pull "$model"
+      if ! OLLAMA_HOST=$ollama_host "$ollama_bin" pull "$model"; then
+        IFS=$old_ifs
+        return 1
+      fi
     fi
   done
   IFS=$old_ifs
 }
 
-pull_models "$summary_models"
-pull_models "$embed_models"
-pull_models "$chat_models"
-pull_models "$judge_model"
+# `set -e` does not stop a function that runs on the left of `||`, so each
+# pull returns its status and this line checks it.
+pull_status=0
+pull_models "$summary_models" && pull_models "$embed_models" &&
+  pull_models "$chat_models" && pull_models "$judge_model" || pull_status=$?
+stop_pull_server
+if [ "$pull_status" -ne 0 ]; then
+  echo "Could not pull the eval models." >&2
+  exit "$pull_status"
+fi
 
 cd "$root"
 eval_prefix="$root/zig-out/eval"
@@ -164,9 +222,12 @@ run_one() {
   echo "Starting Sage in $data_dir"
   (
     cd "$data_dir"
+    # No NATIVE_SDK_MODE here. Sage picks the dev port and SAGE_OLLAMA_PATH
+    # because this binary does not sit in an app bundle.
     SAGE_DATA_DIR="$data_dir" \
       SAGE_SUMMARY_MODEL="$summary_model" \
       SAGE_EMBED_MODEL="$embed_model" \
+      SAGE_OLLAMA_PATH="$ollama_bin" \
       exec "$binary" >"$data_dir/sage.log" 2>&1
   ) &
   sage_pid=$!

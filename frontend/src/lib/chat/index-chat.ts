@@ -22,9 +22,9 @@ export async function indexChatMessages(
 
 // What Sage says when Ollama can't embed, from the core's embedding jobs.
 const ollamaDownMessages = [
-  "Ollama is not running",
-  "Ollama did not answer in time",
-  "The embedding model is not pulled",
+  "Local AI is not running",
+  "Local AI did not answer in time",
+  "The embedding model is not downloaded",
   "Embedding failed",
 ];
 

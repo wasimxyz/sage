@@ -1,6 +1,6 @@
 # Models
 
-This page explains which Ollama models Sage uses, how Settings > Models recommends, downloads, and deletes them, and what happens when Ollama is not running. The screen is `frontend/src/components/settings-models.tsx`, and the Ollama client is `src/ollama.zig`.
+This page explains which Ollama models Sage uses, how Settings > Models recommends, downloads, and deletes them, and what happens when the Ollama server is not running. The screen is `frontend/src/components/settings-models.tsx`, and the Ollama client is `src/ollama.zig`.
 
 ## Which models Sage uses
 
@@ -39,7 +39,7 @@ The list is sorted by score, then by size, and capped at 25 models. To refresh t
 
 - **Download**: `ollama.pull` starts a download. Only one download runs at a time, so the other Download buttons are off until it ends.
 - **Progress**: the table shows progress from `ollama.pulls`, and Cancel calls `ollama.pullCancel`.
-- **Delete**: `ollama.delete` removes the model from Ollama.
+- **Delete**: `ollama.delete` removes the model from this Mac. The models folder is shared, so other apps that use it lose the model too. The dialog says so.
 
 The Installed table reloads when a download finishes.
 
@@ -47,17 +47,21 @@ The Installed table reloads when a download finishes.
 
 ## When Ollama is not running
 
-Chat and Settings > Models show a notice with a Start Ollama button. Settings > Models also says to start Ollama before you download or delete models. Clicking Dream in the sidebar opens a dialog with the same button, as [Dream](dream.md#when-dream-cannot-run) explains.
+Chat and Settings > Models show a notice that says “Local AI isn’t running”, with a “Start local AI” button. Settings > Models also says to start local AI before you download or delete models. Clicking Dream in the sidebar opens a dialog with the same button, as [Dream](dream.md#when-dream-cannot-run) explains.
 
-Start Ollama calls `ollama.start`:
+Start local AI calls `ollama.start`:
 
-1. The core opens the Ollama app through LaunchServices.
-2. If only the command line tool is installed, it runs `ollama serve` instead.
-3. It answers once `/api/tags` replies.
+1. The core starts the bundled server, unless it is already running.
+2. It answers once `/api/tags` replies. If that takes longer than 30s, the start fails.
 
-While the call runs, the notice reads Starting Ollama… and the button reads Starting…. If the start fails, the notice shows the reason and the button comes back.
+While the call runs, the notice reads “Starting local AI…” and the button reads “Starting…”. If the start fails, the notice shows the reason and the button comes back. The reasons are:
 
-`OllamaProvider` (`frontend/src/components/ollama-provider.tsx`) checks `embeddings.status` every 4 seconds to see whether Ollama is running, then lists models with `ollama.models` when it is. Chat, Dream, and Settings > Models all read this one check. A check that is still waiting on Ollama holds back the next one. A hidden window skips the check and runs it once when it comes back. When Ollama comes up, Chat reloads its model list and Settings > Models reloads its Installed table.
+- “Sage’s local AI files are missing. Reinstall Sage.” The app has no bundled copy of Ollama. Outside an app bundle, `SAGE_OLLAMA_PATH` names no binary.
+- “Port 11435 is in use by another app.” Outside an app bundle, such as `make dev`, the port is 11436.
+- “Local AI did not start in time.” When the server wrote a last log line, it follows the message.
+- “Could not start local AI.” Any other failure.
+
+`OllamaProvider` (`frontend/src/components/ollama-provider.tsx`) checks `embeddings.status` every 4s to see whether Ollama is running, then lists models with `ollama.models` when it is. While Sage is unlocked, the same check also restarts a server that has crashed, at most once every 10s. Chat, Dream, and Settings > Models all read this one check. A check that is still waiting on Ollama holds back the next one. A hidden window skips the check and runs it once when it comes back. When Ollama comes up, Chat reloads its model list and Settings > Models reloads its Installed table.
 
 ## Bridge commands
 
@@ -66,6 +70,6 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `ollama.models`: pulled chat models, each name once, without the embedding model, cloud models, or `llamacpp:` runner entries
 - `ollama.pull`, `ollama.pulls`, and `ollama.pullCancel`: start a download, report its progress, and cancel it
 - `ollama.delete`: removes one model
-- `ollama.start`: starts Ollama and answers once it replies
-- `ollama.setupStatus`: whether Ollama is installed and running, and the embedding and summary model names, for [First-launch setup](onboarding.md#step-1-local-ai)
+- `ollama.start`: starts the bundled server and answers once it replies
+- `ollama.setupStatus`: whether the bundled Ollama is in the app and the server is running, and the embedding and summary model names, for [First-launch setup](onboarding.md#step-1-local-ai)
 - `system.hardware`: the chip name, memory size, and CPU core count

@@ -104,7 +104,7 @@ test("ollamaBaseURL uses the default when the value is empty", () => {
   const previous = process.env.OLLAMA_BASE_URL;
   process.env.OLLAMA_BASE_URL = "";
   try {
-    assert.equal(ollamaBaseURL(), "http://127.0.0.1:11434/api");
+    assert.equal(ollamaBaseURL(), "http://127.0.0.1:11436/api");
   } finally {
     restoreEnv("OLLAMA_BASE_URL", previous);
   }

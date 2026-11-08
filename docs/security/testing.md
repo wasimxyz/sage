@@ -46,6 +46,9 @@ The Zig tests cover:
 - Session locking clearing the journal key and world key, then restoring access after unlock
 - Idle timeout defaults, supported values, persistence, and behavior for Never, before the timeout, and at the timeout
 - HKDF derivation of the eve world key, and wiping `.eve/.workflow-data`
+- The bundled Ollama server: finding the binary from the app path or `SAGE_OLLAMA_PATH`, its child environment, the leftover-server check, the last log line, and the 10s restart wait
+- The Ollama ports (11435 inside an app bundle, 11436 anywhere else), the start failure messages, and the unload request body
+- Reading loaded models from `/api/ps`, and the unload flag that lock sets and unlock clears
 
 ## The security tests
 
@@ -53,7 +56,7 @@ The Zig tests cover:
 
 - **Chat token**: Chat routes, the workflow routes, and cancelling a session all need the agent-server token, and health stays public (`eve-auth-admits-everyone.test.ts`, `cancel-session-no-token.test.ts`).
 - **Chat readiness**: a program on port 2001 that answers health cannot make Chat ready unless Sage started its own server (`chat-standin-health.test.ts`).
-- **Local models**: the Chat agent pins Ollama to `127.0.0.1`, and packaged Chat does not copy Sage’s environment (`ollama-env.test.ts`, `sidecar-env-passthrough.test.ts`).
+- **Local models**: the Chat agent pins Ollama to `127.0.0.1` and to the port Sage sets, packaged Chat does not copy Sage’s environment, and the bundled Ollama server gets only its own `OLLAMA_*` settings (`ollama-env.test.ts`, `sidecar-env-passthrough.test.ts`).
 - **Context length**: a request cannot raise the context length above the picker maximum (`context-length-uncapped.test.ts`).
 - **Web view**: the page allows no inline script, and export writes only to the folder you picked (`csp.test.ts`, `export-dest.test.ts`).
 - **Packaging**: the copy targets `Sage.app`, and the bundle ships no dev modules (`copy-agent-target.test.ts`, `agent-dev-modules.sh`).

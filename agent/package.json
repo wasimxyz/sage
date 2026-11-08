@@ -1,6 +1,6 @@
 {
   "name": "sage-agent",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "imports": {
@@ -21,6 +21,9 @@
   "overrides": {
     "@ai-sdk/provider-utils": {
       "undici": "^7.30.1"
+    },
+    "@vercel/queue": {
+      "minimatch": "^11.0.3"
     },
     "@workflow/world-local": {
       "undici": "^7.30.1"

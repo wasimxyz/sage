@@ -11,10 +11,11 @@ type FetchLike = (
 
 /**
  * Sage's Chat only talks to Ollama on this Mac. Rewrites a stale `/v1` suffix.
- * An unset or empty value uses the default.
+ * An unset or empty value uses the dev default, 11436. Packaged Chat always
+ * gets its address from Sage.
  */
 export function localOllamaBaseURL(raw: string | undefined): string {
-  const value = raw?.trim() || "http://127.0.0.1:11434/api";
+  const value = raw?.trim() || "http://127.0.0.1:11436/api";
   let hostname: string;
   try {
     ({ hostname } = new URL(value));
@@ -112,12 +113,12 @@ export async function assertLocalModel(
     }
     tags = await response.json();
   } catch (error) {
-    throw new Error("Ollama is not running.", { cause: error });
+    throw new Error("Local AI is not running.", { cause: error });
   }
   if (listed(remoteModelNames(tags), modelId)) {
     throw new Error(`${modelId} runs in the cloud. Pick a model on this Mac.`);
   }
   if (!listed(localModelNames(tags), modelId)) {
-    throw new Error(`${modelId} is not pulled. Pick a model on this Mac.`);
+    throw new Error(`${modelId} is not downloaded. Pick a model on this Mac.`);
   }
 }

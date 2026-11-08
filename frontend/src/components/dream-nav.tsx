@@ -180,14 +180,14 @@ function StartOllamaContent() {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Ollama isn't running</DialogTitle>
+        <DialogTitle>Local AI isn't running</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogActions>
         <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
         <Button disabled={starting} onClick={onStart}>
           {starting ? <Spinner data-icon="inline-start" /> : null}
-          {starting ? "Starting…" : "Start Ollama"}
+          {starting ? "Starting…" : "Start local AI"}
         </Button>
       </DialogActions>
     </>

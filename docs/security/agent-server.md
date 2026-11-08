@@ -60,7 +60,7 @@ Each Chat caller gets the token its own way:
 
 - **The Chat screen** reads it through `chat.agentToken`, which refuses while Sage is locked. Deleting a chat sends the same token when Sage cancels the turn.
 - **The agent in `make dev` and `make eval`** reads `token` from `agent-server.json` on each check. Until that file exists, requests return 401.
-- **The `eve dev` terminal** gets it from `agent/scripts/dev-auth-hook.ts`, which the `dev` script loads ahead of eve. On each loopback `/eve/v1/…` request, the hook reads the token from `agent-server.json` and replaces the bearer eve built. It leaves Ollama and other non-loopback requests alone.
+- **The `eve dev` terminal** gets it from `agent/scripts/dev-auth-hook.ts`, which the `dev` script loads ahead of eve. On each loopback `/eve/v1/…` request, the hook reads the token from `agent-server.json` and replaces the bearer eve built. It leaves Ollama requests alone, because they use other paths.
 - **The `make eval` client** gets the token through `EVE_EVAL_AUTH_TOKEN`, as [Eval suite](../agent/evals.md#the-eval-server-and-its-token) explains.
 
 The hook reads the file on every request because Sage writes it after the `eve dev` terminal is already up. The terminal’s first `/eve/v1/info` request fails with 401 and the prompt still opens, and later requests carry the token. Health stays public, so `make dev` can wait on it before Sage starts.
