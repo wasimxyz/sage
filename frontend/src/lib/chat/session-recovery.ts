@@ -259,6 +259,7 @@ function hasMetaId(event: EveAgentReducerEvent): boolean {
     return false;
   }
   const { meta } = event;
+  // biome-ignore lint/suspicious/noUnnecessaryConditions: restored events may not match their types
   if (typeof meta !== "object" || meta === null || !("id" in meta)) {
     return false;
   }
@@ -288,6 +289,7 @@ function ensureReceivedMessageMeta(
     return event;
   }
   const previous =
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: restored events may not match their types
     "meta" in event && typeof event.meta === "object" && event.meta !== null
       ? event.meta
       : {};
