@@ -98,8 +98,7 @@
                     "https://canirun.ai",
                     "https://canirun.ai/*",
                     "https://www.canirun.ai",
-                    "https://www.canirun.ai/*",
-                    "https://ollama.com/download"
+                    "https://www.canirun.ai/*"
                 ]
             }
         }

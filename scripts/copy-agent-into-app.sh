@@ -1,6 +1,6 @@
 #!/bin/sh
-# Copy the eve self-host trio and a pinned Node.js into a packaged Sage.app
-# so `eve start` can run without a system Node.
+# Copy the eve self-host trio, a pinned Node.js, and a pinned Ollama CLI into a
+# packaged Sage.app so `eve start` and local AI run without system installs.
 set -eu
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
@@ -49,6 +49,7 @@ if [ -d "$world_src" ]; then
 fi
 
 sh "$root/scripts/fetch-node.sh" "$app"
+sh "$root/scripts/fetch-ollama.sh" "$app"
 
 channel="$dest/agent/channels/eve.ts"
 if ! grep -q 'origin: "zero://app"' "$channel" || ! grep -q 'allowedHeaders: "*"' "$channel"; then

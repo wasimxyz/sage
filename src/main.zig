@@ -18,6 +18,7 @@ const vault_mod = @import("vault.zig");
 const window_chrome = @import("window.zig");
 const agent_server = @import("agent_server.zig");
 const eve_sidecar = @import("eve_sidecar.zig");
+const ollama_server = @import("ollama_server.zig");
 const dream = @import("dream.zig");
 const memory_feature = @import("memory_feature.zig");
 
@@ -43,7 +44,6 @@ const external_link_urls = [_][]const u8{
     "https://canirun.ai/*",
     "https://www.canirun.ai",
     "https://www.canirun.ai/*",
-    "https://ollama.com/download",
 };
 const command_names = [_][]const u8{
     "journal.list",
@@ -248,6 +248,11 @@ const App = struct {
     agent_queue: *agent_server.Queue,
     agent: agent_server.Server = .{},
     eve: eve_sidecar.Sidecar = .{},
+    ollama_server: ollama_server.Server = .{},
+    /// Whether this executable sits in an app bundle with its own Ollama.
+    /// `main` sets it with `ollama.port`. It is false for `native dev`, eval,
+    /// seed, and `zig build run`.
+    ollama_bundled: bool = false,
     data_dir: []const u8 = &.{},
     memory_mode_ready: bool = false,
     models: ollama.ModelPrefixes = .{},
@@ -307,6 +312,9 @@ const App = struct {
             !std.mem.eql(u8, mode, "dev")
         else
             true;
+        // The local AI server starts now, even while locked, so it is ready at
+        // unlock. It stops on quit, not on lock.
+        self.ollama_server.start(std.heap.page_allocator, self.io, self.data_dir, self.env_map, self.ollama_bundled);
         const has_data_dir_override = if (self.env_map.get("SAGE_DATA_DIR")) |override|
             override.len > 0
         else
@@ -356,6 +364,7 @@ const App = struct {
         _ = runtime;
         const self: *App = @ptrCast(@alignCast(context));
         self.eve.stop();
+        self.ollama_server.stop(self.io);
     }
 
     fn syncLockMenu(self: *App) void {
@@ -423,6 +432,7 @@ const App = struct {
             .lifecycle => |phase| {
                 if (phase == .stop) {
                     self.eve.stop();
+                    self.ollama_server.stop(self.io);
                 }
             },
             else => {},
@@ -570,8 +580,40 @@ fn sessionLock(self: *App) void {
     if (self.agent.started) agent_server.setAvailable(&self.agent, false);
     self.eve.stop();
     self.eve.clearWorldKey();
+    // A running Dream stops here, so it does not load a model for each item
+    // that is left. Only the call already in flight finishes, and it unloads
+    // its model below.
+    dream.abort(dreamHost(self), dream_locked_message);
+    // Each generate or embed call from here on unloads its model, and the
+    // detached worker below unloads the ones already loaded.
+    ollama.unload_after_request.store(true, .release);
+    startOllamaUnload(self.io);
     self.syncLockMenu();
     App.emitMainWindowEvent(self, "lock:changed");
+}
+
+/// What Dream reports when locking stops it. Items it already finished stay
+/// saved, and the next Dream does the rest.
+const dream_locked_message = "Dream stopped because Sage locked.";
+
+/// Called on every unlock. Models load and stay loaded again from here on.
+fn clearUnloadOnLock() void {
+    ollama.unload_after_request.store(false, .release);
+}
+
+/// Unload every model the local AI server holds. The request runs on a
+/// detached worker, so the window loop never waits on the network.
+fn startOllamaUnload(io: std.Io) void {
+    // A test must not reach a real server: a Sage that is open on this Mac
+    // would lose its loaded models, and the detached worker would outlive the
+    // test and race with tests that change `ollama.port`.
+    if (builtin.is_test) return;
+    const thread = std.Thread.spawn(.{}, runOllamaUnload, .{io}) catch return;
+    thread.detach();
+}
+
+fn runOllamaUnload(io: std.Io) void {
+    ollama.unloadAll(io, std.heap.page_allocator);
 }
 
 /// Whether `App.start` can spawn packaged Chat. A locked or securing app
@@ -1216,6 +1258,7 @@ fn handleLockUnlock(context: *anyopaque, invocation: native_sdk.bridge.Invocatio
     try self.lock.verifyPassword(password);
     if (self.vault.enabled) try self.vault.unlockWithPassword(password);
     self.lock.unlocked = true;
+    clearUnloadOnLock();
     session_lock.resetIdleClock();
     self.syncLockMenu();
     startEveSidecarAfterUnlock(self);
@@ -1309,6 +1352,7 @@ fn handleLockUnlockRecoveryKey(context: *anyopaque, invocation: native_sdk.bridg
         return err;
     };
     self.lock.unlockRecovered();
+    clearUnloadOnLock();
     // The recovery key already opened the journal, so a failed Keychain write
     // does not undo the unlock. The reply says so, and the page tells the
     // owner that Touch ID will not open the journal until a later unlock with
@@ -1761,8 +1805,6 @@ const EmbedJob = struct {
     vectors: [][]f32 = &.{},
     chat_models: ollama.ChatModels = .{ .running = false },
     delete_name: []const u8 = "",
-    /// The parent PATH, so a worker can find an `ollama` CLI install.
-    start_path: []const u8 = "",
     /// Written by the setup status worker.
     setup_installed: bool = false,
     setup_running: bool = false,
@@ -1785,7 +1827,7 @@ fn handleEmbeddingsStatus(context: *anyopaque, invocation: native_sdk.bridge.Inv
         return;
     };
     startStatusJob(self, invocation, responder) catch {
-        respondFail(responder, invocation.request.id, "Could not check Ollama.");
+        respondFail(responder, invocation.request.id, "Could not check local AI.");
     };
 }
 
@@ -1816,7 +1858,7 @@ fn handleOllamaModels(context: *anyopaque, invocation: native_sdk.bridge.Invocat
         return;
     };
     startModelsJob(self, invocation, responder) catch {
-        respondFail(responder, invocation.request.id, "Could not list Ollama models.");
+        respondFail(responder, invocation.request.id, "Could not list local AI models.");
     };
 }
 
@@ -1827,7 +1869,7 @@ fn handleOllamaStart(context: *anyopaque, invocation: native_sdk.bridge.Invocati
         return;
     };
     startOllamaStartJob(self, invocation, responder) catch {
-        respondFail(responder, invocation.request.id, "Could not start Ollama.");
+        respondFail(responder, invocation.request.id, "Could not start local AI.");
     };
 }
 
@@ -1841,7 +1883,7 @@ fn handleOllamaSetupStatus(context: *anyopaque, invocation: native_sdk.bridge.In
         return;
     };
     startSetupStatusJob(self, invocation, responder) catch {
-        respondFail(responder, invocation.request.id, "Could not check Ollama.");
+        respondFail(responder, invocation.request.id, "Could not check local AI.");
     };
 }
 
@@ -1999,7 +2041,7 @@ fn startStatusJob(self: *App, invocation: native_sdk.bridge.Invocation, responde
         .request_id = try allocator.dupe(u8, invocation.request.id),
     };
     errdefer allocator.free(job.request_id);
-    const thread = try std.Thread.spawn(.{}, runStatusJob, .{ self.io, allocator, self.embed_queue, services, job, self.models });
+    const thread = try std.Thread.spawn(.{}, runStatusJob, .{ self.io, allocator, self.embed_queue, services, job, self.models, &self.ollama_server });
     thread.detach();
 }
 
@@ -2018,42 +2060,35 @@ fn startModelsJob(self: *App, invocation: native_sdk.bridge.Invocation, responde
     thread.detach();
 }
 
-/// Ollama may already be running, and a start that has to launch the app and
-/// wait for the server can outlive a bridge round trip, so the launch and the
-/// wait both happen on a worker thread.
+/// The start can wait up to `start_timeout_ms` for the server to answer, so it
+/// runs on a worker thread, not inside the bridge call.
 fn startOllamaStartJob(self: *App, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) !void {
     const services = self.services orelse return error.RuntimeUnavailable;
     const allocator = self.store.allocator;
-    const path_env = self.env_map.get("PATH");
     const job = try allocator.create(EmbedJob);
     errdefer allocator.destroy(job);
     job.* = .{
         .kind = .start,
         .responder = responder,
         .request_id = try allocator.dupe(u8, invocation.request.id),
-        .start_path = try allocator.dupe(u8, path_env orelse ""),
     };
     errdefer allocator.free(job.request_id);
-    errdefer allocator.free(job.start_path);
-    const thread = try std.Thread.spawn(.{}, runStartJob, .{ self.io, allocator, self.embed_queue, services, job });
+    const thread = try std.Thread.spawn(.{}, runStartJob, .{ self.io, allocator, self.embed_queue, services, job, &self.ollama_server });
     thread.detach();
 }
 
 fn startSetupStatusJob(self: *App, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) !void {
     const services = self.services orelse return error.RuntimeUnavailable;
     const allocator = self.store.allocator;
-    const path_env = self.env_map.get("PATH");
     const job = try allocator.create(EmbedJob);
     errdefer allocator.destroy(job);
     job.* = .{
         .kind = .setup_status,
         .responder = responder,
         .request_id = try allocator.dupe(u8, invocation.request.id),
-        .start_path = try allocator.dupe(u8, path_env orelse ""),
     };
     errdefer allocator.free(job.request_id);
-    errdefer allocator.free(job.start_path);
-    const thread = try std.Thread.spawn(.{}, runSetupStatusJob, .{ self.io, allocator, self.embed_queue, services, job });
+    const thread = try std.Thread.spawn(.{}, runSetupStatusJob, .{ self.io, allocator, self.embed_queue, services, job, &self.ollama_server });
     thread.detach();
 }
 
@@ -2116,7 +2151,9 @@ fn startGenerateJob(self: *App, invocation: native_sdk.bridge.Invocation, respon
     chunks_owned = false;
 }
 
-fn runStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, models: ollama.ModelPrefixes) void {
+fn runStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, models: ollama.ModelPrefixes, server: *ollama_server.Server) void {
+    // A crashed server comes back on this poll, at most once per retry interval.
+    server.ensureRunning(io);
     var abort: ollama.Abort = .{ .io = io };
     const watchdog = ollama.startWatchdog(&abort, status_timeout_ms);
     job.status = ollama.checkStatus(io, allocator, &abort, models);
@@ -2156,16 +2193,19 @@ fn runModelsJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, se
     services.wake() catch {};
 }
 
-fn runStartJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob) void {
-    ollama.startServer(io, allocator, job.start_path) catch |err| {
+fn runStartJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, server: *ollama_server.Server) void {
+    ollama.startServer(io, allocator, server) catch |err| {
         job.err = err;
     };
     queue.push(io, job);
     services.wake() catch {};
 }
 
-fn runSetupStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob) void {
-    const status = ollama.setupStatus(io, allocator, job.start_path);
+fn runSetupStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, server: *ollama_server.Server) void {
+    // Setup polls this one instead of `embeddings.status`, so a server that
+    // failed to start comes back here too, at most once per retry interval.
+    server.ensureRunning(io);
+    const status = ollama.setupStatus(io, allocator, server);
     job.setup_installed = status.installed;
     job.setup_running = status.running;
     queue.push(io, job);
@@ -2204,6 +2244,26 @@ fn writeSetupStatus(writer: *std.Io.Writer, status: ollama.SetupStatus, models: 
     try writer.writeByte('}');
 }
 
+/// The text a failed start shows. Port busy and timeout end with the server's
+/// last log line when there is one, so the reason shows without opening the log.
+fn startFailureMessage(buf: []u8, self: *App, err: anyerror) []const u8 {
+    var line_buf: [512]u8 = undefined;
+    const last = self.ollama_server.lastLogLine(self.io, &line_buf);
+    return switch (err) {
+        error.OllamaMissing => "Sage's local AI files are missing. Reinstall Sage.",
+        error.OllamaPortBusy => withLogLine(buf, "Port {d} is in use by another app.", .{ollama.port}, last),
+        error.OllamaStartTimeout => withLogLine(buf, "Local AI did not start in time.", .{}, last),
+        else => "Could not start local AI.",
+    };
+}
+
+fn withLogLine(buf: []u8, comptime fmt: []const u8, args: anytype, last: []const u8) []const u8 {
+    const lead = std.fmt.bufPrint(buf, fmt, args) catch return "Could not start local AI.";
+    if (last.len == 0) return lead;
+    const tail = std.fmt.bufPrint(buf[lead.len..], " {s}", .{last}) catch return lead;
+    return buf[0 .. lead.len + tail.len];
+}
+
 fn drainEmbedJobs(self: *App) void {
     const jobs = self.embed_queue.takeAll(self.io);
     defer if (jobs.len > 0) std.heap.page_allocator.free(jobs);
@@ -2220,7 +2280,6 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
         if (job.vectors.len > 0) allocator.free(job.vectors);
         if (job.model_name.len > 0) allocator.free(job.model_name);
         if (job.delete_name.len > 0) allocator.free(job.delete_name);
-        if (job.start_path.len > 0) allocator.free(job.start_path);
         if (job.memory_occurred_at.len > 0) allocator.free(job.memory_occurred_at);
         if (job.memory_subject.len > 0) allocator.free(job.memory_subject);
         if (job.memory_text.len > 0) allocator.free(job.memory_text);
@@ -2249,9 +2308,9 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
             if (job.err) |err| {
                 var pulled_buf: [256]u8 = undefined;
                 const message = switch (err) {
-                    error.OllamaNotRunning => "Ollama is not running.",
+                    error.OllamaNotRunning => "Local AI is not running.",
                     error.ModelNotPulled => ollama.embedNotPulledMessage(&pulled_buf, self.models.embed),
-                    error.OllamaTimeout => "Ollama did not answer in time.",
+                    error.OllamaTimeout => "Local AI did not answer in time.",
                     else => "Embedding failed.",
                 };
                 respondFail(job.responder, job.request_id, message);
@@ -2280,8 +2339,8 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
         .delete => {
             if (job.err) |err| {
                 const message = switch (err) {
-                    error.OllamaNotRunning => "Ollama is not running.",
-                    error.OllamaTimeout => "Ollama did not answer in time.",
+                    error.OllamaNotRunning => "Local AI is not running.",
+                    error.OllamaTimeout => "Local AI did not answer in time.",
                     else => "Could not delete the model.",
                 };
                 respondFail(job.responder, job.request_id, message);
@@ -2297,11 +2356,8 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
         },
         .start => {
             if (job.err) |err| {
-                const message = switch (err) {
-                    error.OllamaNotInstalled => "Ollama is not installed on this Mac.",
-                    error.OllamaStartTimeout => "Ollama did not start in time.",
-                    else => "Could not start Ollama.",
-                };
+                var message_buf: [600]u8 = undefined;
+                const message = startFailureMessage(&message_buf, self, err);
                 respondFail(job.responder, job.request_id, message);
                 return;
             }
@@ -2315,9 +2371,9 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
             if (job.err) |err| {
                 var pulled_buf: [256]u8 = undefined;
                 const message = switch (err) {
-                    error.OllamaNotRunning => "Ollama is not running.",
+                    error.OllamaNotRunning => "Local AI is not running.",
                     error.ModelNotPulled => ollama.embedNotPulledMessage(&pulled_buf, self.models.embed),
-                    error.OllamaTimeout => "Ollama did not answer in time.",
+                    error.OllamaTimeout => "Local AI did not answer in time.",
                     else => "Embedding failed.",
                 };
                 respondFail(job.responder, job.request_id, message);
@@ -2735,6 +2791,7 @@ fn unlockAfterPrompt(self: *App, job: *LockJob) void {
     // the user is not asked twice.
     if (!self.vault.enabled) {
         self.lock.unlockTouchId();
+        clearUnloadOnLock();
         session_lock.resetIdleClock();
         self.syncLockMenu();
         startEveSidecarAfterUnlock(self);
@@ -2753,6 +2810,7 @@ fn unlockAfterPrompt(self: *App, job: *LockJob) void {
     }
     self.vault.setKey(key);
     self.lock.unlockTouchId();
+    clearUnloadOnLock();
     session_lock.resetIdleClock();
     self.syncLockMenu();
     startEveSidecarAfterUnlock(self);
@@ -2824,6 +2882,11 @@ pub fn main(init: std.process.Init) !void {
         std.mem.eql(u8, mode, "dev")
     else
         false;
+    // Set before any thread starts. The mode follows where the executable sits,
+    // as it does for Chat and Node: a bundled app runs its own Ollama on 11435,
+    // and every other launch uses `SAGE_OLLAMA_PATH` on 11436.
+    const ollama_bundled = ollama_server.runsFromBundle(init.io);
+    ollama.port = ollama.portForMode(ollama_bundled);
     const app_id: [:0]const u8 = if (dev_mode) "com.wasimxyz.sage-dev" else "com.wasimxyz.sage";
 
     var data_dir_buffer: [512]u8 = undefined;
@@ -2867,6 +2930,7 @@ pub fn main(init: std.process.Init) !void {
         .dream_queue = dream_queue,
         .agent_queue = agent_queue,
         .data_dir = data_dir,
+        .ollama_bundled = ollama_bundled,
         .models = ollama.ModelPrefixes.fromEnv(init.environ_map),
         .pull_abort = .{ .io = init.io },
     };
@@ -2895,6 +2959,7 @@ pub fn main(init: std.process.Init) !void {
     // cannot touch a closed database.
     defer agent_server.stop(&app.agent);
     defer app.eve.stop();
+    defer app.ollama_server.stop(init.io);
 
     var builtin_bridge_commands = [_]native_sdk.BridgeCommandPolicy{
         .{ .name = "native-sdk.dialog.openFile", .origins = bridgeOrigins(dev_mode) },
@@ -3172,7 +3237,7 @@ test "ollama.setupStatus answers through the worker queue" {
     try handleOllamaSetupStatus(@ptrCast(&rig.app), invocation, rig.responder());
     try rig.pump();
 
-    // Ollama may or may not be on the machine running the tests, so only the
+    // The local AI server may or may not be running where the tests run, so only the
     // shape is checked: all four keys, with the default model names.
     const response = rig.capture.body();
     try std.testing.expect(std.mem.indexOf(u8, response, "\"id\":\"t-setup\"") != null);
@@ -3190,6 +3255,41 @@ test "ollama.setupStatus names the models from the environment" {
     try std.testing.expectEqualStrings(
         "{\"installed\":true,\"running\":false,\"embedModel\":\"custom-embed\",\"summaryModel\":\"qwen3:4b\"}",
         writer.buffered(),
+    );
+}
+
+test "ollama.start failures name the reason in plain words" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+
+    var buf: [600]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "Sage's local AI files are missing. Reinstall Sage.",
+        startFailureMessage(&buf, &rig.app, error.OllamaMissing),
+    );
+    var busy_buf: [64]u8 = undefined;
+    const busy = try std.fmt.bufPrint(&busy_buf, "Port {d} is in use by another app.", .{ollama.port});
+    try std.testing.expectEqualStrings(busy, startFailureMessage(&buf, &rig.app, error.OllamaPortBusy));
+    try std.testing.expectEqualStrings(
+        "Local AI did not start in time.",
+        startFailureMessage(&buf, &rig.app, error.OllamaStartTimeout),
+    );
+    try std.testing.expectEqualStrings(
+        "Could not start local AI.",
+        startFailureMessage(&buf, &rig.app, error.OllamaSpawnFailed),
+    );
+}
+
+test "withLogLine adds the server's last line only when there is one" {
+    var buf: [200]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "Local AI did not start in time. boom: bad",
+        withLogLine(&buf, "Local AI did not start in time.", .{}, "boom: bad"),
+    );
+    try std.testing.expectEqualStrings(
+        "Local AI did not start in time.",
+        withLogLine(&buf, "Local AI did not start in time.", .{}, ""),
     );
 }
 
@@ -4071,6 +4171,9 @@ test "session lock clears the key and gates journal and Chat until unlock" {
     try rig.init();
     defer rig.deinit();
     defer rig.app.eve.clearWorldKey();
+    // The unload flag is global, so start and end with it clear.
+    ollama.unload_after_request.store(false, .release);
+    defer ollama.unload_after_request.store(false, .release);
 
     var output: [8192]u8 = undefined;
     _ = try rig.app.lock.setPassword("{\"next\":\"correct horse\"}", null, &output);
@@ -4087,6 +4190,7 @@ test "session lock clears the key and gates journal and Chat until unlock" {
     try std.testing.expect(rig.app.vault.enabled);
     try std.testing.expect(rig.app.vault.dataKey() == null);
     try std.testing.expect(rig.app.eve.world_key_hex == null);
+    try std.testing.expect(ollama.unload_after_request.load(.acquire));
 
     const list = native_sdk.bridge.Invocation{
         .request = .{ .id = "t-session-list", .command = "journal.list", .payload = "{}" },
@@ -4106,9 +4210,31 @@ test "session lock clears the key and gates journal and Chat until unlock" {
     _ = try handleLockUnlock(@ptrCast(&rig.app), unlock, &output);
     try std.testing.expect(rig.app.lock.unlocked);
     try std.testing.expect(rig.app.vault.dataKey() != null);
+    try std.testing.expect(!ollama.unload_after_request.load(.acquire));
     try std.testing.expect(rig.app.eve.world_key_hex != null);
     try std.testing.expect(std.mem.indexOf(u8, try handleList(@ptrCast(&rig.app), list, &output), "Morning walk") != null);
     try std.testing.expectEqualStrings("{\"token\":\"\"}", try handleChatAgentToken(@ptrCast(&rig.app), token, &output));
+}
+
+test "session lock stops a running Dream" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    defer rig.app.eve.clearWorldKey();
+    // The unload flag is global, so start and end with it clear.
+    ollama.unload_after_request.store(false, .release);
+    defer ollama.unload_after_request.store(false, .release);
+
+    var output: [8192]u8 = undefined;
+    _ = try rig.app.lock.setPassword("{\"next\":\"correct horse\"}", null, &output);
+    rig.app.dream_runner.running = true;
+    const epoch = rig.app.dream_runner.epoch;
+
+    sessionLock(&rig.app);
+    try std.testing.expect(!rig.app.lock.unlocked);
+    try std.testing.expect(!rig.app.dream_runner.busy());
+    // A new epoch makes the item that was in flight drop its result.
+    try std.testing.expect(rig.app.dream_runner.epoch > epoch);
 }
 
 test "encryption.enable retries finish the row rewrite" {
@@ -5183,6 +5309,7 @@ test "a session lock forgets the recovery candidate and the recovered flag" {
     var rig: EmbedTestRig = undefined;
     try rig.init();
     defer rig.deinit();
+    defer ollama.unload_after_request.store(false, .release);
 
     var output: [8192]u8 = undefined;
     _ = try rig.app.lock.setTouchId("{\"enabled\":true}", false, &output);
@@ -5385,6 +5512,7 @@ test "a Touch ID sheet that closes after the app locked hands out no key" {
     defer rig.deinit();
     defer rig.app.eve.clearWorldKey();
     defer _ = keychain.deleteKey(rig.app.app_id);
+    defer ollama.unload_after_request.store(false, .release);
 
     var shown: [vault_mod.recovery_key_display_len]u8 = undefined;
     try encryptWithTouchIdOnly(&rig, &shown);

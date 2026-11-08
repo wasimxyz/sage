@@ -31,7 +31,12 @@ jobs:
             agent/package-lock.json
             eval-viewer/package-lock.json
       - name: Install the pinned Native SDK CLI
-        run: npm install -g "@native-sdk/cli@$(cat .native-sdk-version)"
+        # The CLI's postinstall downloads scriptc, its TypeScript toolchain,
+        # from GitHub releases. Sage's core is Zig and its checks never use
+        # scriptc, so CI skips install scripts and cannot fail on that download.
+        # Retrying after a failed install does not work: npm then leaves the
+        # `native` command without its executable bit.
+        run: npm install -g --ignore-scripts "@native-sdk/cli@$(cat .native-sdk-version)"
       - name: Install dependencies
         run: |
           npm --prefix frontend ci

@@ -7,8 +7,8 @@ This page is for people changing the eval runner or the eval files. To run the s
 `make eval` runs `scripts/eval-run.sh`. Once per summary × embed × chat model trio, the runner:
 
 1. Loads `agent/.env`, then `agent/.env.local`, without replacing variables already set in the shell.
-2. Checks that curl, ollama, native, and node are installed and that Ollama is serving.
-3. Pulls any missing models.
+2. Checks that curl, native, and node are installed. It gets the pinned Ollama from `scripts/fetch-ollama.sh`, and it stops if port 11436 is already in use.
+3. Starts a temporary Ollama server on `127.0.0.1:11436`, pulls any missing models through it, and stops the server before Sage starts.
 4. Builds Sage with automation enabled under `zig-out/eval` (`native build -Dinstall-prefix="$root/zig-out/eval" -Dautomation=true`), leaving `zig-out/bin/Sage` alone.
 5. Creates a temporary data directory with a stub frontend and a symlink to `app.json`.
 6. Copies the cached Dream snapshot into the data directory when the cache key matches.

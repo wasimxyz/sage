@@ -966,7 +966,7 @@ function FactEditor({
               {editor.id === undefined ? "Add fact" : "Edit fact"}
             </DialogTitle>
             <DialogDescription>
-              A named fact Chat can search. Sage embeds it with Ollama.
+              A named fact Chat can search. Sage embeds it with local AI.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -1077,7 +1077,7 @@ function EventEditor({
               {editor.id === undefined ? "Add event" : "Edit event"}
             </DialogTitle>
             <DialogDescription>
-              A dated event Chat can search. Sage embeds it with Ollama.
+              A dated event Chat can search. Sage embeds it with local AI.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>

@@ -137,7 +137,7 @@ test("startVisiblePoll keeps going after a failed check", async () => {
   const starts: number[] = [];
   const check = () => {
     starts.push(page.now());
-    return Promise.reject(new Error("Ollama is not running."));
+    return Promise.reject(new Error("Local AI is not running."));
   };
   startVisiblePoll({ check, delayMs: 4000, host: page, leading: true });
   await flush();

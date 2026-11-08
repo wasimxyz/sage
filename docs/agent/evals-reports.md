@@ -27,8 +27,11 @@ Use hard checks to decide whether a run is broken. Compare judge scores across r
 
 These are listed in the order you are likely to hit them:
 
-- **“Ollama is not running at `http://127.0.0.1:11434`.”**: start Ollama and run again.
-- **“Missing curl” (or ollama, native, node)**: install that tool. `make dev` needs the same set.
+- **“Port 11436 is already in use.”**: stop `make dev` or another eval, then run again.
+- **“Ollama did not start on 127.0.0.1:11436.”**: the temporary server that pulls models did not answer. Its log follows the message.
+- **“Could not get the pinned Ollama build.”**: the download or checksum failed. The lines above say which step.
+- **“Could not pull the eval models.”**: a pull failed. The line before it names the model.
+- **“Missing curl” (or native, node)**: install that tool. `make dev` needs the same set.
 - **“Sage exited before it was ready”, “Sage did not write agent-server.json”, “Sage did not create its automation folder”, or “Sage automation did not become ready.”**: the throwaway app failed to start. Read `<run id>.sage.log` in the reports folder for the reason.
 - **“Bridge … did not finish.”**: the app stopped answering bridge commands while seeding. The Sage log shows what it was doing last.
 - **“Dream had nothing to process.”**: seeding saved no entries. Check that `agent/evals/data/` has cases and that the seed step printed `seeded <case>: <ids>` lines.

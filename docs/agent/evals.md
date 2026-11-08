@@ -17,7 +17,7 @@ Judge scores are tracked data, not merge blockers. Use the hard checks to tell w
 
 ## What you need
 
-- Ollama running at `http://127.0.0.1:11434`
+- No separate Ollama install. The runner uses the pinned copy that `scripts/fetch-ollama.sh` downloads. It stops if port 11436 is already in use, which `make dev` also uses, so stop `make dev` before an eval.
 - The models the run uses. The defaults are `qwen3.5:9b` for Dream, Chat, and the judge, and `nomic-embed-text` for embeddings. The runner pulls any that are missing.
 - Node.js 24 and the Native SDK CLI, the same tools `make dev` uses
 
@@ -33,6 +33,8 @@ make eval ARGS='--tag example'
 ## What a run does
 
 The runner builds an automation copy of Sage under `zig-out/eval` and deletes it on exit, so `zig-out/bin/Sage` stays the `make build` binary. The copy runs from a temporary data directory. Its automation folder is separate from the one `make dev` uses.
+
+Before any trio runs, the runner fetches the pinned Ollama and pulls each missing model through a temporary Ollama server on `127.0.0.1:11436`. It stops that server before it starts Sage. The eval Sage is not in an app bundle, so it runs the same pinned copy itself, through `SAGE_OLLAMA_PATH`, on the same port.
 
 For each trio of summary, embedding, and chat models, the runner:
 
@@ -88,7 +90,7 @@ A failed trio does not stop the sweep, and the runner exits non-zero at the end 
 | `SAGE_CHAT_MODELS` | `SAGE_CHAT_MODEL`, then `OLLAMA_MODEL`, then `qwen3.5:9b` | Comma-separated chat models for `make eval` |
 | `SAGE_CHAT_MODEL` | first entry of `SAGE_CHAT_MODELS`, then `OLLAMA_MODEL`, then `qwen3.5:9b` | Chat model for one run. Chat evals read this first |
 | `SAGE_JUDGE_MODEL` | `qwen3.5:9b` | Model that scores summaries and answers |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434/api` | Ollama native API prefix. An empty value uses the default |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11436/api` | Ollama native API prefix. An empty value uses the default |
 | `SAGE_EVAL_CACHE` | on (`0` skips) | Reuse a previous Dream snapshot when the dataset and models match |
 | `SAGE_EVAL_CACHE_DIR` | `agent/evals/.cache/dream` | Folder that stores Dream snapshots |
 
@@ -114,7 +116,7 @@ The [eval viewer](../../eval-viewer/README.md) lists uploaded reports.
 
 ## Your first run
 
-Run `make eval ARGS='--tag example'` on a Mac that already has Ollama and the models above. The Sam timeline is only a format template, so use its report to learn the format, not to judge quality. Then add your own cases under `agent/evals/data/`, as [Eval fixtures](../../agent/evals/data/README.md) explains.
+Run `make eval ARGS='--tag example'` on a Mac with room for the models above. The runner pulls any that are missing. The Sam timeline is only a format template, so use its report to learn the format, not to judge quality. Then add your own cases under `agent/evals/data/`, as [Eval fixtures](../../agent/evals/data/README.md) explains.
 
 ## Unit tests
 

@@ -109,11 +109,11 @@ Packaged Chat loads from `zero://app`, so the channel allows cross-origin reques
 
 `agent/.env.example` lists three settings for `eve dev`. Copy it to `agent/.env.local` to change them:
 
-- `OLLAMA_BASE_URL`: Ollama’s native `/api` prefix. It must be a loopback address (`127.0.0.1`, `localhost`, or `::1`), or the agent stops. An empty value uses `http://127.0.0.1:11434/api`. A leftover `/v1` suffix is rewritten to `/api`, so older env files still work.
+- `OLLAMA_BASE_URL`: Ollama’s native `/api` prefix. It must be a loopback address (`127.0.0.1`, `localhost`, or `::1`), or the agent stops. An empty value uses `http://127.0.0.1:11436/api`, the port of the dev Sage server. A leftover `/v1` suffix is rewritten to `/api`, so older env files still work. An `.env.local` that still says 11434 sends Chat to a different server than Dream and search use, so change it to 11436.
 - `OLLAMA_MODEL`: the fallback chat model
 - `OLLAMA_CONTEXT_WINDOW`: the fallback context length
 
-Packaged Chat does not read `agent/.env.local` or inherit Sage’s environment. It always calls Ollama at `http://127.0.0.1:11434/api` with no Ollama API key. The model and context length come from the Chat request, then from the defaults in `agent.ts`.
+Packaged Chat does not read `agent/.env.local` or inherit Sage’s environment. It always calls Sage’s bundled server at `http://127.0.0.1:11435/api`, with the port Sage sets, and it sends no Ollama API key. The model and context length come from the Chat request, then from the defaults in `agent.ts`.
 
 Memory is a build option, not an agent setting, as [Memories](memories.md#turning-memory-on) explains.
 

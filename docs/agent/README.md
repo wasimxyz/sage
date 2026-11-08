@@ -10,7 +10,7 @@ Chat involves three processes on your Mac:
 
 - **Sage**: the app itself, which owns the journal file and the lock
 - **The eve agent**: a Node.js process in `agent/` that runs the conversation and calls tools
-- **Ollama**: the local model server that runs the chat model, the summary model, and the embedding model
+- **Ollama**: the local model server that runs the chat model, the summary model, and the embedding model. Sage starts and stops it, from a copy bundled in the app.
 
 ## How a question gets an answer
 

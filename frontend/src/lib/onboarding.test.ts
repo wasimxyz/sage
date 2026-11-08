@@ -76,18 +76,18 @@ test("done and skipped open Home", () => {
 
 // --- the Local AI screen ---
 
-test("a running Ollama goes straight to the downloads", () => {
+test("a running local AI goes straight to the downloads", () => {
   assert.equal(ollamaScreen({ installed: true, running: true }), "downloads");
   // A running server is installed by definition, but the core says so too.
   assert.equal(ollamaScreen({ installed: false, running: true }), "downloads");
 });
 
-test("an installed Ollama that is not running gets a start first", () => {
+test("bundled local AI that is not running gets a start first", () => {
   assert.equal(ollamaScreen({ installed: true, running: false }), "start");
 });
 
-test("a missing Ollama gets the install steps", () => {
-  assert.equal(ollamaScreen({ installed: false, running: false }), "install");
+test("missing local AI files get the reinstall screen", () => {
+  assert.equal(ollamaScreen({ installed: false, running: false }), "missing");
 });
 
 // --- the Protect screen ---
