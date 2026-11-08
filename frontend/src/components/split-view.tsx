@@ -409,7 +409,7 @@ function SplitViewListHeader({
           "flex h-8 items-center justify-between gap-2"
         )}
       >
-        <h1 className="ml-3 min-w-0 truncate font-medium text-base">{title}</h1>
+        <h1 className="ml-3 min-w-0 truncate text-base font-medium">{title}</h1>
         <div className="flex shrink-0 items-center gap-2">{children}</div>
       </div>
     </div>

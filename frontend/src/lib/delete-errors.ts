@@ -10,8 +10,8 @@ export type DeleteFailure = "locked" | "missing" | "other";
 // names are matched whole and in their own case, so SQLite's "database is
 // locked" and the word "unlocked" do not count as the app lock.
 const lockedPattern =
-  /\b(?:Locked|Securing)\b|Sage is (?:locked|securing)|journal is locked/;
-const missingPattern = /\bNotFound\b|(?:Entry|Chat) not found/;
+  /\b(?:Locked|Securing)\b|Sage is (?:locked|securing)|journal is locked/u;
+const missingPattern = /\bNotFound\b|(?:Entry|Chat) not found/u;
 
 export function deleteFailure(error: unknown): DeleteFailure {
   const message = rawHandlerError(error);

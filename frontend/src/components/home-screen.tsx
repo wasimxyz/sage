@@ -276,14 +276,14 @@ function CloudBand({
           className="flex w-full max-w-md flex-col items-start"
           data-band-text
         >
-          <p className="text-white/90 text-xs leading-4">
+          <p className="text-xs leading-4 text-white/90">
             {formatHomeHeadingDate(now)}
           </p>
-          <h1 className="mt-0.5 font-semibold text-2xl leading-tight tracking-tight">
+          <h1 className="mt-0.5 text-2xl leading-tight font-semibold tracking-tight">
             {greetingFor(now)}
           </h1>
           {monthAgo === null ? null : (
-            <p className="mt-1 text-[13px] text-white/90 leading-snug">
+            <p className="mt-1 text-[13px] leading-snug text-white/90">
               {monthAgo.line}{" "}
               <RereadLink id={monthAgo.id} onOpen={onOpenEntry} />
             </p>
@@ -336,7 +336,7 @@ function RereadLink({
   );
   return (
     <a
-      className="whitespace-nowrap rounded-xs font-semibold text-white underline decoration-2 underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-(--band-from) focus-visible:ring-offset-2"
+      className="rounded-xs font-semibold whitespace-nowrap text-white underline decoration-2 underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-(--band-from)"
       href={`#${toHash({ entryId: id, section: "journal" })}`}
       onClick={handleClick}
     >
@@ -372,7 +372,7 @@ function MonthRow({
       {/* As tall as a square's cell, so the label lines up with the first row
           of squares when the row wraps. */}
       <span
-        className="flex h-6 min-w-14 shrink-0 items-center text-muted-foreground text-sm"
+        className="text-muted-foreground flex h-6 min-w-14 shrink-0 items-center text-sm"
         id={labelId}
       >
         {monthLabel}
@@ -385,7 +385,7 @@ function MonthRow({
         // does not.
         <fieldset
           aria-labelledby={labelId}
-          className="grid min-w-0 @md:max-w-(--month-width) flex-1 @md:grid-cols-[repeat(var(--days),0.75rem)] grid-cols-[repeat(16,0.75rem)] justify-between"
+          className="grid min-w-0 flex-1 grid-cols-[repeat(16,0.75rem)] justify-between @md:max-w-(--month-width) @md:grid-cols-[repeat(var(--days),0.75rem)]"
         >
           {days.map((day) => (
             <DaySquare day={day} key={day.date} onOpenEntry={onOpenEntry} />
@@ -420,11 +420,11 @@ function DaySquare({
     >
       <span
         className={cn(
-          "size-3 rounded-[3px] transition-transform group-focus-visible/day:ring-[3px] group-focus-visible/day:ring-ring/50 group-enabled/day:group-hover/day:scale-125",
+          "group-focus-visible/day:ring-ring/50 size-3 rounded-[3px] transition-transform group-focus-visible/day:ring-[3px] group-enabled/day:group-hover/day:scale-125",
           day.state === "written" && "bg-brand",
           day.state === "empty" && "bg-foreground/10",
-          day.state === "future" && "border border-foreground/20",
-          day.today && "outline-2 outline-foreground outline-offset-2"
+          day.state === "future" && "border-foreground/20 border",
+          day.today && "outline-foreground outline-2 outline-offset-2"
         )}
       />
     </button>
@@ -449,14 +449,14 @@ function HomeLists({
   }
   if (nothingYet) {
     return (
-      <p className="text-base text-muted-foreground">
+      <p className="text-muted-foreground text-base">
         Your entries and chats will show up here.
       </p>
     );
   }
   if (groupTitles.every(({ group }) => groups[group].length === 0)) {
     return (
-      <p className="text-base text-muted-foreground">
+      <p className="text-muted-foreground text-base">
         Nothing from this week or last week. Older entries are in Journal, and
         older chats are in Chat.
       </p>
@@ -492,7 +492,7 @@ function HomeSection({
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="font-medium text-muted-foreground text-sm">{title}</h2>
+      <h2 className="text-muted-foreground text-sm font-medium">{title}</h2>
       <ul className="flex flex-col">{children}</ul>
     </section>
   );
@@ -528,7 +528,7 @@ function HomeListRow({
         <span className="flex min-w-0 items-center gap-3">
           <Icon
             aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground"
+            className="text-muted-foreground size-4 shrink-0"
           />
           <ListRow.Title>
             <span className="sr-only">
@@ -538,7 +538,7 @@ function HomeListRow({
           </ListRow.Title>
         </span>
         <time
-          className="shrink-0 text-muted-foreground"
+          className="text-muted-foreground shrink-0"
           dateTime={group === "today" ? row.updatedAt : row.day}
         >
           {homeRowDate(row, group)}

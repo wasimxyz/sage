@@ -1,10 +1,10 @@
 import type { RecordedAssertion, RecordedEvalResult } from "./recorder.ts";
 
-const suiteTagPattern = /<testsuite\b([^>]*)>/;
+const suiteTagPattern = /<testsuite\b([^>]*)>/u;
 const testCasePattern =
-  /<testcase\b[^>]*\/>|<testcase\b[^>]*>[\s\S]*?<\/testcase>/g;
-const attributePattern = /(\w+)="([^"]*)"/g;
-const caseNamePattern = /\bname="([^"]*)"/;
+  /<testcase\b[^>]*\/>|<testcase\b[^>]*>[\s\S]*?<\/testcase>/gu;
+const attributePattern = /(\w+)="([^"]*)"/gu;
+const caseNamePattern = /\bname="([^"]*)"/u;
 
 interface Suite {
   cases: string[];

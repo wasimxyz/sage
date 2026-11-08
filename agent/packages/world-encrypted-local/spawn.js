@@ -2,7 +2,7 @@
 // node_modules, and Node will not strip TypeScript there.
 import { readFileSync } from "node:fs";
 
-const hexPattern = /^[0-9a-fA-F]+$/;
+const hexPattern = /^[0-9a-fA-F]+$/u;
 
 const TOKEN_HEX_LENGTH = 64;
 const WORLD_KEY_HEX_LENGTH = 64;

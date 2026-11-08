@@ -18,7 +18,7 @@ export function PassRate({
   return (
     <span
       className={cn(
-        "font-medium font-mono",
+        "font-mono font-medium",
         toneText[passRateTone(rate)],
         className
       )}

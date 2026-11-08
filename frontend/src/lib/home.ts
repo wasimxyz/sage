@@ -46,7 +46,7 @@ const afternoonStartsAt = 12;
 const eveningStartsAt = 17;
 const greetingHours = [morningStartsAt, afternoonStartsAt, eveningStartsAt];
 
-const endsInPunctuation = /[.!?…]$/;
+const endsInPunctuation = /[.!?…]$/u;
 
 export function greetingFor(now = new Date()): string {
   const hour = now.getHours();

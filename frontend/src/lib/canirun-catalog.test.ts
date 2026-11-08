@@ -15,7 +15,7 @@ const catalog: CanirunCatalog = parseCatalog(
   )
 );
 
-const profilePattern = /^[\w ]+\|\d+$/;
+const profilePattern = /^[\w ]+\|\d+$/u;
 
 function hardware(chipName: string, ramGb: number): RecommendHardware {
   return { chipName, cpuCores: 10, ramGb };

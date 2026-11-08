@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { evalDataRoot } from "./dataset.ts";
 import { ollamaBaseURL } from "./models.ts";
 
-const trailingSlashPattern = /\/$/;
+const trailingSlashPattern = /\/$/u;
 
 const checkpointAttempts = 5;
 const checkpointRetryMs = 200;

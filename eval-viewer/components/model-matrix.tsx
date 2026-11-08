@@ -30,13 +30,13 @@ export function ModelMatrix({
       <table className="border-separate border-spacing-2">
         <thead>
           <tr>
-            <th className="px-2 pb-2 text-left font-medium text-muted-foreground text-xs">
+            <th className="text-muted-foreground px-2 pb-2 text-left text-xs font-medium">
               <span className="block">dream ↓</span>
               <span>chat →</span>
             </th>
             {chatModels.map((chat) => (
               <th
-                className="px-2 text-center font-medium font-mono text-muted-foreground text-xs"
+                className="text-muted-foreground px-2 text-center font-mono text-xs font-medium"
                 key={chat}
               >
                 {chat}
@@ -47,7 +47,7 @@ export function ModelMatrix({
         <tbody>
           {dreamModels.map((dream) => (
             <tr key={dream}>
-              <th className="pr-2 text-right font-medium font-mono text-xs">
+              <th className="pr-2 text-right font-mono text-xs font-medium">
                 {dream}
               </th>
               {chatModels.map((chat) => {
@@ -77,11 +77,11 @@ function MatrixCell({ run }: { run: RunSummary }) {
   const rate = passRate(run.passed, run.total);
   return (
     <Link
-      className="flex h-16 w-28 flex-col items-center justify-center rounded-lg border bg-card text-card-foreground ring-1 ring-foreground/10 hover:bg-muted"
+      className="bg-card text-card-foreground ring-foreground/10 hover:bg-muted flex h-16 w-28 flex-col items-center justify-center rounded-lg border ring-1"
       href={`/runs/${run.id}`}
     >
       <PassRate className="text-lg" rate={rate} />
-      <span className="text-[11px] text-muted-foreground">
+      <span className="text-muted-foreground text-[11px]">
         {run.passed}/{run.total}
       </span>
     </Link>
@@ -90,7 +90,7 @@ function MatrixCell({ run }: { run: RunSummary }) {
 
 function EmptyCell() {
   return (
-    <div className="flex h-16 w-28 items-center justify-center rounded-lg border border-dashed text-muted-foreground text-xs">
+    <div className="text-muted-foreground flex h-16 w-28 items-center justify-center rounded-lg border border-dashed text-xs">
       —
     </div>
   );

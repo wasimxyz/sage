@@ -55,10 +55,10 @@ export function SetupImport() {
       <SetupBody>
         {banner ? (
           <p
-            className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm"
+            className="bg-muted flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
             role="status"
           >
-            <CheckIcon className="size-4 text-primary" />
+            <CheckIcon className="text-primary size-4" />
             {banner}
           </p>
         ) : null}
@@ -69,12 +69,12 @@ export function SetupImport() {
             other app. This step is optional.
           </SetupText>
         </SetupIntro>
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed bg-card px-6 py-8 text-center">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
+        <div className="bg-card flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-8 text-center">
+          <span className="bg-muted flex size-9 items-center justify-center rounded-lg">
             <FileIcon className="size-4" />
           </span>
           <Button onClick={handleChoose}>Choose files…</Button>
-          <p className="max-w-72 text-pretty text-muted-foreground text-xs">
+          <p className="text-muted-foreground max-w-72 text-xs text-pretty">
             Pick .md, .markdown, or .txt files, up to 1 MB each. You&apos;ll see
             a preview before anything is saved.
           </p>

@@ -6,5 +6,18 @@
   },
   "files": {
     "includes": ["!!src/components/ui", "!!src/lib/canirun-catalog.json"]
+  },
+  "linter": {
+    "rules": {
+      "style": {
+        // TypeScript types every named group as string | undefined, so
+        // match.groups.name needs more checks than match[1].
+        "useNamedCaptureGroup": "off"
+      },
+      "suspicious": {
+        // The UI runs only in the macOS WebView, not in older browsers.
+        "useBaseline": "off"
+      }
+    }
   }
 }

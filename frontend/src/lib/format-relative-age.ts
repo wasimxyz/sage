@@ -12,7 +12,7 @@ import { isValid } from "date-fns/isValid";
 import { parse } from "date-fns/parse";
 import { parseISO } from "date-fns/parseISO";
 
-const calendarDayPattern = /^\d{4}-\d{2}-\d{2}$/;
+const calendarDayPattern = /^\d{4}-\d{2}-\d{2}$/u;
 const missingUpdatedAt = Date.parse("1970-01-01T00:00:00.000Z");
 
 type DistanceUnit = "day" | "hour" | "minute" | "month" | "week" | "year";

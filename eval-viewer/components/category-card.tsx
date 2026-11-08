@@ -69,16 +69,16 @@ function CategoryCardFrame({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        <p className="font-medium font-mono text-xl">
+        <p className="font-mono text-xl font-medium">
           {category.passed}/{category.total}
         </p>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="bg-muted h-1.5 overflow-hidden rounded-full">
           <div
             className={cn("h-full", barClassName)}
             style={{ width: `${rate}%` }}
           />
         </div>
-        <p className="font-mono text-muted-foreground text-xs">
+        <p className="text-muted-foreground font-mono text-xs">
           avg {formatTime(category.avg)} · max {formatTime(category.max)}
         </p>
       </CardContent>

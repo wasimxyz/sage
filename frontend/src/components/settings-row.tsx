@@ -18,7 +18,7 @@ export function SettingsRow({
       <div className="flex min-w-0 flex-col gap-0.5">
         <p
           className={cn(
-            "font-medium text-sm",
+            "text-sm font-medium",
             muted && "text-muted-foreground"
           )}
         >

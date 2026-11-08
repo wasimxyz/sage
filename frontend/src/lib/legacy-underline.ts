@@ -2,7 +2,7 @@ import { Underline } from "@tiptap/extension-underline";
 
 // `++` with no space inside, like the text Sage writes. TipTap's own rule also
 // takes `++ and C++`, so typed text such as "C++ and C++" reopened underlined.
-const underlineSpan = /^\+\+(?=\S)([\s\S]*?\S)\+\+/;
+const underlineSpan = /^\+\+(?=\S)([\s\S]*?\S)\+\+/u;
 
 /**
  * Underline saved as `++text++`, which other Markdown apps show as plain plus

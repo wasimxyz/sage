@@ -95,7 +95,7 @@ function IdleDreamMenuButton() {
 function PendingDot() {
   return (
     <span className="flex size-3.5 shrink-0 items-center justify-center">
-      <span aria-hidden className="size-1.5 rounded-full bg-brand" />
+      <span aria-hidden className="bg-brand size-1.5 rounded-full" />
       <span className="sr-only">Needs dreaming</span>
     </span>
   );
@@ -217,7 +217,7 @@ function DreamingCaption() {
 
 function DreamCaption({ children }: { children: ReactNode }) {
   return (
-    <p className="px-2 pt-1 text-sidebar-foreground/70 text-xs">{children}</p>
+    <p className="text-sidebar-foreground/70 px-2 pt-1 text-xs">{children}</p>
   );
 }
 

@@ -52,8 +52,8 @@ export const MessageContent = ({
 }: MessageContentProps) => (
   <div
     className={cn(
-      "flex min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm",
-      "group-[.is-user]:w-full group-[.is-user]:rounded-2xl group-[.is-user]:border group-[.is-user]:border-input group-[.is-user]:bg-surface group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
+      "flex max-w-full min-w-0 flex-col gap-2 overflow-hidden text-sm",
+      "group-[.is-user]:border-input group-[.is-user]:bg-surface group-[.is-user]:text-foreground group-[.is-user]:w-full group-[.is-user]:rounded-2xl group-[.is-user]:border group-[.is-user]:px-4 group-[.is-user]:py-3",
       "group-[.is-assistant]:text-foreground",
       className
     )}
@@ -307,7 +307,7 @@ export const MessageBranchPage = ({
   return (
     <ButtonGroupText
       className={cn(
-        "border-none bg-transparent text-muted-foreground shadow-none",
+        "text-muted-foreground border-none bg-transparent shadow-none",
         className
       )}
       {...props}
@@ -346,7 +346,7 @@ const AssistantInlineCode: NonNullable<Components["inlineCode"]> = ({
 }) => (
   <code
     className={cn(
-      "rounded border border-muted-foreground/30 bg-muted px-1.5 py-0.5 font-mono text-dragon text-xs",
+      "border-muted-foreground/30 bg-muted text-dragon rounded border px-1.5 py-0.5 font-mono text-xs",
       className
     )}
     data-streamdown="inline-code"

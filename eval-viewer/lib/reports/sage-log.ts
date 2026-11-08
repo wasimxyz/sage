@@ -1,9 +1,9 @@
 import type { SessionLog } from "./types.ts";
 
-const tsPattern = /\bts=(\d+)/;
-const appPattern = /\bapp="([^"]+)"/;
-const platformPattern = /\bplatform="([^"]+)"/;
-const lineSplitPattern = /\r?\n/;
+const tsPattern = /\bts=(\d+)/u;
+const appPattern = /\bapp="([^"]+)"/u;
+const platformPattern = /\bplatform="([^"]+)"/u;
+const lineSplitPattern = /\r?\n/u;
 
 export function parseSageLog(log: string): SessionLog {
   const lines = log.split(lineSplitPattern).filter((line) => line.length > 0);

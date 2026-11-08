@@ -5,12 +5,12 @@ import { fileURLToPath } from "node:url";
 
 import { loadYaml } from "eve/evals/loaders";
 
-const leadingBomPattern = /^\uFEFF/;
-const lineBreakPattern = /\r?\n/;
+const leadingBomPattern = /^\uFEFF/u;
+const lineBreakPattern = /\r?\n/u;
 
-const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
-const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/;
-const whitespacePattern = /\s+/;
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/u;
+const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/u;
+const whitespacePattern = /\s+/u;
 const bundledDataRoot = fileURLToPath(new URL("../data", import.meta.url));
 
 export function evalDataRoot(): string {

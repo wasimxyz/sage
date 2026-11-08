@@ -14,7 +14,7 @@ import {
   utf8Chunks,
 } from "./bridge.ts";
 
-const alreadyDreamingPattern = /already dreaming/;
+const alreadyDreamingPattern = /already dreaming/u;
 
 test("parseBridgeJson reads a journal.save envelope", () => {
   const parsed = parseBridgeJson(

@@ -7,7 +7,7 @@ import StarterKit from "@tiptap/starter-kit";
 // markdown with contentType: "markdown".
 const extensions = [StarterKit, Markdown];
 const markdownManager = new MarkdownManager({ extensions });
-const whitespacePattern = /\s+/;
+const whitespacePattern = /\s+/u;
 
 export function stripMarkdown(snippet: string): string {
   if (snippet.length === 0) {

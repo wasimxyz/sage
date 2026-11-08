@@ -7,7 +7,7 @@ import { eveChannel } from "eve/channels/eve";
 import { bearerMatches } from "../lib/bearer";
 import { expectedChatToken, sageChatReady } from "../lib/sage";
 
-const savedChatId = /^[1-9]\d{0,15}$/;
+const savedChatId = /^[1-9]\d{0,15}$/u;
 
 function sageHeaders(request: Request): Record<string, string> {
   const model = request.headers.get("x-sage-model");

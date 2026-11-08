@@ -30,31 +30,32 @@ const largestCount = 1000;
 // Back far enough to pass a skipped leap year (1900, 2100) for a leap day.
 const leapDaySearchYears = 8;
 
-const digitsPattern = /^\d+$/;
-const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
-const isoPartsPattern = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/;
-const rangeSeparatorPattern = /\s*\.\.\s*|\s+to\s+/;
-const whitespacePattern = /\s+/g;
-const leadingQuotesPattern = /^[\s"'`\u201c\u201d\u2018\u2019]+/;
-const trailingPunctuationPattern = /[\s.,!?;:"'`\u201c\u201d\u2018\u2019]+$/;
-const openRangePattern = /\d\.\.\s*$/;
+const digitsPattern = /^\d+$/u;
+const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/u;
+const isoPartsPattern = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/u;
+const rangeSeparatorPattern = /\s*\.\.\s*|\s+to\s+/u;
+const whitespacePattern = /\s+/gu;
+const leadingQuotesPattern = /^[\s"'`\u201c\u201d\u2018\u2019]+/u;
+const trailingPunctuationPattern = /[\s.,!?;:"'`\u201c\u201d\u2018\u2019]+$/u;
+const openRangePattern = /\d\.\.\s*$/u;
 const leadingWordsPattern =
-  /^(?:(?:in|on|during|from|over|within|earlier)\s+)+/;
-const theLastPattern = /^the\s+last\s+(?=(?:day|week|month|year)s?$)/;
-const leadingArticlePattern = /^the\s+/;
-const couplePattern = /\b(?:a\s+)?couple(?:\s+of)?\b/g;
-const pastPattern = /^(?:this\s+)?past\s+(?:(\S+)\s+)?(day|week|month|year)s?$/;
-const lastCountPattern = /^last\s+(\S+)\s+(day|week|month|year)s?$/;
-const agoPattern = /^(\S+)\s+(day|week|month|year)s?\s+ago$/;
-const monthPattern = /^(last\s+)?([a-z]+)(?:,?\s+(?:of\s+)?(\d{4}))?$/;
+  /^(?:(?:in|on|during|from|over|within|earlier)\s+)+/u;
+const theLastPattern = /^the\s+last\s+(?=(?:day|week|month|year)s?$)/u;
+const leadingArticlePattern = /^the\s+/u;
+const couplePattern = /\b(?:a\s+)?couple(?:\s+of)?\b/gu;
+const pastPattern =
+  /^(?:this\s+)?past\s+(?:(\S+)\s+)?(day|week|month|year)s?$/u;
+const lastCountPattern = /^last\s+(\S+)\s+(day|week|month|year)s?$/u;
+const agoPattern = /^(\S+)\s+(day|week|month|year)s?\s+ago$/u;
+const monthPattern = /^(last\s+)?([a-z]+)(?:,?\s+(?:of\s+)?(\d{4}))?$/u;
 const monthDayPattern =
-  /^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/;
+  /^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/u;
 const dayMonthPattern =
-  /^(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]+)(?:,?\s+(\d{4}))?$/;
+  /^(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]+)(?:,?\s+(\d{4}))?$/u;
 const seasonPattern =
-  /^(?:(last\s+)|this\s+(?:past\s+)?)?(spring|summer|fall|autumn|winter)(?:,?\s+(?:of\s+)?(\d{4}))?$/;
-const sincePattern = /^since\s+(.+)$/;
-const weekdayPattern = /^(?:last\s+)?([a-z]+)$/;
+  /^(?:(last\s+)|this\s+(?:past\s+)?)?(spring|summer|fall|autumn|winter)(?:,?\s+(?:of\s+)?(\d{4}))?$/u;
+const sincePattern = /^since\s+(.+)$/u;
+const weekdayPattern = /^(?:last\s+)?([a-z]+)$/u;
 
 const monthNumbers: Record<string, number> = {
   apr: 4,

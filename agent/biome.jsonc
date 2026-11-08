@@ -7,6 +7,15 @@
   "files": {
     "includes": ["!!.eve", "!!.output", "!!evals/.cache", "!!evals/reports"]
   },
+  "linter": {
+    "rules": {
+      "style": {
+        // TypeScript types every named group as string | undefined, so
+        // match.groups.name needs more checks than match[1].
+        "useNamedCaptureGroup": "off"
+      }
+    }
+  },
   "overrides": [
     {
       // eve exposes a tool under its filename, so renaming a file renames the

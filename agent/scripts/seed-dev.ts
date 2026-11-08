@@ -37,6 +37,7 @@ async function main(): Promise<void> {
 
 function newestDate(entries: readonly { date: string }[]): string {
   return entries.reduce(
+    // biome-ignore lint/complexity/useMathMinMax: dates are ISO strings, which Math.max turns into NaN
     (newest, entry) => (entry.date > newest ? entry.date : newest),
     ""
   );

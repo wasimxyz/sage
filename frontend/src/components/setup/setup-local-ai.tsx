@@ -213,7 +213,7 @@ function StatusCard({
 }) {
   return (
     <div
-      className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm"
+      className="bg-card flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-sm"
       role="status"
     >
       <span className="flex items-center gap-2 font-medium">{children}</span>
@@ -290,11 +290,11 @@ function DownloadsScreen({
           ) : null
         }
       >
-        <span aria-hidden className="size-2 rounded-full bg-primary" />
+        <span aria-hidden className="bg-primary size-2 rounded-full" />
         Local AI is running
       </StatusCard>
       <div className="flex flex-col gap-2">
-        <h2 className="font-medium text-sm">Sage needs these two models</h2>
+        <h2 className="text-sm font-medium">Sage needs these two models</h2>
         <SetupList>
           {rows.map((row) => (
             <ModelDownloadRow
@@ -363,7 +363,7 @@ function StartScreen({
           </Button>
         }
       >
-        <span aria-hidden className="size-2 rounded-full bg-muted-foreground" />
+        <span aria-hidden className="bg-muted-foreground size-2 rounded-full" />
         Local AI isn&apos;t running
       </StatusCard>
       <SetupText>
@@ -395,7 +395,7 @@ function MissingScreen({
     <>
       <LocalAiIntro />
       <StatusCard>
-        <span aria-hidden className="size-2 rounded-full bg-destructive" />
+        <span aria-hidden className="bg-destructive size-2 rounded-full" />
         Local AI isn&apos;t available
       </StatusCard>
       <SetupText>

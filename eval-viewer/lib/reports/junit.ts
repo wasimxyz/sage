@@ -10,16 +10,16 @@ import {
 } from "./types.ts";
 
 const categorySet = new Set<string>(categoryIds);
-const suiteTagPattern = /<testsuite\b([^>]*)>/;
+const suiteTagPattern = /<testsuite\b([^>]*)>/u;
 const testCasePattern =
-  /<testcase\b([^>]*)\/>|<testcase\b([^>]*)>([\s\S]*?)<\/testcase>/g;
-const skippedPattern = /<skipped\b/;
+  /<testcase\b([^>]*)\/>|<testcase\b([^>]*)>([\s\S]*?)<\/testcase>/gu;
+const skippedPattern = /<skipped\b/u;
 const failurePattern =
-  /<failure\b([^>]*)>([\s\S]*?)<\/failure>|<failure\b([^>]*)\/>/;
-const systemOutPattern = /<system-out\b[^>]*>([\s\S]*?)<\/system-out>/;
-const attributePattern = /(\w+)="([^"]*)"/g;
-const expectedCapture = /expected\s+(\S+)/i;
-const receivedCapture = /received\s+(\S+)/i;
+  /<failure\b([^>]*)>([\s\S]*?)<\/failure>|<failure\b([^>]*)\/>/u;
+const systemOutPattern = /<system-out\b[^>]*>([\s\S]*?)<\/system-out>/u;
+const attributePattern = /(\w+)="([^"]*)"/gu;
+const expectedCapture = /expected\s+(\S+)/iu;
+const receivedCapture = /received\s+(\S+)/iu;
 
 export interface ParsedSuite {
   chatScores: ChatScore[];

@@ -245,7 +245,7 @@ function SubjectReadView({
         <ul className="flex flex-col gap-1">
           {facts.map((fact) => (
             <li className="text-sm" key={fact.id}>
-              <span className="mr-2 text-muted-foreground">•</span>
+              <span className="text-muted-foreground mr-2">•</span>
               {fact.text}
             </li>
           ))}
@@ -557,14 +557,14 @@ function SubjectFactsEditorBar() {
     state,
   } = useFactDrafts();
   return (
-    <div className="shrink-0 border-border border-t">
+    <div className="border-border shrink-0 border-t">
       <div
         className={cn(
           pageColumnClass,
           "flex flex-wrap items-center justify-between gap-3 py-3"
         )}
       >
-        <p className="min-w-0 text-muted-foreground text-xs">
+        <p className="text-muted-foreground min-w-0 text-xs">
           Press Enter to add a fact below. Press Backspace on an empty line to
           remove it.
         </p>

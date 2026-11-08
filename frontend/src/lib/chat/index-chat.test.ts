@@ -8,7 +8,7 @@ import {
   isOllamaUnavailable,
 } from "./index-chat.ts";
 
-const ollamaDown = /Local AI is not running/;
+const ollamaDown = /Local AI is not running/u;
 
 test("indexChatMessages calls again while Sage asks for more", async () => {
   const answers = [true, true, false];

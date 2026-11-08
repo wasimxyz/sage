@@ -11,10 +11,10 @@ import { moveToToday } from "./seed-dates.ts";
 
 const seedDir = fileURLToPath(new URL("../../scripts/seed", import.meta.url));
 const seedDevScript = fileURLToPath(new URL("seed-dev.ts", import.meta.url));
-const entryCountPattern = /25 seed entries/;
+const entryCountPattern = /25 seed entries/u;
 const movePattern =
-  /Dates move -?\d+ days, so the newest is \d{4}-\d{2}-\d{2}\./;
-const badFilePattern = /02-bad\.md needs a title/;
+  /Dates move -?\d+ days, so the newest is \d{4}-\d{2}-\d{2}\./u;
+const badFilePattern = /02-bad\.md needs a title/u;
 
 // The script reads these two. --check must need only the first.
 function runCheck(dir: string) {

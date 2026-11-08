@@ -195,12 +195,12 @@ function EditorTitle() {
               Title
             </FieldLabel>
             <div
-              className="font-semibold text-2xl leading-tight"
+              className="text-2xl leading-tight font-semibold"
               data-slot="entry-title-sizer"
               data-value={title}
             >
               <textarea
-                className="resize-none overflow-hidden placeholder:text-muted-foreground"
+                className="placeholder:text-muted-foreground resize-none overflow-hidden"
                 data-slot="entry-title"
                 id="entry-title"
                 onChange={handleTitleChange}

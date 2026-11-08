@@ -24,7 +24,7 @@ export type Route =
   | { section: "memories"; tab: MemoriesTab }
   | { section: "settings"; tab: SettingsTab };
 
-const idPattern = /^[1-9]\d*$/;
+const idPattern = /^[1-9]\d*$/u;
 
 // Sage opens on Home. Bad hashes and a disabled Memories route fall back here too.
 const defaultRoute: Route = { section: "home" };

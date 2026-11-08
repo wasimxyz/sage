@@ -10,8 +10,8 @@ export interface SourceId {
   kind: SourceKind;
 }
 
-const plainId = /^[1-9]\d{0,15}$/;
-const prefixedId = /^(entry|chat)-([1-9]\d{0,15})$/;
+const plainId = /^[1-9]\d{0,15}$/u;
+const prefixedId = /^(entry|chat)-([1-9]\d{0,15})$/u;
 
 export function entryId(id: number): string {
   return `entry-${id}`;

@@ -1,7 +1,7 @@
 import { parseCalendarDate } from "../format-date.ts";
 
-const prefixedChatId = /^chat-([1-9]\d{0,15})$/;
-const calendarDay = /^\d{4}-\d{2}-\d{2}/;
+const prefixedChatId = /^chat-([1-9]\d{0,15})$/u;
+const calendarDay = /^\d{4}-\d{2}-\d{2}/u;
 
 /** One past chat a `search_chats` call found, as a row of its card. */
 export interface ChatToolHit {

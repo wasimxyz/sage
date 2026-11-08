@@ -17,9 +17,9 @@ import {
   tagsFor,
 } from "./dataset.ts";
 
-const missingPattern = /missing/;
-const entry99Pattern = /entry 99/;
-const dateFormatPattern = /YYYY-MM-DD/;
+const missingPattern = /missing/u;
+const entry99Pattern = /entry 99/u;
+const dateFormatPattern = /YYYY-MM-DD/u;
 
 test("parseFrontmatter reads date, title, and body", () => {
   const parsed = parseFrontmatter(

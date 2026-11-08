@@ -9,7 +9,7 @@ export function RecentRuns({ runs }: { runs: RunSummary[] }) {
   const groups = groupRunsByDate(runs);
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="font-medium text-base">Recent runs</h2>
+      <h2 className="text-base font-medium">Recent runs</h2>
       {groups.map((group) => (
         <div className="flex flex-col gap-2" key={group.key}>
           <h3 className="text-muted-foreground text-sm">{group.label}</h3>
@@ -17,22 +17,22 @@ export function RecentRuns({ runs }: { runs: RunSummary[] }) {
             <table className="w-full caption-bottom text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+                  <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                     Started
                   </th>
-                  <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+                  <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                     Dream
                   </th>
-                  <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+                  <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                     Chat
                   </th>
-                  <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+                  <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                     Embedding
                   </th>
-                  <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+                  <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                     Tests
                   </th>
-                  <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+                  <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                     Pass rate
                   </th>
                 </tr>
@@ -53,7 +53,7 @@ export function RecentRuns({ runs }: { runs: RunSummary[] }) {
 function RunRow({ run }: { run: RunSummary }) {
   const rate = passRate(run.passed, run.total);
   return (
-    <tr className="relative border-b hover:bg-muted/50">
+    <tr className="hover:bg-muted/50 relative border-b">
       <td className="p-2">
         <Link className="after:absolute after:inset-0" href={`/runs/${run.id}`}>
           {formatClockTime(run.startedAt)}

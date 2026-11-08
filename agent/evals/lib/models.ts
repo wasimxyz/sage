@@ -1,4 +1,4 @@
-const trailingV1Pattern = /\/v1\/?$/;
+const trailingV1Pattern = /\/v1\/?$/u;
 
 const defaultChatModel = "qwen3.5:9b";
 

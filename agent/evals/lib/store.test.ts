@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { readEntrySummary } from "./store.ts";
 
-const encryptedPattern = /encrypted/;
+const encryptedPattern = /encrypted/u;
 
 test("readEntrySummary returns plaintext summaries and rejects encrypted rows", () => {
   const dataDir = mkdtempSync(join(tmpdir(), "sage-eval-store-"));

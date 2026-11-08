@@ -1,4 +1,4 @@
-const commandFilePattern = /^command-(\d+)\.txt$/;
+const commandFilePattern = /^command-(\d+)\.txt$/u;
 
 export function parseBridgeJson(
   raw: string | null

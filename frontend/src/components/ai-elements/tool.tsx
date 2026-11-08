@@ -58,8 +58,8 @@ const statusIcons: Record<EveDynamicToolPart["state"], ReactNode> = {
   "input-available": null,
   "input-streaming": null,
   "output-available": <CheckCircleIcon className="size-4 text-green-600" />,
-  "output-denied": <X className="size-3.5 text-dragon" />,
-  "output-error": <X className="size-3.5 text-dragon" />,
+  "output-denied": <X className="text-dragon size-3.5" />,
+  "output-error": <X className="text-dragon size-3.5" />,
 };
 
 export const getStatusBadge = (
@@ -77,14 +77,14 @@ export const getStatusBadge = (
   }
   if (effective === "output-error") {
     return (
-      <span className="inline-flex items-center text-dragon">
+      <span className="text-dragon inline-flex items-center">
         {statusIcons[effective]}
         <span className="sr-only">{statusLabels[effective]}</span>
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground text-xs">
+    <span className="bg-secondary text-secondary-foreground inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs">
       {statusIcons[effective]}
       {statusLabels[effective]}
     </span>
@@ -108,7 +108,7 @@ export const ToolHeader = ({
   return (
     <CollapsibleTrigger
       className={cn(
-        "group/tool-trigger flex h-8 max-w-full cursor-pointer items-center gap-1.5 px-[calc(1rem+1px)] font-sans text-muted-foreground text-sm",
+        "group/tool-trigger text-muted-foreground flex h-8 max-w-full cursor-pointer items-center gap-1.5 px-[calc(1rem+1px)] font-sans text-sm",
         className
       )}
       {...props}
@@ -123,7 +123,7 @@ export const ToolHeader = ({
         ))}
       {getStatusBadge(state, isError)}
       {showChevron ? (
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-open/tool-trigger:rotate-180" />
+        <ChevronDown className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-open/tool-trigger:rotate-180" />
       ) : null}
     </CollapsibleTrigger>
   );
@@ -139,7 +139,7 @@ export const ToolContent = ({
   <CollapsibleContent className={collapsibleHeightMotion} {...props}>
     <div
       className={cn(
-        "mt-1 rounded-2xl border border-input bg-surface px-4 py-3 text-popover-foreground",
+        "border-input bg-surface text-popover-foreground mt-1 rounded-2xl border px-4 py-3",
         className
       )}
     >
@@ -256,7 +256,7 @@ const ToolCodePanel = ({
   <ToolCopyableShell code={code}>
     <pre
       className={cn(
-        "hide-scrollbar max-h-96 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md border p-3 pr-10 text-xs",
+        "hide-scrollbar max-h-96 overflow-x-hidden overflow-y-auto rounded-md border p-3 pr-10 text-xs break-all whitespace-pre-wrap",
         className
       )}
     >
@@ -278,7 +278,7 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
       className={cn("flex flex-col gap-2 overflow-hidden", className)}
       {...props}
     >
-      <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+      <h4 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
         Parameters
       </h4>
       <ToolCodePanel code={formatForDisplay(input)} />
@@ -307,18 +307,18 @@ export const ToolOutput = ({
 
   return (
     <div className={cn("flex flex-col gap-2", className)} {...props}>
-      <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+      <h4 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
         {errorText ? "Error" : "Result"}
       </h4>
       {errorText ? (
         <ToolCopyableShell code={errorText}>
-          <div className="hide-scrollbar max-h-96 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-dragon/10 p-3 text-dragon text-xs">
+          <div className="hide-scrollbar bg-dragon/10 text-dragon max-h-96 overflow-y-auto rounded-md p-3 text-xs break-all whitespace-pre-wrap">
             {errorText}
           </div>
         </ToolCopyableShell>
       ) : null}
       {hasElementOutput ? (
-        <div className="hide-scrollbar overflow-x-auto rounded-md bg-surface text-foreground text-xs [&_table]:w-full">
+        <div className="hide-scrollbar bg-surface text-foreground overflow-x-auto rounded-md text-xs [&_table]:w-full">
           {output as ReactNode}
         </div>
       ) : null}

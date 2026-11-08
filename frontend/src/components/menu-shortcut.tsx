@@ -9,7 +9,7 @@ export function MenuShortcut({ children }: { children: string }) {
   return (
     <Kbd
       aria-hidden
-      className="ml-auto text-sidebar-foreground/70 opacity-0 transition-opacity group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
+      className="text-sidebar-foreground/70 ml-auto opacity-0 transition-opacity group-hover/menu-button:opacity-100 group-focus-visible/menu-button:opacity-100"
     >
       {children}
     </Kbd>

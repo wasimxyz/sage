@@ -5,7 +5,7 @@ import { missingChatText, shapeChatWindow } from "../lib/chat-result";
 import { entryId, readId } from "../lib/ids";
 import { readSageJson, sageFetch } from "../lib/sage";
 
-const entryPrefix = /^\s*entry-/i;
+const entryPrefix = /^\s*entry-/iu;
 
 export default defineTool({
   description:

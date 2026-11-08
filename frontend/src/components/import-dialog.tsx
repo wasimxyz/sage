@@ -39,7 +39,7 @@ type PreviewRow =
   | { fileName: string; kind: "error"; message: string; path: string }
   | { fileName: string; kind: "ok"; parsed: ParsedImport; path: string };
 
-const pathSeparatorPattern = /[/\\]/;
+const pathSeparatorPattern = /[/\\]/u;
 
 export function ImportDialog({
   onImported,
@@ -216,7 +216,7 @@ export function ImportDialog({
           <div
             aria-atomic="true"
             aria-live="polite"
-            className="flex min-w-0 items-center gap-2 text-muted-foreground text-sm"
+            className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm"
           >
             <Spinner />
             <span>
@@ -305,7 +305,7 @@ function PreviewTable({ rows }: { rows: PreviewRow[] }) {
                 </TableCell>
                 <TableCell
                   className={cn(
-                    "whitespace-normal text-sm",
+                    "text-sm whitespace-normal",
                     row.kind === "error"
                       ? "text-destructive"
                       : "text-muted-foreground"

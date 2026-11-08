@@ -1,6 +1,6 @@
 import type { ParsedRunId } from "./types.ts";
 
-const timestampPattern = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
+const timestampPattern = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/u;
 
 export function parseRunId(id: string): ParsedRunId {
   const parts = id.split("__");

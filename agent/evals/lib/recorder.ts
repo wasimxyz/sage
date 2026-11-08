@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { EveEvalResult } from "eve/evals";
 import type { EvalReporter, EveEvalCompleteContext } from "eve/evals/reporters";
 
-const lineBreakPattern = /\r?\n/;
+const lineBreakPattern = /\r?\n/u;
 
 export interface RecordedAssertion {
   errored?: boolean;

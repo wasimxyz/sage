@@ -1,4 +1,4 @@
-const hexPattern = /^[0-9a-fA-F]+$/;
+const hexPattern = /^[0-9a-fA-F]+$/u;
 
 export const WORLD_KEY_ENV = "SAGE_EVE_WORLD_KEY";
 const WORLD_KEY_HEX_LENGTH = 64;

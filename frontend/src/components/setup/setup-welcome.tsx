@@ -64,11 +64,11 @@ export function SetupWelcome() {
         <ul className="flex flex-col gap-3">
           {features.map(({ description, icon: Icon, title }) => (
             <li className="flex items-start gap-3" key={title}>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card [&_svg]:size-4.5">
+              <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-lg border [&_svg]:size-4.5">
                 <Icon />
               </span>
               <div className="flex flex-col">
-                <span className="font-medium text-sm">{title}</span>
+                <span className="text-sm font-medium">{title}</span>
                 <span className="text-muted-foreground text-sm">
                   {description}
                 </span>

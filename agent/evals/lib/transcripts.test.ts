@@ -10,7 +10,7 @@ import {
   loadChatTranscripts,
 } from "./transcripts.ts";
 
-const notValidJSONPattern = /not valid JSON/;
+const notValidJSONPattern = /not valid JSON/u;
 
 test("loadChatTranscripts returns an empty list when the env var is unset", () => {
   const previous = process.env.SAGE_EVAL_TRANSCRIPTS;

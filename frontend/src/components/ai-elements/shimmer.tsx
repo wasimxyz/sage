@@ -23,7 +23,7 @@ const ShimmerComponent = ({
 }: ShimmerProps) => (
   <Component
     className={cn(
-      "relative inline-block bg-[length:250%_100%] bg-clip-text text-transparent [animation:conversation-shimmer_2s_linear_infinite] motion-reduce:animate-none",
+      "relative inline-block [animation:conversation-shimmer_2s_linear_infinite] bg-[length:250%_100%] bg-clip-text text-transparent motion-reduce:animate-none",
       className
     )}
     style={shimmerStyle}

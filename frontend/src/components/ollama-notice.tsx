@@ -16,7 +16,7 @@ export function OllamaNotice({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-2xl border bg-surface px-3 py-2 text-card-foreground",
+        "bg-surface text-card-foreground flex items-center gap-3 rounded-2xl border px-3 py-2",
         className
       )}
       {...props}
@@ -30,7 +30,7 @@ export function OllamaNotice({
 
 export function OllamaNoticeIcon({ children }: { children: ReactNode }) {
   return (
-    <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">
+    <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
       {children}
     </span>
   );
@@ -38,7 +38,7 @@ export function OllamaNoticeIcon({ children }: { children: ReactNode }) {
 
 function OllamaNoticeTitle({ children }: { children: string }) {
   return (
-    <p className="min-w-0 flex-1 font-medium text-sm leading-5">{children}</p>
+    <p className="min-w-0 flex-1 text-sm leading-5 font-medium">{children}</p>
   );
 }
 
@@ -66,7 +66,7 @@ function OllamaStartButton({ onStart }: { onStart: () => void }) {
     <Button
       className={cn(
         ollamaStartButtonClass,
-        "rounded-lg [&:hover]:bg-foreground/6"
+        "[&:hover]:bg-foreground/6 rounded-lg"
       )}
       onClick={onStart}
       size="sm"

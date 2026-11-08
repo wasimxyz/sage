@@ -20,9 +20,9 @@ function span(phrase: string, today = sunday): string {
   return `${result.range.from}..${result.range.to}`;
 }
 
-const couldNotReadWheneverPattern = /Couldn't read "whenever" as a date/;
+const couldNotReadWheneverPattern = /Couldn't read "whenever" as a date/u;
 const couldNotReadPattern =
-  /^error: Couldn't read ".*" as a date\. Pass when as YYYY-MM-DD\.\.YYYY-MM-DD\.$/;
+  /^error: Couldn't read ".*" as a date\. Pass when as YYYY-MM-DD\.\.YYYY-MM-DD\.$/u;
 
 test("single days", () => {
   assert.equal(span("today"), "2026-10-25..2026-10-25");

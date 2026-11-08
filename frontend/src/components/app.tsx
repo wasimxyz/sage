@@ -82,7 +82,7 @@ function OnboardingGate() {
   } = useOnboarding();
   if (mode.kind === "loading") {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background">
+      <div className="bg-background flex min-h-0 min-w-0 flex-1 items-center justify-center">
         <Spinner />
       </div>
     );

@@ -34,18 +34,18 @@ export function ChatScoresList({ scores }: { scores: ChatScore[] }) {
 function ChatScoreRow({ score }: { score: ChatScore }) {
   const judgeScore = score.judge?.score;
   return (
-    <details className="rounded-lg border bg-card">
+    <details className="bg-card rounded-lg border">
       <summary className="grid w-full list-none grid-cols-1 gap-2 px-4 py-3 text-left text-sm md:grid-cols-[7rem_7rem_1fr_4rem] md:items-center [&::-webkit-details-marker]:hidden">
-        <span className="font-medium font-mono">{score.id}</span>
+        <span className="font-mono font-medium">{score.id}</span>
         <Badge variant={score.failed ? "destructive" : "secondary"}>
           {score.failed ? "failed" : "passed"}
         </Badge>
-        <span className="truncate text-muted-foreground">
+        <span className="text-muted-foreground truncate">
           {judgeScore === undefined
             ? "no judge score"
             : `factuality ${judgeScore}`}
         </span>
-        <span className="font-mono text-muted-foreground md:text-right">
+        <span className="text-muted-foreground font-mono md:text-right">
           {formatTime(score.time)}
         </span>
       </summary>

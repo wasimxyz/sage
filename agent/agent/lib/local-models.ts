@@ -1,5 +1,5 @@
-const trailingV1Pattern = /\/v1\/?$/;
-const trailingSlashPattern = /\/$/;
+const trailingV1Pattern = /\/v1\/?$/u;
+const trailingSlashPattern = /\/$/u;
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const TAGS_TIMEOUT_MS = 10_000;

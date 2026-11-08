@@ -352,7 +352,7 @@ function CountedWipeRow({
       <div className="flex items-center gap-3">
         <span
           aria-live="polite"
-          className="min-w-5 text-right text-muted-foreground text-sm tabular-nums"
+          className="text-muted-foreground min-w-5 text-right text-sm tabular-nums"
         >
           {count === null ? "…" : count.toLocaleString()}
         </span>

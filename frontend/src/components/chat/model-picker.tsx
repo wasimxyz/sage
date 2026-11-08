@@ -107,7 +107,7 @@ function ModelPickerReady({ names }: { names: string[] }) {
         <ModelSelectorModels>
           <ModelSelectorModelsTrigger>
             <span className="shrink-0">Model</span>
-            <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+            <span className="text-muted-foreground min-w-0 flex-1 truncate text-right">
               {selectedModel || "Choose"}
             </span>
           </ModelSelectorModelsTrigger>
@@ -150,7 +150,7 @@ function ContextLengthMenu({
         disabled
       >
         <span className="shrink-0">Context length</span>
-        <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-right">
           {label}
         </span>
       </DropdownMenuItem>
@@ -160,7 +160,7 @@ function ContextLengthMenu({
     <ModelSelectorModels>
       <ModelSelectorModelsTrigger>
         <span className="shrink-0">Context length</span>
-        <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-right">
           {label}
         </span>
       </ModelSelectorModelsTrigger>

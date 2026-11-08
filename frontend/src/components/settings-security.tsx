@@ -104,7 +104,7 @@ function SecurityBody({
       !status.passwordSet &&
       status.touchIdEnabled &&
       status.fileVault === "off" ? (
-        <p className="mt-3 text-muted-foreground text-sm">
+        <p className="text-muted-foreground mt-3 text-sm">
           {fileVaultOffMessage}
         </p>
       ) : null}
@@ -114,8 +114,8 @@ function SecurityBody({
 
 function LockOffStatus({ touchIdAvailable }: { touchIdAvailable: boolean }) {
   return (
-    <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border bg-surface px-3 py-2.5">
-      <div className="flex items-center gap-2 text-foreground">
+    <div className="bg-surface mt-4 flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5">
+      <div className="text-foreground flex items-center gap-2">
         <LockIcon className="size-4" />
         <p className="text-sm">Lock is off</p>
       </div>
@@ -234,8 +234,8 @@ function LockOnStatus({
 
   return (
     <div className="mt-4">
-      <div className="flex items-center justify-between gap-4 rounded-lg border bg-surface px-3 py-2.5">
-        <div className="flex items-center gap-2 text-foreground">
+      <div className="bg-surface flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5">
+        <div className="text-foreground flex items-center gap-2">
           <LockIcon className="size-4" />
           <p className="text-sm">Lock is on</p>
         </div>
@@ -244,13 +244,13 @@ function LockOnStatus({
         </Button>
       </div>
       {encrypted ? null : (
-        <p className="mt-2 text-muted-foreground text-sm">
+        <p className="text-muted-foreground mt-2 text-sm">
           With encryption off, the lock only stops Sage until you unlock it. The
           SQLite file is still readable.
         </p>
       )}
       {blocked ? (
-        <p className="mt-2 text-destructive text-sm" role="alert">
+        <p className="text-destructive mt-2 text-sm" role="alert">
           {removeEncryptionFirst}
         </p>
       ) : null}
@@ -401,7 +401,7 @@ function PasswordGroup({
       </SettingsRow>
       {expanded ? (
         <form
-          className="mb-4 flex flex-col gap-3 rounded-lg border bg-surface p-4"
+          className="bg-surface mb-4 flex flex-col gap-3 rounded-lg border p-4"
           onSubmit={handleSubmit}
         >
           {needsCurrent ? (
@@ -730,7 +730,7 @@ function TouchIdGroup({
         </Button>
       </SettingsRow>
       {blocked ? (
-        <p className="-mt-2 pb-4 text-destructive text-sm" role="alert">
+        <p className="text-destructive -mt-2 pb-4 text-sm" role="alert">
           {lastUnlockMethodMessage}
         </p>
       ) : null}

@@ -33,7 +33,7 @@ export function SettingsSection({
             data-slot="window-drag"
             onPointerDown={onTitlebarPointerDown}
           >
-            <h1 className="min-w-0 truncate font-medium text-base">{title}</h1>
+            <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
           </div>
           {description ? (
             <p className="text-muted-foreground text-sm">{description}</p>

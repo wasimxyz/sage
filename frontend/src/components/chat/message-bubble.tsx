@@ -66,7 +66,7 @@ function UserMessage({ message }: { message: EveMessage }) {
   return (
     <div
       className={cn(
-        "w-full whitespace-pre-wrap break-words rounded-2xl border border-input bg-surface px-4 py-3 text-foreground text-sm",
+        "border-input bg-surface text-foreground w-full rounded-2xl border px-4 py-3 text-sm break-words whitespace-pre-wrap",
         BUBBLE_CONTAINMENT,
         SEARCH_FOCUS_RING
       )}

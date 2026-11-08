@@ -26,7 +26,7 @@ export function RunReport({
   return (
     <div className="flex flex-col gap-8">
       <Link
-        className="w-fit text-muted-foreground text-sm underline-offset-4 hover:underline"
+        className="text-muted-foreground w-fit text-sm underline-offset-4 hover:underline"
         href="/"
       >
         ← Back to overview
@@ -34,10 +34,10 @@ export function RunReport({
 
       <div className="flex flex-wrap items-start justify-between gap-6">
         <div className="flex min-w-60 flex-1 flex-col gap-2">
-          <h1 className="font-medium text-2xl tracking-tight">
+          <h1 className="text-2xl font-medium tracking-tight">
             eve eval report
           </h1>
-          <p className="font-mono text-muted-foreground text-sm">
+          <p className="text-muted-foreground font-mono text-sm">
             <span className="text-foreground">{report.models.chatModel}</span>{" "}
             chat ·{" "}
             <span className="text-foreground">{report.models.dreamModel}</span>{" "}
@@ -52,8 +52,8 @@ export function RunReport({
           </p>
         </div>
         <div className="text-right">
-          <p className="font-medium text-4xl tracking-tight">{rate}%</p>
-          <p className="font-mono text-muted-foreground text-sm">
+          <p className="text-4xl font-medium tracking-tight">{rate}%</p>
+          <p className="text-muted-foreground font-mono text-sm">
             {report.run.passed} / {report.run.total} passed
           </p>
         </div>
@@ -97,7 +97,7 @@ export function RunReport({
 
       <section className="flex scroll-mt-8 flex-col gap-4" id="chat-scores">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-base">Chat scores</h2>
+          <h2 className="text-base font-medium">Chat scores</h2>
           <p className="text-muted-foreground text-sm">
             Factuality on every Chat turn, including passes
           </p>
@@ -107,7 +107,7 @@ export function RunReport({
 
       <section className="flex scroll-mt-8 flex-col gap-4" id="failures">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-base">Failures</h2>
+          <h2 className="text-base font-medium">Failures</h2>
           <p className="text-muted-foreground text-sm">
             Open a row for the assertion trail
           </p>
@@ -122,7 +122,7 @@ export function RunReport({
 
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-base">Passed</h2>
+          <h2 className="text-base font-medium">Passed</h2>
           <p className="text-muted-foreground text-sm">
             How long passed evals took. Chat scores are in the list above.
           </p>
@@ -132,7 +132,7 @@ export function RunReport({
 
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-base">Journal fixture</h2>
+          <h2 className="text-base font-medium">Journal fixture</h2>
           <p className="text-muted-foreground text-sm">
             Scenarios chat and retrieval questions are grounded in
           </p>
@@ -146,7 +146,7 @@ export function RunReport({
 
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium text-base">Session log</h2>
+          <h2 className="text-base font-medium">Session log</h2>
           <p className="text-muted-foreground text-sm">
             {report.run.app} on {report.run.platform}
           </p>
@@ -184,16 +184,16 @@ function FixtureTable({ report }: { report: EvalReport }) {
         <table className="w-full caption-bottom text-sm">
           <thead>
             <tr className="border-b">
-              <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+              <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                 Scenario
               </th>
-              <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+              <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                 Type
               </th>
-              <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+              <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                 Entries
               </th>
-              <th className="h-10 px-2 text-left font-medium text-muted-foreground">
+              <th className="text-muted-foreground h-10 px-2 text-left font-medium">
                 Matched to a failing prompt
               </th>
             </tr>
@@ -201,12 +201,12 @@ function FixtureTable({ report }: { report: EvalReport }) {
           <tbody>
             {report.scenarios.map((scenario) => (
               <tr className="border-b" key={scenario.id}>
-                <td className="p-2 font-medium font-mono">{scenario.id}</td>
+                <td className="p-2 font-mono font-medium">{scenario.id}</td>
                 <td className="p-2">
                   <Badge variant="outline">{scenario.kind}</Badge>
                 </td>
                 <td className="p-2">{scenario.entries}</td>
-                <td className="p-2 text-muted-foreground">
+                <td className="text-muted-foreground p-2">
                   {scenario.matchedPrompts.length > 0 ? (
                     <div className="flex flex-col gap-1">
                       {scenario.matchedPrompts.map((prompt) => (

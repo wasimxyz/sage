@@ -102,7 +102,7 @@ function ListRowDate({ date }: { date: string }) {
   // Today and Yesterday turn over at midnight, even if the row does not change.
   const today = useCalendarDay();
   return (
-    <time className="shrink-0 text-muted-foreground" dateTime={date}>
+    <time className="text-muted-foreground shrink-0" dateTime={date}>
       {formatJournalListDate(date, parseCalendarDate(today) ?? new Date())}
     </time>
   );

@@ -23,7 +23,7 @@ export function AssistantPending() {
           aria-hidden="true"
           className="inline-flex size-4 shrink-0 items-center justify-center motion-safe:[animation:assistant-pending-pulse_1.5s_ease-in-out_infinite]"
         >
-          <LeafIcon className="size-4 text-muted-foreground" />
+          <LeafIcon className="text-muted-foreground size-4" />
         </span>
       </div>
     </div>

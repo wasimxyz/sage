@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const trailingSlashesPattern = /\/+$/;
+const trailingSlashesPattern = /\/+$/u;
 
 export const defaultBlobPrefix = "sage-evals";
 

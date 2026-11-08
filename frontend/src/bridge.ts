@@ -51,7 +51,7 @@ export interface ImportFile {
 const chunkBytes = 32 * 1024;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const whitespacePattern = /\s+/;
+const whitespacePattern = /\s+/u;
 
 function nativeBridge() {
   const { zero } = window;
