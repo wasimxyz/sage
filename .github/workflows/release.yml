@@ -39,7 +39,10 @@ jobs:
             agent/package-lock.json
             eval-viewer/package-lock.json
       - name: Install the pinned Native SDK CLI
-        run: npm install -g "@native-sdk/cli@$(cat .native-sdk-version)"
+        # Same as ci.yml: skip the CLI's scriptc postinstall, which downloads
+        # from GitHub releases. Packaging and `native update sign` never use
+        # scriptc, so a failed scriptc download cannot block a release.
+        run: npm install -g --ignore-scripts "@native-sdk/cli@$(cat .native-sdk-version)"
       - name: Install dependencies
         run: |
           npm --prefix frontend ci
