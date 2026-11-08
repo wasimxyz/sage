@@ -167,7 +167,7 @@ These stay unencrypted on purpose, so the date-sorted sidebar, search by meaning
 - For a chat from before Sage kept those times, the latest moment one of its messages could have been saved (`chat_conversation.unstamped_until`)
 - Embedding and summary vectors
 - Chat session ids, event positions, model names, Thinking settings, and context lengths
-- The highest chat id Sage has used (`chat_id_counter`)
+- The highest entry id and chat id Sage has used (`entry_id_counter` and `chat_id_counter`)
 
 Someone holding the file can see when and how much you wrote and when you chatted, and can run searches against the vectors. They cannot read the words or the chat transcripts.
 

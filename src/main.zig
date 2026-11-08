@@ -4113,10 +4113,13 @@ test "stale embed jobs do not write after deleteAllData" {
     const stale_generation = rig.app.store.data_generation;
     var output: [8192]u8 = undefined;
     _ = try rig.app.store.deleteAllData(&output);
-    _ = try rig.app.store.save(
+    // The new entry takes id 4, not an id the wipe freed. The stale job below
+    // still names deleted entry 1, and must not bring its text back.
+    const saved = try rig.app.store.save(
         "{\"id\":null,\"title\":\"After wipe\",\"date\":\"2026-09-13\",\"wordCount\":2,\"format\":\"plain\",\"offset\":0,\"chunk\":\"Fresh entry.\",\"done\":true}",
         &output,
     );
+    try std.testing.expect(std.mem.startsWith(u8, saved, "{\"id\":4,"));
 
     const allocator = rig.app.store.allocator;
     const stale_embed = try allocator.create(EmbedJob);
@@ -4141,7 +4144,7 @@ test "stale embed jobs do not write after deleteAllData" {
     };
     completeEmbedJob(&rig.app, stale_embed);
     try std.testing.expect(std.mem.indexOf(u8, rig.capture.body(), "Journal data was deleted.") != null);
-    try std.testing.expectEqualStrings("{\"ids\":[1],\"chatIds\":[]}", try rig.app.store.listPendingEmbeddings(&output));
+    try std.testing.expectEqualStrings("{\"ids\":[4],\"chatIds\":[]}", try rig.app.store.listPendingEmbeddings(&output));
 
     rig.capture = .{};
     const fresh_embed = try allocator.create(EmbedJob);
@@ -4158,7 +4161,7 @@ test "stale embed jobs do not write after deleteAllData" {
         .kind = .generate,
         .responder = rig.responder(),
         .request_id = try allocator.dupe(u8, "t-fresh-embed"),
-        .entry_id = 1,
+        .entry_id = 4,
         .chunks = fresh_chunks,
         .vectors = fresh_vectors,
         .model_name = try allocator.dupe(u8, "nomic-embed-text:v1.5"),

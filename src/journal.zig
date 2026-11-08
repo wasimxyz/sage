@@ -343,6 +343,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 20, .name = "chat_time_bounds", .sql = @embedFile("schema/0020_chat_time_bounds.sql") },
     .{ .version = 21, .name = "chat_id_counter", .sql = @embedFile("schema/0021_chat_id_counter.sql") },
     .{ .version = 22, .name = "chat_index_no_role", .sql = @embedFile("schema/0022_chat_index_no_role.sql") },
+    .{ .version = 23, .name = "entry_id_counter", .sql = @embedFile("schema/0023_entry_id_counter.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -4515,9 +4516,11 @@ pub const Store = struct {
         defer self.allocator.free(stored_title);
         const stored_body = try self.encryptForStorage(vault_mod.aad_entry_body, body);
         defer self.allocator.free(stored_body);
+        // The id comes from entry_id_counter, not from SQLite's MAX(id) + 1,
+        // so it is never an id a deleted entry had. The insert moves the counter.
         const insert_outcome = self.db.exec(&.{
             .{
-                .sql = "INSERT INTO journal_entry (entry_date, title, body, word_count, body_format, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%fZ','now'));",
+                .sql = "INSERT INTO journal_entry (id, entry_date, title, body, word_count, body_format, updated_at) VALUES ((SELECT last_id + 1 FROM entry_id_counter WHERE slot = 1), ?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%fZ','now'));",
                 .params = &.{
                     .{ .text = date },
                     .{ .text = stored_title },
@@ -4532,10 +4535,10 @@ pub const Store = struct {
         var rows = QueryRows.init(self.allocator);
         defer rows.deinit();
         // RelationalStore.query uses a separate read connection on disk, so
-        // last_insert_rowid() would be 0 after exec(). INTEGER PRIMARY KEY gives
-        // the new row the current maximum id, which the reader sees after commit.
+        // last_insert_rowid() would be 0 after exec(). The insert moved the
+        // counter to the new row's id, which the reader sees after commit.
         const outcome = self.db.query(
-            "SELECT MAX(id) AS id FROM journal_entry;",
+            "SELECT last_id AS id FROM entry_id_counter WHERE slot = 1;",
             &.{},
             &rows,
             QueryRows.collect,
@@ -7560,6 +7563,54 @@ test "delete removes an entry" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"id\":1") != null);
 }
 
+test "a new entry never takes the id of a deleted one" {
+    var store = try testEmptyStore();
+    defer store.deinit();
+    try std.testing.expectEqual(@as(i64, 1), try saveJournalBody(&store, "First", "One."));
+    const second = try saveJournalBody(&store, "Second", "Two.");
+    try std.testing.expectEqual(@as(i64, 2), second);
+
+    // Delete the newest entry. SQLite hands out MAX(id) + 1, which is its id.
+    var out: [256]u8 = undefined;
+    _ = try store.delete("{\"id\":2}", &out);
+    try std.testing.expectEqual(@as(i64, 3), try saveJournalBody(&store, "Third", "Three."));
+
+    // The old id opens nothing, not the entry that came after it.
+    var get_out: [8192]u8 = undefined;
+    try std.testing.expectError(error.NotFound, store.get("{\"id\":2,\"offset\":0}", &get_out));
+
+    // Deleting every entry, or all data, does not start the ids over either.
+    _ = try store.deleteEntries(&out);
+    try std.testing.expectEqual(@as(i64, 4), try saveJournalBody(&store, "Fourth", "Four."));
+    _ = try store.deleteAllData(&out);
+    try std.testing.expectEqual(@as(i64, 5), try saveJournalBody(&store, "Fifth", "Five."));
+}
+
+test "an insert that names an entry id moves the counter up and never down" {
+    // The fixture entries name their ids 1 to 3, the way a test rig does.
+    var store = try testStore();
+    defer store.deinit();
+    try std.testing.expectEqual(@as(i64, 4), try saveJournalBody(&store, "After fixtures", "Four."));
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "INSERT INTO journal_entry (id, entry_date, title, body, word_count) VALUES (40, '2026-09-10', 'Named', 'Named.', 1);" },
+    }) == .ok);
+    try std.testing.expectEqual(@as(i64, 41), try saveJournalBody(&store, "After named", "Forty-one."));
+
+    // A lower id does not pull the counter back.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "INSERT INTO journal_entry (id, entry_date, title, body, word_count) VALUES (7, '2026-09-11', 'Lower', 'Lower.', 1);" },
+    }) == .ok);
+    var out: [256]u8 = undefined;
+    _ = try store.delete("{\"id\":41}", &out);
+    _ = try store.delete("{\"id\":40}", &out);
+    try std.testing.expectEqual(@as(i64, 42), try saveJournalBody(&store, "Next", "Next."));
+
+    // A rig that reopens its file inserts the fixtures again. Rows it skips
+    // leave the counter alone.
+    try insertFixtureEntries(&store.db);
+    try std.testing.expectEqual(@as(i64, 43), try saveJournalBody(&store, "After reopen", "Again."));
+}
+
 test "deleteAllData wipes entries and chats and leaves settings" {
     var store = try testStore();
     defer store.deinit();
@@ -9844,6 +9895,22 @@ test "migration 22 drops the sender column and keeps the index rows" {
     try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM sqlite_master WHERE name = 'chat_embedding' AND sql LIKE '%role%';"));
     try std.testing.expectEqual(@as(i64, 2), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding WHERE model = 'test-model';"));
     try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding WHERE chunk_index = 2 AND chunk_text = 'hi there';"));
+}
+
+test "migration 23 starts the entry id counter at the highest id" {
+    var store = try upgradedStoreFrom(22, &.{
+        "INSERT INTO journal_entry (id, entry_date, title, body, word_count) VALUES (1, '2026-09-01', 'One', 'One.', 1);",
+        "INSERT INTO journal_entry (id, entry_date, title, body, word_count) VALUES (2, '2026-09-02', 'Two', 'Two.', 1);",
+        "INSERT INTO journal_entry (id, entry_date, title, body, word_count) VALUES (5, '2026-09-05', 'Five', 'Five.', 1);",
+    });
+    defer store.deinit();
+    try std.testing.expectEqual(@as(i64, 5), try store.countDataRows("SELECT last_id AS n FROM entry_id_counter;"));
+    try std.testing.expectEqual(@as(i64, 6), try saveJournalBody(&store, "Six", "Six."));
+
+    var empty = try upgradedStoreFrom(22, &.{});
+    defer empty.deinit();
+    try std.testing.expectEqual(@as(i64, 0), try empty.countDataRows("SELECT last_id AS n FROM entry_id_counter;"));
+    try std.testing.expectEqual(@as(i64, 1), try saveJournalBody(&empty, "One", "One."));
 }
 
 /// Searching for `match` finds message 0 (User) and message 2 (Sage) of a
