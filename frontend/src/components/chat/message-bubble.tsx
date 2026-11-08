@@ -17,6 +17,10 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import {
+  ChatReadToolCard,
+  renderChatSearchCard,
+} from "@/components/chat/chat-tool-cards";
+import {
   JournalReadToolCard,
   renderJournalSearchCard,
 } from "@/components/chat/journal-tool-cards";
@@ -27,6 +31,8 @@ import {
 import { assistantPartIsVisible } from "@/lib/chat/assistant-pending";
 import { assistantRuns } from "@/lib/chat/assistant-runs";
 import {
+  readChatToolName,
+  searchChatsToolName,
   searchJournalToolName,
   toolPartFailed,
   toolPartName,
@@ -88,11 +94,13 @@ function AssistantMessage({ message }: { message: EveMessage }) {
         </Reasoning>
       );
     } else if (run.kind === "reads") {
+      const key = `${message.id}-reads-${run.parts[0].toolCallId}`;
       nodes.push(
-        <JournalReadToolCard
-          key={`${message.id}-reads-${run.parts[0].toolCallId}`}
-          parts={run.parts}
-        />
+        run.toolName === readChatToolName ? (
+          <ChatReadToolCard key={key} parts={run.parts} />
+        ) : (
+          <JournalReadToolCard key={key} parts={run.parts} />
+        )
       );
     } else {
       const node = renderAssistantPart(run.part, message.id, run.index);
@@ -152,8 +160,12 @@ function renderAssistantPart(
 }
 
 function ToolCallBlock({ part }: { part: EveDynamicToolPart }) {
-  if (toolPartName(part) === searchJournalToolName) {
-    const card = renderJournalSearchCard(part);
+  const name = toolPartName(part);
+  if (name === searchJournalToolName || name === searchChatsToolName) {
+    const card =
+      name === searchJournalToolName
+        ? renderJournalSearchCard(part)
+        : renderChatSearchCard(part);
     if (card) {
       return card;
     }

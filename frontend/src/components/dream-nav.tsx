@@ -155,7 +155,7 @@ function ConfirmDreamContent() {
         <DialogDescription>
           {memoryEnabled
             ? "Sage will read new and changed journal entries and chats, then remember facts and events. Chat pauses until this finishes."
-            : "Sage will index journal entries, update their summaries, and title chats. Chat pauses until this finishes."}
+            : "Sage will index and summarize journal entries and chats, and title chats. Chat pauses until this finishes."}
         </DialogDescription>
       </DialogHeader>
       <DialogActions>

@@ -243,14 +243,17 @@ export async function sageChatReady(): Promise<boolean> {
   }
 }
 
-export async function readSageJson(response: Response): Promise<unknown> {
+export async function readSageJson(
+  response: Response,
+  notFound = "No journal entry has that id."
+): Promise<unknown> {
   if (response.status === 409) {
     throw new Error(
       "The journal is locked. Ask the user to unlock Sage, then try again."
     );
   }
   if (response.status === 404) {
-    throw new Error("No journal entry has that id.");
+    throw new Error(notFound);
   }
   if (!response.ok) {
     throw new Error(`Sage returned HTTP ${response.status}.`);

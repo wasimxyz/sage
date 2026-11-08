@@ -49,8 +49,8 @@ The agent server listens on its own background thread and gives each connection 
 
 Ollama is the local model server that runs the models. Sage ships a pinned copy, starts it at launch, and stops it on quit. The mode follows where the executable sits, the way Chat and Node are found. A Sage inside an app bundle runs its own copy on `127.0.0.1:11435`. Every other launch, such as `make dev` and `make eval`, runs the copy named by `SAGE_OLLAMA_PATH` on `127.0.0.1:11436`, so a packaged and a dev Sage can run at once. Sage does not use port 11434, where an Ollama you run yourself listens. Sage uses it for these jobs:
 
-- **Embeddings**: `nomic-embed-text` turns entries, summaries, and memories into vectors, so Chat can find them by meaning. Any pulled tag works, and `SAGE_EMBED_MODEL` changes the name Sage looks for.
-- **Dream**: the summary model writes entry summaries and chat titles, and in a memory build it extracts memories. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
+- **Embeddings**: `nomic-embed-text` turns entries, chat messages, summaries, and memories into vectors, so Chat can find them by meaning. Any pulled tag works, and `SAGE_EMBED_MODEL` changes the name Sage looks for.
+- **Dream**: the summary model writes entry and chat summaries and chat titles, and in a memory build it extracts memories. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
 - **Chat**: the eve agent calls the chat model you pick. The Chat screen lists pulled chat models through `ollama.models`.
 - **Model management**: Settings > Models downloads and deletes models, as [Models](models.md) explains.
 

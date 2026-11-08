@@ -7,15 +7,20 @@ import { eveChannel } from "eve/channels/eve";
 import { bearerMatches } from "../lib/bearer";
 import { expectedChatToken, sageChatReady } from "../lib/sage";
 
+const savedChatId = /^[1-9]\d{0,15}$/;
+
 function sageHeaders(request: Request): Record<string, string> {
   const model = request.headers.get("x-sage-model");
   const thinkHeader = request.headers.get("x-sage-think");
   const contextLength = request.headers.get("x-sage-context-length");
+  // The saved chat this turn belongs to, so search_chats can leave it out.
+  const chatId = request.headers.get("x-sage-chat-id");
   return {
     ...(model !== null && model.length > 0 ? { model } : {}),
     ...(contextLength !== null && contextLength.length > 0
       ? { contextLength }
       : {}),
+    ...(chatId !== null && savedChatId.test(chatId) ? { chatId } : {}),
     think: thinkHeader === "0" || thinkHeader === "false" ? "0" : "1",
   };
 }

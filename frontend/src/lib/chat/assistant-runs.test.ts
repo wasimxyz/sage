@@ -114,3 +114,16 @@ test("a search and a reply each keep their own run, in order", () => {
     [-1, 1, 2]
   );
 });
+
+test("reads of past chats group apart from reads of entries", () => {
+  const readChat = (id: string) => tool("get_chat", id);
+  const runs = assistantRuns([readChat("a"), readChat("b"), read("c")]);
+  assert.deepEqual(
+    runs.map((run) =>
+      run.kind === "reads"
+        ? `${run.toolName}:${run.parts.map((part) => part.toolCallId).join(",")}`
+        : run.kind
+    ),
+    ["get_chat:a,b", "get_journal_entry:c"]
+  );
+});

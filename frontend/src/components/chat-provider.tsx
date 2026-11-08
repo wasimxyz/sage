@@ -151,6 +151,15 @@ interface ChatPanelContextValue {
 
 const ChatPanelContext = createContext<ChatPanelContextValue | null>(null);
 
+/**
+ * `openConversation` alone. It never changes while the provider lives, and
+ * the rest of the chat does, with every refresh of the chat list. A row that
+ * only opens a chat reads this one, so it does not render each time.
+ */
+const OpenConversationContext = createContext<
+  ChatActions["openConversation"] | null
+>(null);
+
 /** The real delete for one chat. The pending-delete store also runs it after a relaunch. */
 async function commitChatDelete(id: number): Promise<CommitResult> {
   try {
@@ -209,6 +218,14 @@ export function useChat(): ChatContextValue {
 
 export function useChatPanel(): ChatPanelContextValue {
   const value = use(ChatPanelContext);
+  if (!value) {
+    throw new Error("ChatProvider is missing.");
+  }
+  return value;
+}
+
+export function useOpenConversation(): ChatActions["openConversation"] {
+  const value = use(OpenConversationContext);
   if (!value) {
     throw new Error("ChatProvider is missing.");
   }
@@ -719,7 +736,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   return (
     <ChatContext value={value}>
-      <ChatPanelContext value={panelValue}>{children}</ChatPanelContext>
+      <OpenConversationContext value={openConversation}>
+        <ChatPanelContext value={panelValue}>{children}</ChatPanelContext>
+      </OpenConversationContext>
     </ChatContext>
   );
 }

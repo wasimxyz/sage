@@ -7,6 +7,7 @@ import {
   journalSearchQuery,
   journalSearchRange,
   journalSearchSummary,
+  readEntryId,
 } from "./journal-tool-output.ts";
 
 const now = new Date(2026, 9, 26, 9, 0);
@@ -135,4 +136,36 @@ test("journal entry output needs an id, a title, and a date", () => {
   assert.equal(journalEntryOutput({ ...entry, id: -1 }), null);
   assert.equal(journalEntryOutput({ ...entry, title: undefined }), null);
   assert.equal(journalEntryOutput("not an entry"), null);
+});
+
+test("journal tool output reads entry-12 ids and the plain ids of older chats", () => {
+  assert.equal(readEntryId("entry-17"), 17);
+  assert.equal(readEntryId(17), 17);
+  assert.equal(readEntryId("chat-17"), null);
+  assert.equal(readEntryId("17"), null);
+  assert.equal(readEntryId("entry-0"), null);
+  assert.deepEqual(
+    journalSearchHits([{ date: "2026-03-03", id: "entry-17", title: "Walk" }]),
+    [{ date: "2026-03-03", id: 17, title: "Walk" }]
+  );
+  assert.deepEqual(
+    journalEntryOutput({ date: "2026-03-03", id: "entry-17", title: "Walk" }),
+    { date: "2026-03-03", id: 17, title: "Walk" }
+  );
+  assert.equal(
+    journalEntryOutput({ date: "2026-03-03", id: "chat-17", title: "Walk" }),
+    null
+  );
+});
+
+test("a date-only summary can name chats instead of entries", () => {
+  assert.deepEqual(
+    journalSearchSummary(
+      null,
+      { from: "2026-10-19", to: "2026-10-25" },
+      now,
+      "Chats"
+    )?.lead.startsWith("Chats from "),
+    true
+  );
 });
