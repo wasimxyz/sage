@@ -580,6 +580,10 @@ fn sessionLock(self: *App) void {
     if (self.agent.started) agent_server.setAvailable(&self.agent, false);
     self.eve.stop();
     self.eve.clearWorldKey();
+    // A running Dream stops here, so it does not load a model for each item
+    // that is left. Only the call already in flight finishes, and it unloads
+    // its model below.
+    dream.abort(dreamHost(self), dream_locked_message);
     // Each generate or embed call from here on unloads its model, and the
     // detached worker below unloads the ones already loaded.
     ollama.unload_after_request.store(true, .release);
@@ -587,6 +591,10 @@ fn sessionLock(self: *App) void {
     self.syncLockMenu();
     App.emitMainWindowEvent(self, "lock:changed");
 }
+
+/// What Dream reports when locking stops it. Items it already finished stay
+/// saved, and the next Dream does the rest.
+const dream_locked_message = "Dream stopped because Sage locked.";
 
 /// Called on every unlock. Models load and stay loaded again from here on.
 fn clearUnloadOnLock() void {
@@ -2193,7 +2201,10 @@ fn runStartJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, ser
     services.wake() catch {};
 }
 
-fn runSetupStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, server: *const ollama_server.Server) void {
+fn runSetupStatusJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, server: *ollama_server.Server) void {
+    // Setup polls this one instead of `embeddings.status`, so a server that
+    // failed to start comes back here too, at most once per retry interval.
+    server.ensureRunning(io);
     const status = ollama.setupStatus(io, allocator, server);
     job.setup_installed = status.installed;
     job.setup_running = status.running;
@@ -4203,6 +4214,27 @@ test "session lock clears the key and gates journal and Chat until unlock" {
     try std.testing.expect(rig.app.eve.world_key_hex != null);
     try std.testing.expect(std.mem.indexOf(u8, try handleList(@ptrCast(&rig.app), list, &output), "Morning walk") != null);
     try std.testing.expectEqualStrings("{\"token\":\"\"}", try handleChatAgentToken(@ptrCast(&rig.app), token, &output));
+}
+
+test "session lock stops a running Dream" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    defer rig.app.eve.clearWorldKey();
+    // The unload flag is global, so start and end with it clear.
+    ollama.unload_after_request.store(false, .release);
+    defer ollama.unload_after_request.store(false, .release);
+
+    var output: [8192]u8 = undefined;
+    _ = try rig.app.lock.setPassword("{\"next\":\"correct horse\"}", null, &output);
+    rig.app.dream_runner.running = true;
+    const epoch = rig.app.dream_runner.epoch;
+
+    sessionLock(&rig.app);
+    try std.testing.expect(!rig.app.lock.unlocked);
+    try std.testing.expect(!rig.app.dream_runner.busy());
+    // A new epoch makes the item that was in flight drop its result.
+    try std.testing.expect(rig.app.dream_runner.epoch > epoch);
 }
 
 test "encryption.enable retries finish the row rewrite" {

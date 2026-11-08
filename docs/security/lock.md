@@ -65,9 +65,9 @@ While encryption is on, you cannot turn the lock off or remove the last way to u
 
 Sage starts its Ollama server at launch, before you unlock, and the lock does not stop it. The server listens on `127.0.0.1` only, so other computers cannot reach it. Any program on this Mac can reach it while Sage runs, because the server does not check the lock. The Ollama commands in Sage still refuse while the lock is on, as the list above says.
 
-When the lock turns on, Sage asks the server to unload every model it has loaded, so no model keeps the last prompt in memory. A Dream or search request that finishes after the lock unloads its model when it ends. Unlocking clears this, so the next request loads its model as usual. A download keeps running while the lock is on.
+When the lock turns on, Sage stops a running Dream and asks the server to unload every model it has loaded, so no model keeps the last prompt in memory. A Dream or search request that was already running finishes and then unloads its model. Unlocking clears this, so the next request loads its model as usual. A download keeps running while the lock is on.
 
-Sage restarts a crashed server from its status check, and that check runs only while Sage is unlocked. A server that crashes while the lock is on stays down until you unlock.
+Sage restarts a crashed server from its status checks, and those checks run only while Sage is unlocked. A server that crashes while the lock is on stays down until you unlock.
 
 ## Chat and the lock
 

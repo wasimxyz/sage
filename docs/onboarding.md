@@ -36,7 +36,7 @@ The screen depends on `ollama.setupStatus`, which returns `{ installed, running,
 Then Sage picks a screen:
 
 - **Local AI is running**: the downloads screen.
-- **Installed but not running**: Sage calls `ollama.start` once, and the screen reads “Starting local AI…” while it waits. If the start works, the downloads screen shows. If it fails, the **Local AI isn’t running** screen shows the reason and a **Try again** button. That screen checks every 4s and moves on by itself once local AI answers.
+- **Installed but not running**: Sage calls `ollama.start` once, and the screen reads “Starting local AI…” while it waits. If the start works, the downloads screen shows. If it fails, the **Local AI isn’t running** screen shows the reason and a **Try again** button. That screen checks every 4s. Each check also tries to start the server again, at most once every 10s, so the screen moves on by itself once local AI answers.
 - **Not installed**: the **Local AI isn’t available** screen says “Sage’s local AI files are missing. Reinstall Sage.” It has no download link, and reinstalling Sage is the fix.
 
 Both of those screens have **Skip this step**, which goes to Protect. Chat and Dream do not work until you finish in Settings > Models, or reinstall Sage for the missing-files screen.
