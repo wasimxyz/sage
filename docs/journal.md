@@ -8,6 +8,7 @@ Journal and Chat share one layout: a list on the left, and a panel that opens be
 
 Each entry is one row in `journal_entry`:
 
+- `id`: the entry id. Chat tool output, the model’s own history, and memories name entries by it (`entry-12`), so Sage never gives an id to a second entry. `entry_id_counter` holds the highest id given out, and a new entry takes the next one. Deleting an entry, or all of them, does not lower it.
 - `entry_date`: the calendar date of the entry, as `YYYY-MM-DD`
 - `title` and `body`: the text you wrote, encrypted when encryption is on
 - `body_format`: `markdown` for entries the editor saves, or `plain` for older entries

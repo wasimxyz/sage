@@ -71,6 +71,8 @@ Sage numbers entries and chats separately, so a plain 12 could be either. The to
 
 `lib/ids.ts` adds the prefixes. The agent server’s answers keep plain numbers.
 
+Sage never gives a deleted entry’s or chat’s id to a new one. So `get_journal_entry` or `get_chat` with an id from an old chat never returns a different entry or chat. [The journal](../journal.md#what-an-entry-holds) and [Chat storage](storage.md#the-tables) cover the counters.
+
 A search by meaning leaves out summaries that score under 0.45 against the query. That number comes from `nomic-embed-text`, so another embedding model needs its own value (`min_summary_score` in `src/journal.zig`).
 
 ### Searching by time
