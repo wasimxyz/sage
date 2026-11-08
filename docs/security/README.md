@@ -15,7 +15,7 @@ Both use the same password or Touch ID. You can also turn on encryption with Tou
 
 With encryption on, a person who copies the database file cannot read your entries or chats. They can still see:
 
-- **Dates, word counts, and chat settings**: these stay readable so the sidebar and chat resume stay fast.
+- **Dates, word counts, chat times, and chat settings**: these stay readable so the sidebar, chat search by time, and chat resume stay fast.
 - **Embedding and summary vectors**: these stay readable so search by meaning keeps working.
 - **Old copies**: a copy made before encryption, such as an APFS snapshot or a Time Machine backup, can still hold old text. [Encryption at rest](encryption.md#scrubbing-old-bytes) covers what Sage removes from the live file.
 

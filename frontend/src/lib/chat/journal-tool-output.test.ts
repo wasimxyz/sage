@@ -158,6 +158,19 @@ test("journal tool output reads entry-12 ids and the plain ids of older chats", 
   );
 });
 
+test("an entry id past the safe integer range is null, not a rounded number", () => {
+  assert.equal(readEntryId("entry-9007199254740991"), 9_007_199_254_740_991);
+  assert.equal(readEntryId("entry-9007199254740992"), null);
+  assert.equal(readEntryId("entry-9999999999999999"), null);
+  assert.equal(readEntryId(2 ** 53), null);
+  assert.equal(
+    journalSearchHits([
+      { date: "2026-03-03", id: "entry-9999999999999999", title: "Walk" },
+    ]),
+    null
+  );
+});
+
 test("a date-only summary can name chats instead of entries", () => {
   assert.deepEqual(
     journalSearchSummary(

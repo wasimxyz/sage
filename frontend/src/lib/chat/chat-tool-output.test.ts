@@ -14,6 +14,16 @@ test("chat ids are chat-12 and nothing else", () => {
   assert.equal(readChatId("chat-0"), null);
 });
 
+test("a chat id past the safe integer range is null, not a rounded number", () => {
+  assert.equal(readChatId("chat-9007199254740991"), 9_007_199_254_740_991);
+  assert.equal(readChatId("chat-9007199254740992"), null);
+  assert.equal(readChatId("chat-9999999999999999"), null);
+  assert.equal(
+    chatSearchHits({ chats: [{ id: "chat-9999999999999999", title: "Big" }] }),
+    null
+  );
+});
+
 test("a search by meaning opens each chat at its best hit", () => {
   const output = {
     chats: [

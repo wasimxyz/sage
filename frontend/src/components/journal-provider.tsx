@@ -39,7 +39,7 @@ import {
 } from "@/components/journal-context";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
-import { indexChats } from "@/lib/chat/index-chat";
+import { createChatIndexQueue } from "@/lib/chat/chat-index-queue";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
 import type { ParsedImport } from "@/lib/parse-markdown";
@@ -151,10 +151,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const loadedKeyRef = useRef<string | null>(null);
   const persistChainRef = useRef(Promise.resolve());
   const embedChainRef = useRef(Promise.resolve());
-  // Chat indexing has its own queue, which waits for the entries and never
-  // holds them up. The set keeps a retry from queueing a chat twice.
-  const chatIndexChainRef = useRef(Promise.resolve());
-  const queuedChatIdsRef = useRef(new Set<number>());
   const adapterRef = useRef<EditorAdapter | null>(null);
   const persistRef = useRef<() => Promise<void>>(async () => undefined);
   const embedEntryRef = useRef<(id: number) => Promise<void>>(
@@ -343,6 +339,15 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     [scheduleStaleEmbeddingRetry]
   );
 
+  // Chat indexing has its own queue, which waits for the entries and never
+  // holds them up. Its waiting set keeps a retry from queueing a chat twice.
+  const [chatIndexQueue] = useState(() =>
+    createChatIndexQueue({
+      generate: generateChatEmbeddings,
+      onOllamaDown: scheduleStaleEmbeddingRetry,
+    })
+  );
+
   const enqueueEmbed = useCallback((id: number) => {
     if (!pendingEmbedIdsRef.current.has(id)) {
       return;
@@ -351,34 +356,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       .then(() => embedEntryRef.current(id))
       .catch(() => undefined);
   }, []);
-
-  const queueChatIndexing = useCallback(
-    (ids: number[], after: Promise<void>) => {
-      const fresh = ids.filter((id) => !queuedChatIdsRef.current.has(id));
-      if (fresh.length === 0) {
-        return;
-      }
-      for (const id of fresh) {
-        queuedChatIdsRef.current.add(id);
-      }
-      chatIndexChainRef.current = chatIndexChainRef.current
-        .then(() => after)
-        .then(() => indexChats(fresh, generateChatEmbeddings))
-        .then((finished) => {
-          // Only Ollama being down is worth another pass.
-          if (!finished) {
-            scheduleStaleEmbeddingRetry();
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          for (const id of fresh) {
-            queuedChatIdsRef.current.delete(id);
-          }
-        });
-    },
-    [scheduleStaleEmbeddingRetry]
-  );
 
   const embedStaleEntries = useCallback(async (): Promise<boolean> => {
     if (!hasNativeBridge()) {
@@ -415,13 +392,13 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     // while Ollama was down, start once the entries are done. The pass does
     // not wait for them, so its answer is about the entries alone.
     const entriesDone = embedChainRef.current;
-    queueChatIndexing(pending.chatIds, entriesDone);
+    chatIndexQueue.add(pending.chatIds, entriesDone);
     await entriesDone;
     return staleEmbeddingRetryTimerRef.current === null;
   }, [
+    chatIndexQueue,
     clearStaleEmbeddingRetry,
     enqueueEmbed,
-    queueChatIndexing,
     scheduleStaleEmbeddingRetry,
   ]);
 
