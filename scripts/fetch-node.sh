@@ -3,7 +3,7 @@
 # need a system Node.
 set -eu
 
-NODE_VERSION="24.22.1"
+NODE_VERSION="24.22.2"
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 app="${1:-}"
@@ -14,15 +14,15 @@ if [ -z "$app" ] || [ ! -d "$app" ]; then
 fi
 
 # SHA256 of the official darwin tarballs from
-# https://nodejs.org/dist/v24.22.1/SHASUMS256.txt
+# https://nodejs.org/dist/v24.22.2/SHASUMS256.txt
 case "$(uname -m)" in
   arm64|aarch64)
     arch="arm64"
-    expected_sha="89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7"
+    expected_sha="aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a"
     ;;
   x86_64|amd64)
     arch="x64"
-    expected_sha="d132557e7ee2b85af08b0c8c34338e65c6430f2238d01f727728ef42dc83b035"
+    expected_sha="d5e336d588c45be0c37dbd52cc29895593009ca4997a77a1fd02815131ed0e52"
     ;;
   *)
     echo "fetch-node: unsupported machine $(uname -m)" >&2
