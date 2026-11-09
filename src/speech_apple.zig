@@ -20,7 +20,7 @@ pub const dev_library_env = "SAGE_SPEECH_LIB_PATH";
 /// Relative to the app's `Contents` folder. Packaging copies the library here.
 pub const bundled_rel_path = "Frameworks/libSageSpeech.dylib";
 /// Must match `abiVersion` in SageSpeech.swift.
-const abi_version: i32 = 1;
+const abi_version: i32 = 2;
 /// The first macOS with SpeechAnalyzer.
 const minimum_macos_major: u32 = 26;
 
@@ -95,7 +95,8 @@ const LoadResult = union(enum) {
     unavailable: dictation.Unavailable,
 };
 
-/// Load the library once. Safe from any thread.
+/// Load the library once, waiting for another thread that is loading it. Safe
+/// from any thread, but not for the loop thread: use `peek` there.
 fn load() LoadResult {
     while (!load_lock.tryLock()) std.Thread.yield() catch {};
     defer load_lock.unlock();
@@ -109,6 +110,25 @@ fn load() LoadResult {
         .loaded => .{ .api = &load_state.loaded },
         .unavailable => |reason| .{ .unavailable = reason },
         .unloaded => unreachable,
+    };
+}
+
+const PeekResult = union(enum) {
+    api: *const Api,
+    unavailable: dictation.Unavailable,
+    /// Nobody has loaded the library yet, or a thread is loading it now.
+    loading,
+};
+
+/// What `load` found, without loading anything or waiting for a thread that is.
+/// The loop thread uses this, so it never waits on the speech engine.
+fn peek() PeekResult {
+    if (!load_lock.tryLock()) return .loading;
+    defer load_lock.unlock();
+    return switch (load_state) {
+        .loaded => .{ .api = &load_state.loaded },
+        .unavailable => |reason| .{ .unavailable = reason },
+        .unloaded => .loading,
     };
 }
 
@@ -178,8 +198,9 @@ pub fn backend() dictation.Backend {
     };
 }
 
-/// Load the library and ask the OS about the model on another thread, so the
-/// first status call from the web view finds an answer waiting.
+/// Load the library and start asking the OS about the model, on another
+/// thread. The loop thread never does either, so until this thread is done the
+/// model reads as `checking`.
 fn primeFn(context: ?*anyopaque) void {
     _ = context;
     const thread = std.Thread.spawn(.{}, primeMain, .{}) catch return;
@@ -187,21 +208,40 @@ fn primeFn(context: ?*anyopaque) void {
 }
 
 fn primeMain() void {
-    _ = statusFn(null);
+    switch (load()) {
+        // The first call starts the library's own check in the background.
+        .api => |api| _ = readStatus(api),
+        .unavailable => {},
+    }
 }
 
+/// Answers at once, from what the library has cached. It never loads the
+/// library and never waits for macOS, because the loop thread calls it.
 fn statusFn(context: ?*anyopaque) dictation.EngineStatus {
     _ = context;
-    const api = switch (load()) {
+    const api = switch (peek()) {
         .api => |api| api,
         .unavailable => |reason| return .{ .unavailable = reason },
+        .loading => return .{ .model = .checking },
     };
+    return readStatus(api);
+}
+
+fn readStatus(api: *const Api) dictation.EngineStatus {
     var state: i32 = 0;
     var fraction: f64 = -1;
     var message: [192]u8 = undefined;
     const message_len = api.status(&state, &fraction, &message, message.len);
+    return statusFromLibrary(state, fraction, message[0..@intCast(@min(@max(message_len, 0), message.len))]);
+}
+
+/// The library's model state as `dictation.EngineStatus`. The states are the
+/// ones `sage_speech_status` documents in SageSpeech.swift.
+fn statusFromLibrary(state: i32, fraction: f64, message: []const u8) dictation.EngineStatus {
     var status: dictation.EngineStatus = .{};
     switch (state) {
+        // macOS has not said yet.
+        0 => status.model = .checking,
         1 => status.model = .installed,
         3 => {
             status.model = .downloading;
@@ -209,10 +249,10 @@ fn statusFn(context: ?*anyopaque) dictation.EngineStatus {
         },
         4 => {
             status.model = .failed;
-            if (message_len > 0) status.setMessage(message[0..@intCast(@min(message_len, message.len))]);
+            if (message.len > 0) status.setMessage(message);
         },
         // This Mac has no speech model for English.
-        5 => status.unavailable = .engine_missing,
+        5 => status.unavailable = .no_english,
         else => status.model = .missing,
     }
     return status;
@@ -220,9 +260,10 @@ fn statusFn(context: ?*anyopaque) dictation.EngineStatus {
 
 fn downloadFn(context: ?*anyopaque) bool {
     _ = context;
-    const api = switch (load()) {
+    const api = switch (peek()) {
         .api => |api| api,
-        .unavailable => return false,
+        // Nothing to download until the library is loaded and macOS has answered.
+        .unavailable, .loading => return false,
     };
     return api.install() == 1;
 }
@@ -337,9 +378,53 @@ test "without a library the engine is missing" {
     load_state = .unloaded;
     configure(std.testing.io, "/nonexistent/libSageSpeech.dylib");
     defer configure(std.testing.io, null);
+    // The priming thread does this load in the app.
+    _ = load();
     const status = statusFn(null);
     try std.testing.expect(status.unavailable != null);
     try std.testing.expectEqual(dictation.Unavailable.engine_missing, status.unavailable.?);
+}
+
+test "status never loads the library or waits for it" {
+    const saved = load_state;
+    defer load_state = saved;
+    load_state = .unloaded;
+    configure(std.testing.io, "/nonexistent/libSageSpeech.dylib");
+    defer configure(std.testing.io, null);
+
+    // Nothing has loaded the library yet, so the answer is "checking". Asking
+    // does not load it.
+    var status = statusFn(null);
+    try std.testing.expectEqual(@as(?dictation.Unavailable, null), status.unavailable);
+    try std.testing.expectEqual(dictation.ModelState.checking, status.model);
+    try std.testing.expect(load_state == .unloaded);
+
+    // A thread that is loading holds the lock. The answer is still immediate.
+    try std.testing.expect(load_lock.tryLock());
+    status = statusFn(null);
+    load_lock.unlock();
+    try std.testing.expectEqual(dictation.ModelState.checking, status.model);
+    try std.testing.expect(!downloadFn(null));
+}
+
+test "the library's model states map to the engine status" {
+    // macOS has not answered yet.
+    try std.testing.expectEqual(dictation.ModelState.checking, statusFromLibrary(0, -1, "").model);
+    try std.testing.expectEqual(dictation.ModelState.installed, statusFromLibrary(1, -1, "").model);
+    try std.testing.expectEqual(dictation.ModelState.missing, statusFromLibrary(2, -1, "").model);
+    try std.testing.expectEqual(dictation.ModelState.missing, statusFromLibrary(42, -1, "").model);
+
+    const downloading = statusFromLibrary(3, 0.4, "");
+    try std.testing.expectEqual(dictation.ModelState.downloading, downloading.model);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.4), downloading.fraction.?, 0.001);
+
+    const failed = statusFromLibrary(4, -1, "It did not download.");
+    try std.testing.expectEqual(dictation.ModelState.failed, failed.model);
+    try std.testing.expectEqualStrings("It did not download.", failed.message().?);
+
+    // A Mac with no English model can't dictate, and says why.
+    const no_english = statusFromLibrary(5, -1, "");
+    try std.testing.expectEqual(dictation.Unavailable.no_english, no_english.unavailable.?);
 }
 
 // --- Live test ---------------------------------------------------------------
@@ -426,7 +511,15 @@ test "live: the Apple engine turns a WAV into text through the controller" {
     configure(io, lib_path);
     defer configure(io, null);
 
-    const status = statusFn(null);
+    // The loop thread never loads the library or waits for macOS, so load it as
+    // the priming thread does and wait for the first answer.
+    _ = load();
+    var status = statusFn(null);
+    var asked: usize = 0;
+    while (status.model == .checking and asked < 500) : (asked += 1) {
+        std.Io.sleep(io, .fromMilliseconds(10), .awake) catch {};
+        status = statusFn(null);
+    }
     try std.testing.expectEqual(@as(?dictation.Unavailable, null), status.unavailable);
     try std.testing.expectEqual(dictation.ModelState.installed, status.model);
 

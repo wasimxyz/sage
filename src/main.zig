@@ -22,6 +22,7 @@ const eve_sidecar = @import("eve_sidecar.zig");
 const ollama_server = @import("ollama_server.zig");
 const dream = @import("dream.zig");
 const dictation_mod = @import("dictation.zig");
+const display_awake = @import("display_awake.zig");
 const speech_apple = @import("speech_apple.zig");
 const memory_feature = @import("memory_feature.zig");
 
@@ -397,10 +398,12 @@ const App = struct {
         return self.lock.idle_timeout_ms;
     }
 
-    /// The idle clock waits while the microphone is on.
+    /// The idle clock waits while the microphone is really on. A dictation that
+    /// is still waiting for the macOS microphone prompt does not count, because
+    /// the person may have walked away from it.
     fn idleHeldForSession(context: *anyopaque) bool {
         const self: *App = @ptrCast(@alignCast(context));
-        return self.dictation.active();
+        return self.dictation.listening();
     }
 
     /// Fired from Sage > Settings, on the loop thread.
@@ -1115,7 +1118,15 @@ fn dictationHost(self: *App) dictation_mod.Host {
         .context = self,
         .emit_fn = emitDictationEvent,
         .session_ended_fn = dictationSessionEnded,
+        .listening_fn = dictationListening,
     };
+}
+
+/// The display stays awake while the microphone is on, so display sleep does
+/// not lock Sage in the middle of a sentence.
+fn dictationListening(context: ?*anyopaque, on: bool) void {
+    _ = context;
+    display_awake.set(on);
 }
 
 fn emitDictationEvent(context: ?*anyopaque, name: []const u8, payload: []const u8) void {
@@ -3402,6 +3413,7 @@ test {
     _ = @import("eve_sidecar.zig");
     _ = @import("dream.zig");
     _ = dictation_mod;
+    _ = display_awake;
     _ = microphone;
     _ = speech_apple;
 }
@@ -6087,14 +6099,26 @@ test "a session lock stops dictation, even with the lock off" {
     host.microphone_status_fn = grantedMicrophone;
     _ = try rig.app.dictation.start(host);
     try std.testing.expect(rig.app.dictation.active());
-    // The idle clock waits while the microphone is on.
+    // Until the microphone has started, the person may be looking at the macOS
+    // permission prompt. Sage may still idle-lock, and the display may sleep.
+    try std.testing.expect(!App.idleHeldForSession(@ptrCast(&rig.app)));
+    try std.testing.expect(!display_awake.held());
+
+    // The idle clock waits while the microphone is on, and so does the display.
+    var waited: i64 = 0;
+    while (!rig.app.dictation.listening() and waited < 3000) : (waited += 5) {
+        rig.app.dictation.drain(host);
+        std.Io.sleep(std.testing.io, .fromMilliseconds(5), .awake) catch {};
+    }
     try std.testing.expect(App.idleHeldForSession(@ptrCast(&rig.app)));
+    try std.testing.expect(display_awake.held());
 
     // Sleep and the screen saver reach here with the lock off.
     try std.testing.expect(!rig.app.lock.enabled());
     sessionLock(&rig.app);
     try std.testing.expect(!rig.app.dictation.active());
     try std.testing.expect(!App.idleHeldForSession(@ptrCast(&rig.app)));
+    try std.testing.expect(!display_awake.held());
     try std.testing.expect(rig.app.lock.unlocked);
 }
 
@@ -6145,8 +6169,16 @@ test "quitting stops dictation" {
     var host = dictationHost(&rig.app);
     host.microphone_status_fn = grantedMicrophone;
     _ = try rig.app.dictation.start(host);
+    var waited: i64 = 0;
+    while (!rig.app.dictation.listening() and waited < 3000) : (waited += 5) {
+        rig.app.dictation.drain(host);
+        std.Io.sleep(std.testing.io, .fromMilliseconds(5), .awake) catch {};
+    }
+    try std.testing.expect(display_awake.held());
     rig.app.dictation.cancelAll(dictationHost(&rig.app), .quit);
     try std.testing.expect(!rig.app.dictation.active());
+    // Quitting lets the display sleep again.
+    try std.testing.expect(!display_awake.held());
 }
 
 fn tidyInvocation(id: []const u8, payload: []const u8) native_sdk.bridge.Invocation {

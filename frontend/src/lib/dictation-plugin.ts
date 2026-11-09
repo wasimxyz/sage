@@ -525,6 +525,37 @@ export interface TidyRequest {
   text: string;
 }
 
+/**
+ * Shrinks a range past the spaces and line breaks at both ends, as the
+ * dictated stretch is. Tidy's reply has none, so leaving them in the range
+ * would join the words around it. Null when the range has no words.
+ */
+function trimmedRange(
+  doc: ProseNode,
+  from: number,
+  to: number
+): DictatedRange | null {
+  let first = -1;
+  let last = -1;
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) {
+      return true;
+    }
+    const start = Math.max(from, pos) - pos;
+    const end = Math.min(to, pos + node.nodeSize) - pos;
+    const piece = (node.text ?? "").slice(start, end);
+    const trimmed = piece.trim();
+    if (trimmed.length > 0) {
+      if (first < 0) {
+        first = pos + start + piece.indexOf(trimmed);
+      }
+      last = pos + start + piece.trimEnd().length;
+    }
+    return false;
+  });
+  return first < 0 ? null : { from: first, to: last };
+}
+
 let lastTidyId = 0;
 
 /**
@@ -537,28 +568,25 @@ export function beginTidy(
 ): TidyRequest | null {
   const { state } = view;
   const ps = dictationState(state);
-  if (
-    ps.active ||
-    ps.tidy !== null ||
-    !isPlainRange(state.doc, range.from, range.to)
-  ) {
+  if (ps.active || ps.tidy !== null) {
     return null;
   }
-  const text = state.doc.textBetween(range.from, range.to, "\n\n").trim();
-  if (text.length === 0) {
+  const trimmed = trimmedRange(state.doc, range.from, range.to);
+  if (trimmed === null || !isPlainRange(state.doc, trimmed.from, trimmed.to)) {
     return null;
   }
+  const text = state.doc.textBetween(trimmed.from, trimmed.to, "\n\n");
   lastTidyId += 1;
   view.dispatch(
     withState(state.tr, {
       ...ps,
       tidy: {
         edited: false,
-        from: range.from,
+        from: trimmed.from,
         id: lastTidyId,
         kind: "working",
-        original: state.doc.slice(range.from, range.to),
-        to: range.to,
+        original: state.doc.slice(trimmed.from, trimmed.to),
+        to: trimmed.to,
       },
     })
   );
@@ -604,9 +632,15 @@ export function finishTidy(
     return "gone";
   }
   const paragraphs = tidyParagraphs(reply);
-  if (tidy.edited || paragraphs.length === 0) {
+  // Typing and deleting are caught as they happen. A mark or a heading moves no
+  // text, so compare the range with what Tidy sent.
+  const edited =
+    tidy.edited ||
+    !state.doc.slice(tidy.from, tidy.to).content.eq(tidy.original.content) ||
+    !isPlainRange(state.doc, tidy.from, tidy.to);
+  if (edited || paragraphs.length === 0) {
     view.dispatch(withState(state.tr, { ...ps, tidy: null }));
-    return tidy.edited ? "edited" : "unusable";
+    return edited ? "edited" : "unusable";
   }
   const tr = closeHistory(state.tr).replace(
     tidy.from,

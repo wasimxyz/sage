@@ -235,6 +235,7 @@ test("stopNotice has its own words when the core sent none", () => {
 test("startFailure names the core's errors", () => {
   assert.equal(startFailure("MicrophoneDenied"), "denied");
   assert.equal(startFailure("SpeechModelMissing"), "download");
+  assert.equal(startFailure("SpeechModelChecking"), "checking");
   assert.equal(startFailure("DictationBusy"), "busy");
   assert.equal(startFailure("DictationUnavailable"), "unavailable");
   assert.equal(startFailure("Locked"), "locked");

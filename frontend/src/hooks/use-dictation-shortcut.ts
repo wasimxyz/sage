@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 
-import { useDictation } from "@/components/dictation-provider";
+import {
+  useDictationActions,
+  useDictationAvailable,
+} from "@/components/dictation-provider";
 import { useJournalView } from "@/components/journal-context";
 import { dictationTarget, isDictateKey } from "@/lib/dictation-shortcut";
 import { hasOpenSurface } from "@/lib/open-surface";
@@ -13,10 +16,9 @@ import { hasOpenSurface } from "@/lib/open-surface";
  */
 export function useDictationShortcut() {
   const { detailOpen, section, selection } = useJournalView();
-  const {
-    actions: { toggle },
-    state: { available },
-  } = useDictation();
+  // Not `useDictation`: its phase changes would redraw the whole app shell.
+  const { toggle } = useDictationActions();
+  const available = useDictationAvailable();
   const entryOpen = detailOpen && selection !== null;
 
   useEffect(() => {

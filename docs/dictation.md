@@ -39,12 +39,12 @@ In an entry, grey words are drawn at the cursor and are never part of the entry,
 
 These end a session. Each one has a reason, which the core sends in `dictation:stopped`:
 
-- **You stop it** (`user`): the core stops listening at once, lets the engine finish what it already heard, and sends those words. The grey words become normal text. This takes about 0.1s, and the core waits up to 8s.
+- **You stop it** (`user`): the core stops listening at once, lets the engine finish what it already heard, and sends those words. The grey words become normal text. This takes about 0.1s. If the engine has not settled after 8s, the session ends as `engine_failed` instead, so you are told that words may be missing.
 - **You leave** (`discarded`): you open another entry, start a new one, close or delete the entry, or go to Home, Chat, Memories, or Settings. In Chat, it is sending a message, opening another chat, or leaving Chat. The session ends at once.
 - **Sage locks** (`locked`): this covers the lock, the idle lock, **Sage > Lock**, the Mac or display going to sleep, and the screen saver starting. These stop dictation even when the lock is off. [The app lock](security/lock.md#dictation-and-the-lock) has the rest.
 - **Sage quits** (`quit`).
 - **The mic cannot be used**: `denied` when you refuse access, `no_input` when there is no working mic, and `input_lost` when a started mic sends no sound for 2s. That can happen when you connect AirPods or the Mac wakes. The Native SDK does not report these changes, so Sage watches for them.
-- **The engine fails** (`engine_failed`): it stopped, or it fell a minute behind the mic.
+- **The engine fails** (`engine_failed`): it stopped, it fell a minute behind the sound it was given, or it did not settle within 8s of a Stop.
 
 What happens to grey words depends on the reason:
 
@@ -54,9 +54,23 @@ What happens to grey words depends on the reason:
 
 A stop with a message shows it in a toast. A refused microphone adds **Open System Settings**.
 
+### The display stays awake
+
+Display sleep locks Sage, so a long entry with no key or trackpad use would be cut off mid-sentence on a Mac whose display sleeps after a few minutes. While the mic is on, Sage asks macOS not to sleep the display from idleness. The request is a power assertion named “Sage is dictating”, which `pmset -g assertions` lists. It starts when the mic really starts, not when you press the button, and it ends when the session ends, when Sage locks, and when Sage quits.
+
+A closing lid, a real system sleep, and the screen saver are not stopped by it, and they still lock Sage and stop dictation. A mic left on keeps the display awake and Sage unlocked, so press ⌘D or Esc when you are done. [The app lock](security/lock.md#dictation-and-the-lock) has the trade-off. The code is `src/display_awake.zig`, which opens IOKit at run time, so the Sage executable does not link it.
+
 ## Audio is never saved
 
-Sage captures sound only while a session runs. The core keeps about 60s of it in memory and zeroes it when the session ends. Sound is never written to a file, never logged, and never sent to the web view, which only receives text. Sage never logs transcript text either, and the core holds the text only long enough to pass it on.
+Sage captures sound only while a session runs. Sound is never written to a file, never logged, and never sent to the web view, which only receives text. Sage never logs transcript text either, and the core holds the text only long enough to pass it on.
+
+Sage keeps these copies of the sound in memory, and zeroes each one:
+
+- **The ring**: the core keeps about 60s in a ring, and zeroes it when the session ends. The worker also zeroes the small buffer it copies through.
+- **The engine's queue**: `libSageSpeech.dylib` copies each piece it is fed into a queue. It zeroes the piece once the analyzer has taken it, and zeroes whatever is left when the session ends.
+- **The analyzer's buffers**: the library keeps the last minute of the buffers it gave SpeechAnalyzer. It zeroes each one as it ages out, and the rest when the session ends. A temporary copy made for a format change is zeroed at once.
+
+Two copies are out of Sage’s reach, so they are not zeroed: the Native SDK’s own capture buffers, and whatever SpeechAnalyzer and macOS keep inside themselves.
 
 The engine runs on this Mac. `security-tests/dictation-no-audio.test.ts` checks these rules in the source: the web view has no `getUserMedia`, `MediaRecorder`, or `AudioContext`, the dictation source files write no files and log no text, and the app does not link the Speech framework.
 
@@ -74,11 +88,14 @@ Sage uses Apple’s on-device speech engine: SpeechAnalyzer with SpeechTranscrib
 
 The engine needs an English speech model. macOS downloads it, keeps it up to date, and stores it outside Sage, so it is not in the Ollama models folder. Sage cannot delete it. Settings > Models shows a **Speech** section with a **Speech model** row:
 
+- **Checking** until macOS has said what is installed. This lasts a moment after Sage starts. The core asks on a background thread, so the loop thread never waits for the speech service.
 - **Installed**, or **Not downloaded** with a **Download** button
 - **Downloading (40%)** while macOS fetches it
 - **Download failed**, with **Try again** and the reason
 
-If you press the mic without the model, Sage starts the download and shows its progress in a toast. When it finishes, the toast says to press ⌘D. Dictation is English only.
+If you press the mic without the model, Sage starts the download and shows its progress in a toast. When it finishes, the toast says to press ⌘D. If macOS has not answered yet, the toast says “Sage is still checking the speech model. Try again in a moment.” Dictation is English only.
+
+A Mac with no English speech model cannot dictate. The mic is hidden, and Settings > Models says “Dictation isn’t available in English on this Mac.”
 
 ### Why this engine
 
@@ -97,9 +114,9 @@ Tidy cleans up spoken text with the summary model, the one Dream uses. It fixes 
 Tidy shows in two places:
 
 - **After Stop**: a **Tidy** button in the entry header cleans the stretch you dictated last. It stays until you type or leave the entry.
-- **In the selection menu**: select text and choose **Tidy**. It is off, with a tooltip, when the selection holds anything but plain paragraphs, such as a heading, a list, or bold text.
+- **In the selection menu**: select text and choose **Tidy**. It is off, with a tooltip, when the selection holds anything but plain paragraphs, such as a heading, a list, or bold text. Spaces at the ends of a selection stay where they were, so the words around it are not joined.
 
-The spinner reads “Tidying…”. The result replaces the text as paragraphs, in one undo step, and the header offers **Keep** and **Undo**. Undo restores the original text. Typing, leaving, and Esc count as Keep. If you change the text while Tidy works, Sage drops the result and says so.
+The spinner reads “Tidying…”. The result replaces the text as paragraphs, in one undo step, and the header offers **Keep** and **Undo**. Undo restores the original text. Typing, leaving, and Esc count as Keep. If you change the text while Tidy works, Sage drops the result and says so. That includes a change that moves no words, such as making a word bold or turning the paragraph into a heading.
 
 These limits apply:
 
@@ -114,7 +131,7 @@ These limits apply:
 
 While Sage is locked, every command below answers “Sage is locked.” except `dictation.stop`, which always answers.
 
-- `dictation.status`: whether this Mac can dictate, the microphone and model state, and the running session
+- `dictation.status`: whether this Mac can dictate, the microphone and model state, and the running session. It answers at once, from what the engine has cached
 - `dictation.start`: opens the mic and answers with the session number
 - `dictation.stop`: stops a session, with `{ session, discard }`
 - `dictation.openSettings`: opens Privacy & Security > Microphone
@@ -126,10 +143,10 @@ While Sage is locked, every command below answers “Sage is locked.” except `
 ```ts
 {
   available: boolean; // false hides the mic
-  reason: "unsupported_os" | "engine_missing" | null;
+  reason: "unsupported_os" | "engine_missing" | "no_english" | null;
   microphone: "granted" | "denied" | "restricted" | "undetermined";
   model: {
-    state: "installed" | "missing" | "downloading" | "failed";
+    state: "checking" | "installed" | "missing" | "downloading" | "failed";
     fraction: number | null; // 0 to 1 while downloading
     message: string | null; // why a download failed
   };
@@ -140,7 +157,8 @@ While Sage is locked, every command below answers “Sage is locked.” except `
 `dictation.start` refuses with an error name that the web view reads as the error code:
 
 - `Locked` and `Securing`: Sage is locked, or still securing the journal
-- `DictationUnavailable`: the Mac is older than macOS 26, or the speech library is missing
+- `DictationUnavailable`: the Mac is older than macOS 26, the speech library is missing, or the Mac has no English speech model
+- `SpeechModelChecking`: macOS has not said yet whether the model is installed, so try again in a moment
 - `SpeechModelMissing`: the model is not installed yet
 - `MicrophoneDenied`: you refused access, or an administrator restricted it
 - `DictationBusy`: the last session is still ending
@@ -166,7 +184,7 @@ A phrase moves from grey to final inside one event, so grey words never vanish b
 Audio passes through five steps, on four kinds of thread:
 
 1. **Audio tap**: the Native SDK calls `captureSink` on its capture thread. The sink copies the samples into a ring of about 60s and sets a few flags. It takes no lock, allocates nothing, and never wakes the loop.
-2. **Worker**: one thread per session drains the ring every 20 ms into the engine, up to 100 ms of sound at a time. It also ends the session when no sound arrives for 2s or the ring fills, and it settles the engine on a normal stop.
+2. **Worker**: one thread per session drains the ring every 20 ms into the engine, up to 100 ms of sound at a time. It also ends the session when no sound arrives for 2s, and when the ring fills because the engine stopped taking sound. It settles the engine on a normal stop, and a settle that takes over 8s ends the session as `engine_failed`. The Apple engine never makes the worker wait, so it keeps its own count of sound it has not used yet. It reports a failure when that passes a minute.
 3. **Result queue**: the engine reports text from its own threads. Each report goes into a queue under a short spin lock, and wakes the loop thread. A newer grey tail replaces one that is still queued.
 4. **Loop thread**: `.effects_wake` drains the queue and builds the window events. A result from a session that is no longer current is dropped here. Only this thread starts and stops sessions, and nothing here touches SQLite.
 5. **Window events**: `runtime.emitWindowEvent` sends them to the web view.
@@ -182,11 +200,13 @@ The library has a small C interface: `sage_speech_status`, `_install`, `_begin`,
 - **A packaged app** loads `Contents/Frameworks/libSageSpeech.dylib` and ignores the environment variable below.
 - **Any other launch** loads the absolute path in `SAGE_SPEECH_LIB_PATH`. `make dev` sets it to `zig-out/lib/libSageSpeech.dylib`, where the build installs the library.
 
-If the file is missing, `dictation.status` answers `engine_missing`, and Settings says “Sage’s dictation files are missing. Reinstall Sage.” If the file is there but macOS refuses to load it because the Mac is older than macOS 26, the answer is `unsupported_os`, and Settings says “Dictation needs macOS 26 or later.”
+If the file is missing, `dictation.status` answers `engine_missing`, and Settings says “Sage’s dictation files are missing. Reinstall Sage.” If the file is there but macOS refuses to load it because the Mac is older than macOS 26, the answer is `unsupported_os`, and Settings says “Dictation needs macOS 26 or later.” If the library loads but the Mac has no English speech model, the answer is `no_english`.
+
+The loop thread never loads the library and never waits for macOS. A thread that starts with Sage loads it and asks for the model state, and the library keeps the answer in a cache that it refreshes in the background. A status call reads the cache. Until the first answer, the model reads `checking`.
 
 `build.zig` builds the library with `xcrun swiftc` for macOS 26 and installs it in `zig-out/lib/`. `make package` copies it into the app before signing.
 
-Building it needs the macOS 26 SDK, which Xcode 26 includes. Pass `-Dspeech=false` to skip it on a Mac without that SDK, and Sage then has no mic. `native check` and `native test` do not build it. The release workflow runs on `macos-26`, because packaging builds it.
+Building it needs the macOS 26 SDK, which Xcode 26 includes. Pass `-Dspeech=false` to skip it on a Mac without that SDK, and Sage then has no mic. `native check` and `native test` do not build it. CI has a separate job on `macos-26` that compiles just the library, so a Swift error shows on the pull request. The release workflow runs on `macos-26` too, because packaging builds it.
 
 After a macOS update, check that the engine still works. A live test in `src/speech_apple.zig` feeds a recorded clip through the real engine and the whole core. It is skipped unless `SAGE_SPEECH_LIB_PATH` names a built library and `SAGE_SPEECH_TEST_WAV` names a 16 kHz mono 16-bit WAV file. `SAGE_SPEECH_TEST_SECONDS` limits how much of the file it reads.
 

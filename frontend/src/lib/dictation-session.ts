@@ -187,6 +187,7 @@ export function stopNotice(
 /** How `dictation.start` failed, from the error name the core sent. */
 export type StartFailure =
   | "busy"
+  | "checking"
   | "denied"
   | "download"
   | "locked"
@@ -197,6 +198,8 @@ export function startFailure(code: string | null): StartFailure {
   switch (code) {
     case "MicrophoneDenied":
       return "denied";
+    case "SpeechModelChecking":
+      return "checking";
     case "SpeechModelMissing":
       return "download";
     case "DictationBusy":
@@ -216,6 +219,7 @@ export const startFailureMessages: Record<
   string
 > = {
   busy: "Dictation is still stopping. Try again in a moment.",
+  checking: "Sage is still checking the speech model. Try again in a moment.",
   other: "Could not start dictation.",
   unavailable: "Dictation isn't available on this Mac.",
 };

@@ -679,6 +679,60 @@ test("Tidy drops its reply when words inside were deleted", () => {
   assert.equal(text(editor).includes("Reply."), false);
 });
 
+test("Tidy drops its reply when a mark was added inside the words", () => {
+  const editor = makeEditor("so um I went to the the store");
+  const view = viewOf(editor);
+  const request = beginTidy(view, {
+    from: 1,
+    to: editor.state.doc.content.size - 1,
+  });
+  assert.ok(request);
+  const start = editor.state.doc.textContent.indexOf("store") + 1;
+  editor.view.dispatch(
+    editor.state.tr.addMark(
+      start,
+      start + "store".length,
+      editor.state.schema.marks.bold.create()
+    )
+  );
+  assert.equal(finishTidy(view, request.id, "I went to the store."), "edited");
+  assert.equal(JSON.stringify(editor.getJSON()).includes('"bold"'), true);
+  assert.equal(text(editor), "so um I went to the the store");
+  assert.equal(dictationState(editor.state).tidy, null);
+});
+
+test("Tidy drops its reply when the paragraph became a heading", () => {
+  const editor = makeEditor("so um I went to the the store");
+  const view = viewOf(editor);
+  const request = beginTidy(view, {
+    from: 1,
+    to: editor.state.doc.content.size - 1,
+  });
+  assert.ok(request);
+  editor.chain().setTextSelection(3).setHeading({ level: 1 }).run();
+  assert.equal(finishTidy(view, request.id, "I went to the store."), "edited");
+  assert.equal(editor.state.doc.child(0).type.name, "heading");
+  assert.equal(editor.state.doc.textContent, "so um I went to the the store");
+  assert.equal(dictationState(editor.state).tidy, null);
+});
+
+test("Tidy drops its reply when the paragraph around a selection became a heading", () => {
+  const editor = makeEditor("Intro. some rambling words. Outro.");
+  const view = viewOf(editor);
+  const start = editor.state.doc.textContent.indexOf("some") + 1;
+  const end = start + "some rambling words.".length;
+  const request = beginTidy(view, { from: start, to: end });
+  assert.ok(request);
+  // The words in the range do not change, only the block around them.
+  editor.chain().setTextSelection(3).setHeading({ level: 2 }).run();
+  assert.equal(finishTidy(view, request.id, "A few words."), "edited");
+  assert.equal(editor.state.doc.child(0).type.name, "heading");
+  assert.equal(
+    editor.state.doc.textContent,
+    "Intro. some rambling words. Outro."
+  );
+});
+
 test("Tidy still runs when the person typed before or after the words", () => {
   const { editor, view } = dictated("Earlier text.");
   const { range } = dictationState(editor.state);
@@ -753,6 +807,44 @@ test("Tidy works on a selection inside a paragraph, and joins the text around it
   assert.equal(undoTidy(view), true);
   assert.equal(text(editor), "Intro. some rambling words. Outro.");
   assert.equal(editor.state.doc.childCount, 1);
+});
+
+test("Tidy on a selection keeps the space after it", () => {
+  const editor = makeEditor("so um I went home. Then I slept.");
+  const view = viewOf(editor);
+  // The selection ends with the space before "Then".
+  const end = "so um I went home. ".length + 1;
+  const request = beginTidy(view, { from: 1, to: end });
+  assert.ok(request);
+  assert.equal(request.text, "so um I went home.");
+  assert.equal(finishTidy(view, request.id, "I went home."), "applied");
+  assert.equal(text(editor), "I went home. Then I slept.");
+  assert.equal(undoTidy(view), true);
+  assert.equal(text(editor), "so um I went home. Then I slept.");
+});
+
+test("Tidy on a selection keeps the space before it", () => {
+  const editor = makeEditor("I slept. so um I went home");
+  const view = viewOf(editor);
+  // The selection starts with the space after "slept."
+  const start = "I slept.".length + 1;
+  const request = beginTidy(view, {
+    from: start,
+    to: editor.state.doc.content.size - 1,
+  });
+  assert.ok(request);
+  assert.equal(request.text, "so um I went home");
+  assert.equal(finishTidy(view, request.id, "I went home."), "applied");
+  assert.equal(text(editor), "I slept. I went home.");
+  assert.equal(undoTidy(view), true);
+  assert.equal(text(editor), "I slept. so um I went home");
+});
+
+test("Tidy on a selection of only spaces does not start", () => {
+  const editor = makeEditor("one   two");
+  const view = viewOf(editor);
+  assert.equal(beginTidy(view, { from: 4, to: 7 }), null);
+  assert.equal(dictationState(editor.state).tidy, null);
 });
 
 test("Tidy splits the paragraph around a selection when the reply has several", () => {

@@ -8,6 +8,11 @@
 // Audio comes in as 16 kHz mono Int16 and is never written anywhere. Text goes
 // out through one callback and is never logged.
 //
+// Sage's own copies of the audio are zeroed once they are used: the queue
+// copies, the converter's temporary, and the buffers handed to the analyzer
+// (the last minute of them at session end). Whatever SpeechAnalyzer and the
+// system keep inside themselves is theirs, and out of this file's reach.
+//
 // Every function is safe to call from any thread, except that `begin` hands
 // back a handle that one caller owns: feed, finish, cancel, and free for the
 // same handle must not run at the same time.
@@ -29,7 +34,7 @@ public typealias SageSpeechResultFn = @convention(c) (
 ) -> Void
 
 /// Bump when the interface changes. Sage refuses a library with another number.
-private let abiVersion: Int32 = 1
+private let abiVersion: Int32 = 2
 
 @_cdecl("sage_speech_abi_version")
 public func sage_speech_abi_version() -> Int32 {
@@ -37,9 +42,11 @@ public func sage_speech_abi_version() -> Int32 {
 }
 
 /// Model states reported by `sage_speech_status`:
-///   1 installed, 2 missing, 3 downloading, 4 failed, 5 not supported on this Mac
+///   0 checking (macOS has not said yet), 1 installed, 2 missing,
+///   3 downloading, 4 failed, 5 no English model on this Mac
 /// The fraction is 0...1 while downloading and -1 otherwise. The message is
 /// UTF-8 for a failure and empty otherwise. Returns the message length.
+/// It answers from a cache at once and never waits for macOS.
 @_cdecl("sage_speech_status")
 public func sage_speech_status(
   _ state: UnsafeMutablePointer<Int32>?,
@@ -57,7 +64,8 @@ public func sage_speech_status(
 }
 
 /// Start downloading the speech model. Returns 1 when a download started and
-/// 0 when there is nothing to do (installed, downloading, or not supported).
+/// 0 when there is nothing to do (still checking, installed, downloading, or
+/// no English model on this Mac). It never waits for macOS.
 @_cdecl("sage_speech_install")
 public func sage_speech_install() -> Int32 {
   ModelState.shared.startInstall() ? 1 : 0
@@ -136,7 +144,8 @@ private func makeTranscriber(locale: Locale) -> SpeechTranscriber {
 }
 
 /// What the OS knows about the model, kept fresh in the background so a status
-/// call never waits on the OS.
+/// call never waits on the OS. Until macOS answers the first time, the state
+/// is 0 (checking).
 private final class ModelState: @unchecked Sendable {
   static let shared = ModelState()
 
@@ -147,29 +156,18 @@ private final class ModelState: @unchecked Sendable {
   }
 
   private let gate = NSLock()
-  private let firstAnswer = DispatchSemaphore(value: 0)
-  private var state: Int32 = 0  // 0: not asked yet
+  private var state: Int32 = 0  // 0: macOS has not answered yet
   private var fraction: Double = -1
   private var message = ""
   private var installing = false
   private var refreshing = false
   private var lastRefresh: ContinuousClock.Instant?
-  private var answered = false
 
-  /// The cached answer. The first call waits a moment for the first answer.
+  /// The cached answer, at once. It starts a refresh in the background when
+  /// the answer is old.
   func snapshot() -> Snapshot {
     refreshIfStale()
-    gate.lock()
-    let unknown = state == 0
-    gate.unlock()
-    if unknown {
-      // Pass the signal on, so every caller that is waiting wakes up.
-      if firstAnswer.wait(timeout: .now() + 2) == .success { firstAnswer.signal() }
-    }
-    gate.lock()
-    defer { gate.unlock() }
-    // An answer that never came reads as missing; installing then sorts it out.
-    return Snapshot(state: state == 0 ? 2 : state, fraction: fraction, message: message)
+    return gate.withLock { Snapshot(state: state, fraction: fraction, message: message) }
   }
 
   private func refreshIfStale() {
@@ -208,7 +206,7 @@ private final class ModelState: @unchecked Sendable {
         }
       }
     }
-    let first = gate.withLock { () -> Bool in
+    gate.withLock {
       refreshing = false
       lastRefresh = ContinuousClock.now
       // A failed download keeps its message until the next attempt or an install.
@@ -217,18 +215,14 @@ private final class ModelState: @unchecked Sendable {
         if next != 3 { fraction = -1 }
         if next == 1 || next == 5 { message = "" }
       }
-      let first = !answered
-      answered = true
-      return first
     }
-    if first { firstAnswer.signal() }
   }
 
   func startInstall() -> Bool {
-    // Know what is installed before deciding there is something to download.
-    _ = snapshot()
+    refreshIfStale()
     gate.lock()
-    if installing || state == 1 || state == 5 {
+    // Nothing to download until macOS has said what is installed.
+    if installing || state == 0 || state == 1 || state == 5 {
       gate.unlock()
       return false
     }
@@ -276,26 +270,73 @@ private final class ModelState: @unchecked Sendable {
   }
 
   private func finishInstall(state next: Int32, message text: String) {
-    let first = gate.withLock { () -> Bool in
+    gate.withLock {
       installing = false
       state = next
       fraction = -1
       message = text
       lastRefresh = ContinuousClock.now
-      let first = !answered
-      answered = true
-      return first
     }
-    if first { firstAnswer.signal() }
   }
 }
 
 // MARK: - A dictation session
 
+/// Audio waiting for the analyzer is capped at about a minute, the same as the
+/// ring on Sage's side. Past that the analyzer has stalled, and the session
+/// reports a failure instead of piling up audio that would arrive far too late.
+private let maxQueuedSamples = 16_000 * 60
+
+/// The most recent buffers kept after they went to the analyzer, in seconds of
+/// audio. Older ones are zeroed as they leave. The rest are zeroed at the end.
+private let trailSeconds = 60.0
+
+/// Zero memory in a way the optimizer may not drop.
+private func scrub(_ pointer: UnsafeMutableRawPointer?, _ byteCount: Int) {
+  guard let pointer, byteCount > 0 else { return }
+  memset_s(pointer, byteCount, 0, byteCount)
+}
+
+private func scrub(_ buffer: AVAudioPCMBuffer) {
+  for audio in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+    scrub(audio.mData, Int(audio.mDataByteSize))
+  }
+}
+
+/// A copy of the samples Sage fed, zeroed when the last reference goes.
+private final class AudioChunk: @unchecked Sendable {
+  let samples: UnsafeMutablePointer<Int16>
+  let count: Int
+
+  init(copying source: UnsafeBufferPointer<Int16>) {
+    count = source.count
+    samples = UnsafeMutablePointer<Int16>.allocate(capacity: max(count, 1))
+    if let base = source.baseAddress { samples.update(from: base, count: count) }
+  }
+
+  deinit {
+    scrub(samples, count * MemoryLayout<Int16>.size)
+    samples.deallocate()
+  }
+}
+
+/// Hands the queued chunks to the analyzer one at a time, as it asks for them.
+private final class ChunkSource: @unchecked Sendable {
+  private var iterator: AsyncStream<AudioChunk>.AsyncIterator
+
+  init(_ stream: AsyncStream<AudioChunk>) {
+    iterator = stream.makeAsyncIterator()
+  }
+
+  func next() async -> AudioChunk? {
+    await iterator.next()
+  }
+}
+
 /// Turns the 16 kHz mono Int16 samples Sage captures into the buffers the
 /// analyzer wants. The analyzer reports 16 kHz mono Int16 on the Macs tested,
 /// which needs no conversion. Any other format goes through AVAudioConverter.
-private final class SampleConverter {
+private final class SampleConverter: @unchecked Sendable {
   private let target: AVAudioFormat
   private let source: AVAudioFormat
   private let converter: AVAudioConverter?
@@ -318,20 +359,18 @@ private final class SampleConverter {
     }
   }
 
-  func buffer(from samples: [Int16]) -> AVAudioPCMBuffer? {
-    let frames = AVAudioFrameCount(samples.count)
+  func buffer(from chunk: AudioChunk) -> AVAudioPCMBuffer? {
+    let frames = AVAudioFrameCount(chunk.count)
     guard frames > 0,
       let input = AVAudioPCMBuffer(pcmFormat: source, frameCapacity: frames),
       let channel = input.int16ChannelData
     else { return nil }
     input.frameLength = frames
-    samples.withUnsafeBufferPointer { buffer in
-      if let base = buffer.baseAddress {
-        channel[0].update(from: base, count: samples.count)
-      }
-    }
+    channel[0].update(from: chunk.samples, count: chunk.count)
     guard let converter else { return input }
 
+    // From here the input is only a temporary, so it is zeroed once converted.
+    defer { scrub(input) }
     let ratio = target.sampleRate / source.sampleRate
     let capacity = AVAudioFrameCount(Double(frames) * ratio) + 64
     guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else {
@@ -356,8 +395,12 @@ private final class SampleConverter {
 private final class Session: @unchecked Sendable {
   private let callback: SageSpeechResultFn
   private let context: UnsafeMutableRawPointer?
-  private let input: AsyncStream<[Int16]>
-  private let inputContinuation: AsyncStream<[Int16]>.Continuation
+  private let input: AsyncStream<AudioChunk>
+  private let inputContinuation: AsyncStream<AudioChunk>.Continuation
+  /// Finishes when the analyzer has been given all the input, or the session
+  /// is cancelled.
+  private let inputDone: AsyncStream<Void>
+  private let inputDoneContinuation: AsyncStream<Void>.Continuation
 
   /// Guards the flags below and every call out to Sage, so `close` can promise
   /// that no callback is running or will run after it returns.
@@ -368,10 +411,22 @@ private final class Session: @unchecked Sendable {
   private var analyzer: SpeechAnalyzer?
   private var task: Task<Void, Never>?
 
+  /// Guards the audio bookkeeping: the samples queued for the analyzer, and the
+  /// buffers it was given most recently.
+  private let audioGate = NSLock()
+  private var queuedSamples = 0
+  private var trail: [AVAudioPCMBuffer] = []
+  private var trailLength = 0.0
+
   init(callback: @escaping SageSpeechResultFn, context: UnsafeMutableRawPointer?) {
     self.callback = callback
     self.context = context
-    (input, inputContinuation) = AsyncStream<[Int16]>.makeStream(bufferingPolicy: .unbounded)
+    (input, inputContinuation) = AsyncStream<AudioChunk>.makeStream(bufferingPolicy: .unbounded)
+    (inputDone, inputDoneContinuation) = AsyncStream<Void>.makeStream()
+  }
+
+  deinit {
+    scrubTrail()
   }
 
   func start() {
@@ -379,7 +434,17 @@ private final class Session: @unchecked Sendable {
   }
 
   func feed(_ samples: UnsafeBufferPointer<Int16>) {
-    inputContinuation.yield(Array(samples))
+    let stalled = audioGate.withLock { () -> Bool in
+      queuedSamples += samples.count
+      return queuedSamples > maxQueuedSamples
+    }
+    if stalled {
+      // The analyzer is a minute behind. Say so, and stop taking audio.
+      emit(4, "")
+      cancel()
+      return
+    }
+    inputContinuation.yield(AudioChunk(copying: samples))
   }
 
   func finish() {
@@ -394,6 +459,7 @@ private final class Session: @unchecked Sendable {
     gate.unlock()
     if already { return }
     inputContinuation.finish()
+    inputDoneContinuation.finish()
     task?.cancel()
     if let active {
       Task { await active.cancelAndFinishNow() }
@@ -422,9 +488,58 @@ private final class Session: @unchecked Sendable {
     gate.withLock { cancelRequested }
   }
 
+  /// The next buffer for the analyzer, made when it asks. Taking a chunk off
+  /// the queue is what counts it as used, so a stalled analyzer shows as a
+  /// queue that only grows.
+  private func nextInput(_ source: ChunkSource, _ converter: SampleConverter) async
+    -> AnalyzerInput?
+  {
+    while let chunk = await source.next() {
+      audioGate.withLock { queuedSamples -= chunk.count }
+      if isCancelled() { break }
+      if let buffer = converter.buffer(from: chunk) {
+        remember(buffer)
+        return AnalyzerInput(buffer: buffer)
+      }
+    }
+    inputDoneContinuation.finish()
+    return nil
+  }
+
+  /// Keeps the last minute of buffers the analyzer was given, so they can be
+  /// zeroed. A buffer that falls out of that minute is zeroed at once.
+  private func remember(_ buffer: AVAudioPCMBuffer) {
+    var expired: [AVAudioPCMBuffer] = []
+    audioGate.withLock {
+      trail.append(buffer)
+      trailLength += duration(of: buffer)
+      while trailLength > trailSeconds, let oldest = trail.first {
+        trail.removeFirst()
+        trailLength -= duration(of: oldest)
+        expired.append(oldest)
+      }
+    }
+    for old in expired { scrub(old) }
+  }
+
+  private func duration(of buffer: AVAudioPCMBuffer) -> Double {
+    Double(buffer.frameLength) / buffer.format.sampleRate
+  }
+
+  private func scrubTrail() {
+    let kept = audioGate.withLock { () -> [AVAudioPCMBuffer] in
+      let kept = trail
+      trail = []
+      trailLength = 0
+      return kept
+    }
+    for buffer in kept { scrub(buffer) }
+  }
+
   private func run() async {
     defer {
       gate.withLock { finished = true }
+      scrubTrail()
     }
     do {
       guard let locale = await englishLocale() else {
@@ -455,16 +570,15 @@ private final class Session: @unchecked Sendable {
           self.emit(result.isFinal ? 2 : 1, String(result.text.characters))
         }
       }
-      let (analyzerInput, analyzerBuilder) = AsyncStream<AnalyzerInput>.makeStream()
+      let source = ChunkSource(input)
+      let analyzerInput = AsyncStream<AnalyzerInput> {
+        await self.nextInput(source, converter)
+      }
       try await analyzer.start(inputSequence: analyzerInput)
 
-      for await samples in input {
-        if isCancelled() { break }
-        if let buffer = converter.buffer(from: samples) {
-          analyzerBuilder.yield(AnalyzerInput(buffer: buffer))
-        }
-      }
-      analyzerBuilder.finish()
+      // The analyzer pulls the input itself. This returns when it has been
+      // given all of it, or when the session is cancelled.
+      for await _ in inputDone {}
       if isCancelled() {
         results.cancel()
         await analyzer.cancelAndFinishNow()

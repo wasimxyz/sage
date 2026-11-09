@@ -101,6 +101,7 @@ function violations(source: string, rules: readonly Rule[]): string[] {
 
 const dictationZig = [
   "src/dictation.zig",
+  "src/display_awake.zig",
   "src/microphone.zig",
   "src/speech_apple.zig",
 ] as const;
@@ -302,6 +303,66 @@ test("the audio ring is zeroed before its memory is freed", () => {
       destroy.indexOf("self.ring.clear()") <
         destroy.indexOf("page_allocator.free(storage)"),
     "Session.destroy frees the audio before it clears it."
+  );
+});
+
+test("the speech library zeroes the copies of the audio it makes", () => {
+  const swift = stripComments(read(dictationSwift), "swift");
+  // A plain store of zeros can be dropped by the optimizer before the free.
+  assert.match(
+    swift,
+    /memset_s\(/,
+    "SageSpeech.swift no longer zeroes with memset_s, so a store of zeros could be optimized away."
+  );
+  const chunk = swift.slice(swift.indexOf("final class AudioChunk"));
+  assert.match(
+    chunk.slice(0, chunk.indexOf("\n}\n")),
+    /deinit\s*\{[^}]*scrub\(/,
+    "AudioChunk no longer zeroes its samples when the last reference goes, so queued audio could stay in freed memory."
+  );
+  assert.match(
+    swift,
+    /defer\s*\{\s*scrub\(input\)\s*\}/,
+    "The converter no longer zeroes its temporary copy of the audio."
+  );
+  const run = swift.slice(swift.indexOf("private func run() async"));
+  assert.match(
+    run.slice(0, run.indexOf("\n  }\n")),
+    /defer\s*\{[\s\S]{0,120}?scrubTrail\(\)/,
+    "The session no longer zeroes the buffers it gave the analyzer when it ends."
+  );
+});
+
+test("Sage opens IOKit at run time to keep the display awake", () => {
+  const build = stripComments(read("build.zig"), "zig");
+  for (const line of build.split("\n")) {
+    if (
+      /\b(linkFramework|linkSystemLibrary|linkLibrary|addObjectFile|addFrameworkPath)\(/.test(
+        line
+      )
+    ) {
+      assert.doesNotMatch(
+        line,
+        /IOKit/i,
+        `build.zig links ${line.trim()}. display_awake.zig opens IOKit with DynLib, the way microphone.zig opens AVFoundation.`
+      );
+    }
+  }
+  const awake = stripComments(read("src/display_awake.zig"), "zig");
+  assert.match(
+    awake,
+    /std\.DynLib\.open\(/,
+    "display_awake.zig no longer opens IOKit with DynLib."
+  );
+  assert.doesNotMatch(
+    awake,
+    /\bextern\b/,
+    "display_awake.zig declares an extern function, which makes the loader need IOKit at launch."
+  );
+  assert.match(
+    awake,
+    /PreventUserIdleDisplaySleep/,
+    "display_awake.zig no longer asks for the idle display sleep assertion."
   );
 });
 

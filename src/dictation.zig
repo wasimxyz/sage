@@ -14,8 +14,13 @@
 //!   into window events. Anything queued for a session that is no longer
 //!   current is dropped there.
 //!
-//! Audio lives only in the ring, which `Session.destroy` zeroes. Nothing here
-//! writes a file or logs text, and the web view never receives audio.
+//! Audio is never written to a file, never logged, and never sent to the web
+//! view, and nothing here logs text. In this file it lives in the ring, which
+//! `Session.destroy` zeroes, and in the worker's scratch buffer, which is zeroed
+//! when the worker ends. The Apple engine queues its own copies in
+//! `SageSpeech.swift`, which zeroes the ones it made once it is done with them.
+//! Two things are out of Sage's reach and are not zeroed: the Native SDK's own
+//! capture buffers, and what the speech engine keeps inside itself.
 const std = @import("std");
 const native_sdk = @import("native_sdk");
 const journal = @import("journal.zig");
@@ -82,13 +87,17 @@ const EndedReason = enum { user, capture_failed, input_lost, engine_failed };
 pub const Unavailable = enum {
     unsupported_os,
     engine_missing,
+    /// This Mac has no speech model for English.
+    no_english,
 
     pub fn name(self: Unavailable) []const u8 {
         return @tagName(self);
     }
 };
 
-pub const ModelState = enum { installed, missing, downloading, failed };
+/// `checking` means the engine has not heard from macOS yet. It answers a
+/// status call at once, so the loop thread never waits for the speech service.
+pub const ModelState = enum { checking, installed, missing, downloading, failed };
 
 pub const EngineStatus = struct {
     /// Set when this Mac can't dictate at all, so the mic is hidden.
@@ -354,6 +363,9 @@ pub const Host = struct {
     emit_fn: ?*const fn (context: ?*anyopaque, name: []const u8, payload: []const u8) void = null,
     /// A session ended. The app restarts its idle clock here.
     session_ended_fn: ?*const fn (context: ?*anyopaque) void = null,
+    /// The microphone is really on (true), or the session that had it ended
+    /// (false). The app keeps the display awake while it is on.
+    listening_fn: ?*const fn (context: ?*anyopaque, on: bool) void = null,
     microphone_status_fn: *const fn () microphone.Status = microphone.status,
 
     fn emit(self: Host, name: []const u8, payload: []const u8) void {
@@ -364,6 +376,11 @@ pub const Host = struct {
     fn sessionEnded(self: Host) void {
         const ended_fn = self.session_ended_fn orelse return;
         ended_fn(self.context);
+    }
+
+    fn setListening(self: Host, on: bool) void {
+        const listening_fn = self.listening_fn orelse return;
+        listening_fn(self.context, on);
     }
 };
 
@@ -412,6 +429,7 @@ const Session = struct {
     services: native_sdk.platform.PlatformServices,
     ring: Ring,
     watchdog_ms: i64,
+    settle_ms: i64 = settle_timeout_ms,
     engine: Engine = undefined,
     /// The loop thread and the worker each hold one.
     refs: std.atomic.Value(u32) = .init(2),
@@ -510,6 +528,7 @@ fn captureSink(context: ?*anyopaque, generation: u64, event: native_sdk.platform
 pub const StartError = error{
     DictationBusy,
     DictationUnavailable,
+    SpeechModelChecking,
     SpeechModelMissing,
     MicrophoneDenied,
     OutOfMemory,
@@ -519,6 +538,10 @@ pub const Controller = struct {
     backend: ?Backend = null,
     /// How long a started microphone may send nothing. Tests shorten it.
     watchdog_ms: i64 = no_samples_ms,
+    /// How long Stop waits for the engine to settle. Tests shorten it.
+    settle_ms: i64 = settle_timeout_ms,
+    /// Samples in a session's ring. Tests shrink it.
+    ring_len: usize = ring_samples,
 
     // Loop thread only.
     next_id: u64 = 0,
@@ -534,9 +557,19 @@ pub const Controller = struct {
         if (backend.prime_fn) |prime| prime(backend.context);
     }
 
-    /// Whether a session is running or settling. Auto-lock waits while it is.
+    /// Whether a session is running or settling, even if the microphone has
+    /// not started yet.
     pub fn active(self: *const Controller) bool {
         return self.current != null;
+    }
+
+    /// Whether the microphone is really on: capture has started and the session
+    /// has not ended. Auto-lock waits, and the display stays awake, only while
+    /// it is. A session that is still waiting for the person to answer the
+    /// macOS microphone prompt is not listening, and holds neither.
+    pub fn listening(self: *const Controller) bool {
+        const session = self.current orelse return false;
+        return session.started_sent;
     }
 
     pub fn currentId(self: *const Controller) ?u64 {
@@ -591,7 +624,10 @@ pub const Controller = struct {
     /// Start the model download. False when there is nothing to start.
     pub fn downloadModel(self: *Controller) error{DictationUnavailable}!bool {
         const backend = self.backend orelse return error.DictationUnavailable;
-        if (backend.status_fn(backend.context).unavailable != null) return error.DictationUnavailable;
+        const status = backend.status_fn(backend.context);
+        if (status.unavailable != null) return error.DictationUnavailable;
+        // Nothing to download until macOS has said what is installed.
+        if (status.model == .checking) return false;
         return backend.download_fn(backend.context);
     }
 
@@ -604,6 +640,7 @@ pub const Controller = struct {
         const backend = self.backend orelse return error.DictationUnavailable;
         const status = backend.status_fn(backend.context);
         if (status.unavailable != null) return error.DictationUnavailable;
+        if (status.model == .checking) return error.SpeechModelChecking;
         if (status.model != .installed) return error.SpeechModelMissing;
         switch (host.microphone_status_fn()) {
             .denied, .restricted => return error.MicrophoneDenied,
@@ -612,7 +649,7 @@ pub const Controller = struct {
         const services = host.services orelse return error.DictationUnavailable;
 
         const allocator = std.heap.page_allocator;
-        const storage = try allocator.alloc(i16, ring_samples);
+        const storage = try allocator.alloc(i16, self.ring_len);
         const session = allocator.create(Session) catch {
             allocator.free(storage);
             return error.OutOfMemory;
@@ -625,6 +662,7 @@ pub const Controller = struct {
             .services = services,
             .ring = Ring.init(storage),
             .watchdog_ms = self.watchdog_ms,
+            .settle_ms = self.settle_ms,
         };
         _ = self.live_sessions.fetchAdd(1, .acq_rel);
         // From here `destroy` frees the audio and the session together. No
@@ -695,7 +733,9 @@ pub const Controller = struct {
             host.emit("dictation:stopped", payload);
         } else |_| {}
         self.current = null;
+        const was_listening = session.started_sent;
         session.release();
+        if (was_listening) host.setListening(false);
         host.sessionEnded();
     }
 
@@ -763,6 +803,7 @@ pub const Controller = struct {
                 .started => {
                     if (session.started_sent) continue;
                     session.started_sent = true;
+                    host.setListening(true);
                     var buffer: [64]u8 = undefined;
                     if (writeStartedEvent(&buffer, session.id)) |payload| {
                         host.emit("dictation:started", payload);
@@ -929,7 +970,9 @@ fn runWorker(session: *Session) void {
             return;
         }
         if (ring.overflowed.load(.acquire)) {
-            // The engine fell a minute behind. Stop before text arrives late.
+            // The engine stopped taking audio, so the ring filled. Stop before
+            // text arrives late. The Apple engine never blocks `feed`: it
+            // queues the audio and reports its own backlog (SageSpeech.swift).
             session.engine.cancel();
             controller.pushResult(session, .ended, "", .engine_failed);
             return;
@@ -967,7 +1010,7 @@ fn settle(session: *Session) void {
     const io = session.io;
     session.engine.finish();
     var waited: i64 = 0;
-    while (session.engine_state.load(.acquire) == .running and waited < settle_timeout_ms) {
+    while (session.engine_state.load(.acquire) == .running and waited < session.settle_ms) {
         if (session.stop_mode.load(.acquire) == .cancel) {
             session.engine.cancel();
             return;
@@ -977,7 +1020,13 @@ fn settle(session: *Session) void {
     }
     switch (session.engine_state.load(.acquire)) {
         .failed => return,
-        .running => session.engine.cancel(),
+        .running => {
+            // The engine never settled, so words it was holding are lost. End
+            // as a failure, so the person is told, not as a Stop that went well.
+            session.engine.cancel();
+            session.controller.pushResult(session, .ended, "", .engine_failed);
+            return;
+        },
         .ended => {},
     }
     session.controller.pushResult(session, .ended, "", .user);
@@ -993,6 +1042,10 @@ pub const FakeEngine = struct {
     /// Delivered as a final when the input finishes.
     finish_final: []const u8 = "",
     fail_on_begin: bool = false,
+    /// `finish` reports nothing, as an engine that has stalled would.
+    stall_on_finish: bool = false,
+    /// `feed` waits until this is cleared, as an engine that has stalled would.
+    block_feed: std.atomic.Value(bool) = .init(false),
     /// Samples fed so far. The worker writes it and tests read it.
     fed: std.atomic.Value(usize) = .init(0),
     began: std.atomic.Value(bool) = .init(false),
@@ -1031,6 +1084,7 @@ pub const FakeEngine = struct {
 
     fn feed(context: *anyopaque, samples: []const i16) void {
         const self = from(context);
+        while (self.block_feed.load(.acquire)) std.Thread.yield() catch {};
         const total = self.fed.fetchAdd(samples.len, .acq_rel) + samples.len;
         while (self.next_step < self.script.len and self.script[self.next_step].at_samples <= total) {
             const step = self.script[self.next_step];
@@ -1046,6 +1100,7 @@ pub const FakeEngine = struct {
     fn finish(context: *anyopaque) void {
         const self = from(context);
         self.finished.store(true, .release);
+        if (self.stall_on_finish) return;
         if (self.finish_final.len > 0) self.events.final(self.finish_final);
         self.events.ended();
     }
@@ -1106,12 +1161,15 @@ const Capture = struct {
     names: std.ArrayList([]u8) = .empty,
     payloads: std.ArrayList([]u8) = .empty,
     sessions_ended: usize = 0,
+    /// Each time the microphone came on (true) or the session ended (false).
+    holds: std.ArrayList(bool) = .empty,
 
     fn deinit(self: *Capture) void {
         for (self.names.items) |item| testing.allocator.free(item);
         for (self.payloads.items) |item| testing.allocator.free(item);
         self.names.deinit(testing.allocator);
         self.payloads.deinit(testing.allocator);
+        self.holds.deinit(testing.allocator);
     }
 
     fn emit(context: ?*anyopaque, name: []const u8, payload: []const u8) void {
@@ -1123,6 +1181,11 @@ const Capture = struct {
     fn ended(context: ?*anyopaque) void {
         const self: *Capture = @ptrCast(@alignCast(context.?));
         self.sessions_ended += 1;
+    }
+
+    fn listening(context: ?*anyopaque, on: bool) void {
+        const self: *Capture = @ptrCast(@alignCast(context.?));
+        self.holds.append(testing.allocator, on) catch @panic("oom");
     }
 
     fn count(self: *const Capture, name: []const u8) usize {
@@ -1176,6 +1239,7 @@ const Rig = struct {
             .context = &self.capture,
             .emit_fn = Capture.emit,
             .session_ended_fn = Capture.ended,
+            .listening_fn = Capture.listening,
             .microphone_status_fn = testMicrophone,
         };
     }
@@ -1548,7 +1612,9 @@ test "text from an old session never reaches a new one" {
     const old = rig.controller.current.?;
     rig.controller.pushResult(old, .final, "from the old session", .user);
     rig.controller.stop(rig.host(), first, true);
-    try testing.expect(rig.controller.waitIdle(testing.io, 3000) or true);
+    // The old worker uses `rig.engine` until it lets go of the session, so wait
+    // for it before the engine is replaced.
+    try testing.expect(rig.controller.waitIdle(testing.io, 3000));
 
     rig.engine = .{};
     const second = try rig.controller.start(rig.host());
@@ -1697,31 +1763,51 @@ test "an engine failure ends the session as engine_failed" {
     try expectStopped(&rig, 1, second, "engine_failed");
 }
 
-test "a quiet engine ring overflow ends the session" {
+test "an engine that stops taking audio overflows the ring and ends the session" {
     var rig: Rig = undefined;
     try rig.init();
     defer rig.deinit();
+    // A ring of three chunks, and an engine whose `feed` blocks. The worker can
+    // move one chunk into the engine and then waits, so six chunks always
+    // overflow the ring.
+    rig.controller.ring_len = 4800;
+    rig.engine.block_feed.store(true, .release);
+    defer rig.engine.block_feed.store(false, .release);
     const session = try rig.controller.start(rig.host());
-    // Fill the ring faster than the worker drains it.
+
     var samples: [1600]i16 = undefined;
     @memset(&samples, 7);
-    var overflowed = false;
-    var pushed: usize = 0;
-    while (pushed < ring_samples + 4 * samples.len) : (pushed += samples.len) {
+    var dropped: usize = 0;
+    for (0..6) |_| {
         const result = rig.platform.pushAudioCapture(.microphone, 0, std.mem.sliceAsBytes(&samples));
-        if (result == .dropped_full) {
-            overflowed = true;
-            break;
-        }
-        // Keep the worker from keeping up by never yielding.
+        if (result == .dropped_full) dropped += 1;
     }
-    if (overflowed) {
-        try rig.pumpUntil(Rig.stopped);
-        try expectStopped(&rig, 0, session, "engine_failed");
-    } else {
-        // The worker kept pace, which is fine too.
-        rig.controller.stop(rig.host(), session, true);
-    }
+    try testing.expect(dropped >= 2);
+
+    // The worker notices once the engine takes its audio again.
+    rig.engine.block_feed.store(false, .release);
+    try rig.pumpUntil(Rig.stopped);
+    try expectStopped(&rig, 0, session, "engine_failed");
+    try testing.expect(std.mem.indexOf(u8, rig.payloadAt("dictation:stopped", 0).?, "\"message\":\"Dictation stopped because the speech engine failed.") != null);
+    try testing.expect(rig.engine.cancelled.load(.acquire));
+    try testing.expect(!rig.controller.active());
+}
+
+test "a Stop that the engine never settles ends as engine_failed, not as a quiet stop" {
+    var rig: Rig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.controller.settle_ms = 100;
+    rig.engine.stall_on_finish = true;
+    const session = try rig.controller.start(rig.host());
+    try rig.pushSamples(1600);
+    rig.controller.stop(rig.host(), session, false);
+    try rig.pumpUntil(Rig.stopped);
+    try testing.expect(rig.engine.finished.load(.acquire));
+    try testing.expect(rig.engine.cancelled.load(.acquire));
+    try expectStopped(&rig, 0, session, "engine_failed");
+    try testing.expect(std.mem.indexOf(u8, rig.payloadAt("dictation:stopped", 0).?, "\"message\":\"Dictation stopped") != null);
+    try testing.expectEqual(@as(usize, 1), rig.capture.sessions_ended);
 }
 
 test "a session stays quiet until the capture really starts" {
@@ -1782,6 +1868,128 @@ test "status reports the engine, the microphone, and the running session" {
     try rig.controller.writeStatus(rig.host(), &writer);
     try testing.expect(std.mem.endsWith(u8, writer.buffered(), "\"session\":1}"));
     rig.controller.stop(rig.host(), session, true);
+}
+
+test "the status says when macOS has not answered about the speech model" {
+    var rig: Rig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    var buffer: [512]u8 = undefined;
+
+    rig.backend.status = .{ .model = .checking };
+    var writer = std.Io.Writer.fixed(&buffer);
+    try rig.controller.writeStatus(rig.host(), &writer);
+    try testing.expectEqualStrings(
+        "{\"available\":true,\"reason\":null,\"microphone\":\"granted\",\"model\":{\"state\":\"checking\",\"fraction\":null,\"message\":null},\"session\":null}",
+        writer.buffered(),
+    );
+
+    // Starting waits for the answer. It is not a missing model, so the web view
+    // does not start a download.
+    try testing.expectError(error.SpeechModelChecking, rig.controller.start(rig.host()));
+    try testing.expect(!rig.controller.active());
+    // And there is nothing to download yet.
+    try testing.expect(!(try rig.controller.downloadModel()));
+    try testing.expectEqual(@as(u32, 0), rig.backend.downloads.load(.acquire));
+
+    // Once macOS answers, the same calls work.
+    rig.backend.status = .{ .model = .missing };
+    try testing.expectError(error.SpeechModelMissing, rig.controller.start(rig.host()));
+    try testing.expect(try rig.controller.downloadModel());
+}
+
+test "a Mac with no English speech model says so" {
+    var rig: Rig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    var buffer: [512]u8 = undefined;
+    rig.backend.status = .{ .unavailable = .no_english };
+    var writer = std.Io.Writer.fixed(&buffer);
+    try rig.controller.writeStatus(rig.host(), &writer);
+    try testing.expect(std.mem.startsWith(u8, writer.buffered(), "{\"available\":false,\"reason\":\"no_english\","));
+    try testing.expectError(error.DictationUnavailable, rig.controller.start(rig.host()));
+    try testing.expectError(error.DictationUnavailable, rig.controller.downloadModel());
+}
+
+test "the microphone counts as on only once capture has started" {
+    var rig: Rig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    try testing.expect(!rig.controller.listening());
+
+    const session = try rig.controller.start(rig.host());
+    // The session exists, but the loop has not heard `started` yet. In the app
+    // the person may still be looking at the macOS microphone prompt, and Sage
+    // must be free to lock, so nothing is held.
+    try testing.expect(rig.controller.active());
+    try testing.expect(!rig.controller.listening());
+    try testing.expectEqual(@as(usize, 0), rig.capture.holds.items.len);
+
+    const Started = struct {
+        fn done(r: *Rig) bool {
+            return r.capture.count("dictation:started") > 0;
+        }
+    };
+    try rig.pumpUntil(Started.done);
+    try testing.expect(rig.controller.listening());
+    try testing.expectEqualSlices(bool, &.{true}, rig.capture.holds.items);
+
+    rig.controller.stop(rig.host(), session, true);
+    try testing.expect(!rig.controller.listening());
+    try testing.expectEqualSlices(bool, &.{ true, false }, rig.capture.holds.items);
+}
+
+test "a session that ends before the microphone starts never holds anything" {
+    var rig: Rig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.engine.fail_on_begin = true;
+    const session = try rig.controller.start(rig.host());
+    try rig.pumpUntil(Rig.stopped);
+    try expectStopped(&rig, 0, session, "engine_failed");
+    try testing.expect(!rig.controller.listening());
+    try testing.expectEqual(@as(usize, 0), rig.capture.holds.items.len);
+    try testing.expectEqual(@as(usize, 1), rig.capture.sessions_ended);
+}
+
+test "every way a session ends lets go of the microphone hold" {
+    var rig: Rig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const Started = struct {
+        fn done(r: *Rig) bool {
+            return r.capture.count("dictation:started") > 0;
+        }
+    };
+    const Ends = enum { locked, quit, stopped, failed };
+    for ([_]Ends{ .locked, .quit, .stopped, .failed }) |how| {
+        try testing.expect(rig.controller.waitIdle(testing.io, 3000));
+        rig.engine = .{};
+        rig.capture.holds.clearRetainingCapacity();
+        for (rig.capture.names.items) |item| testing.allocator.free(item);
+        for (rig.capture.payloads.items) |item| testing.allocator.free(item);
+        rig.capture.names.clearRetainingCapacity();
+        rig.capture.payloads.clearRetainingCapacity();
+        if (how == .failed) rig.engine.script = &.{.{ .at_samples = 800, .kind = .failed }};
+
+        const session = try rig.controller.start(rig.host());
+        try rig.pumpUntil(Started.done);
+        try testing.expect(rig.controller.listening());
+        switch (how) {
+            .locked => rig.controller.cancelAll(rig.host(), .locked),
+            .quit => rig.controller.cancelAll(rig.host(), .quit),
+            .stopped => {
+                rig.controller.stop(rig.host(), session, false);
+                try rig.pumpUntil(Rig.stopped);
+            },
+            .failed => {
+                try rig.pushSamples(800);
+                try rig.pumpUntil(Rig.stopped);
+            },
+        }
+        try testing.expect(!rig.controller.listening());
+        try testing.expectEqualSlices(bool, &.{ true, false }, rig.capture.holds.items);
+    }
 }
 
 test "the model download starts only when there is something to download" {

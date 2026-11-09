@@ -332,6 +332,8 @@ fn useLlvmWorkaround(target: std.Build.ResolvedTarget) ?bool {
 /// The deployment target is 26.0 because SpeechAnalyzer starts there. An older
 /// macOS refuses to load the library, which is how Sage learns to hide the mic.
 /// Returns null off macOS. Needs a macOS 26 SDK; pass -Dspeech=false without one.
+/// The `speech` job in .github/workflows/ci.yml compiles the library with the
+/// same flags. Keep the two in step.
 fn addSpeechLibrary(b: *std.Build, target: std.Build.ResolvedTarget) ?std.Build.LazyPath {
     if (target.result.os.tag != .macos or b.graph.host.result.os.tag != .macos) return null;
     const arch = switch (target.result.cpu.arch) {

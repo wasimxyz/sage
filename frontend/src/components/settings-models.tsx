@@ -362,7 +362,10 @@ function SpeechModelSection() {
       {unavailable === null ? (
         <ModelsTable caption="Speech model">
           <TableRow
-            aria-busy={status.model.state === "downloading"}
+            aria-busy={
+              status.model.state === "downloading" ||
+              status.model.state === "checking"
+            }
             className="hover:bg-transparent"
           >
             <TableCell className={nameCellClassName}>Speech model</TableCell>
@@ -393,12 +396,28 @@ function speechUnavailableMessage(status: DictationStatus): string | null {
   if (status.available) {
     return null;
   }
-  return status.reason === "unsupported_os"
-    ? "Dictation needs macOS 26 or later."
-    : "Sage's dictation files are missing. Reinstall Sage.";
+  switch (status.reason) {
+    case "unsupported_os":
+      return "Dictation needs macOS 26 or later.";
+    case "no_english":
+      return "Dictation isn't available in English on this Mac.";
+    default:
+      return "Sage's dictation files are missing. Reinstall Sage.";
+  }
 }
 
 function SpeechModelState({ model }: { model: DictationStatus["model"] }) {
+  if (model.state === "checking") {
+    return (
+      <span
+        aria-live="polite"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap"
+      >
+        <Spinner aria-hidden />
+        Checking
+      </span>
+    );
+  }
   if (model.state === "downloading") {
     const percent = speechModelPercent(model.fraction);
     return (

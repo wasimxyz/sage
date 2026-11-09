@@ -1,9 +1,9 @@
 import {
   type DictationStopReason,
   dictationStopReasons,
-} from "./lib/dictation-session";
+} from "./lib/dictation-session.ts";
 import type { ExportCounts } from "./lib/export-data-flow";
-import { memoryEnabledFrom } from "./lib/memory-feature";
+import { memoryEnabledFrom } from "./lib/memory-feature.ts";
 import type { NativeSdkInvokeError, NativeSdkJson } from "./zero";
 
 // Command names and allowed origins are declared in app.json and again in src/main.zig.
@@ -1454,13 +1454,17 @@ export function onJournalExport(callback: () => void): () => void {
 
 // --- dictation ---
 
-export type DictationUnavailableReason = "engine_missing" | "unsupported_os";
+export type DictationUnavailableReason =
+  | "engine_missing"
+  | "no_english"
+  | "unsupported_os";
 export type MicrophoneAccess =
   | "denied"
   | "granted"
   | "restricted"
   | "undetermined";
 export type SpeechModelState =
+  | "checking"
   | "downloading"
   | "failed"
   | "installed"
@@ -1508,6 +1512,7 @@ export type DictationErrorCode =
   | "Locked"
   | "MicrophoneDenied"
   | "Securing"
+  | "SpeechModelChecking"
   | "SpeechModelMissing";
 
 const dictationErrorCodes: readonly DictationErrorCode[] = [
@@ -1516,6 +1521,7 @@ const dictationErrorCodes: readonly DictationErrorCode[] = [
   "Locked",
   "MicrophoneDenied",
   "Securing",
+  "SpeechModelChecking",
   "SpeechModelMissing",
 ];
 
@@ -1526,6 +1532,7 @@ const microphoneAccessStates: readonly MicrophoneAccess[] = [
   "undetermined",
 ];
 const speechModelStates: readonly SpeechModelState[] = [
+  "checking",
   "downloading",
   "failed",
   "installed",
@@ -1533,6 +1540,7 @@ const speechModelStates: readonly SpeechModelState[] = [
 ];
 const dictationUnavailableReasons: readonly DictationUnavailableReason[] = [
   "engine_missing",
+  "no_english",
   "unsupported_os",
 ];
 
@@ -1627,16 +1635,20 @@ export async function tidyText(text: string): Promise<string> {
   return asString(response.text);
 }
 
+// The dictation events parse inside `try` and call the callback outside it, so
+// an error in the callback is not taken for a malformed event.
 export function onDictationStarted(
   callback: (payload: { session: number }) => void
 ): () => void {
   return onWindowEvent("dictation:started", (detail) => {
+    let payload: { session: number };
     try {
-      const record = asRecord(detail);
-      callback({ session: asNumber(record.session) });
+      payload = { session: asNumber(asRecord(detail).session) };
     } catch {
       // Ignore a malformed window event.
+      return;
     }
+    callback(payload);
   });
 }
 
@@ -1644,17 +1656,20 @@ export function onDictationText(
   callback: (payload: DictationTextEvent) => void
 ): () => void {
   return onWindowEvent("dictation:text", (detail) => {
+    let payload: DictationTextEvent;
     try {
       const record = asRecord(detail);
-      callback({
+      payload = {
         final: asString(record.final),
         seq: asNumber(record.seq),
         session: asNumber(record.session),
         volatile: asString(record.volatile),
-      });
+      };
     } catch {
       // Ignore a malformed window event.
+      return;
     }
+    callback(payload);
   });
 }
 
@@ -1662,19 +1677,22 @@ export function onDictationStopped(
   callback: (payload: DictationStoppedEvent) => void
 ): () => void {
   return onWindowEvent("dictation:stopped", (detail) => {
+    let payload: DictationStoppedEvent;
     try {
       const record = asRecord(detail);
-      callback({
+      payload = {
         message: asStringOrNull(record.message),
         // A reason this page does not know still ends the session.
         reason:
           dictationStopReasons.find((reason) => reason === record.reason) ??
           "engine_failed",
         session: asNumber(record.session),
-      });
+      };
     } catch {
       // Ignore a malformed window event.
+      return;
     }
+    callback(payload);
   });
 }
 

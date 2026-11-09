@@ -129,6 +129,7 @@ const reconcilePollMs = 3000;
 
 const DictationContext = createContext<DictationContextValue | null>(null);
 const DictationActionsContext = createContext<DictationActions | null>(null);
+const DictationAvailableContext = createContext<boolean | null>(null);
 const DictationTailContext = createContext<string>("");
 const SpeechModelContext = createContext<SpeechModelValue | null>(null);
 
@@ -144,6 +145,15 @@ export function useDictation(): DictationContextValue {
 export function useDictationActions(): DictationActions {
   const value = use(DictationActionsContext);
   if (!value) {
+    throw new Error("DictationProvider is missing.");
+  }
+  return value;
+}
+
+/** Whether this Mac can dictate. It does not change with the phase. */
+export function useDictationAvailable(): boolean {
+  const value = use(DictationAvailableContext);
+  if (value === null) {
     throw new Error("DictationProvider is missing.");
   }
   return value;
@@ -222,6 +232,10 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     const next = await getDictationStatus();
     setStatus(next);
     setAvailable(next.available);
+    if (next.model.state === "checking") {
+      // The core has not heard from macOS about the model yet. Ask again.
+      setWatchingModel(true);
+    }
     return next;
   }, []);
 
@@ -331,9 +345,12 @@ export function DictationProvider({ children }: { children: ReactNode }) {
         toast.error(startFailureMessages.unavailable, { id: toastIds.error });
       } else if (failure !== "locked") {
         toast.error(startFailureMessages[failure], { id: toastIds.error });
+        if (failure === "checking") {
+          refreshStatus().catch(() => undefined);
+        }
       }
     },
-    [downloadModel]
+    [downloadModel, refreshStatus]
   );
 
   const start = useCallback(
@@ -504,11 +521,15 @@ export function DictationProvider({ children }: { children: ReactNode }) {
     { enabled: session.phase !== "idle", leading: false }
   );
 
-  // Watch a model download until it ends, then say so if this page started it.
+  // Watch the speech model until macOS has answered or a download has ended,
+  // then say so if this page started the download.
   useVisiblePoll(
     async () => {
       const next = await refreshStatus();
       const { model } = next;
+      if (model.state === "checking") {
+        return;
+      }
       if (model.state === "downloading") {
         if (readFlag(announceModelRef)) {
           const percent = speechModelPercent(model.fraction);
@@ -579,11 +600,15 @@ export function DictationProvider({ children }: { children: ReactNode }) {
 
   return (
     <DictationActionsContext value={actions}>
-      <DictationContext value={value}>
-        <DictationTailContext value={tail}>
-          <SpeechModelContext value={modelValue}>{children}</SpeechModelContext>
-        </DictationTailContext>
-      </DictationContext>
+      <DictationAvailableContext value={available}>
+        <DictationContext value={value}>
+          <DictationTailContext value={tail}>
+            <SpeechModelContext value={modelValue}>
+              {children}
+            </SpeechModelContext>
+          </DictationTailContext>
+        </DictationContext>
+      </DictationAvailableContext>
     </DictationActionsContext>
   );
 }

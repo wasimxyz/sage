@@ -20,7 +20,7 @@ Dictation needs one more model, which is not an Ollama model. macOS provides the
 
 Settings > Models has three parts:
 
-- **Speech**: the speech model for dictation. Its row reads Installed, Not downloaded, Downloading, or Download failed, and it has a Download or Try again button when macOS has no copy. macOS downloads and keeps the model, so Delete does not apply. A Mac that cannot dictate shows the reason in place of the row. The row comes from `dictation.status`, and **Download** calls `dictation.downloadModel`.
+- **Speech**: the speech model for dictation. Its row reads Checking, Installed, Not downloaded, Downloading, or Download failed, and it has a Download or Try again button when macOS has no copy. Checking lasts a moment after Sage starts, until macOS says what is installed. macOS downloads and keeps the model, so Delete does not apply. A Mac that cannot dictate shows the reason in place of the row. The row comes from `dictation.status`, and **Download** calls `dictation.downloadModel`.
 - **Installed**: the chat models Ollama has pulled, each with a Delete button
 - **Recommended**: text models that should run well on this Mac, each with a Download button
 

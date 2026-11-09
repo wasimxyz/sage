@@ -13,7 +13,7 @@ Both use the same password or Touch ID. You can also turn on encryption with Tou
 
 ## The microphone
 
-Dictation is the only part of Sage that listens. It captures sound only while a session runs, keeps it in memory, and zeroes it when the session ends. Sound is never written to a file, never logged, and never sent to the web view. The speech engine runs on this Mac, and Sage never logs the text it hears. macOS asks for microphone access the first time, and Sage needs no other permission for it. [Dictation](../dictation.md#audio-is-never-saved) covers the details, and `security-tests/dictation-no-audio.test.ts` checks the rules in the source.
+Dictation is the only part of Sage that listens. It captures sound only while a session runs and keeps it in memory. The core zeroes its ring, and the speech library zeroes the copies it makes, when it is done with them. The Native SDK’s own capture buffers and the speech engine’s own memory are out of Sage’s reach, so they are not zeroed. Sound is never written to a file, never logged, and never sent to the web view. The speech engine runs on this Mac, and Sage never logs the text it hears. macOS asks for microphone access the first time, and Sage needs no other permission for it. [Dictation](../dictation.md#audio-is-never-saved) covers the details, and `security-tests/dictation-no-audio.test.ts` checks the rules in the source.
 
 ## What leaves this Mac
 
