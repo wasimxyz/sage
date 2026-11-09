@@ -1,6 +1,6 @@
 import { formatShortEntryDate, parseCalendarDate } from "../format-date.ts";
 
-const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
+const calendarDate = /^\d{4}-\d{2}-\d{2}$/u;
 
 export interface JournalToolSearchHit {
   date: string;
@@ -34,7 +34,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const prefixedEntryId = /^entry-([1-9]\d{0,15})$/;
+const prefixedEntryId = /^entry-([1-9]\d{0,15})$/u;
 
 /**
  * The entry id in a tool result. Chat names entries `entry-12`. Chats saved

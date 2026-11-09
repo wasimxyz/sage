@@ -130,7 +130,7 @@ function ChatDate({ updatedAt }: { updatedAt: string }) {
   // The date gives way before the title does when the panel is narrow.
   return (
     <time
-      className="min-w-0 shrink-[4] truncate text-muted-foreground"
+      className="text-muted-foreground min-w-0 shrink-[4] truncate"
       dateTime={day}
     >
       {formatEntryDate(day)}

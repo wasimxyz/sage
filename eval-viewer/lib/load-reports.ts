@@ -9,7 +9,7 @@ import { runIdFromPathname } from "./reports/run-id.ts";
 import type { EvalReport, ReportFiles, RunSummary } from "./reports/types.ts";
 
 export const defaultBlobPrefix = "sage-evals";
-const trailingSlashes = /\/+$/;
+const trailingSlashes = /\/+$/u;
 
 export type ReportsSource =
   | { kind: "blob"; prefix: string }

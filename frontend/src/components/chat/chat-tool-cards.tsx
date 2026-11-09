@@ -60,15 +60,15 @@ function PastChatRow({ date, id, seq, title }: ChatToolHit) {
           ? `Open chat: ${name}`
           : `Open chat: ${name}, ${formatEntryDate(date)}`
       }
-      className="h-10 w-full justify-between gap-3 rounded-none px-4 text-left font-normal text-sm"
+      className="h-10 w-full justify-between gap-3 rounded-none px-4 text-left text-sm font-normal"
       data-chat-id={id}
       onClick={open}
       type="button"
       variant="ghost"
     >
-      <span className="min-w-0 truncate text-foreground">{name}</span>
+      <span className="text-foreground min-w-0 truncate">{name}</span>
       {date === null ? null : (
-        <time className="shrink-0 text-muted-foreground" dateTime={date}>
+        <time className="text-muted-foreground shrink-0" dateTime={date}>
           {formatShortEntryDate(date)}
         </time>
       )}

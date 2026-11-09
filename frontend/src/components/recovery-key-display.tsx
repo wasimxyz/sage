@@ -95,8 +95,8 @@ export function RecoveryKeyGrid({
 }) {
   return (
     <>
-      <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-4 py-3">
-        <div className="grid select-all grid-cols-3 gap-x-4 gap-y-1 font-mono text-base tracking-wider">
+      <div className="bg-muted flex items-center justify-between gap-3 rounded-lg px-4 py-3">
+        <div className="grid grid-cols-3 gap-x-4 gap-y-1 font-mono text-base tracking-wider select-all">
           {recoveryKey
             .split("-")
             .map((text, position) => ({
@@ -128,8 +128,8 @@ export function RecoveryKeyCard({
   recoveryKey: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-6 text-center">
-      <p className="select-all font-mono text-xl tracking-wider">
+    <div className="bg-card flex flex-col items-center gap-4 rounded-xl border px-6 py-6 text-center">
+      <p className="font-mono text-xl tracking-wider select-all">
         {recoveryKey}
       </p>
       <RecoveryKeyCopyButton copied={copied} label="Copy key" onCopy={onCopy} />

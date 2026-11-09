@@ -8,8 +8,8 @@ import {
 } from "./lock-errors.ts";
 
 const fallback = "Could not do that.";
-const startAgain = /Start again/;
-const tooManyAttempts = /Too many attempts/;
+const startAgain = /Start again/u;
+const tooManyAttempts = /Too many attempts/u;
 
 test("lockErrorMessage names the failures people can fix", () => {
   const cases: ReadonlyArray<readonly [string, string]> = [

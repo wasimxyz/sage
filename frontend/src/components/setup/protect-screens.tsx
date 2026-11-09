@@ -51,7 +51,7 @@ const noReset =
  */
 function NoResetNote() {
   return (
-    <p className="-mt-2 flex items-start gap-2 text-wrap text-muted-foreground text-xs">
+    <p className="text-muted-foreground -mt-2 flex items-start gap-2 text-xs text-wrap">
       <InfoIcon className="mt-px size-3.5 shrink-0" />
       {noReset}
     </p>
@@ -214,7 +214,7 @@ function IdleTimeoutField({
 }) {
   return (
     <Field
-      className="items-center justify-between rounded-xl border bg-card px-4 py-3"
+      className="bg-card items-center justify-between rounded-xl border px-4 py-3"
       orientation="horizontal"
     >
       <FieldLabel htmlFor="setup-idle-timeout">
@@ -257,11 +257,11 @@ export function TouchIdScreen({
         </SetupText>
       </SetupIntro>
       {encrypt ? (
-        <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-8 text-center">
-          <span className="flex size-14 items-center justify-center rounded-full bg-muted">
+        <div className="bg-card flex flex-col items-center gap-4 rounded-xl border px-6 py-8 text-center">
+          <span className="bg-muted flex size-14 items-center justify-center rounded-full">
             <FingerprintIcon className="size-6" />
           </span>
-          <p className="max-w-72 text-pretty text-sm">
+          <p className="max-w-72 text-sm text-pretty">
             When you continue, macOS asks you to touch the sensor once to
             confirm it&apos;s you.
           </p>

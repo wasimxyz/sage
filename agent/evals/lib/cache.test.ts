@@ -20,7 +20,7 @@ import {
   snapshotDreamCache,
 } from "./cache.ts";
 
-const sha256HexPattern = /^[a-f0-9]{64}$/;
+const sha256HexPattern = /^[a-f0-9]{64}$/u;
 
 test("computeCacheKey is stable for fixed inputs", () => {
   const fixture = makeFixture();

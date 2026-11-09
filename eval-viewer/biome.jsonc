@@ -10,5 +10,14 @@
   },
   "files": {
     "includes": ["!!components/ui"]
+  },
+  "linter": {
+    "rules": {
+      "style": {
+        // TypeScript types every named group as string | undefined, so
+        // match.groups.name needs more checks than match[1].
+        "useNamedCaptureGroup": "off"
+      }
+    }
   }
 }

@@ -4,8 +4,8 @@ import { dirname } from "node:path";
 import type { EvalCase } from "./dataset.ts";
 import { embedModel, ollamaBaseURL } from "./models.ts";
 
-const lineBreakPattern = /\r?\n/;
-const trailingSlashPattern = /\/$/;
+const lineBreakPattern = /\r?\n/u;
+const trailingSlashPattern = /\/$/u;
 
 export interface QueryEmbedding {
   embedding: number[];

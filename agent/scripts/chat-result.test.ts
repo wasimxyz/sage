@@ -13,8 +13,8 @@ import { instantsFromRange, localDayOf } from "../agent/lib/when.ts";
 // saving time. Node reads TZ again when it changes.
 process.env.TZ = "America/Los_Angeles";
 
-const missingMessageStart = /^chat-12 has no message 39\./;
-const missingMessageAdvice = /shown by search_chats or an earlier get_chat/;
+const missingMessageStart = /^chat-12 has no message 39\./u;
+const missingMessageAdvice = /shown by search_chats or an earlier get_chat/u;
 const week = { from: "2026-10-19", label: "last week", to: "2026-10-25" };
 const today = "2026-10-27";
 

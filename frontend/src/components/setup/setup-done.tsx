@@ -61,9 +61,9 @@ export function SetupDone() {
           {protection ? (
             <div className="flex items-center gap-2 p-3 text-sm">
               {protection.on ? (
-                <CheckIcon className="size-4 text-primary" />
+                <CheckIcon className="text-primary size-4" />
               ) : (
-                <CircleAlertIcon className="size-4 text-muted-foreground" />
+                <CircleAlertIcon className="text-muted-foreground size-4" />
               )}
               {protection.text}
             </div>
@@ -73,7 +73,7 @@ export function SetupDone() {
           ))}
         </SetupList>
         <div className="flex flex-col gap-2">
-          <h2 className="font-medium text-sm">Good to know</h2>
+          <h2 className="text-sm font-medium">Good to know</h2>
           <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
             <li>
               Click Dream in the sidebar after you write. Chat only finds

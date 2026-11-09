@@ -7,13 +7,13 @@ import {
   localOllamaBaseURL,
 } from "../agent/lib/local-models.ts";
 
-const onThisMacPattern = /on this Mac/;
+const onThisMacPattern = /on this Mac/u;
 const cloudModelMessagePattern =
-  /gpt-oss:120b-cloud runs in the cloud\. Pick a model on this Mac\./;
-const runsInTheCloudPattern = /runs in the cloud/;
+  /gpt-oss:120b-cloud runs in the cloud\. Pick a model on this Mac\./u;
+const runsInTheCloudPattern = /runs in the cloud/u;
 const notDownloadedMessagePattern =
-  /qwen3:8b is not downloaded\. Pick a model on this Mac\./;
-const localAiIsNotRunningPattern = /Local AI is not running\./;
+  /qwen3:8b is not downloaded\. Pick a model on this Mac\./u;
+const localAiIsNotRunningPattern = /Local AI is not running\./u;
 
 const tags = {
   models: [

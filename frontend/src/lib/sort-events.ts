@@ -1,6 +1,6 @@
 import type { EventMemory } from "@/bridge";
 
-const eventDatePrefixPattern = /^\d{4}-\d{2}-\d{2}/;
+const eventDatePrefixPattern = /^\d{4}-\d{2}-\d{2}/u;
 
 export function eventDateKey(value: string): string {
   const trimmed = value.trim();

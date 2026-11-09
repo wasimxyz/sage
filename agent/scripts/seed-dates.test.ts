@@ -5,7 +5,7 @@ import { type DatedEntry, localToday, moveToToday } from "./seed-dates.ts";
 
 const msPerDay = 86_400_000;
 const notOnCalendarPattern =
-  /02-bad\.md has a date that is not on the calendar/;
+  /02-bad\.md has a date that is not on the calendar/u;
 
 // Out of order on purpose: the baseline is the latest date, not the last file.
 // 2026-10-25 is a Sunday.

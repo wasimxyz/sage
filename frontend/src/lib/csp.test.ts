@@ -4,8 +4,8 @@ import test from "node:test";
 
 const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
-const cspContent = /content="([^"]+)"\s+http-equiv="Content-Security-Policy"/;
-const whitespace = /\s+/;
+const cspContent = /content="([^"]+)"\s+http-equiv="Content-Security-Policy"/u;
+const whitespace = /\s+/u;
 
 function contentSecurityPolicy(): string {
   const match = cspContent.exec(html);

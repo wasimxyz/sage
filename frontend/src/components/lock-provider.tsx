@@ -283,7 +283,7 @@ export function LockProvider({ children }: { children: ReactNode }) {
   let content: ReactNode;
   if (status === null && !locked) {
     content = (
-      <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background">
+      <div className="bg-background flex min-h-0 min-w-0 flex-1 items-center justify-center">
         <Spinner />
       </div>
     );
@@ -321,12 +321,12 @@ function ScrubScreen({
   onRetry: () => Promise<void>;
 }) {
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background px-6">
+    <div className="bg-background flex min-h-0 min-w-0 flex-1 items-center justify-center px-6">
       <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
         {busy || !error ? <Spinner /> : null}
         <div className="flex flex-col gap-1">
-          <h1 className="font-medium text-lg">Securing your journal</h1>
-          <p className="text-balance text-muted-foreground text-sm">
+          <h1 className="text-lg font-medium">Securing your journal</h1>
+          <p className="text-muted-foreground text-sm text-balance">
             Sage is rebuilding its database so old data can&apos;t be recovered.
             This only takes a moment.
           </p>

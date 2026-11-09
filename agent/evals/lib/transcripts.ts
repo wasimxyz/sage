@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-const lineBreakPattern = /\r?\n/;
+const lineBreakPattern = /\r?\n/u;
 
 export interface ChatTranscript {
   caseId: string;

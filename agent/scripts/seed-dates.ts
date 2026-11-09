@@ -6,7 +6,7 @@
 // Dates are plain calendar days. Day numbers count days since 1970-01-01 and
 // are built with Date.UTC, so no time zone can move a date by one day.
 
-const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/u;
 const msPerDay = 86_400_000;
 const daysPerWeek = 7;
 

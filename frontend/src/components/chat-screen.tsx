@@ -385,7 +385,6 @@ function ChatTurn({
   const recoverDeadSession = useCallback((): boolean => {
     // The ref starts false and is set true after the first 409 so a second
     // failure in this conversation does not remount again.
-    // biome-ignore lint/suspicious/noUnnecessaryConditions: mutated across 409 recoveries
     if (recoveredRef.current.used || sessionRef.current === undefined) {
       return false;
     }
@@ -925,7 +924,7 @@ function ChatTranscriptShell({
         <Hint label="Scroll to latest">
           <MessageScrollerButton
             aria-label="Scroll to latest message"
-            className="rounded-full bg-surface hover:bg-accent dark:hover:bg-muted"
+            className="bg-surface hover:bg-accent dark:hover:bg-muted rounded-full"
             size="icon"
             variant="outline"
           >
@@ -963,7 +962,7 @@ function ChatComposerBar({ children }: { children: ReactNode }) {
     <div
       className={cn(
         TRANSCRIPT_GUTTER_CLASS,
-        "shrink-0 bg-background/80 pt-3 pb-5 backdrop-blur"
+        "bg-background/80 shrink-0 pt-3 pb-5 backdrop-blur"
       )}
       data-slot="chat-composer-bar"
     >
@@ -1059,7 +1058,7 @@ function ChatPromptTextarea({
       {text.length === 0 ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 px-5 pt-4 text-muted-foreground text-sm"
+          className="text-muted-foreground pointer-events-none absolute inset-x-0 top-0 px-5 pt-4 text-sm"
         >
           {placeholder}
         </span>
@@ -1118,7 +1117,7 @@ function ConversationSkeleton() {
 function UserMessageSkeleton() {
   return (
     <div
-      className="min-h-10 w-full rounded-2xl border border-input bg-surface"
+      className="border-input bg-surface min-h-10 w-full rounded-2xl border"
       data-role="user"
     />
   );
@@ -1301,7 +1300,7 @@ function sessionFromRow(
 }
 
 function clipTitle(text: string): string {
-  const trimmed = text.trim().replace(/\s+/g, " ");
+  const trimmed = text.trim().replace(/\s+/gu, " ");
   if (trimmed.length <= titleLimit) {
     return trimmed;
   }

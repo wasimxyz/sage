@@ -17,7 +17,7 @@ export default function EvalRunError({
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="font-medium text-lg">Could not load this eval run</h2>
+      <h2 className="text-lg font-medium">Could not load this eval run</h2>
       <p className="text-muted-foreground text-sm">{error.message}</p>
       <Button className="w-fit" onClick={reset}>
         Try again

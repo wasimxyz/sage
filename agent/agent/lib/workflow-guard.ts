@@ -25,7 +25,7 @@ import {
 } from "./bearer.ts";
 import { expectedChatToken } from "./sage.ts";
 
-const queryOrFragmentPattern = /[?#]/;
+const queryOrFragmentPattern = /[?#]/u;
 
 type Env = Record<string, string | undefined>;
 
@@ -56,7 +56,7 @@ export function isWorkflowPath(rawUrl: string): boolean {
   const folded = decoded.toLowerCase().replaceAll("\\", "/");
   let resolved: string;
   try {
-    resolved = new URL(folded.replace(/\/{2,}/g, "/"), "http://sage.invalid")
+    resolved = new URL(folded.replace(/\/{2,}/gu, "/"), "http://sage.invalid")
       .pathname;
   } catch {
     return true;

@@ -2,12 +2,12 @@ import { parseDate } from "chrono-node";
 
 import { countWords } from "@/bridge";
 
-const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
-const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/;
-const headingPattern = /^#\s+(.+)$/;
-const dateLinePattern = /^date:\s*(.+)$/i;
-const bomPattern = /^\uFEFF/;
-const lineBreakPattern = /\r?\n/;
+const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/u;
+const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/u;
+const headingPattern = /^#\s+(.+)$/u;
+const dateLinePattern = /^date:\s*(.+)$/iu;
+const bomPattern = /^\uFEFF/u;
+const lineBreakPattern = /\r?\n/u;
 const leadingScanLines = 20;
 
 export interface ParsedImport {

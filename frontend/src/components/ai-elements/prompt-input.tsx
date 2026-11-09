@@ -153,7 +153,7 @@ const captureScreenshot = async (): Promise<File | null> => {
 
     const timestamp = new Date()
       .toISOString()
-      .replaceAll(/[:.]/g, "-")
+      .replaceAll(/[:.]/gu, "-")
       .replace("T", "_")
       .replace("Z", "");
 
@@ -913,7 +913,7 @@ export const PromptInput = ({
         ref={formRef}
         {...props}
       >
-        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:!border-border has-[[data-slot=input-group-control]:focus-visible]:!ring-1 has-[[data-slot=input-group-control]:focus-visible]:!ring-foreground/10 overflow-hidden rounded-2xl bg-surface dark:bg-surface">
+        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:!border-border has-[[data-slot=input-group-control]:focus-visible]:!ring-foreground/10 bg-surface dark:bg-surface overflow-hidden rounded-2xl has-[[data-slot=input-group-control]:focus-visible]:!ring-1">
           {children}
         </InputGroup>
       </form>
@@ -1278,7 +1278,7 @@ export const PromptInputSelectTrigger = ({
 }: PromptInputSelectTriggerProps) => (
   <SelectTrigger
     className={cn(
-      "border-none bg-transparent font-medium text-muted-foreground shadow-none transition-colors",
+      "text-muted-foreground border-none bg-transparent font-medium shadow-none transition-colors",
       "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
       className
     )}
@@ -1364,7 +1364,7 @@ export const PromptInputTabLabel = ({
   // oxlint-disable-next-line eslint-plugin-jsx-a11y(heading-has-content)
   <h3
     className={cn(
-      "mb-2 px-3 font-medium text-muted-foreground text-xs",
+      "text-muted-foreground mb-2 px-3 text-xs font-medium",
       className
     )}
     {...props}
@@ -1388,7 +1388,7 @@ export const PromptInputTabItem = ({
 }: PromptInputTabItemProps) => (
   <div
     className={cn(
-      "flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent",
+      "hover:bg-accent flex items-center gap-2 px-3 py-2 text-xs",
       className
     )}
     {...props}

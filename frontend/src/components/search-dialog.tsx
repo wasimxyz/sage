@@ -52,7 +52,7 @@ import { cn } from "@/lib/utils";
 
 // Search runs once typing pauses this long.
 const searchDebounceMs = 300;
-const whitespacePattern = /\s+/;
+const whitespacePattern = /\s+/u;
 const emptyMeta = {};
 const searchResultRowClassName =
   "flex w-full cursor-pointer flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
@@ -525,10 +525,10 @@ function SearchQueryField() {
   );
 
   return (
-    <div className="flex items-center gap-2 border-b px-3 focus-within:bg-muted/40">
+    <div className="focus-within:bg-muted/40 flex items-center gap-2 border-b px-3">
       <SearchIcon
         aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground"
+        className="text-muted-foreground size-4 shrink-0"
       />
       <Input
         aria-activedescendant={activeOptionId}
@@ -730,7 +730,7 @@ function SearchTabButton({
       className={cn(
         "cursor-pointer rounded-md px-2 py-1 text-sm",
         selected
-          ? [searchResultActiveClassName, "font-medium text-foreground"]
+          ? [searchResultActiveClassName, "text-foreground font-medium"]
           : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
       )}
       onClick={handleClick}
@@ -753,7 +753,7 @@ function SearchGroup({
 }) {
   return (
     <div className="flex flex-col">
-      <div className="px-3 py-1 font-medium text-muted-foreground text-xs">
+      <div className="text-muted-foreground px-3 py-1 text-xs font-medium">
         {heading}
       </div>
       {children}
@@ -919,7 +919,7 @@ function SearchResultTitle({ children }: { children: ReactNode }) {
 
 function SearchResultMeta({ children }: { children: ReactNode }) {
   return (
-    <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
       {children}
     </span>
   );
@@ -927,7 +927,7 @@ function SearchResultMeta({ children }: { children: ReactNode }) {
 
 function SearchResultExcerpt({ children }: { children: ReactNode }) {
   return (
-    <span className="line-clamp-2 text-muted-foreground text-xs">
+    <span className="text-muted-foreground line-clamp-2 text-xs">
       {children}
     </span>
   );
@@ -935,7 +935,7 @@ function SearchResultExcerpt({ children }: { children: ReactNode }) {
 
 function SearchStatus({ children }: { children: ReactNode }) {
   return (
-    <output className="block px-3 py-8 text-center text-muted-foreground text-sm">
+    <output className="text-muted-foreground block px-3 py-8 text-center text-sm">
       {children}
     </output>
   );

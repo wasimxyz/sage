@@ -9,7 +9,7 @@ import type { EveEvalCompleteContext } from "eve/evals/reporters";
 
 import { loadRecordedResults, sageEvalRecorder } from "./recorder.ts";
 
-const notValidJSONPattern = /not valid JSON/;
+const notValidJSONPattern = /not valid JSON/u;
 
 test("loadRecordedResults returns an empty list when the file is missing", () => {
   assert.deepEqual(

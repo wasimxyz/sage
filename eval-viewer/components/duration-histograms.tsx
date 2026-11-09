@@ -35,7 +35,7 @@ export function DurationHistograms({ report }: { report: EvalReport }) {
 
 function Histogram({ values }: { values: number[] }) {
   if (values.length === 0) {
-    return <div className="h-14 rounded-md bg-muted" />;
+    return <div className="bg-muted h-14 rounded-md" />;
   }
   const min = Math.min(...values);
   const max = Math.max(...values);

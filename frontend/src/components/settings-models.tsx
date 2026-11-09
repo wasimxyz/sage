@@ -294,11 +294,11 @@ function ModelsSettingsBody({
         </>
       ) : null}
       <h2 className={sectionHeadingClassName}>Recommended</h2>
-      <p className="mt-0.5 text-muted-foreground text-xs">{subtitle}</p>
+      <p className="text-muted-foreground mt-0.5 text-xs">{subtitle}</p>
       {recommendedRows.length === 0 &&
       recommendations.length === 0 &&
       hardware !== null ? (
-        <p className="mt-2 py-4 text-muted-foreground text-sm">
+        <p className="text-muted-foreground mt-2 py-4 text-sm">
           No recommended text models scored high enough for this Mac.
         </p>
       ) : null}
@@ -446,7 +446,7 @@ function DownloadStatus({ progress }: { progress: OllamaPullProgress | null }) {
   return (
     <span
       aria-live="polite"
-      className="inline-flex items-center gap-1.5 whitespace-nowrap font-normal text-muted-foreground text-sm tabular-nums"
+      className="text-muted-foreground inline-flex items-center gap-1.5 text-sm font-normal whitespace-nowrap tabular-nums"
     >
       <Spinner aria-hidden />
       {downloadStatusLabel(progress)}

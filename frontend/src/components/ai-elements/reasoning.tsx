@@ -165,7 +165,7 @@ export const ReasoningTrigger = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          "flex h-8 cursor-pointer items-center gap-1.5 font-sans text-muted-foreground text-sm",
+          "text-muted-foreground flex h-8 cursor-pointer items-center gap-1.5 font-sans text-sm",
           className
         )}
         {...props}
@@ -175,7 +175,7 @@ export const ReasoningTrigger = memo(
             <span>{label}</span>
             <ChevronDown
               className={cn(
-                "size-3.5 text-muted-foreground transition-transform",
+                "text-muted-foreground size-3.5 transition-transform",
                 isOpen ? "rotate-180" : "rotate-0"
               )}
             />
@@ -200,7 +200,7 @@ export const ReasoningContent = memo(
     <CollapsibleContent className={collapsibleHeightMotion} {...props}>
       <div
         className={cn(
-          "my-3 border-muted-foreground/20 border-l-2 pl-3 text-muted-foreground text-sm",
+          "border-muted-foreground/20 text-muted-foreground my-3 border-l-2 pl-3 text-sm",
           className
         )}
       >

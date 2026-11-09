@@ -15,8 +15,8 @@ import {
   writeQueryEmbeddings,
 } from "./query-embeddings.ts";
 
-const notValidJSONPattern = /not valid JSON/;
-const twoQueriesPattern = /2 queries/;
+const notValidJSONPattern = /not valid JSON/u;
+const twoQueriesPattern = /2 queries/u;
 
 test("embeddingFor returns undefined when SAGE_EVAL_EMBEDDINGS is unset", () => {
   const previous = process.env.SAGE_EVAL_EMBEDDINGS;

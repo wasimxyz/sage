@@ -295,7 +295,7 @@ export function EditorBubbleMenu() {
   return (
     <BubbleMenu
       appendTo={appendMenuToBody}
-      className="z-50 flex items-center rounded-lg border bg-popover p-1 shadow-md"
+      className="bg-popover z-50 flex items-center rounded-lg border p-1 shadow-md"
     >
       <MarkToggles formatting={formatting} />
       <Separator className="mx-1 h-6" orientation="vertical" />

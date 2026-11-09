@@ -136,7 +136,7 @@ export function LockScreen() {
 
   return (
     <div
-      className="bg-(image:--sky) relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-(image:--sky)"
       style={
         {
           "--titlebar-leading": fullscreen ? "0.5rem" : "5.375rem",
@@ -157,12 +157,12 @@ export function LockScreen() {
       {/* The same room above and below, so the card sits in the middle of the
           window and still scrolls when the window is short. */}
       <main className="relative flex min-h-0 flex-1 overflow-y-auto px-4 py-(--titlebar-height)">
-        <div className="m-auto flex w-full max-w-[360px] flex-col items-center gap-6 rounded-2xl bg-card p-8 text-center text-card-foreground shadow-(--card-shadow)">
+        <div className="bg-card text-card-foreground m-auto flex w-full max-w-[360px] flex-col items-center gap-6 rounded-2xl p-8 text-center shadow-(--card-shadow)">
           <div className="flex flex-col items-center gap-4">
-            <LeafIcon className="size-8 text-muted-foreground" />
+            <LeafIcon className="text-muted-foreground size-8" />
             <div className="flex flex-col gap-1">
-              <h1 className="font-semibold text-xl">Sage is locked</h1>
-              <p className="text-balance text-muted-foreground text-sm">
+              <h1 className="text-xl font-semibold">Sage is locked</h1>
+              <p className="text-muted-foreground text-sm text-balance">
                 Unlock Sage to read and write entries.
               </p>
             </div>

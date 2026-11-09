@@ -48,8 +48,8 @@ export interface ListRow {
 // The open card: rows in a rounded box, as in a list in Journal.
 export function JournalToolList({ rows }: { rows: ListRow[] }) {
   return (
-    <ToolContent className="border-0 bg-transparent p-0 text-foreground">
-      <div className="overflow-hidden rounded-2xl border border-input bg-surface">
+    <ToolContent className="text-foreground border-0 bg-transparent p-0">
+      <div className="border-input bg-surface overflow-hidden rounded-2xl border">
         {rows.map((row, index) => (
           <Fragment key={row.key}>
             {index > 0 ? <Separator /> : null}
@@ -64,7 +64,7 @@ export function JournalToolList({ rows }: { rows: ListRow[] }) {
 // A line of the card that is not an entry, so it is muted and not a button.
 export function JournalToolNote({ children }: { children: ReactNode }) {
   return (
-    <p className="flex min-h-9 items-center px-4 py-2 text-muted-foreground text-sm">
+    <p className="text-muted-foreground flex min-h-9 items-center px-4 py-2 text-sm">
       {children}
     </p>
   );
@@ -77,14 +77,14 @@ function JournalEntryRow({ date, id, title }: JournalToolEntry) {
   return (
     <Button
       aria-label={`Open journal entry: ${name}, ${formatEntryDate(date)}`}
-      className="h-10 w-full justify-between gap-3 rounded-none px-4 text-left font-normal text-sm"
+      className="h-10 w-full justify-between gap-3 rounded-none px-4 text-left text-sm font-normal"
       data-entry-id={id}
       onClick={openEntry}
       type="button"
       variant="ghost"
     >
-      <span className="min-w-0 truncate text-foreground">{name}</span>
-      <time className="shrink-0 text-muted-foreground" dateTime={date}>
+      <span className="text-foreground min-w-0 truncate">{name}</span>
+      <time className="text-muted-foreground shrink-0" dateTime={date}>
         {formatShortEntryDate(date)}
       </time>
     </Button>

@@ -10,7 +10,7 @@ import { LegacyUnderline } from "./legacy-underline.ts";
 
 // ProseMirror reads the platform once, so Mod is Meta on a Mac and Ctrl
 // elsewhere.
-const onMac = /Mac|iP(hone|[oa]d)/.test(navigator.platform);
+const onMac = /Mac|iP(hone|[oa]d)/u.test(navigator.platform);
 const mod = onMac ? { metaKey: true } : { ctrlKey: true };
 const plain = {
   altKey: false,

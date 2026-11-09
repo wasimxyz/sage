@@ -100,7 +100,6 @@ export function usePanelSpring(
       return;
     }
     const jump = reduceMotion || shouldJumpRef.current?.() === true;
-    // biome-ignore lint/suspicious/noUnnecessaryConditions: setMovingNow flips movingRef between steps
     if (movingRef.current) {
       // A move is under way. Steer it, and drop a target that was waiting.
       pendingRef.current = null;
@@ -130,7 +129,6 @@ export function usePanelSpring(
     }
     const target = pendingRef.current;
     pendingRef.current = null;
-    // biome-ignore lint/suspicious/noUnnecessaryConditions: the step effect sets pendingJumpRef before each move
     if (!pendingJumpRef.current) {
       value.set(target);
       return;

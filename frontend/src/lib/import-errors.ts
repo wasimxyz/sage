@@ -1,6 +1,6 @@
 import { handlerErrorMessage } from "./handler-errors.ts";
 
-const partialImportMessage = /^Imported \d+ of \d+ entries?\.$/;
+const partialImportMessage = /^Imported \d+ of \d+ entries?\.$/u;
 
 export function formatImportError(error: unknown): string {
   const message = handlerErrorMessage(error);

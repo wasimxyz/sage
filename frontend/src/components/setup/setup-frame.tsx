@@ -18,7 +18,7 @@ export function SetupFrame({ children }: { children: ReactNode }) {
   const fullscreen = useWindowFullscreen();
   return (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+      className="bg-background flex min-h-0 min-w-0 flex-1 flex-col"
       style={
         {
           "--titlebar-leading": fullscreen ? "0.5rem" : "5.375rem",
@@ -41,7 +41,7 @@ function HeaderBar({ children }: { children?: ReactNode }) {
       onPointerDown={onTitlebarPointerDown}
       ref={rowRef}
     >
-      <div className="flex items-center gap-2 font-medium text-sm">
+      <div className="flex items-center gap-2 text-sm font-medium">
         <LeafIcon className="size-4" />
         Sage
       </div>
@@ -59,7 +59,7 @@ const stepNumbers = [1, 2, 3] as const;
  */
 function StepIndicator({ step }: { step: number }) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 flex items-center justify-center gap-3 text-muted-foreground text-xs">
+    <div className="text-muted-foreground pointer-events-none absolute inset-x-0 flex items-center justify-center gap-3 text-xs">
       <span>
         Step {step} of {stepCount}
       </span>
@@ -133,7 +133,7 @@ export function SetupIntro({ children }: { children: ReactNode }) {
 }
 
 export function SetupTitle({ children }: { children: ReactNode }) {
-  return <h1 className="font-semibold text-2xl tracking-tight">{children}</h1>;
+  return <h1 className="text-2xl font-semibold tracking-tight">{children}</h1>;
 }
 
 export function SetupText({
@@ -144,7 +144,7 @@ export function SetupText({
   className?: string;
 }) {
   return (
-    <p className={cn("text-pretty text-muted-foreground text-sm", className)}>
+    <p className={cn("text-muted-foreground text-sm text-pretty", className)}>
       {children}
     </p>
   );
@@ -153,7 +153,7 @@ export function SetupText({
 /** A bordered list of rows, one after another. */
 export function SetupList({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col divide-y rounded-lg border bg-card">
+    <div className="bg-card flex flex-col divide-y rounded-lg border">
       {children}
     </div>
   );
@@ -173,5 +173,5 @@ export function SetupFooterEnd({ children }: { children: ReactNode }) {
 }
 
 export function SetupNote({ children }: { children: ReactNode }) {
-  return <p className="max-w-56 text-muted-foreground text-xs">{children}</p>;
+  return <p className="text-muted-foreground max-w-56 text-xs">{children}</p>;
 }

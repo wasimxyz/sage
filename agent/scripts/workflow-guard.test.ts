@@ -22,15 +22,15 @@ import {
   workflowRouteAllowed,
 } from "../agent/lib/workflow-guard.ts";
 
-const portPattern = /port (\d+)/;
-const unauthorizedStatusPattern = /^HTTP\/1\.1 401 /;
-const wwwAuthenticateBearerPattern = /www-authenticate: Bearer/;
-const status101Pattern = /101/;
-const switchingProtocolsStatusPattern = /^HTTP\/1\.1 101 /;
-const okStatusPattern = /^HTTP\/1\.1 200 /;
-const checkContinuePattern = /checkContinue/;
-const resultPattern = /result {"other":401,"own":200}/;
-const workflowNodeHttpPattern = /WORKFLOW_NODE_HTTP/;
+const portPattern = /port (\d+)/u;
+const unauthorizedStatusPattern = /^HTTP\/1\.1 401 /u;
+const wwwAuthenticateBearerPattern = /www-authenticate: Bearer/u;
+const status101Pattern = /101/u;
+const switchingProtocolsStatusPattern = /^HTTP\/1\.1 101 /u;
+const okStatusPattern = /^HTTP\/1\.1 200 /u;
+const checkContinuePattern = /checkContinue/u;
+const resultPattern = /result \{"other":401,"own":200\}/u;
+const workflowNodeHttpPattern = /WORKFLOW_NODE_HTTP/u;
 
 const token = "sage-token";
 const flow = "/.well-known/workflow/v1/flow";
@@ -377,7 +377,7 @@ test("the preload guards upgrade requests", async () => {
     );
     const allowed = await upgrade(flow, [`Authorization: Bearer ${token}`]);
     assert.match(allowed, switchingProtocolsStatusPattern);
-    assert.match(allowed, new RegExp(`upgrade ${flow}`));
+    assert.match(allowed, new RegExp(`upgrade ${flow}`, "u"));
     assert.match(
       await upgrade("/eve/v1/stream"),
       switchingProtocolsStatusPattern

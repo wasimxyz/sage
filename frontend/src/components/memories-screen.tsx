@@ -84,7 +84,7 @@ import { isMemoriesTab } from "@/lib/route";
 import { eventDateKey } from "@/lib/sort-events";
 import { cn } from "@/lib/utils";
 
-const datePrefixPattern = /^\d{4}-\d{2}-\d{2}/;
+const datePrefixPattern = /^\d{4}-\d{2}-\d{2}/u;
 const skeletonRows = [0, 1, 2, 3, 4];
 
 export function MemoriesScreen() {
@@ -211,7 +211,7 @@ function MemoriesHeaderFrame({ children }: { children?: ReactNode }) {
           "flex h-8 items-center justify-between gap-2"
         )}
       >
-        <h1 className="ml-3 min-w-0 truncate font-medium text-base">
+        <h1 className="ml-3 min-w-0 truncate text-base font-medium">
           Memories
         </h1>
         {children}
@@ -306,7 +306,7 @@ function SubjectHeaderFrame({
           "flex h-8 items-center justify-between gap-2 pb-1"
         )}
       >
-        <h2 className="min-w-0 truncate font-medium text-base">{title}</h2>
+        <h2 className="min-w-0 truncate text-base font-medium">{title}</h2>
         {children}
       </div>
     </div>
@@ -433,7 +433,7 @@ function ProfileSection() {
   return (
     <MemorySection>
       <MemorySectionHeading>
-        <h2 className="font-medium text-sm">Profile</h2>
+        <h2 className="text-sm font-medium">Profile</h2>
       </MemorySectionHeading>
       <ProfileList />
     </MemorySection>
@@ -444,7 +444,7 @@ function TopicsSection() {
   return (
     <MemorySection>
       <MemorySectionHeading>
-        <h2 className="font-medium text-sm">Topics</h2>
+        <h2 className="text-sm font-medium">Topics</h2>
       </MemorySectionHeading>
       <TopicsList />
     </MemorySection>
@@ -544,7 +544,7 @@ function EventGroupSection({ group }: { group: EventGroup }) {
   return (
     <MemorySection>
       <MemorySectionHeading>
-        <h2 className="font-medium text-sm">{group.title}</h2>
+        <h2 className="text-sm font-medium">{group.title}</h2>
       </MemorySectionHeading>
       <EventList events={group.events} label={group.title} />
     </MemorySection>
@@ -555,7 +555,7 @@ function UndatedEventsSection({ events }: { events: EventMemory[] }) {
   return (
     <MemorySection>
       <MemorySectionHeading>
-        <h2 className="font-medium text-sm">No date</h2>
+        <h2 className="text-sm font-medium">No date</h2>
       </MemorySectionHeading>
       <EventList events={events} label="No date" />
     </MemorySection>
@@ -623,20 +623,20 @@ function SubjectRow({
       <button
         aria-current={selected ? "true" : undefined}
         className={cn(
-          "flex w-full cursor-pointer items-center gap-4 rounded-xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0",
+          "hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-ring/50 active:bg-foreground/15 flex w-full cursor-pointer items-center gap-4 rounded-xl px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-2 active:duration-0",
           selected && "bg-foreground/10 hover:bg-foreground/10"
         )}
         onClick={onOpen}
         type="button"
       >
-        <span className="w-36 shrink-0 truncate font-medium text-sm">
+        <span className="w-36 shrink-0 truncate text-sm font-medium">
           {subject}
         </span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
           {snippet}
         </span>
         {updated.length > 0 ? (
-          <span className="shrink-0 text-muted-foreground text-sm">
+          <span className="text-muted-foreground shrink-0 text-sm">
             {updated}
           </span>
         ) : null}
@@ -664,15 +664,15 @@ function EventRow({
   return (
     <li>
       <button
-        className="flex w-full cursor-pointer flex-col rounded-xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0"
+        className="hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-ring/50 active:bg-foreground/15 flex w-full cursor-pointer flex-col rounded-xl px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-2 active:duration-0"
         onClick={handleEdit}
         type="button"
       >
         <span className="flex items-baseline justify-between gap-4">
-          <span className="min-w-0 truncate font-medium text-sm">
+          <span className="min-w-0 truncate text-sm font-medium">
             {row.event}
           </span>
-          <span className="shrink-0 text-muted-foreground text-sm">
+          <span className="text-muted-foreground shrink-0 text-sm">
             {formatEventOccurred(row.occurredAt)}
           </span>
         </span>
@@ -686,7 +686,7 @@ function EventRow({
 
 function EventSourceLine({ title }: { title: string }) {
   return (
-    <span className="truncate text-muted-foreground text-sm">From {title}</span>
+    <span className="text-muted-foreground truncate text-sm">From {title}</span>
   );
 }
 
@@ -1146,7 +1146,7 @@ function EventDateField({
           render={
             <Button
               className={cn(
-                "w-full justify-start border-input bg-transparent hover:bg-transparent aria-expanded:bg-transparent",
+                "border-input w-full justify-start bg-transparent hover:bg-transparent aria-expanded:bg-transparent",
                 !selected && "text-muted-foreground"
               )}
               disabled={busy}

@@ -2,9 +2,9 @@ import { handlerErrorMessage } from "../handler-errors.ts";
 
 const unlockMessage = "Unlock the app first.";
 const missingChatMessage = "This chat could not be found.";
-const lockedPattern = /journal is locked/i;
+const lockedPattern = /journal is locked/iu;
 const agentDownPattern =
-  /Server returned 50[234]|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|Failed to fetch|fetch failed/i;
+  /Server returned 50[234]|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|Failed to fetch|fetch failed/iu;
 
 export function formatChatSaveError(error: unknown): string {
   return mapChatError(error, "Could not save the chat.");

@@ -44,12 +44,12 @@ export function ModelDownloadRow({
     <div className="flex flex-col gap-2 p-3" data-state={state.kind}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col">
-          <span className="truncate font-medium font-mono text-sm">{name}</span>
+          <span className="truncate font-mono text-sm font-medium">{name}</span>
           <span className="text-muted-foreground text-xs">{purpose}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-sm">
           {state.kind === "ready" ? (
-            <span className="flex items-center gap-1 text-primary">
+            <span className="text-primary flex items-center gap-1">
               <CheckIcon className="size-4" />
               Ready
             </span>
@@ -129,11 +129,11 @@ export function ModelStatusLine({
 
 function StatusIcon({ state }: { state: ModelRowState }) {
   if (state.kind === "ready") {
-    return <CheckIcon className="size-4 shrink-0 text-primary" />;
+    return <CheckIcon className="text-primary size-4 shrink-0" />;
   }
   if (state.kind === "problem" || state.kind === "unavailable") {
     return (
-      <CircleAlertIcon className="size-4 shrink-0 text-muted-foreground" />
+      <CircleAlertIcon className="text-muted-foreground size-4 shrink-0" />
     );
   }
   return <Spinner aria-hidden className="shrink-0" />;

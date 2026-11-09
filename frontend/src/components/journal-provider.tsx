@@ -277,7 +277,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         wordCount,
       });
       pendingEmbedIdsRef.current.add(saved.id);
-      // biome-ignore lint/suspicious/noUnnecessaryConditions: dirtyRef can be set true by scheduleSave() during the await above
       if (!dirtyRef.current) {
         scheduleEmbedRef.current();
       }

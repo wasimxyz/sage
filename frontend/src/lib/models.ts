@@ -15,7 +15,7 @@ export const minParamsBillions = 6;
 
 const recommendLimit = 25;
 const textUseCases = new Set(["chat", "code", "reasoning"]);
-const tieredChip = /^(Apple M\d+)(?: (Pro|Max|Ultra))?$/;
+const tieredChip = /^(Apple M\d+)(?: (Pro|Max|Ultra))?$/u;
 
 export interface CatalogGrade {
   compatible: boolean;
@@ -56,7 +56,7 @@ export interface RecommendedModel {
   vramGb: number;
 }
 
-const sizeHintPattern = /:([\d.]+)b(?:-|$)/i;
+const sizeHintPattern = /:([\d.]+)b(?:-|$)/iu;
 
 const unversionedDefaults: Record<string, string> = {
   gemma3: "gemma3:4b",

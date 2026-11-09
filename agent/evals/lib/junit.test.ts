@@ -4,36 +4,37 @@ import test from "node:test";
 import { mergeJunit } from "./junit.ts";
 import type { RecordedEvalResult } from "./recorder.ts";
 
-const tests0Pattern = /tests="0"/;
-const tests5Pattern = /tests="5"/;
-const failures1Pattern = /failures="1"/;
-const skipped1Pattern = /skipped="1"/;
-const time7750Pattern = /time="7.750"/;
-const nameChat0000Pattern = /name="chat\/0000"/;
-const nameChat0001Pattern = /name="chat\/0001"/;
-const nameChatJudge0000Pattern = /name="chat-judge\/0000"/;
-const nameExtraction0000Pattern = /name="extraction\/0000"/;
-const nameRetrieval0000Pattern = /name="retrieval\/0000"/;
-const runFailedPattern = /run failed/;
-const noRetrievalCasesInTheDatasetPattern = /No retrieval cases in the dataset/;
-const tests2Pattern = /tests="2"/;
-const failures0Pattern = /failures="0"/;
-const skipped0Pattern = /skipped="0"/;
-const nameChatJudgePattern = /name="chat-judge\//;
-const missingATestsuitePattern = /missing a testsuite/;
-const tests4Pattern = /tests="4"/;
-const systemOutPattern = /<system-out>/;
-const whoIsSamPattern = /Who is Sam\?/;
-const samIsYourPartnerPattern = /Sam is your partner\./;
-const failureMessageRunFailedPattern = /<failure message="run failed">/;
-const areTheoAndIStillTogetherPattern = /Are Theo and I still together\?/;
-const time3000Pattern = /time="3.000"/;
+const tests0Pattern = /tests="0"/u;
+const tests5Pattern = /tests="5"/u;
+const failures1Pattern = /failures="1"/u;
+const skipped1Pattern = /skipped="1"/u;
+const time7750Pattern = /time="7.750"/u;
+const nameChat0000Pattern = /name="chat\/0000"/u;
+const nameChat0001Pattern = /name="chat\/0001"/u;
+const nameChatJudge0000Pattern = /name="chat-judge\/0000"/u;
+const nameExtraction0000Pattern = /name="extraction\/0000"/u;
+const nameRetrieval0000Pattern = /name="retrieval\/0000"/u;
+const runFailedPattern = /run failed/u;
+const noRetrievalCasesInTheDatasetPattern =
+  /No retrieval cases in the dataset/u;
+const tests2Pattern = /tests="2"/u;
+const failures0Pattern = /failures="0"/u;
+const skipped0Pattern = /skipped="0"/u;
+const nameChatJudgePattern = /name="chat-judge\//u;
+const missingATestsuitePattern = /missing a testsuite/u;
+const tests4Pattern = /tests="4"/u;
+const systemOutPattern = /<system-out>/u;
+const whoIsSamPattern = /Who is Sam\?/u;
+const samIsYourPartnerPattern = /Sam is your partner\./u;
+const failureMessageRunFailedPattern = /<failure message="run failed">/u;
+const areTheoAndIStillTogetherPattern = /Are Theo and I still together\?/u;
+const time3000Pattern = /time="3.000"/u;
 const chatFactualityOrderPattern =
-  /name="chat\/0000"[\s\S]*chat factuality[\s\S]*name="chat\/0001"/;
+  /name="chat\/0000"[\s\S]*chat factuality[\s\S]*name="chat\/0001"/u;
 const chatTheoOrderPattern =
-  /name="chat\/0001"[\s\S]*Are Theo and I still together\?/;
-const chatFactualityPattern = /chat factuality/;
-const time0000Pattern = /time="0.000"/;
+  /name="chat\/0001"[\s\S]*Are Theo and I still together\?/u;
+const chatFactualityPattern = /chat factuality/u;
+const time0000Pattern = /time="0.000"/u;
 
 const generateXml = `<?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="eve evals" tests="2" failures="1" skipped="0" time="3.250">

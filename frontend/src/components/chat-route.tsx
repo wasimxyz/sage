@@ -44,7 +44,7 @@ export function ChatRoute() {
 
 function ChatLoading() {
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-background">
+    <div className="bg-background flex min-h-0 min-w-0 flex-1 items-center justify-center">
       <Spinner />
     </div>
   );
@@ -80,7 +80,7 @@ function reloadSage() {
 
 function ChatFailed() {
   return (
-    <Empty className="min-h-0 flex-1 bg-background">
+    <Empty className="bg-background min-h-0 flex-1">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <AlertCircleIcon />

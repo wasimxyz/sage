@@ -52,7 +52,7 @@ export function HomeDashboard({
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h1 className="font-medium text-2xl tracking-tight">Overview</h1>
+        <h1 className="text-2xl font-medium tracking-tight">Overview</h1>
         <p className="text-muted-foreground text-sm">
           {runs.length} {runs.length === 1 ? "run" : "runs"} · {totalTests}{" "}
           {totalTests === 1 ? "test" : "tests"} · {overall}% overall pass rate ·{" "}
@@ -62,7 +62,7 @@ export function HomeDashboard({
 
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium text-base">Results by model</h2>
+          <h2 className="text-base font-medium">Results by model</h2>
           {embedOptions.length > 0 ? (
             <EmbedFilter options={embedOptions} value={embedModel} />
           ) : null}

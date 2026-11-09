@@ -7,8 +7,8 @@ import { createWorld } from "./index.ts";
 import { decodeWorldKey, WORLD_KEY_ENV } from "./key.ts";
 import { parseSpawnSecrets, readSpawnSecrets } from "./spawn.js";
 
-const worldKeyPattern = /world key/;
-const spawnTokenPattern = /spawn token/;
+const worldKeyPattern = /world key/u;
+const spawnTokenPattern = /spawn token/u;
 
 test("decodeWorldKey treats missing and empty values as plaintext", () => {
   assert.equal(decodeWorldKey(undefined), undefined);
@@ -26,13 +26,13 @@ test("decodeWorldKey accepts 32-byte hex", () => {
 
 test("decodeWorldKey rejects a present but invalid value", () => {
   assert.throws(() => decodeWorldKey("short"), {
-    message: new RegExp(WORLD_KEY_ENV),
+    message: new RegExp(WORLD_KEY_ENV, "u"),
   });
   assert.throws(() => decodeWorldKey("zz".repeat(32)), {
-    message: new RegExp(WORLD_KEY_ENV),
+    message: new RegExp(WORLD_KEY_ENV, "u"),
   });
   assert.throws(() => decodeWorldKey("00".repeat(31)), {
-    message: new RegExp(WORLD_KEY_ENV),
+    message: new RegExp(WORLD_KEY_ENV, "u"),
   });
 });
 
