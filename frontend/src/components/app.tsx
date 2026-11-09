@@ -3,6 +3,7 @@ import { ThemeProvider } from "next-themes";
 
 import { AppShell } from "@/components/app-shell";
 import { ChatProvider } from "@/components/chat-provider";
+import { DictationProvider } from "@/components/dictation-provider";
 import { DreamProvider } from "@/components/dream-provider";
 import { FileMenuProvider } from "@/components/file-menu-provider";
 import { useJournalView } from "@/components/journal-context";
@@ -45,18 +46,20 @@ export default function App() {
                     <OllamaProvider>
                       <DreamProvider>
                         <SettingsProvider>
-                          <JournalProvider>
-                            <FileMenuProvider>
-                              <ChatProvider>
-                                <MemoriesProvider>
-                                  <OnboardingProvider>
-                                    <OnboardingGate />
-                                    <AppToaster />
-                                  </OnboardingProvider>
-                                </MemoriesProvider>
-                              </ChatProvider>
-                            </FileMenuProvider>
-                          </JournalProvider>
+                          <DictationProvider>
+                            <JournalProvider>
+                              <FileMenuProvider>
+                                <ChatProvider>
+                                  <MemoriesProvider>
+                                    <OnboardingProvider>
+                                      <OnboardingGate />
+                                      <AppToaster />
+                                    </OnboardingProvider>
+                                  </MemoriesProvider>
+                                </ChatProvider>
+                              </FileMenuProvider>
+                            </JournalProvider>
+                          </DictationProvider>
                         </SettingsProvider>
                       </DreamProvider>
                     </OllamaProvider>

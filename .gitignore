@@ -7,3 +7,4 @@ frontend/dist/
 agent/evals/.cache/
 third_party/node/
 third_party/ollama/
+third_party/dictation-spike/

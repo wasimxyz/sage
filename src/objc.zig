@@ -101,6 +101,13 @@ pub fn msgInt(api: Api, object: ?*anyopaque, selector: *anyopaque) i64 {
     return send(object, selector);
 }
 
+/// A message that takes one object and returns an NSInteger, such as
+/// `authorizationStatusForMediaType:`.
+pub fn msg1Int(api: Api, object: ?*anyopaque, selector: *anyopaque, arg: ?*anyopaque) i64 {
+    const send: *const fn (?*anyopaque, *anyopaque, ?*anyopaque) callconv(.c) i64 = @ptrCast(api.msg_send);
+    return send(object, selector, arg);
+}
+
 pub fn msg1i(api: Api, object: ?*anyopaque, selector: *anyopaque, arg: i64) ?*anyopaque {
     const send: *const fn (?*anyopaque, *anyopaque, i64) callconv(.c) ?*anyopaque = @ptrCast(api.msg_send);
     return send(object, selector, arg);

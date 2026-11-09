@@ -77,6 +77,13 @@ export interface EntryActions {
   deleteOpenEntry: () => void;
   /** Save now. Resolves true when nothing is left unsaved. */
   flush: () => Promise<boolean>;
+  /**
+   * Runs `leave` at the top of every way out of the open entry, before the
+   * save that goes with it, so changes it makes are saved too. `leave` answers
+   * true when it changed something. One function at a time; the cleanup
+   * removes it.
+   */
+  registerBeforeLeave: (leave: () => boolean) => () => void;
   registerEditor: (adapter: EditorAdapter | null) => void;
   scheduleSave: () => void;
 }

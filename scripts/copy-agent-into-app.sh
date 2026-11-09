@@ -1,10 +1,13 @@
 #!/bin/sh
-# Copy the eve self-host trio, a pinned Node.js, and a pinned Ollama CLI into a
-# packaged Sage.app so `eve start` and local AI run without system installs.
+# Copy the eve self-host trio, a pinned Node.js, a pinned Ollama CLI, and the
+# speech library into a packaged Sage.app so `eve start`, local AI, and
+# dictation run without system installs. Usage:
+#   copy-agent-into-app.sh [Sage.app [libSageSpeech.dylib]]
 set -eu
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 app="${1:-}"
+speech_lib="${2:-$root/zig-out/lib/libSageSpeech.dylib}"
 
 if [ -z "$app" ]; then
   # `native package` writes Sage.app. `zig build package` writes a versioned
@@ -50,6 +53,24 @@ fi
 
 sh "$root/scripts/fetch-node.sh" "$app"
 sh "$root/scripts/fetch-ollama.sh" "$app"
+
+# Dictation's speech engine is a separate library for macOS 26 and later. Sage
+# loads it from Contents/Frameworks and never links it, so an older Mac simply
+# hides the mic. `make build` or `make package` builds it with the app.
+if [ ! -f "$speech_lib" ]; then
+  echo "copy-agent-into-app: no speech library at $speech_lib; build it first with make build" >&2
+  exit 1
+fi
+mkdir -p "$app/Contents/Frameworks"
+cp "$speech_lib" "$app/Contents/Frameworks/libSageSpeech.dylib"
+
+# The package command writes its own microphone prompt, which says "recording".
+# Replace it before signing, because editing the plist breaks the seal. Add the
+# key if the package command left it out.
+mic_text="Sage listens only while you dictate. Audio stays on this Mac and is never saved."
+plist="$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription $mic_text" "$plist" 2>/dev/null ||
+  /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $mic_text" "$plist"
 
 channel="$dest/agent/channels/eve.ts"
 if ! grep -q 'origin: "zero://app"' "$channel" || ! grep -q 'allowedHeaders: "*"' "$channel"; then

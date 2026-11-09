@@ -7,7 +7,7 @@
     "version": "0.3.1",
     "icons": ["assets/icon.svg"],
     "platforms": ["macos"],
-    "permissions": [],
+    "permissions": ["microphone"],
     "capabilities": ["webview", "js_bridge", "sqlite"],
     "frontend": {
         "dist": "frontend/dist",
@@ -86,7 +86,13 @@
             { "name": "onboarding.save", "origins": ["zero://app"] },
             { "name": "onboarding.reminderShown", "origins": ["zero://app"] },
             { "name": "onboarding.remindersOff", "origins": ["zero://app"] },
-            { "name": "ollama.setupStatus", "origins": ["zero://app"] }
+            { "name": "ollama.setupStatus", "origins": ["zero://app"] },
+            { "name": "dictation.status", "origins": ["zero://app"] },
+            { "name": "dictation.start", "origins": ["zero://app"] },
+            { "name": "dictation.stop", "origins": ["zero://app"] },
+            { "name": "dictation.openSettings", "origins": ["zero://app"] },
+            { "name": "dictation.downloadModel", "origins": ["zero://app"] },
+            { "name": "journal.tidy", "origins": ["zero://app"] }
         ]
     },
     "security": {

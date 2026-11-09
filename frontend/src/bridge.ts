@@ -1,5 +1,9 @@
+import {
+  type DictationStopReason,
+  dictationStopReasons,
+} from "./lib/dictation-session.ts";
 import type { ExportCounts } from "./lib/export-data-flow";
-import { memoryEnabledFrom } from "./lib/memory-feature";
+import { memoryEnabledFrom } from "./lib/memory-feature.ts";
 import type { NativeSdkInvokeError, NativeSdkJson } from "./zero";
 
 // Command names and allowed origins are declared in app.json and again in src/main.zig.
@@ -1445,6 +1449,250 @@ export function onJournalImport(callback: () => void): () => void {
 export function onJournalExport(callback: () => void): () => void {
   return onWindowEvent("journal:export", () => {
     callback();
+  });
+}
+
+// --- dictation ---
+
+export type DictationUnavailableReason =
+  | "engine_missing"
+  | "no_english"
+  | "unsupported_os";
+export type MicrophoneAccess =
+  | "denied"
+  | "granted"
+  | "restricted"
+  | "undetermined";
+export type SpeechModelState =
+  | "checking"
+  | "downloading"
+  | "failed"
+  | "installed"
+  | "missing";
+
+export interface SpeechModelStatus {
+  /** How much of the download is done, 0 to 1, while it runs. */
+  fraction: number | null;
+  /** Why the download failed, when it did. */
+  message: string | null;
+  state: SpeechModelState;
+}
+
+export interface DictationStatus {
+  /** False when this Mac cannot dictate, so no mic button shows. */
+  available: boolean;
+  microphone: MicrophoneAccess;
+  model: SpeechModelStatus;
+  reason: DictationUnavailableReason | null;
+  /** The running session, if any. */
+  session: number | null;
+}
+
+export interface DictationTextEvent {
+  /** Text that settled since the last event. Empty when none did. */
+  final: string;
+  /** Starts at 1 for each session and rises by 1. A gap means a lost event. */
+  seq: number;
+  session: number;
+  /** The whole grey tail now. It replaces the one before. */
+  volatile: string;
+}
+
+export interface DictationStoppedEvent {
+  /** Words for a failure. Null when the person asked or Sage locked or quit. */
+  message: string | null;
+  reason: DictationStopReason;
+  session: number;
+}
+
+/** The error names the core sends when a dictation command fails. */
+export type DictationErrorCode =
+  | "DictationBusy"
+  | "DictationUnavailable"
+  | "Locked"
+  | "MicrophoneDenied"
+  | "Securing"
+  | "SpeechModelChecking"
+  | "SpeechModelMissing";
+
+const dictationErrorCodes: readonly DictationErrorCode[] = [
+  "DictationBusy",
+  "DictationUnavailable",
+  "Locked",
+  "MicrophoneDenied",
+  "Securing",
+  "SpeechModelChecking",
+  "SpeechModelMissing",
+];
+
+const microphoneAccessStates: readonly MicrophoneAccess[] = [
+  "denied",
+  "granted",
+  "restricted",
+  "undetermined",
+];
+const speechModelStates: readonly SpeechModelState[] = [
+  "checking",
+  "downloading",
+  "failed",
+  "installed",
+  "missing",
+];
+const dictationUnavailableReasons: readonly DictationUnavailableReason[] = [
+  "engine_missing",
+  "no_english",
+  "unsupported_os",
+];
+
+function oneOfRequired<T extends string>(
+  options: readonly T[],
+  value: NativeSdkJson | undefined
+): T {
+  const found = oneOf(options, value);
+  if (found === null) {
+    throw new Error("Unexpected bridge response.");
+  }
+  return found;
+}
+
+/**
+ * The name the core gave a failed dictation command, such as
+ * `MicrophoneDenied`. `invoke` wraps the bridge's error, so this looks through
+ * the wrapper too. Null for any other failure.
+ */
+export function dictationErrorCode(error: unknown): DictationErrorCode | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== null; depth += 1) {
+    const code = errorCode(current);
+    const found = dictationErrorCodes.find((name) => name === code);
+    if (found !== undefined) {
+      return found;
+    }
+    current = current instanceof Error ? (current.cause ?? null) : null;
+  }
+  return null;
+}
+
+function speechModelFrom(value: NativeSdkJson | undefined): SpeechModelStatus {
+  const model = asRecord(value ?? null);
+  return {
+    fraction: asNumberOrNull(model.fraction),
+    message: asStringOrNull(model.message),
+    state: oneOfRequired(speechModelStates, model.state),
+  };
+}
+
+export async function getDictationStatus(): Promise<DictationStatus> {
+  const response = asRecord(await invoke("dictation.status", {}));
+  return {
+    available: asBoolean(response.available),
+    microphone: oneOfRequired(microphoneAccessStates, response.microphone),
+    model: speechModelFrom(response.model),
+    reason:
+      response.reason === null || response.reason === undefined
+        ? null
+        : oneOfRequired(dictationUnavailableReasons, response.reason),
+    session: asNumberOrNull(response.session),
+  };
+}
+
+/**
+ * Starts the mic. Resolves with the session id once the core has taken the
+ * request. Rejects with a `DictationErrorCode` name; read it with
+ * `dictationErrorCode`.
+ */
+export async function startDictation(): Promise<number> {
+  const response = asRecord(await invoke("dictation.start", {}));
+  return asNumber(response.session);
+}
+
+/**
+ * Stops a session. Without `discard`, the core finishes the words it already
+ * heard and sends them before the stopped event. With it, the session ends at
+ * once and sends no more text.
+ */
+export async function stopDictation(
+  session: number,
+  discard: boolean
+): Promise<void> {
+  await invoke("dictation.stop", { discard, session });
+}
+
+/** Opens System Settings at Privacy & Security > Microphone. */
+export async function openDictationSettings(): Promise<void> {
+  await invoke("dictation.openSettings", {});
+}
+
+/** Starts the speech model download. Progress shows in `getDictationStatus`. */
+export async function downloadSpeechModel(): Promise<boolean> {
+  const response = asRecord(await invoke("dictation.downloadModel", {}));
+  return asBoolean(response.started);
+}
+
+/** Asks the summary model to tidy dictated or selected text. */
+export async function tidyText(text: string): Promise<string> {
+  const response = asRecord(await invoke("journal.tidy", { text }));
+  return asString(response.text);
+}
+
+// The dictation events parse inside `try` and call the callback outside it, so
+// an error in the callback is not taken for a malformed event.
+export function onDictationStarted(
+  callback: (payload: { session: number }) => void
+): () => void {
+  return onWindowEvent("dictation:started", (detail) => {
+    let payload: { session: number };
+    try {
+      payload = { session: asNumber(asRecord(detail).session) };
+    } catch {
+      // Ignore a malformed window event.
+      return;
+    }
+    callback(payload);
+  });
+}
+
+export function onDictationText(
+  callback: (payload: DictationTextEvent) => void
+): () => void {
+  return onWindowEvent("dictation:text", (detail) => {
+    let payload: DictationTextEvent;
+    try {
+      const record = asRecord(detail);
+      payload = {
+        final: asString(record.final),
+        seq: asNumber(record.seq),
+        session: asNumber(record.session),
+        volatile: asString(record.volatile),
+      };
+    } catch {
+      // Ignore a malformed window event.
+      return;
+    }
+    callback(payload);
+  });
+}
+
+export function onDictationStopped(
+  callback: (payload: DictationStoppedEvent) => void
+): () => void {
+  return onWindowEvent("dictation:stopped", (detail) => {
+    let payload: DictationStoppedEvent;
+    try {
+      const record = asRecord(detail);
+      payload = {
+        message: asStringOrNull(record.message),
+        // A reason this page does not know still ends the session.
+        reason:
+          dictationStopReasons.find((reason) => reason === record.reason) ??
+          "engine_failed",
+        session: asNumber(record.session),
+      };
+    } catch {
+      // Ignore a malformed window event.
+      return;
+    }
+    callback(payload);
   });
 }
 
