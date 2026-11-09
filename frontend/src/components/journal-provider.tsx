@@ -152,6 +152,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const persistChainRef = useRef(Promise.resolve());
   const embedChainRef = useRef(Promise.resolve());
   const adapterRef = useRef<EditorAdapter | null>(null);
+  const beforeLeaveRef = useRef<(() => boolean) | null>(null);
   const persistRef = useRef<() => Promise<void>>(async () => undefined);
   const embedEntryRef = useRef<(id: number) => Promise<void>>(
     async () => undefined
@@ -477,6 +478,22 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setEditorGeneration((current) => current + 1);
   }, []);
 
+  const registerBeforeLeave = useCallback((leave: () => boolean) => {
+    beforeLeaveRef.current = leave;
+    return () => {
+      if (beforeLeaveRef.current === leave) {
+        beforeLeaveRef.current = null;
+      }
+    };
+  }, []);
+
+  // Called first in every way out of the open entry, before its save, so words
+  // it adds on the way out are saved with the rest. True when it did something.
+  const leaveEntry = useCallback(
+    (): boolean => beforeLeaveRef.current?.() ?? false,
+    []
+  );
+
   const changeTitle = useCallback(
     (nextTitle: string) => {
       setTitle(nextTitle);
@@ -675,18 +692,20 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   }, [clearEmbedTimer, loadEntries]);
 
   const showHome = useCallback(async () => {
+    leaveEntry();
     await flush();
     setSection("home");
     setSidebarMenu("nav");
-  }, [flush]);
+  }, [flush, leaveEntry]);
 
   const showChat = useCallback(async () => {
+    leaveEntry();
     // Every way into Chat comes through here, so the load starts with the
     // flush. Chat then opens at once instead of behind a spinner.
     await Promise.all([flush(), preloadChatLayout()]);
     setSection("chat");
     setSidebarMenu("nav");
-  }, [flush]);
+  }, [flush, leaveEntry]);
 
   // Reads the list through refs, so a save that changes the list does not
   // change this function or the actions that hold it.
@@ -702,16 +721,18 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     if (!memoryEnabled) {
       return;
     }
+    leaveEntry();
     await flush();
     setSection("memories");
     setSidebarMenu("nav");
-  }, [flush, memoryEnabled]);
+  }, [flush, leaveEntry, memoryEnabled]);
 
   const showSettings = useCallback(async () => {
+    leaveEntry();
     await flush();
     setSection("settings");
     setSidebarMenu("settings");
-  }, [flush]);
+  }, [flush, leaveEntry]);
 
   const closeSettings = useCallback(async () => {
     const target = returnSectionRef.current;
@@ -746,6 +767,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         setDetailOpenState(true);
         return;
       }
+      leaveEntry();
       await flush();
       setSection("journal");
       setSidebarMenu("nav");
@@ -753,25 +775,27 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       setDetailOpenState(true);
       setEntryLoading(true);
     },
-    [flush]
+    [flush, leaveEntry]
   );
 
   const startDraft = useCallback(async () => {
+    leaveEntry();
     await flush();
     setSection("journal");
     setSidebarMenu("nav");
     setSelection({ kind: "draft" });
     setDetailOpenState(true);
     setEntryLoading(false);
-  }, [flush]);
+  }, [flush, leaveEntry]);
 
   // The open entry is gone from the editor, and nothing of it saves again.
   const closeOpenEntry = useCallback(() => {
+    leaveEntry();
     dirtyRef.current = false;
     clearEmbedTimer();
     setSelection(null);
     setExpanded(false);
-  }, [clearEmbedTimer]);
+  }, [clearEmbedTimer, leaveEntry]);
 
   // Hide the entry now and delete it when the undo toast closes.
   const startDelete = useCallback(
@@ -809,6 +833,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   // text. If that save fails, nothing is deleted.
   const deleteEntryById = useCallback(
     (id: number) => {
+      if (idRef.current === id) {
+        leaveEntry();
+      }
       const ready = idRef.current === id ? flush() : Promise.resolve(true);
       ready
         .then((saved) => {
@@ -820,12 +847,13 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         })
         .catch(() => undefined);
     },
-    [flush, startDelete]
+    [flush, leaveEntry, startDelete]
   );
 
   // From the editor menu. A draft that never saved has nothing to undo, so it
   // just closes. If saving what you typed fails, nothing is deleted.
   const deleteOpenEntry = useCallback(() => {
+    leaveEntry();
     flush()
       .then((saved) => {
         if (!saved) {
@@ -840,7 +868,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         startDelete(id);
       })
       .catch(() => undefined);
-  }, [closeOpenEntry, flush, startDelete]);
+  }, [closeOpenEntry, flush, leaveEntry, startDelete]);
 
   const embedImportedEntries = useCallback(
     async (
@@ -902,12 +930,20 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     [embedImportedEntries, flush, loadEntries]
   );
 
-  const setDetailOpen = useCallback((open: boolean) => {
-    setDetailOpenState(open);
-    if (!open) {
-      setExpanded(false);
-    }
-  }, []);
+  const setDetailOpen = useCallback(
+    (open: boolean) => {
+      setDetailOpenState(open);
+      if (!open) {
+        setExpanded(false);
+        // A closed panel leaves the entry, and it unmounts soon after, so what
+        // the entry gained on the way out is saved now.
+        if (leaveEntry()) {
+          flush().catch(() => undefined);
+        }
+      }
+    },
+    [flush, leaveEntry]
+  );
 
   const journalActions = useMemo<JournalActions>(
     () => ({
@@ -954,10 +990,18 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       changeTitle,
       deleteOpenEntry,
       flush,
+      registerBeforeLeave,
       registerEditor,
       scheduleSave,
     }),
-    [changeTitle, deleteOpenEntry, flush, registerEditor, scheduleSave]
+    [
+      changeTitle,
+      deleteOpenEntry,
+      flush,
+      registerBeforeLeave,
+      registerEditor,
+      scheduleSave,
+    ]
   );
 
   const view = useMemo<JournalViewState>(

@@ -521,7 +521,7 @@ test "a server with no binary reports missing and starts nothing" {
 
 /// A port nothing listens on: bind port 0, read the port the system chose, and
 /// close the socket. Tests use it so they never touch 11434, 11435, or 11436.
-fn freeTestPort(io: std.Io) !u16 {
+pub fn freeTestPort(io: std.Io) !u16 {
     const bind = try std.Io.net.IpAddress.parseIp4(ollama.host, 0);
     var listener = try std.Io.net.IpAddress.listen(&bind, io, .{ .reuse_address = true });
     defer listener.deinit(io);

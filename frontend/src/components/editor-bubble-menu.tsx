@@ -9,14 +9,23 @@ import {
   ListIcon,
   ListOrderedIcon,
   PilcrowIcon,
+  SparklesIcon,
   StrikethroughIcon,
   TextQuoteIcon,
 } from "lucide-react";
 import { type ComponentProps, useCallback } from "react";
 import { Hint } from "@/components/hint";
 import { panelIconHoverClass } from "@/components/panel-icon-button";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useTidy } from "@/hooks/use-tidy";
+import {
+  type DictationEditorView,
+  readDictationView,
+  sameDictationView,
+} from "@/lib/dictation-plugin";
 import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -286,6 +295,57 @@ function BlockToggles({ formatting }: { formatting: FormattingState }) {
   );
 }
 
+function tidyLabel(view: DictationEditorView): string {
+  if (view.tidy === "working") {
+    return "Tidying…";
+  }
+  return view.selectionNeedsPlain
+    ? "Tidy only works on plain paragraphs"
+    : "Tidy";
+}
+
+// A button that is off still takes hover, so its tooltip can say why. A real
+// `disabled` button takes no pointer events.
+function TidyButton() {
+  const { editor } = useTiptap();
+  const view = useTiptapState(
+    ({ editor: current }) => readDictationView(current.state),
+    sameDictationView
+  );
+  const tidy = useTidy();
+  const enabled = view.canTidySelection;
+
+  const handleClick = useCallback(() => {
+    if (!enabled || editor.isDestroyed) {
+      return;
+    }
+    const { from, to } = editor.state.selection;
+    tidy({ from, to }).catch(() => undefined);
+  }, [editor, enabled, tidy]);
+
+  return (
+    <Hint label={tidyLabel(view)}>
+      <Button
+        aria-disabled={!enabled}
+        className={cn(
+          panelIconHoverClass,
+          !enabled && "cursor-default opacity-50"
+        )}
+        onClick={handleClick}
+        size="sm"
+        variant="ghost"
+      >
+        {view.tidy === "working" ? (
+          <Spinner aria-hidden data-icon="inline-start" />
+        ) : (
+          <SparklesIcon data-icon="inline-start" />
+        )}
+        Tidy
+      </Button>
+    </Hint>
+  );
+}
+
 export function EditorBubbleMenu() {
   const formatting = useTiptapState(
     (state) => readFormatting(state.editor),
@@ -300,6 +360,8 @@ export function EditorBubbleMenu() {
       <MarkToggles formatting={formatting} />
       <Separator className="mx-1 h-6" orientation="vertical" />
       <BlockToggles formatting={formatting} />
+      <Separator className="mx-1 h-6" orientation="vertical" />
+      <TidyButton />
     </BubbleMenu>
   );
 }

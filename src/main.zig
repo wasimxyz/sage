@@ -10,6 +10,7 @@ const export_mod = @import("export.zig");
 const keychain = @import("keychain.zig");
 const lock_mod = @import("lock.zig");
 const menu = @import("menu.zig");
+const microphone = @import("microphone.zig");
 const session_lock = @import("session_lock.zig");
 const ollama = @import("ollama.zig");
 const onboarding_mod = @import("onboarding.zig");
@@ -20,6 +21,8 @@ const agent_server = @import("agent_server.zig");
 const eve_sidecar = @import("eve_sidecar.zig");
 const ollama_server = @import("ollama_server.zig");
 const dream = @import("dream.zig");
+const dictation_mod = @import("dictation.zig");
+const speech_apple = @import("speech_apple.zig");
 const memory_feature = @import("memory_feature.zig");
 
 pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
@@ -111,8 +114,14 @@ const command_names = [_][]const u8{
     "onboarding.reminderShown",
     "onboarding.remindersOff",
     "ollama.setupStatus",
+    "dictation.status",
+    "dictation.start",
+    "dictation.stop",
+    "dictation.openSettings",
+    "dictation.downloadModel",
+    "journal.tidy",
 };
-const async_handler_count = 14;
+const async_handler_count = 15;
 
 fn navigationOrigins(dev_mode: bool) []const []const u8 {
     if (dev_mode) return &navigation_origins_dev;
@@ -245,6 +254,9 @@ const App = struct {
     embed_queue: *EmbedQueue,
     dream_queue: *dream.Queue,
     dream_runner: dream.Runner = .{},
+    /// Voice dictation: the microphone, the speech engine, and the text they
+    /// produce. Only the loop thread calls into it.
+    dictation: dictation_mod.Controller = .{},
     agent_queue: *agent_server.Queue,
     agent: agent_server.Server = .{},
     eve: eve_sidecar.Sidecar = .{},
@@ -307,7 +319,10 @@ const App = struct {
         session_lock.install(self.io, self, .{
             .on_lock = onSessionLock,
             .idle_timeout_ms = idleTimeoutForSession,
+            .idle_held = idleHeldForSession,
         });
+        speech_apple.configure(self.io, self.env_map.get(speech_apple.dev_library_env));
+        self.dictation.setBackend(speech_apple.backend());
         const packaged = if (self.env_map.get("NATIVE_SDK_MODE")) |mode|
             !std.mem.eql(u8, mode, "dev")
         else
@@ -363,6 +378,7 @@ const App = struct {
     fn stop(context: *anyopaque, runtime: *native_sdk.Runtime) anyerror!void {
         _ = runtime;
         const self: *App = @ptrCast(@alignCast(context));
+        self.dictation.cancelAll(dictationHost(self), .quit);
         self.eve.stop();
         self.ollama_server.stop(self.io);
     }
@@ -379,6 +395,12 @@ const App = struct {
     fn idleTimeoutForSession(context: *anyopaque) i64 {
         const self: *App = @ptrCast(@alignCast(context));
         return self.lock.idle_timeout_ms;
+    }
+
+    /// The idle clock waits while the microphone is on.
+    fn idleHeldForSession(context: *anyopaque) bool {
+        const self: *App = @ptrCast(@alignCast(context));
+        return self.dictation.active();
     }
 
     /// Fired from Sage > Settings, on the loop thread.
@@ -413,6 +435,7 @@ const App = struct {
                 drainDreamJobs(self);
                 drainLockJobs(self);
                 drainAgentJobs(self);
+                self.dictation.drain(dictationHost(self));
             },
             // Menu item IMPs emit window events directly; these command
             // names exist so automation can drive the same actions.
@@ -431,6 +454,7 @@ const App = struct {
             },
             .lifecycle => |phase| {
                 if (phase == .stop) {
+                    self.dictation.cancelAll(dictationHost(self), .quit);
                     self.eve.stop();
                     self.ollama_server.stop(self.io);
                 }
@@ -493,6 +517,11 @@ const App = struct {
             .{ .name = "onboarding.save", .context = self, .invoke_fn = handleOnboardingSave },
             .{ .name = "onboarding.reminderShown", .context = self, .invoke_fn = handleOnboardingReminderShown },
             .{ .name = "onboarding.remindersOff", .context = self, .invoke_fn = handleOnboardingRemindersOff },
+            .{ .name = "dictation.status", .context = self, .invoke_fn = handleDictationStatus },
+            .{ .name = "dictation.start", .context = self, .invoke_fn = handleDictationStart },
+            .{ .name = "dictation.stop", .context = self, .invoke_fn = handleDictationStop },
+            .{ .name = "dictation.openSettings", .context = self, .invoke_fn = handleDictationOpenSettings },
+            .{ .name = "dictation.downloadModel", .context = self, .invoke_fn = handleDictationDownloadModel },
         };
         self.async_handlers = .{
             .{ .name = "embeddings.status", .context = self, .invoke_fn = handleEmbeddingsStatus },
@@ -509,6 +538,7 @@ const App = struct {
             .{ .name = "ollama.start", .context = self, .invoke_fn = handleOllamaStart },
             .{ .name = "ollama.delete", .context = self, .invoke_fn = handleOllamaDelete },
             .{ .name = "ollama.setupStatus", .context = self, .invoke_fn = handleOllamaSetupStatus },
+            .{ .name = "journal.tidy", .context = self, .invoke_fn = handleJournalTidy },
         };
         return .{
             .policy = .{
@@ -569,6 +599,10 @@ fn readFileVault(allocator: std.mem.Allocator, io: std.Io) lock_mod.FileVault {
 
 /// Lock the current session and clear every in-memory copy of its keys.
 fn sessionLock(self: *App) void {
+    // Sleep and the screen saver end dictation even when the lock is off, so
+    // this comes before the early return. `dictation:stopped` reaches the web
+    // view before `lock:changed`.
+    self.dictation.cancelAll(dictationHost(self), .locked);
     if (!self.lock.enabled()) {
         App.emitMainWindowEvent(self, "lock:unavailable");
         return;
@@ -1069,6 +1103,91 @@ fn handleOllamaPullCancel(context: *anyopaque, invocation: native_sdk.bridge.Inv
     self.pull_abort.fire();
     var writer = std.Io.Writer.fixed(output);
     try writer.writeAll("{\"ok\":true}");
+    return writer.buffered();
+}
+
+/// The app side of the dictation controller: where its window events go, and
+/// what to do when a session ends.
+fn dictationHost(self: *App) dictation_mod.Host {
+    return .{
+        .io = self.io,
+        .services = self.services,
+        .context = self,
+        .emit_fn = emitDictationEvent,
+        .session_ended_fn = dictationSessionEnded,
+    };
+}
+
+fn emitDictationEvent(context: ?*anyopaque, name: []const u8, payload: []const u8) void {
+    const self: *App = @ptrCast(@alignCast(context.?));
+    const runtime = self.runtime orelse return;
+    runtime.emitWindowEvent(1, name, payload) catch {};
+}
+
+/// The full idle time counts from the moment dictation ends.
+fn dictationSessionEnded(context: ?*anyopaque) void {
+    _ = context;
+    session_lock.resetIdleClock();
+}
+
+fn handleDictationStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireUnlocked(self);
+    var writer = std.Io.Writer.fixed(output);
+    try self.dictation.writeStatus(dictationHost(self), &writer);
+    return writer.buffered();
+}
+
+/// Refuses while locked or securing. The other refusals are the controller's:
+/// `DictationUnavailable`, `SpeechModelMissing`, `MicrophoneDenied`, and
+/// `DictationBusy`.
+fn handleDictationStart(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireReady(self);
+    const session = try self.dictation.start(dictationHost(self));
+    var writer = std.Io.Writer.fixed(output);
+    try writer.print("{{\"session\":{d}}}", .{session});
+    return writer.buffered();
+}
+
+/// Never refuses, and works while locked. An unknown or ended session is a
+/// no-op.
+fn handleDictationStop(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    const self: *App = @ptrCast(@alignCast(context));
+    if (journal.jsonI64(invocation.request.payload, "session")) |session| {
+        if (session > 0) {
+            const discard = journal.jsonBool(invocation.request.payload, "discard") orelse false;
+            self.dictation.stop(dictationHost(self), @intCast(session), discard);
+        }
+    }
+    var writer = std.Io.Writer.fixed(output);
+    try writer.writeAll("{\"ok\":true}");
+    return writer.buffered();
+}
+
+/// Opens Privacy & Security > Microphone. The URL is fixed in
+/// `microphone.zig`; the web view never picks it.
+fn handleDictationOpenSettings(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireUnlocked(self);
+    const services = self.services orelse return error.RuntimeUnavailable;
+    try microphone.openSettings(services);
+    var writer = std.Io.Writer.fixed(output);
+    try writer.writeAll("{\"ok\":true}");
+    return writer.buffered();
+}
+
+/// Starts the speech model download. Progress shows in `dictation.status`.
+fn handleDictationDownloadModel(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+    _ = invocation;
+    const self: *App = @ptrCast(@alignCast(context));
+    try requireUnlocked(self);
+    const started = try self.dictation.downloadModel();
+    var writer = std.Io.Writer.fixed(output);
+    try writer.print("{{\"started\":{}}}", .{started});
     return writer.buffered();
 }
 
@@ -1771,6 +1890,8 @@ fn finishEncryptionDisable(self: *App) !void {
 const status_timeout_ms = ollama.status_timeout_ms;
 /// Model load plus inference on a long entry can legitimately take a while.
 const generate_timeout_ms = 120_000;
+/// Tidy can wait behind a Dream request for the same model, then generate.
+const tidy_timeout_ms = 180_000;
 
 const EmbedQueue = struct {
     mutex: std.Io.Mutex = .init,
@@ -1819,8 +1940,11 @@ const EmbedJob = struct {
     chat_id: i64 = 0,
     /// The chat messages a `generate_chat` job embeds, read on the loop thread.
     chat_batch: journal.ChatIndexBatch = .{},
+    /// A `tidy` job's text and its cleaned reply.
+    tidy_text: []u8 = &.{},
+    tidy_result: []u8 = &.{},
 
-    const Kind = enum { status, generate, generate_chat, models, start, delete, memory_save, setup_status };
+    const Kind = enum { status, generate, generate_chat, models, start, delete, memory_save, setup_status, tidy };
 };
 
 fn handleEmbeddingsStatus(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) anyerror!void {
@@ -1863,6 +1987,64 @@ fn handleEmbeddingsGenerate(context: *anyopaque, invocation: native_sdk.bridge.I
         };
         respondFail(responder, invocation.request.id, message);
     };
+}
+
+/// Tidy spoken text with the summary model. The web view sends the text it
+/// selected and gets the cleaned text back. Every refusal is a message, and no
+/// error leaves this handler.
+fn handleJournalTidy(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) anyerror!void {
+    const self: *App = @ptrCast(@alignCast(context));
+    requireUnlocked(self) catch {
+        respondFail(responder, invocation.request.id, "Sage is locked.");
+        return;
+    };
+    startTidyJob(self, invocation, responder) catch |err| {
+        const message = switch (err) {
+            error.TidyTooLong => "Select less text to tidy.",
+            else => "Could not tidy the text.",
+        };
+        respondFail(responder, invocation.request.id, message);
+    };
+}
+
+fn startTidyJob(self: *App, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) !void {
+    const services = self.services orelse return error.RuntimeUnavailable;
+    const allocator = self.store.allocator;
+    const payload = invocation.request.payload;
+    // The decoded text is never longer than its JSON form.
+    const decoded = try allocator.alloc(u8, payload.len);
+    defer allocator.free(decoded);
+    var used: usize = 0;
+    const text = journal.jsonString(payload, "text", decoded, &used) orelse return error.InvalidRequest;
+    const trimmed = std.mem.trim(u8, text, " \t\r\n");
+    if (trimmed.len > ollama.max_tidy_input_bytes) return error.TidyTooLong;
+    if (trimmed.len == 0) {
+        // Nothing to clean: hand the text back as it came.
+        var body = std.Io.Writer.Allocating.init(allocator);
+        defer body.deinit();
+        try writeTidyBody(&body.writer, text);
+        try responder.success(invocation.request.id, body.written());
+        return;
+    }
+
+    const job = try allocator.create(EmbedJob);
+    errdefer allocator.destroy(job);
+    job.* = .{
+        .kind = .tidy,
+        .responder = responder,
+        .request_id = try allocator.dupe(u8, invocation.request.id),
+        .tidy_text = try allocator.dupe(u8, text),
+    };
+    errdefer allocator.free(job.request_id);
+    errdefer allocator.free(job.tidy_text);
+    const thread = try std.Thread.spawn(.{}, runTidyJob, .{ self.io, allocator, self.embed_queue, services, job, self.models });
+    thread.detach();
+}
+
+fn writeTidyBody(writer: *std.Io.Writer, text: []const u8) !void {
+    try writer.writeAll("{\"text\":");
+    try journal.writeJsonStringStreaming(writer, text);
+    try writer.writeByte('}');
 }
 
 fn handleOllamaModels(context: *anyopaque, invocation: native_sdk.bridge.Invocation, responder: native_sdk.bridge.AsyncResponder) anyerror!void {
@@ -2302,6 +2484,35 @@ fn runDeleteJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, se
     services.wake() catch {};
 }
 
+/// Checks the summary model, then asks it to tidy the text. Ollama answers
+/// requests for one model in turn, so this waits behind Dream.
+fn runTidyJob(io: std.Io, allocator: std.mem.Allocator, queue: *EmbedQueue, services: native_sdk.platform.PlatformServices, job: *EmbedJob, models: ollama.ModelPrefixes) void {
+    defer {
+        queue.push(io, job);
+        services.wake() catch {};
+    }
+    var abort: ollama.Abort = .{ .io = io };
+    const watchdog = ollama.startWatchdog(&abort, tidy_timeout_ms);
+    defer ollama.finishWatchdog(&abort, watchdog);
+    const status = ollama.checkSummaryStatus(io, allocator, &abort, models);
+    defer {
+        if (status.embed_model_name.len > 0) allocator.free(status.embed_model_name);
+        if (status.summary_model_name.len > 0) allocator.free(status.summary_model_name);
+    }
+    if (!status.running) {
+        job.err = error.OllamaNotRunning;
+        return;
+    }
+    if (!status.summary_pulled) {
+        job.err = error.SummaryModelNotPulled;
+        return;
+    }
+    job.tidy_result = ollama.tidy(io, allocator, job.tidy_text, status.summary_model_name, &abort) catch |err| {
+        job.err = err;
+        return;
+    };
+}
+
 fn runPullJob(self: *App, name: []u8) void {
     const allocator = self.store.allocator;
     defer allocator.free(name);
@@ -2362,6 +2573,8 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
         if (job.memory_occurred_at.len > 0) allocator.free(job.memory_occurred_at);
         if (job.memory_subject.len > 0) allocator.free(job.memory_subject);
         if (job.memory_text.len > 0) allocator.free(job.memory_text);
+        if (job.tidy_text.len > 0) allocator.free(job.tidy_text);
+        if (job.tidy_result.len > 0) allocator.free(job.tidy_result);
         job.chat_batch.deinit(allocator);
         for (job.chat_models.names) |name| allocator.free(name);
         if (job.chat_models.names.len > 0) allocator.free(job.chat_models.names);
@@ -2455,6 +2668,32 @@ fn completeEmbedJob(self: *App, job: *EmbedJob) void {
                 return;
             }
             job.responder.success(job.request_id, "{\"ok\":true}") catch {};
+        },
+        .tidy => {
+            // The lock may have engaged while the model worked.
+            if (!self.lock.unlocked) {
+                respondFail(job.responder, job.request_id, "Sage is locked.");
+                return;
+            }
+            if (job.err) |err| {
+                var pulled_buf: [256]u8 = undefined;
+                const message = switch (err) {
+                    error.OllamaNotRunning => "Local AI is not running.",
+                    error.SummaryModelNotPulled => ollama.summaryNotPulledMessage(&pulled_buf, self.models.summary),
+                    error.TidyChangedWords => "Tidy would have changed your words, so Sage left them as they were.",
+                    error.OllamaTimeout => "Local AI did not answer in time.",
+                    else => "Could not tidy the text.",
+                };
+                respondFail(job.responder, job.request_id, message);
+                return;
+            }
+            var body = std.Io.Writer.Allocating.init(allocator);
+            defer body.deinit();
+            writeTidyBody(&body.writer, job.tidy_result) catch {
+                respondFail(job.responder, job.request_id, "Could not tidy the text.");
+                return;
+            };
+            job.responder.success(job.request_id, body.written()) catch {};
         },
         .setup_status => {
             var body = std.Io.Writer.Allocating.init(allocator);
@@ -3162,6 +3401,9 @@ test {
     _ = @import("agent_server.zig");
     _ = @import("eve_sidecar.zig");
     _ = @import("dream.zig");
+    _ = dictation_mod;
+    _ = microphone;
+    _ = speech_apple;
 }
 
 // --- async bridge tests ---
@@ -5698,4 +5940,339 @@ test "an off FileVault answer expires and the others stay" {
     try std.testing.expect(fileVaultCacheFresh(.unknown, read, read + 10 * file_vault_recheck_ms));
     try std.testing.expect(fileVaultCacheFresh(.off, read, read + file_vault_recheck_ms - 1));
     try std.testing.expect(!fileVaultCacheFresh(.off, read, read + file_vault_recheck_ms));
+}
+
+fn grantedMicrophone() microphone.Status {
+    return .granted;
+}
+
+/// A rig whose platform is a null platform, so a session can open its fake
+/// microphone. The probe's wake is put back before the platform goes.
+fn useNullPlatform(rig: *EmbedTestRig) !*native_sdk.NullPlatform {
+    const platform = try native_sdk.NullPlatform.createWithOptions(.{}, .system, .{});
+    rig.app.services = platform.platform().services;
+    return platform;
+}
+
+fn restoreProbe(rig: *EmbedTestRig) void {
+    rig.app.services = .{ .context = rig.probe, .wake_fn = WakeProbe.wake };
+}
+
+test "dictation commands refuse while locked, except stop" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.app.lock.unlocked = false;
+
+    var output: [1024]u8 = undefined;
+    const context: *anyopaque = @ptrCast(&rig.app);
+    const status = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-status", .command = "dictation.status", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.Locked, handleDictationStatus(context, status, &output));
+    const start = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-start", .command = "dictation.start", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.Locked, handleDictationStart(context, start, &output));
+    const settings = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-settings", .command = "dictation.openSettings", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.Locked, handleDictationOpenSettings(context, settings, &output));
+    const download = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-download", .command = "dictation.downloadModel", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.Locked, handleDictationDownloadModel(context, download, &output));
+
+    // Stop never refuses. A session that does not exist is a no-op.
+    const stop = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-stop", .command = "dictation.stop", .payload = "{\"session\":7,\"discard\":true}" },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"ok\":true}", try handleDictationStop(context, stop, &output));
+    const junk = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-junk", .command = "dictation.stop", .payload = "not json" },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"ok\":true}", try handleDictationStop(context, junk, &output));
+}
+
+test "dictation.start refuses while the journal is securing" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.app.rewrite_pending = true;
+    var output: [256]u8 = undefined;
+    const start = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-secure", .command = "dictation.start", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.Securing, handleDictationStart(@ptrCast(&rig.app), start, &output));
+}
+
+test "dictation.status answers when there is no speech engine" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    var output: [512]u8 = undefined;
+    const status = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-status-ok", .command = "dictation.status", .payload = "{}" },
+        .source = .{},
+    };
+    const json = try handleDictationStatus(@ptrCast(&rig.app), status, &output);
+    try std.testing.expect(std.mem.startsWith(u8, json, "{\"available\":false,\"reason\":\"engine_missing\",\"microphone\":\""));
+    try std.testing.expect(std.mem.endsWith(u8, json, "\"model\":{\"state\":\"missing\",\"fraction\":null,\"message\":null},\"session\":null}"));
+    // Starting says why it can't, by the error name the web view reads.
+    const start = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-nostart", .command = "dictation.start", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.DictationUnavailable, handleDictationStart(@ptrCast(&rig.app), start, &output));
+    const download = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-nodl", .command = "dictation.downloadModel", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectError(error.DictationUnavailable, handleDictationDownloadModel(@ptrCast(&rig.app), download, &output));
+}
+
+test "dictation.start and dictation.stop run a session through the handlers" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const platform = try useNullPlatform(&rig);
+    defer platform.destroy();
+    defer restoreProbe(&rig);
+    var engine: dictation_mod.FakeEngine = .{};
+    var backend: dictation_mod.FakeBackend = .{ .engine = &engine };
+    rig.app.dictation.setBackend(backend.backend());
+    defer _ = rig.app.dictation.waitIdle(std.testing.io, 5000);
+
+    // Whether the Mac lets this process use the microphone decides the start.
+    if (microphone.status() == .denied or microphone.status() == .restricted) return error.SkipZigTest;
+
+    var output: [256]u8 = undefined;
+    const context: *anyopaque = @ptrCast(&rig.app);
+    const start = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-run", .command = "dictation.start", .payload = "{}" },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"session\":1}", try handleDictationStart(context, start, &output));
+    try std.testing.expect(rig.app.dictation.active());
+    try std.testing.expectError(error.DictationBusy, handleDictationStart(context, start, &output));
+
+    const stop = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-run-stop", .command = "dictation.stop", .payload = "{\"session\":1,\"discard\":true}" },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"ok\":true}", try handleDictationStop(context, stop, &output));
+    try std.testing.expect(!rig.app.dictation.active());
+}
+
+test "a session lock stops dictation, even with the lock off" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const platform = try useNullPlatform(&rig);
+    defer platform.destroy();
+    defer restoreProbe(&rig);
+    var engine: dictation_mod.FakeEngine = .{};
+    var backend: dictation_mod.FakeBackend = .{ .engine = &engine };
+    rig.app.dictation.setBackend(backend.backend());
+    defer _ = rig.app.dictation.waitIdle(std.testing.io, 5000);
+
+    var host = dictationHost(&rig.app);
+    host.microphone_status_fn = grantedMicrophone;
+    _ = try rig.app.dictation.start(host);
+    try std.testing.expect(rig.app.dictation.active());
+    // The idle clock waits while the microphone is on.
+    try std.testing.expect(App.idleHeldForSession(@ptrCast(&rig.app)));
+
+    // Sleep and the screen saver reach here with the lock off.
+    try std.testing.expect(!rig.app.lock.enabled());
+    sessionLock(&rig.app);
+    try std.testing.expect(!rig.app.dictation.active());
+    try std.testing.expect(!App.idleHeldForSession(@ptrCast(&rig.app)));
+    try std.testing.expect(rig.app.lock.unlocked);
+}
+
+test "a session lock with the lock on stops dictation and locks" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    defer rig.app.eve.clearWorldKey();
+    ollama.unload_after_request.store(false, .release);
+    defer ollama.unload_after_request.store(false, .release);
+    const platform = try useNullPlatform(&rig);
+    defer platform.destroy();
+    defer restoreProbe(&rig);
+    var engine: dictation_mod.FakeEngine = .{};
+    var backend: dictation_mod.FakeBackend = .{ .engine = &engine };
+    rig.app.dictation.setBackend(backend.backend());
+    defer _ = rig.app.dictation.waitIdle(std.testing.io, 5000);
+
+    var output: [8192]u8 = undefined;
+    _ = try rig.app.lock.setPassword("{\"next\":\"correct horse\"}", null, &output);
+    var host = dictationHost(&rig.app);
+    host.microphone_status_fn = grantedMicrophone;
+    _ = try rig.app.dictation.start(host);
+
+    sessionLock(&rig.app);
+    try std.testing.expect(!rig.app.lock.unlocked);
+    try std.testing.expect(!rig.app.dictation.active());
+    // A stop that arrives after the lock is still answered.
+    const stop = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-dict-late-stop", .command = "dictation.stop", .payload = "{\"session\":1,\"discard\":false}" },
+        .source = .{},
+    };
+    try std.testing.expectEqualStrings("{\"ok\":true}", try handleDictationStop(@ptrCast(&rig.app), stop, &output));
+}
+
+test "quitting stops dictation" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const platform = try useNullPlatform(&rig);
+    defer platform.destroy();
+    defer restoreProbe(&rig);
+    var engine: dictation_mod.FakeEngine = .{};
+    var backend: dictation_mod.FakeBackend = .{ .engine = &engine };
+    rig.app.dictation.setBackend(backend.backend());
+    defer _ = rig.app.dictation.waitIdle(std.testing.io, 5000);
+
+    var host = dictationHost(&rig.app);
+    host.microphone_status_fn = grantedMicrophone;
+    _ = try rig.app.dictation.start(host);
+    rig.app.dictation.cancelAll(dictationHost(&rig.app), .quit);
+    try std.testing.expect(!rig.app.dictation.active());
+}
+
+fn tidyInvocation(id: []const u8, payload: []const u8) native_sdk.bridge.Invocation {
+    return .{
+        .request = .{ .id = id, .command = "journal.tidy", .payload = payload },
+        .source = .{},
+    };
+}
+
+test "journal.tidy refuses while locked" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    rig.app.lock.unlocked = false;
+    const response = try rig.callNow(handleJournalTidy, tidyInvocation("t-tidy-locked", "{\"text\":\"so um I went out\"}"));
+    try expectFailedResponse(response, "Sage is locked.");
+}
+
+test "journal.tidy refuses text over 16 KiB" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const allocator = std.testing.allocator;
+    // `{"text":"` is 9 bytes and `"}` is 2, so this carries one byte too many.
+    const payload = try allocator.alloc(u8, 9 + ollama.max_tidy_input_bytes + 1 + 2);
+    defer allocator.free(payload);
+    @memcpy(payload[0..9], "{\"text\":\"");
+    @memset(payload[9 .. payload.len - 2], 'a');
+    @memcpy(payload[payload.len - 2 ..], "\"}");
+    const response = try rig.callNow(handleJournalTidy, tidyInvocation("t-tidy-long", payload));
+    try expectFailedResponse(response, "Select less text to tidy.");
+}
+
+test "journal.tidy hands back text with nothing to clean" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const response = try rig.callNow(handleJournalTidy, tidyInvocation("t-tidy-empty", "{\"text\":\"  \"}"));
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"ok\":true,\"result\":{\"text\":\"  \"}") != null);
+}
+
+test "journal.tidy refuses a request with no text" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const response = try rig.callNow(handleJournalTidy, tidyInvocation("t-tidy-none", "{}"));
+    try expectFailedResponse(response, "Could not tidy the text.");
+}
+
+test "journal.tidy says when local AI is not running" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    // Point the client at a port nobody listens on, whatever runs on this Mac.
+    const saved_port = ollama.port;
+    ollama.port = try ollama_server.freeTestPort(std.testing.io);
+    defer ollama.port = saved_port;
+
+    try handleJournalTidy(@ptrCast(&rig.app), tidyInvocation("t-tidy-down", "{\"text\":\"so um I went out\"}"), rig.responder());
+    try rig.pump();
+    try expectFailedResponse(rig.capture.body(), "Local AI is not running.");
+    try std.testing.expect(rig.probe.wakes.load(.acquire) >= 1);
+}
+
+fn tidyJob(rig: *EmbedTestRig, id: []const u8) !*EmbedJob {
+    const allocator = rig.app.store.allocator;
+    const job = try allocator.create(EmbedJob);
+    job.* = .{
+        .kind = .tidy,
+        .responder = rig.responder(),
+        .request_id = try allocator.dupe(u8, id),
+        .tidy_text = try allocator.dupe(u8, "so um I went out"),
+    };
+    return job;
+}
+
+test "journal.tidy answers with the cleaned text" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const job = try tidyJob(&rig, "t-tidy-ok");
+    job.tidy_result = try rig.app.store.allocator.dupe(u8, "I went \"out\".\n\nThen I slept.");
+    completeEmbedJob(&rig.app, job);
+    try std.testing.expect(std.mem.indexOf(u8, rig.capture.body(), "\"ok\":true,\"result\":{\"text\":\"I went \\\"out\\\".\\n\\nThen I slept.\"}") != null);
+}
+
+test "journal.tidy says Sage is locked when the lock came on while the model worked" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const job = try tidyJob(&rig, "t-tidy-late-lock");
+    job.tidy_result = try rig.app.store.allocator.dupe(u8, "I went out.");
+    rig.app.lock.unlocked = false;
+    completeEmbedJob(&rig.app, job);
+    try expectFailedResponse(rig.capture.body(), "Sage is locked.");
+    // The cleaned text is not in the answer.
+    try std.testing.expect(std.mem.indexOf(u8, rig.capture.body(), "went out") == null);
+}
+
+test "journal.tidy explains each way the model can fail" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    const cases = [_]struct { err: anyerror, message: []const u8 }{
+        .{ .err = error.OllamaNotRunning, .message = "Local AI is not running." },
+        .{ .err = error.SummaryModelNotPulled, .message = "The summary model is not downloaded. Download qwen3.5:9b in Settings › Models." },
+        .{ .err = error.TidyChangedWords, .message = "Tidy would have changed your words, so Sage left them as they were." },
+        .{ .err = error.OllamaTimeout, .message = "Local AI did not answer in time." },
+        .{ .err = error.OllamaRequestFailed, .message = "Could not tidy the text." },
+    };
+    for (cases) |case| {
+        rig.capture = .{};
+        const job = try tidyJob(&rig, "t-tidy-err");
+        job.err = case.err;
+        completeEmbedJob(&rig.app, job);
+        try expectFailedResponse(rig.capture.body(), case.message);
+    }
+}
+
+test "the dictation and tidy commands are registered" {
+    const wanted = [_][]const u8{ "dictation.status", "dictation.start", "dictation.stop", "dictation.openSettings", "dictation.downloadModel", "journal.tidy" };
+    for (wanted) |name| {
+        var found = false;
+        for (command_names) |known| {
+            if (std.mem.eql(u8, known, name)) found = true;
+        }
+        try std.testing.expect(found);
+    }
 }

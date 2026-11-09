@@ -23,6 +23,10 @@ There is no Underline button, and ⌘U and ⇧⌘U do nothing. Text underlined i
 
 Cmd+S saves at once and shows a message that Sage saves your entry automatically.
 
+## Dictating
+
+⌘D, or the mic button in the entry header, turns on dictation. Your words appear in the entry as you speak, grey at first and then as normal text, and Esc or ⌘D stops it. They land at the cursor, or at the end of the body when the title has focus. After you stop, a **Tidy** button cleans up what you just said, and the selection menu has a **Tidy** button for any plain paragraphs you select. Dictated words are saved like typed ones. [Dictation](dictation.md) has the details.
+
 Opening an entry is not an edit. Each entry opens with an empty undo history, so ⌘Z cannot undo the opening or bring back the text of the entry you had open before. A new entry starts the same way, and the title box is read-only while an entry loads. The reset lives in `frontend/src/lib/editor-history.ts`.
 
 If an entry fails to open, Sage shows an error, and the editor still holds the entry you had open. Sage does not save what you type there, because it would land in the wrong entry. It tells you so instead. Open another entry, then this one again.
@@ -111,6 +115,7 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `journal.save`: creates or updates one entry, sent in chunks
 - `journal.delete`: removes one entry
 - `journal.search`: text search over titles and bodies
+- `journal.tidy`: cleans up spoken or selected text with the summary model and answers with the new text, as [Dictation](dictation.md#tidy) explains
 - `journal.importDialog` and `journal.readFile`: pick Markdown files and read them
 - `journal.exportDialog` and `journal.export`: pick a folder and write the export
 - `system.calendar`: the first day of the week on this Mac, for Home

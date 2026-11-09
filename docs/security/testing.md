@@ -48,6 +48,10 @@ The Zig tests cover:
 - HKDF derivation of the eve world key, and wiping `.eve/.workflow-data`
 - The bundled Ollama server: finding the binary from the app path or `SAGE_OLLAMA_PATH`, its child environment, the leftover-server check, the last log line, and the 10s restart wait
 - The Ollama ports (11435 inside an app bundle, 11436 anywhere else), the start failure messages, and the unload request body
+- Dictation with a fake engine and a fake microphone: the audio ring wrapping and zeroing, events under 8 KiB with long text split at UTF-8 boundaries, grey words becoming final in one event, no text after a cancel, a lock, or a new session, a silent mic ending as `input_lost`, a failed capture reading as `denied` or `no_input`, and the commands refusing while locked, except stop
+- A session lock or a quit ending dictation, even with the lock off, and the idle clock waiting while the mic is on
+- Tidy: the checks on the model’s reply (word count, new words, lead-in lines, quotes), and each failure message
+- The speech library: finding it from the app path or `SAGE_SPEECH_LIB_PATH`, and a skipped live test that runs the real engine on a recorded clip
 - Reading loaded models from `/api/ps`, and the unload flag that lock sets and unlock clears
 
 ## The security tests
@@ -60,6 +64,7 @@ The Zig tests cover:
 - **Context length**: a request cannot raise the context length above the picker maximum (`context-length-uncapped.test.ts`).
 - **Web view**: the page allows no inline script, and export writes only to the folder you picked (`csp.test.ts`, `export-dest.test.ts`).
 - **Packaging**: the copy targets `Sage.app`, and the bundle ships no dev modules (`copy-agent-target.test.ts`, `agent-dev-modules.sh`).
+- **Dictation**: the web view never uses `getUserMedia`, `MediaRecorder`, or `AudioContext`. The dictation Zig and Swift files write no files, log no text, and open no connection. The audio ring is zeroed. The microphone text is set before the app is signed. The Sage executable loads the speech library at run time and does not link the Speech framework, which `otool -L` confirms when a build exists (`dictation-no-audio.test.ts`).
 - **Seeding**: `make seed-dev` builds its automation binary under `zig-out/seed`, names only the dev app, and reads the seed files and builds before it resets (`seed-dev-dev-only.sh`).
 - **Evals**: `make eval` sends the token to a URL target, leaves no automation binary in `zig-out/bin/`, and opens only the throwaway `app.db` (`eval-server-token.sh`, `eval-leftover-automation.sh`, `eval-ignores-data-dir.sh`).
 

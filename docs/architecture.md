@@ -17,7 +17,7 @@ The frontend reaches the Zig core through bridge commands. The frontend calls `w
 
 Large values travel in 32 KiB chunks. The frontend sends one chunk at a time with its byte offset, and the core joins them. Journal entries and imported files read back in slices the same way, while chat transcripts read back by event index, as [Chat storage](agent/storage.md) explains.
 
-Each feature page lists its own commands: [The journal](journal.md), [Dream](dream.md), [Models](models.md), [First-launch setup](onboarding.md), [Chat storage](agent/storage.md), and [Memories](agent/memories.md).
+Each feature page lists its own commands: [The journal](journal.md), [Dream](dream.md), [Dictation](dictation.md), [Models](models.md), [First-launch setup](onboarding.md), [Chat storage](agent/storage.md), and [Memories](agent/memories.md).
 
 ## Storage
 
@@ -41,9 +41,11 @@ Sage does not open a second SQLite file. The Native SDK stores window size and p
 
 Only the event loop thread touches SQLite. Work that waits on the network runs on worker threads. Each worker puts its result on a queue and wakes the loop thread, which writes the result.
 
-Four queues exist: embeddings, Dream jobs, lock jobs, and agent server jobs.
+Four queues exist: embeddings, Dream jobs, lock jobs, and agent server jobs. Tidy, which cleans up dictated text, runs as a job on the embeddings queue.
 
 The agent server listens on its own background thread and gives each connection its own task, so one slow client cannot hold up the rest. Each request becomes a job on the agent server queue, and the loop thread does the database work and writes the reply. [Local agent server](security/agent-server.md) covers its limits and timeouts.
+
+Dictation has a fifth path that is not a job queue, because audio arrives continuously. The Native SDK’s audio thread fills a ring of about 60s. One worker thread per session feeds the ring to the speech engine. The engine reports text from its own threads into a result queue, which wakes the loop thread, and the loop thread turns the results into window events. [Dictation](dictation.md#threads) covers each step.
 
 ## Ollama
 
@@ -51,6 +53,7 @@ Ollama is the local model server that runs the models. Sage ships a pinned copy,
 
 - **Embeddings**: `nomic-embed-text` turns entries, chat messages, summaries, and memories into vectors, so Chat can find them by meaning. Any pulled tag works, and `SAGE_EMBED_MODEL` changes the name Sage looks for.
 - **Dream**: the summary model writes entry and chat summaries and chat titles, and in a memory build it extracts memories. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
+- **Tidy**: the same summary model cleans up dictated or selected text through `POST /api/generate`. It waits behind Dream, because Ollama answers requests for one model in turn.
 - **Chat**: the eve agent calls the chat model you pick. The Chat screen lists pulled chat models through `ollama.models`.
 - **Model management**: Settings > Models downloads and deletes models, as [Models](models.md) explains.
 
@@ -97,5 +100,7 @@ The first build downloads Zig 0.16 if it is not already on `PATH`. To call Zig d
 ```sh
 export PATH="$HOME/.native/toolchains/zig-0.16.0:$PATH"
 ```
+
+Dictation’s speech engine is Swift, so `build.zig` also compiles `src/speech/SageSpeech.swift` into `libSageSpeech.dylib` with `xcrun swiftc`, for macOS 26. Sage loads that library at run time and never links it, because the executable still runs on macOS 11. Building it needs the macOS 26 SDK, and `-Dspeech=false` skips it. [Dictation](dictation.md#the-speech-library) explains how Sage finds it in dev and in a packaged app.
 
 `scripts/fetch-ollama.sh` downloads the pinned Ollama archive, checks its SHA-256, and keeps an extracted copy in `third_party/ollama/`. `make dev`, `make seed-dev`, and `make eval` use that copy. `make package` copies it into the app. [Scripts](../scripts/README.md#packaging) has the steps.

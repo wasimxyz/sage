@@ -27,6 +27,11 @@ if [ ! -x "$app/Contents/Resources/ollama/ollama" ]; then
   exit 1
 fi
 
+if [ ! -f "$app/Contents/Frameworks/libSageSpeech.dylib" ]; then
+  echo "update-archive-packaged-app: $app has no speech library (Contents/Frameworks/libSageSpeech.dylib); run copy-agent-into-app.sh first" >&2
+  exit 1
+fi
+
 version="$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")"
 out="$root/zig-out/package/Sage-$version-macos-update.zip"
 

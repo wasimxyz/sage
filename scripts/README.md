@@ -6,22 +6,33 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 
 ## Packaging
 
-`make package` builds the app, then runs `copy-agent-into-app.sh`. `zig build package` runs that same script and passes the app path.
+`make package` builds the app and the speech library, then runs `copy-agent-into-app.sh` with the app and `zig-out/lib/libSageSpeech.dylib`. `zig build package` runs that same script and passes the app path and the library it built.
 
-`copy-agent-into-app.sh` copies the built Chat agent into `Sage.app`, along with the pinned Node.js and Ollama. Before it finishes, it runs the scripts below, checks that the copied Chat channel still allows `zero://app` (the address the packaged app uses to call Chat), and signs the app again so the copy still opens. The scripts it runs first are:
+`copy-agent-into-app.sh` copies the built Chat agent into `Sage.app`, along with the pinned Node.js and Ollama and the speech library. Before it finishes, it sets the microphone text, checks that the copied Chat channel still allows `zero://app` (the address the packaged app uses to call Chat), and signs the app again so the copy still opens. The scripts it runs first are:
 
 1. `refuse-packaged-dev-modules.sh` stops the copy when `typescript`, `@types`, or `@vercel/blob` is still installed in the copied agent.
 2. `fetch-node.sh` downloads Node.js 24.22.2 once into `third_party/node/`, checks that the download is the expected file, and copies the `node` program into the app.
 3. `fetch-ollama.sh` downloads Ollama 0.40.15 once into `third_party/ollama/`, checks the archive and its LICENSE against pinned SHA-256 values, keeps only the arm64 code, and copies the tree into `Contents/Resources/ollama/`.
 
+The script then does two things for [dictation](../docs/dictation.md):
+
+- **The speech library**: it copies `libSageSpeech.dylib` into `Contents/Frameworks/` and stops if the library is missing. Sage loads it from there at run time, and the Sage executable never links it.
+- **The microphone text**: it replaces `NSMicrophoneUsageDescription` in `Info.plist` with “Sage listens only while you dictate. Audio stays on this Mac and is never saved.” using PlistBuddy. `native package` writes its own text, which says “recording”. The script adds the key if `native package` left it out. This step must run before the final signing, because editing the plist after it breaks the seal.
+
+`make test` runs `security-tests/dictation-no-audio.test.ts`, which checks that the plist step and the library copy come before `codesign`, and that the text matches the one `build.zig` gives the dev build.
+
 `make package-archive` runs two more scripts after that copy. Both read the version from the app’s `Info.plist` and work on the app that already contains the Chat agent and Node.js.
 
 - `archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos.dmg`.
-- `update-archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos-update.zip`, the file installed copies download. It stands in for `native package --update-archive`, which zips the app before the Chat agent is copied in. It also refuses an app with no executable `Resources/ollama/ollama`.
+- `update-archive-packaged-app.sh` builds `zig-out/package/Sage-<version>-macos-update.zip`, the file installed copies download. It stands in for `native package --update-archive`, which zips the app before the Chat agent is copied in. It also refuses an app with no executable `Resources/ollama/ollama` and an app with no `Contents/Frameworks/libSageSpeech.dylib`.
 
 `zig build package` runs `update-archive-packaged-app.sh` itself when `app.json` has an `updates` block.
 
 `fetch-ollama.sh` with no argument fills the same cache and prints the path of the binary. `make dev`, `make seed-dev`, and `make eval` pass that path to Sage as `SAGE_OLLAMA_PATH`. A Sage outside an app bundle runs that copy on port 11436, and `make eval` also uses it for its pulls.
+
+`make dev` also passes `SAGE_SPEECH_LIB_PATH`, the path of the speech library the build installed in `zig-out/lib/`. A packaged app ignores that variable and loads its own copy.
+
+Building the speech library needs the macOS 26 SDK. The release workflow, `.github/workflows/release.yml`, runs on `macos-26` and stops early when the SDK is older. `ci.yml` stays on `macos-latest`, because `native check` and `native test` do not build the library. On a Mac without that SDK, add `-Dspeech=false` to the build, and Sage runs without the mic.
 
 ## Releasing
 

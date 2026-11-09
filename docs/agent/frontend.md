@@ -17,6 +17,7 @@ These paths are under `frontend/src/components/`:
 - **The chat panel**: the header in `chat-layout.tsx` and the conversation in `chat-screen.tsx`
 - **Rename dialog** (`chat/rename-chat-dialog.tsx`): one dialog, shared by the rows and the panel’s ⋯ menu
 - **ChatTurn** (`chat-screen.tsx`): one conversation, connected to the agent through eve’s `useEveAgent` hook
+- **ChatDictateButton** and **ChatDictationTail** (`chat/chat-dictation.tsx`): the mic in the message box and the grey words under it, as [Dictating a message](#dictating-a-message) explains
 
 ## How Chat loads
 
@@ -63,6 +64,14 @@ The address bar follows the panel:
 - `#/chat/<id>`: the panel open on that saved chat
 
 When a new chat saves, `#/chat/new` becomes `#/chat/<id>` without adding a history entry. Back and Forward move between the chats you opened, and reloading the page reopens the same view.
+
+## Dictating a message
+
+A mic button sits in the message box, beside the model picker. Only a live conversation has one, and it is hidden on a Mac that cannot dictate. ⌘D does the same while Chat is on screen. [Dictation](../dictation.md) explains the engine and the permission.
+
+Dictated words go to the end of the box as they settle, with the space they need. You press Send as usual. The grey words, the ones that have not settled, show in a muted line under the box. They are not in the box, so Send never carries them.
+
+Dictation ends when you press Send, open another chat, or leave Chat for another screen. A Send or a change of chat drops the grey words, and the words that settled stay in the box. It also ends when Dream starts and turns the box off. The code in `chat/chat-dictation.tsx` registers the box with `DictationProvider` as the place the words go, and only one dictation runs at a time, so the entry mic is off while this one is on.
 
 ## Search
 

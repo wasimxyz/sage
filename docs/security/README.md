@@ -11,6 +11,20 @@ Two protections guard `app.db`:
 
 Both use the same password or Touch ID. You can also turn on encryption with Touch ID alone and no password. Sage then makes a recovery key that you save once, as the backup if the Keychain copy of the key is lost; see [Recovery](recovery.md).
 
+## The microphone
+
+Dictation is the only part of Sage that listens. It captures sound only while a session runs, keeps it in memory, and zeroes it when the session ends. Sound is never written to a file, never logged, and never sent to the web view. The speech engine runs on this Mac, and Sage never logs the text it hears. macOS asks for microphone access the first time, and Sage needs no other permission for it. [Dictation](../dictation.md#audio-is-never-saved) covers the details, and `security-tests/dictation-no-audio.test.ts` checks the rules in the source.
+
+## What leaves this Mac
+
+Sage makes few connections outside this Mac, and none of them carry your entries, chats, memories, or sound:
+
+- **The update feed**: Sage fetches `native-update.json` from GitHub Releases when it starts and when you choose **Check for updates**. When you install an update, it downloads the update ZIP. [Releasing Sage](../release.md#how-installed-copies-update) has the steps.
+- **Ollama model downloads**: when you press Download in Settings or setup, the bundled Ollama pulls the model files from Ollama’s registry. The request names the model.
+- **The speech model**: when you press Download in Settings > Models, or start dictating without the model, macOS downloads its English speech model. macOS does this, not Sage, and no sound goes with it.
+
+Chat, Dream, search, and Tidy call the Ollama server on this Mac. Clicking a model name in Settings > Models opens its canirun.ai page in your browser, and that visit is your browser’s.
+
 ## What someone with the file can see
 
 With encryption on, a person who copies the database file cannot read your entries or chats. They can still see:
@@ -27,13 +41,16 @@ With encryption on, a person who copies the database file cannot read your entri
 - `src/vault.zig`: the data key, its password and recovery key slots, and field encryption
 - `src/keychain.zig`: the Keychain copy of the data key for Touch ID
 - `src/ollama_server.zig`: starts, restarts, and stops the bundled Ollama server, and sets its environment
+- `src/dictation.zig`: the dictation sessions, the audio ring that is zeroed after use, and the window events that carry text
+- `src/microphone.zig`: the microphone permission, through `AVCaptureDevice`
+- `src/speech_apple.zig` and `src/speech/SageSpeech.swift`: load and run Apple’s on-device speech engine
 - `src/journal.zig`: encrypts on write and decrypts on read
 - `src/agent_server.zig`: the Unix socket server that lets the Chat agent search and read the journal
 - `src/eve_sidecar.zig`: starts the packaged Chat agent and, with encryption on, gives it a separate key for its session files
 - `agent/agent/lib/workflow-guard.ts`: puts the agent-server token on eve’s `/.well-known/workflow/` routes
 - `agent/agent/lib/bearer.ts`: the constant-time token compare and the `fetch` wrapper that adds the token
 - `src/main.zig`: the bridge commands that tie the parts together
-- `security-tests/`: tests for the token, origin, and packaging rules
+- `security-tests/`: tests for the token, origin, packaging, and microphone rules
 
 `app.db` is the only SQLite file Sage opens. Packaged Chat session files live under `eve/` in the app data directory, and window size and position live in the Native SDK’s `windows.zon`.
 

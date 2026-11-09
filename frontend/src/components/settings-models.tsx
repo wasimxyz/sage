@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 
 import {
+  type DictationStatus,
   deleteOllamaModel,
   getOllamaStatus,
   getSystemHardware,
@@ -19,6 +20,7 @@ import {
   type SystemHardware,
 } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
+import { useSpeechModel } from "@/components/dictation-provider";
 import { useModelDownloads } from "@/components/model-downloads-provider";
 import { OllamaStartNotice } from "@/components/ollama-notice";
 import { SettingsSection } from "@/components/settings-section";
@@ -42,6 +44,7 @@ import {
   TableCell,
   TableRow,
 } from "@/components/ui/table";
+import { speechModelPercent } from "@/lib/dictation-session";
 import {
   compareScoresDescending,
   findCanirunModelId,
@@ -277,6 +280,7 @@ function ModelsSettingsBody({
           />
         </div>
       )}
+      <SpeechModelSection />
       {installedRows.length > 0 ? (
         <>
           <h2 className={sectionHeadingClassName}>Installed</h2>
@@ -324,6 +328,93 @@ function ModelsSettingsBody({
       />
     </>
   );
+}
+
+/**
+ * The speech model dictation uses. macOS keeps it, and Sage asks for it. It is
+ * not an Ollama model, so it has its own section and its own download.
+ */
+function SpeechModelSection() {
+  const {
+    actions: { downloadModel, refreshStatus },
+    status,
+  } = useSpeechModel();
+
+  // Read it when the page opens, so a download that ran meanwhile shows.
+  useEffect(() => {
+    refreshStatus().catch(() => undefined);
+  }, [refreshStatus]);
+
+  const handleDownload = useCallback(() => {
+    downloadModel({ announce: false }).catch(() => undefined);
+  }, [downloadModel]);
+
+  if (status === null) {
+    return null;
+  }
+  const unavailable = speechUnavailableMessage(status);
+  return (
+    <>
+      <h2 className={sectionHeadingClassName}>Speech</h2>
+      <p className="text-muted-foreground mt-0.5 text-xs">
+        {unavailable ?? "Dictation turns your voice into text on this Mac."}
+      </p>
+      {unavailable === null ? (
+        <ModelsTable caption="Speech model">
+          <TableRow
+            aria-busy={status.model.state === "downloading"}
+            className="hover:bg-transparent"
+          >
+            <TableCell className={nameCellClassName}>Speech model</TableCell>
+            <TableCell className={metricCellClassName}>
+              <SpeechModelState model={status.model} />
+            </TableCell>
+            <TableCell className={actionCellClassName}>
+              {status.model.state === "missing" ||
+              status.model.state === "failed" ? (
+                <Button onClick={handleDownload} size="sm" variant="outline">
+                  {status.model.state === "failed" ? "Try again" : "Download"}
+                </Button>
+              ) : null}
+            </TableCell>
+          </TableRow>
+        </ModelsTable>
+      ) : null}
+      {status.available && status.model.state === "failed" ? (
+        <p className="text-destructive mt-2 text-xs">
+          {status.model.message ?? "Could not download the speech model."}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function speechUnavailableMessage(status: DictationStatus): string | null {
+  if (status.available) {
+    return null;
+  }
+  return status.reason === "unsupported_os"
+    ? "Dictation needs macOS 26 or later."
+    : "Sage's dictation files are missing. Reinstall Sage.";
+}
+
+function SpeechModelState({ model }: { model: DictationStatus["model"] }) {
+  if (model.state === "downloading") {
+    const percent = speechModelPercent(model.fraction);
+    return (
+      <span
+        aria-live="polite"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap"
+      >
+        <Spinner aria-hidden />
+        {percent === null ? "Downloading" : `Downloading (${percent})`}
+      </span>
+    );
+  }
+  if (model.state === "failed") {
+    return <span className="text-destructive">Download failed</span>;
+  }
+  return <>{model.state === "installed" ? "Installed" : "Not downloaded"}</>;
 }
 
 function ModelsTable({

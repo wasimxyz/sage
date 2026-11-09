@@ -36,11 +36,11 @@ Whether Sage is unlocked lives only in memory, so quitting Sage always locks it.
 
 A running Sage also locks when any of these happen:
 
-- The Mac sleeps, the display sleeps, or the screen saver starts.
+- The Mac sleeps, the display sleeps, or the screen saver starts. With the lock off, these still stop dictation.
 - You choose **Sage > Lock**. If the lock is off, Sage asks you to turn it on in Settings > Security.
 - You stop using Sage for the idle time set in Settings > Security: Never, 1, 5, 15, or 30 minutes. The default is 5 minutes.
 
-Idle time counts from the last keyboard, mouse, scroll, or gesture input Sage receives. Time spent in another app counts as idle.
+Idle time counts from the last keyboard, mouse, scroll, or gesture input Sage receives. Time spent in another app counts as idle. Idle time does not run while the microphone is on, as [Dictation and the lock](#dictation-and-the-lock) explains.
 
 ## Touch ID
 
@@ -54,7 +54,8 @@ A wrong password or a cancelled prompt changes nothing. The check runs in the Zi
 
 While locked, these commands answer “Sage is locked.” and return nothing:
 
-- Every journal, embeddings, Dream, and memory command
+- Every journal, embeddings, Dream, and memory command, including `journal.tidy`
+- Every dictation command except `dictation.stop`, which always answers
 - Every Ollama command, the hardware info, the first day of the week, and the Chat agent status
 - The Chat token command, `chat.agentToken`
 - Changing the password, turning the lock off, turning Touch ID on or off, and turning encryption on or off
@@ -67,6 +68,8 @@ Sage starts its Ollama server at launch, before you unlock, and the lock does no
 
 When the lock turns on, Sage stops a running Dream and asks the server to unload every model it has loaded, so no model keeps the last prompt in memory. A Dream or search request that was already running finishes and then unloads its model. Unlocking clears this, so the next request loads its model as usual. A download keeps running while the lock is on.
 
+A Tidy request that finishes after the lock turns on answers “Sage is locked.” and Sage drops the cleaned text.
+
 Sage restarts a crashed server from its status checks, and those checks run only while Sage is unlocked. A server that crashes while the lock is on stays down until you unlock.
 
 ## Chat and the lock
@@ -74,3 +77,11 @@ Sage restarts a crashed server from its status checks, and those checks run only
 A packaged Sage does not start its Chat server while the lock is on, with or without encryption. The lock screen never loads Chat, and unlocking with the password or Touch ID starts the server. With encryption on, unlocking is also when the world key reaches the server, as [The eve app](../agent/eve-app.md#how-chat-starts-in-a-packaged-app) explains.
 
 A session lock stops packaged Chat and clears the world key from the Node.js process, and unlocking starts Chat again. In `make dev`, Sage cannot stop the separate `eve dev` process, but Sage’s agent server refuses its requests while locked.
+
+## Dictation and the lock
+
+Dictation ends whenever Sage locks, with the reason `locked`. That covers the lock turning on, the idle lock, **Sage > Lock**, the Mac or display sleeping, and the screen saver starting. Sleep, the display, and the screen saver end it even when the lock is off, because they run the same code. **Sage > Lock** with the lock off ends dictation first and then asks you to turn the lock on. The core sends `dictation:stopped` before `lock:changed`, drops any words it had not sent, and sends no dictation events while Sage is locked. `dictation.stop` still answers while locked, so a stop that arrives late does no harm.
+
+The idle clock waits while the microphone is on. The idle check runs every 15 seconds, and each pass during a session counts as activity. When the session ends, the full idle time counts again from that moment.
+
+This has a cost. A mic left on keeps Sage unlocked and writing whatever it hears into the entry or the message box. If you start dictating and walk away, the idle lock never fires. Sleep and the screen saver follow your Mac’s own settings, and they still lock Sage and stop dictation. Press ⌘D or Esc before you leave your desk.
