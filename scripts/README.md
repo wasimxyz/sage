@@ -94,3 +94,7 @@ The new journal has no lock and no encryption. It has entries, so the next `make
 When `make dev` loads the entries, Sage embeds them, as [The journal](../docs/journal.md#writing-and-saving) explains. Start Dream from the sidebar to write summaries and memories.
 
 `make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files parse and that `--check` names a bad file, and `agent/scripts/seed-dates.test.ts`, which checks the date move.
+
+## Dictation voice test
+
+`dictation-spike/` holds the test that picks the speech engine for dictation. It runs your own recorded clips through Apple's SpeechAnalyzer and NVIDIA Parakeet, then scores accuracy and how fast text shows up. No `make` command runs it. Its [README](dictation-spike/README.md) has the steps.
