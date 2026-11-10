@@ -1,16 +1,22 @@
-import { readFileSync } from "node:fs";
+import { type Dirent, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadYaml } from "eve/evals/loaders";
 
-const leadingBomPattern = /^\uFEFF/u;
+import { resolveWhen } from "../../agent/lib/when.ts";
+import { type PersonCase, parsePersonCase } from "./schema.ts";
+
+const leadingBomPattern = /^﻿/u;
 const lineBreakPattern = /\r?\n/u;
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/u;
 const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/u;
 const whitespacePattern = /\s+/u;
+const markdownSuffixPattern = /\.md$/u;
+const onlyDigitsPattern = /^\d+$/u;
+const personIdPattern = /^[a-z0-9][a-z0-9-]*$/u;
 const bundledDataRoot = fileURLToPath(new URL("../data", import.meta.url));
 
 export function evalDataRoot(): string {
@@ -25,104 +31,311 @@ export function evalDataRoot(): string {
   return bundledDataRoot;
 }
 
-export type CaseKind = "timeline" | "standalone";
-
-export interface JournalEntryFixture {
+export interface LoadedEntry {
   body: string;
   date: string;
   fileName: string;
+  /** 1-based, in filename order. */
   index: number;
+  /** The file name without `.md`. A ref in `case.yaml` can use it. */
+  stem: string;
   title: string;
   wordCount: number;
 }
 
-export interface FactRef {
-  reference: string;
-  stale?: string;
-  subject: string;
-}
+/** The old name for a loaded entry, still imported by `scripts/automation.ts`. */
+export type JournalEntryFixture = LoadedEntry;
 
-export interface EventRef {
-  entry: number;
-  reference: string;
-}
-
-export interface SummaryRef {
-  entry: number;
-  reference: string;
-}
-
-export interface RetrievalRef {
-  expectEntry: number;
-  query: string;
-  /** A time in a person's words, such as "in March". Narrows the search. */
-  when?: string;
-}
-
-export interface ChatRef {
-  expectTool?: boolean;
-  /** The answer should come from a search that passed `when`. */
-  expectWhen?: boolean;
-  question: string;
-  reference: string;
-}
-
-export interface EvalCase {
-  chat: ChatRef[];
+export interface LoadedPerson {
   dir: string;
-  entries: JournalEntryFixture[];
-  events: EventRef[];
-  facts: FactRef[];
+  /** No `.md` entries, so the journal is empty. */
+  empty: boolean;
+  entries: LoadedEntry[];
   id: string;
-  kind: CaseKind;
-  retrieval: RetrievalRef[];
-  summaries: SummaryRef[];
-  tags: string[];
+  personCase: PersonCase;
 }
 
-export interface EvalManifest {
+export interface Manifest {
   cases: Record<string, { journalIds: number[] }>;
 }
 
-export async function loadAllCases(): Promise<EvalCase[]> {
-  const groups = ["timelines", "standalones"] as const;
-  const loaded = await Promise.all(groups.map((group) => loadGroup(group)));
-  return loaded.flat();
+// ---------------------------------------------------------------------------
+// People
+// ---------------------------------------------------------------------------
+
+function peopleDir(): string {
+  return join(evalDataRoot(), "people");
 }
 
-async function loadGroup(group: "timelines" | "standalones") {
-  const groupDir = join(evalDataRoot(), group);
-  let names: string[];
+/** Every person under `<root>/people/`, in id order. `only` limits it to those ids. */
+export async function loadPeople(opts?: {
+  only?: string[];
+}): Promise<LoadedPerson[]> {
+  const known = await listPeopleIds();
+  const wanted = opts?.only;
+  if (wanted !== undefined) {
+    const missing = wanted.filter((id) => !known.includes(id));
+    if (missing.length > 0) {
+      throw new Error(
+        `Unknown ${missing.length === 1 ? "person" : "people"} ${missing.map((id) => `"${id}"`).join(", ")}. Known: ${known.join(", ") || "(none)"}.`
+      );
+    }
+  }
+  const ids =
+    wanted === undefined ? known : known.filter((id) => wanted.includes(id));
+  return await Promise.all(ids.map((id) => loadPerson(id)));
+}
+
+export async function loadPerson(id: string): Promise<LoadedPerson> {
+  if (!personIdPattern.test(id)) {
+    throw new Error(
+      `"${id}" is not a person id. Use lowercase letters, digits, and dashes.`
+    );
+  }
+  const dir = join(peopleDir(), id);
+  let doc: Record<string, unknown>;
   try {
-    names = await readdir(groupDir);
+    doc = await loadYaml(join(dir, "case.yaml"));
+  } catch (error) {
+    if (isMissing(error)) {
+      throw new Error(`${id} has no case.yaml. Looked in ${dir}.`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  const personCase = parsePersonCase(doc, `case.yaml for ${id}`);
+  if (personCase.id !== id) {
+    throw new Error(
+      `${id}/case.yaml has id "${personCase.id}". The id must match the folder name.`
+    );
+  }
+  const entries = await loadEntryFiles(dir);
+  for (const entry of entries) {
+    if (onlyDigitsPattern.test(entry.stem)) {
+      throw new Error(
+        `${id}/${entry.fileName} is named only with digits, so a ref to it reads as an entry number. Rename the file.`
+      );
+    }
+  }
+  return { dir, empty: entries.length === 0, entries, id, personCase };
+}
+
+async function listPeopleIds(): Promise<string[]> {
+  let found: Dirent[];
+  try {
+    found = await readdir(peopleDir(), { withFileTypes: true });
   } catch (error) {
     if (isMissing(error)) {
       return [];
     }
     throw error;
   }
-  const cases = await Promise.all(
-    names
-      .sort()
-      .filter((name) => !name.startsWith("."))
-      .map((name) => loadCaseDir(join(groupDir, name)))
-  );
-  return cases.filter((loaded): loaded is EvalCase => loaded !== null);
+  return found
+    .filter((item) => item.isDirectory() && !item.name.startsWith("."))
+    .map((item) => item.name)
+    .sort();
 }
 
-export async function loadCaseDir(dir: string): Promise<EvalCase | null> {
-  let doc: Record<string, unknown>;
-  try {
-    doc = await loadYaml(join(dir, "case.yaml"));
-  } catch (error) {
-    if (isMissing(error)) {
-      return null;
-    }
-    throw error;
+/**
+ * The entry a `case.yaml` ref points at. A number counts from 1 in filename
+ * order. A string is a file stem, such as `2026-06-15-told-sam`.
+ */
+export function resolveEntry(
+  person: LoadedPerson,
+  ref: number | string
+): LoadedEntry {
+  const count = person.entries.length;
+  if (count === 0) {
+    throw new Error(
+      `${person.id} has an empty journal, so there is no entry ${JSON.stringify(ref)}.`
+    );
   }
-  const entries = await loadEntryFiles(dir);
-  return parseCase(dir, doc, entries);
+  if (typeof ref === "number") {
+    const entry = Number.isInteger(ref) ? person.entries[ref - 1] : undefined;
+    if (ref < 1 || entry === undefined) {
+      throw new Error(
+        `${person.id} has no entry number ${ref}. Entries are numbered 1 to ${count}.`
+      );
+    }
+    return entry;
+  }
+  const entry = person.entries.find((candidate) => candidate.stem === ref);
+  if (entry === undefined) {
+    const hint = markdownSuffixPattern.test(ref)
+      ? " Leave off .md."
+      : ` A stem looks like "${person.entries[0]?.stem}".`;
+    throw new Error(`${person.id} has no entry with the stem "${ref}".${hint}`);
+  }
+  return entry;
 }
+
+// ---------------------------------------------------------------------------
+// Checks on a loaded person
+// ---------------------------------------------------------------------------
+
+/**
+ * Problems in a person's files, one line each, as of `today`. An empty list
+ * means the person is sound.
+ *
+ * - An entry is dated after `today`.
+ * - A ref in `events`, `summaries`, `retrieval`, `chat`, or `openers` names no entry.
+ * - A retrieval item with `when` expects an entry outside the days that phrase
+ *   covers on `today`, read the way `search_journal` reads it.
+ */
+export function validatePerson(person: LoadedPerson, today: string): string[] {
+  if (!isRealDate(today)) {
+    return [`Today must be a YYYY-MM-DD date, not "${today}".`];
+  }
+  const problems: string[] = [];
+  for (const entry of person.entries) {
+    if (entry.date > today) {
+      problems.push(
+        `${entry.fileName} is dated ${entry.date}, after ${today}.`
+      );
+    }
+  }
+  const { personCase } = person;
+  for (const [index, item] of personCase.events.entries()) {
+    lookUp(person, `events[${index}].entry`, item.entry, problems);
+  }
+  for (const [index, item] of personCase.summaries.entries()) {
+    lookUp(person, `summaries[${index}].entry`, item.entry, problems);
+  }
+  for (const [index, item] of personCase.retrieval.entries()) {
+    const label = `retrieval[${index}] (query "${item.query}")`;
+    const expected = lookUp(
+      person,
+      `${label} expectEntry`,
+      item.expectEntry,
+      problems
+    );
+    if (expected !== undefined && item.when !== undefined) {
+      const problem = whenProblem(label, item.when, expected, today);
+      if (problem !== undefined) {
+        problems.push(problem);
+      }
+    }
+  }
+  for (const [index, item] of personCase.chat.entries()) {
+    for (const ref of item.needs) {
+      lookUp(person, `chat[${index}].needs`, ref, problems);
+    }
+  }
+  for (const item of personCase.openers) {
+    for (const ref of item.needs) {
+      lookUp(person, `openers (in ${item.id}).needs`, ref, problems);
+    }
+  }
+  return problems;
+}
+
+function lookUp(
+  person: LoadedPerson,
+  label: string,
+  ref: number | string,
+  problems: string[]
+): LoadedEntry | undefined {
+  try {
+    return resolveEntry(person, ref);
+  } catch (error) {
+    problems.push(
+      `${label}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return undefined;
+  }
+}
+
+function whenProblem(
+  label: string,
+  when: string,
+  expected: LoadedEntry,
+  today: string
+): string | undefined {
+  const resolved = resolveWhen(when, today);
+  if ("error" in resolved) {
+    return `${label}: when "${when}" does not read as a time. ${resolved.error}`;
+  }
+  const { from, to } = resolved.range;
+  if (expected.date >= from && expected.date <= to) {
+    return undefined;
+  }
+  return `${label}: when "${when}" covers ${from} to ${to} on ${today}, but ${expected.fileName} is dated ${expected.date}.`;
+}
+
+function isRealDate(value: string): boolean {
+  if (!isoDatePattern.test(value)) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+}
+
+// ---------------------------------------------------------------------------
+// Journal-id manifest
+// ---------------------------------------------------------------------------
+
+/** Reads the journal ids that `make eval` wrote when it seeded the journals. */
+export function loadManifest(path?: string): Manifest {
+  const file = path ?? process.env.SAGE_EVAL_MANIFEST;
+  if (file === undefined || file.length === 0) {
+    throw new Error(
+      "SAGE_EVAL_MANIFEST is not set. Run make eval so the seed step can write journal ids."
+    );
+  }
+  return readManifestSync(file);
+}
+
+export function journalIdFor(
+  manifest: Manifest,
+  personId: string,
+  entry: LoadedEntry
+): number {
+  const ids = manifest.cases[personId]?.journalIds;
+  if (ids === undefined) {
+    throw new Error(`Manifest has no journal ids for ${personId}.`);
+  }
+  const id = ids[entry.index - 1];
+  if (id === undefined) {
+    throw new Error(
+      `${personId} has no journal id for entry ${entry.index} (${entry.stem}).`
+    );
+  }
+  return id;
+}
+
+function readManifestSync(path: string): Manifest {
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    !("cases" in parsed) ||
+    parsed.cases === null ||
+    typeof parsed.cases !== "object"
+  ) {
+    throw new Error("Eval manifest is missing a cases object.");
+  }
+  const cases: Record<string, { journalIds: number[] }> = {};
+  for (const [id, value] of Object.entries(
+    parsed.cases as Record<string, unknown>
+  )) {
+    if (
+      value === null ||
+      typeof value !== "object" ||
+      !("journalIds" in value) ||
+      !Array.isArray(value.journalIds) ||
+      !value.journalIds.every((item) => typeof item === "number")
+    ) {
+      throw new Error(`Eval manifest case ${id} is missing journalIds.`);
+    }
+    cases[id] = { journalIds: value.journalIds };
+  }
+  return { cases };
+}
+
+// ---------------------------------------------------------------------------
+// Entry files
+// ---------------------------------------------------------------------------
 
 export function parseFrontmatter(content: string): {
   body: string;
@@ -174,80 +387,16 @@ export function countWords(text: string): number {
   return parts.length;
 }
 
-export function loadManifest(): EvalManifest {
-  const path = process.env.SAGE_EVAL_MANIFEST;
-  if (path === undefined || path.length === 0) {
-    throw new Error(
-      "SAGE_EVAL_MANIFEST is not set. Run make eval so the seed step can write journal ids."
-    );
-  }
-  return readManifestSync(path);
-}
-
-/** Throws unless `make eval` wrote journal ids for this run. */
-export function requireSeededManifest(): EvalManifest {
-  return loadManifest();
-}
-
-/** Throws unless this case's entry was seeded into the throwaway journal. */
-export function requireSeededEntry(caseId: string, entryIndex: number): void {
-  journalIdFor(requireSeededManifest(), caseId, entryIndex);
-}
-
-export function journalIdFor(
-  manifest: EvalManifest,
-  caseId: string,
-  entryIndex: number
-): number {
-  const ids = manifest.cases[caseId]?.journalIds;
-  if (ids === undefined) {
-    throw new Error(`Manifest has no journal ids for ${caseId}.`);
-  }
-  const id = ids[entryIndex - 1];
-  if (id === undefined) {
-    throw new Error(`${caseId} has no journal id for entry ${entryIndex}.`);
-  }
-  return id;
-}
-
-export function tagsFor(fixture: EvalCase, pipeline: string): string[] {
-  return [...new Set([...fixture.tags, fixture.kind, pipeline])];
-}
-
-function readManifestSync(path: string): EvalManifest {
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    !("cases" in parsed) ||
-    parsed.cases === null ||
-    typeof parsed.cases !== "object"
-  ) {
-    throw new Error("Eval manifest is missing a cases object.");
-  }
-  const cases: Record<string, { journalIds: number[] }> = {};
-  for (const [id, value] of Object.entries(
-    parsed.cases as Record<string, unknown>
-  )) {
-    if (
-      value === null ||
-      typeof value !== "object" ||
-      !("journalIds" in value) ||
-      !Array.isArray(value.journalIds) ||
-      !value.journalIds.every((item) => typeof item === "number")
-    ) {
-      throw new Error(`Eval manifest case ${id} is missing journalIds.`);
-    }
-    cases[id] = { journalIds: value.journalIds };
-  }
-  return { cases };
-}
-
-export async function loadEntryFiles(
-  dir: string
-): Promise<JournalEntryFixture[]> {
-  const names = (await readdir(dir))
-    .filter((name) => name.endsWith(".md"))
+/**
+ * Reads the `*.md` files at the top of a folder, in filename order. Other
+ * files and folders, such as `case.yaml` and `chats/`, are left alone. A folder
+ * with no entries gives an empty list.
+ */
+export async function loadEntryFiles(dir: string): Promise<LoadedEntry[]> {
+  const found = await readdir(dir, { withFileTypes: true });
+  const names = found
+    .filter((item) => item.isFile() && item.name.endsWith(".md"))
+    .map((item) => item.name)
     .sort();
   const files = await Promise.all(
     names.map(async (fileName) => ({
@@ -255,13 +404,13 @@ export async function loadEntryFiles(
       raw: await readFile(join(dir, fileName), "utf8"),
     }))
   );
-  const entries: JournalEntryFixture[] = [];
+  const entries: LoadedEntry[] = [];
   for (const [offset, { fileName, raw }] of files.entries()) {
     const parsed = parseFrontmatter(raw);
     const body = parsed.body.trim();
     const date = parsed.date?.trim() ?? "";
     const title = parsed.title?.trim() ?? "";
-    if (!isoDatePattern.test(date)) {
+    if (!(isoDatePattern.test(date) && isRealDate(date))) {
       throw new Error(`${fileName} needs a YYYY-MM-DD date in frontmatter.`);
     }
     if (title.length === 0) {
@@ -275,242 +424,12 @@ export async function loadEntryFiles(
       date,
       fileName,
       index: offset + 1,
+      stem: fileName.replace(markdownSuffixPattern, ""),
       title,
       wordCount: countWords(body),
     });
   }
-  if (entries.length === 0) {
-    throw new Error(`${basename(dir)} has no markdown entries.`);
-  }
   return entries;
-}
-
-function parseCase(
-  dir: string,
-  doc: Record<string, unknown>,
-  entries: JournalEntryFixture[]
-): EvalCase {
-  const id = requiredString(doc, "id", dir);
-  const kind = requiredString(doc, "kind", dir);
-  if (kind !== "timeline" && kind !== "standalone") {
-    throw new Error(`${id} kind must be timeline or standalone.`);
-  }
-  const folder = basename(dir);
-  const tags = stringList(doc.tags);
-  if (folder.includes("example") && !tags.includes("example")) {
-    tags.push("example");
-  }
-  return {
-    chat: parseChat(doc.chat, id, entries.length),
-    dir,
-    entries,
-    events: parseEvents(doc.events, id, entries.length),
-    facts: parseFacts(doc.facts, id),
-    id,
-    kind,
-    retrieval: parseRetrieval(doc.retrieval, id, entries.length),
-    summaries: parseSummaries(doc.summaries, id, entries.length),
-    tags,
-  };
-}
-
-function parseFacts(value: unknown, id: string): FactRef[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${id} facts must be a list.`);
-  }
-  return value.map((item, index) => {
-    if (item === null || typeof item !== "object") {
-      throw new Error(`${id} fact ${index + 1} must be a mapping.`);
-    }
-    const row = item as Record<string, unknown>;
-    const subject = requiredString(row, "subject", `${id} fact ${index + 1}`);
-    const reference = requiredString(
-      row,
-      "reference",
-      `${id} fact ${index + 1}`
-    );
-    const stale =
-      typeof row.stale === "string" && row.stale.length > 0
-        ? row.stale
-        : undefined;
-    return { reference, stale, subject };
-  });
-}
-
-function parseEvents(
-  value: unknown,
-  id: string,
-  entryCount: number
-): EventRef[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${id} events must be a list.`);
-  }
-  return value.map((item, index) => {
-    if (item === null || typeof item !== "object") {
-      throw new Error(`${id} event ${index + 1} must be a mapping.`);
-    }
-    const row = item as Record<string, unknown>;
-    const entry = requiredEntry(row, `${id} event ${index + 1}`, entryCount);
-    const reference = requiredString(
-      row,
-      "reference",
-      `${id} event ${index + 1}`
-    );
-    return { entry, reference };
-  });
-}
-
-function parseSummaries(
-  value: unknown,
-  id: string,
-  entryCount: number
-): SummaryRef[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${id} summaries must be a list.`);
-  }
-  return value.map((item, index) => {
-    if (item === null || typeof item !== "object") {
-      throw new Error(`${id} summary ${index + 1} must be a mapping.`);
-    }
-    const row = item as Record<string, unknown>;
-    const entry = requiredEntry(row, `${id} summary ${index + 1}`, entryCount);
-    const reference = requiredString(
-      row,
-      "reference",
-      `${id} summary ${index + 1}`
-    );
-    return { entry, reference };
-  });
-}
-
-function parseRetrieval(
-  value: unknown,
-  id: string,
-  entryCount: number
-): RetrievalRef[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${id} retrieval must be a list.`);
-  }
-  return value.map((item, index) => {
-    if (item === null || typeof item !== "object") {
-      throw new Error(`${id} retrieval ${index + 1} must be a mapping.`);
-    }
-    const row = item as Record<string, unknown>;
-    const query = requiredString(row, "query", `${id} retrieval ${index + 1}`);
-    const expectEntry = requiredInt(
-      row,
-      "expectEntry",
-      `${id} retrieval ${index + 1}`
-    );
-    requireEntryIndex(expectEntry, entryCount, `${id} retrieval ${index + 1}`);
-    const when = optionalString(row, "when");
-    return when === undefined
-      ? { expectEntry, query }
-      : { expectEntry, query, when };
-  });
-}
-
-function parseChat(value: unknown, id: string, _entryCount: number): ChatRef[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${id} chat must be a list.`);
-  }
-  return value.map((item, index) => {
-    if (item === null || typeof item !== "object") {
-      throw new Error(`${id} chat ${index + 1} must be a mapping.`);
-    }
-    const row = item as Record<string, unknown>;
-    const question = requiredString(row, "question", `${id} chat ${index + 1}`);
-    const reference = requiredString(
-      row,
-      "reference",
-      `${id} chat ${index + 1}`
-    );
-    const expectTool = row.expectTool === true;
-    const expectWhen = row.expectWhen === true;
-    return { expectTool, expectWhen, question, reference };
-  });
-}
-
-function optionalString(
-  row: Record<string, unknown>,
-  key: string
-): string | undefined {
-  const value = row[key];
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return undefined;
-  }
-  return value.trim();
-}
-
-function requiredString(
-  row: Record<string, unknown>,
-  key: string,
-  label: string
-): string {
-  const value = row[key];
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${label} is missing ${key}.`);
-  }
-  return value.trim();
-}
-
-function requiredInt(
-  row: Record<string, unknown>,
-  key: string,
-  label: string
-): number {
-  const value = row[key];
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new Error(`${label} is missing integer ${key}.`);
-  }
-  return value;
-}
-
-function requiredEntry(
-  row: Record<string, unknown>,
-  label: string,
-  entryCount: number
-): number {
-  const entry = requiredInt(row, "entry", label);
-  requireEntryIndex(entry, entryCount, label);
-  return entry;
-}
-
-function requireEntryIndex(
-  entry: number,
-  entryCount: number,
-  label: string
-): void {
-  if (entry < 1 || entry > entryCount) {
-    throw new Error(`${label} entry ${entry} is out of range.`);
-  }
-}
-
-function stringList(value: unknown): string[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (
-    !(Array.isArray(value) && value.every((item) => typeof item === "string"))
-  ) {
-    throw new Error("tags must be a list of strings.");
-  }
-  return value.map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
 function stripQuotes(value: string): string {

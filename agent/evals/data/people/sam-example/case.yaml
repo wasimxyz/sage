@@ -1,0 +1,86 @@
+id: sam-example
+tags: [ example ]
+about: >-
+  A made-up person who schedules rooms in the events office of a community
+  college and keeps a plain, everyday journal. They finished a first half
+  marathon in April and were told to stop running for four weeks in May.
+  They began dating Sam in June, after climbing together on Thursdays. Their
+  sister Lena visited for four days in August. The journal never says they
+  ran again after the doctor's visit, so the checks treat the time off as the
+  latest word on running. This is the format template.
+cast:
+  - name: Sam
+    relation: boyfriend
+    pronouns: he/him
+    alive: true
+    note: "A friend and climbing partner until 2026-06-15, then the author's boyfriend."
+  - name: Lena
+    relation: older sister
+    pronouns: she/her
+    alive: true
+    note: Works at a library and lives out of town.
+  - name: Dev
+    relation: coworker and lunch regular
+    pronouns: he/him
+    alive: true
+timeline:
+  - date: 2026-04-12
+    what: Finished the first half marathon in just under two hours
+    weight: big
+  - date: 2026-05-22
+    what: A doctor said to stop running for at least four weeks because of shin splints
+    weight: medium
+  - date: 2026-06-15
+    what: Told Sam how they felt, and they began dating
+    weight: big
+  - date: 2026-06-25
+    what: Called Sam "my boyfriend" out loud for the first time
+    weight: small
+  - date: 2026-08-06
+    what: Lena visited for four days and met Sam
+    weight: medium
+  - date: 2026-09-13
+    what: Went to a barbecue with Sam's coworkers and left feeling like they had been waiting for a bus
+    weight: small
+  - date: 2026-09-25
+    what: Double booked the auditorium by entering the wrong day, and fixed it the same morning
+    weight: medium
+facts:
+  - subject: Sam
+    reference: Sam is the user's boyfriend or partner
+    stale: Sam is the user's friend or climbing partner
+  - subject: user
+    reference: The user was told to stop running for four weeks because of shin splints
+    stale: The user recently finished a half marathon and is actively running
+events:
+  - entry: 2026-06-15-told-sam
+    reference: The user and Sam started dating
+  - entry: 2026-04-12-first-half-marathon
+    reference: The user finished their first half marathon
+  - entry: 2026-05-22-shin-splints
+    reference: The user was told by a doctor to stop running for four weeks due to shin splints
+summaries:
+  - entry: 2026-06-15-told-sam
+    reference: The user and Sam mutually admit their feelings and decide to start dating.
+  - entry: 2026-04-12-first-half-marathon
+    reference: The user completes their first half marathon in just under two hours, proud of not stopping despite it not being a fast time.
+  - entry: 2026-05-22-shin-splints
+    reference: The user is diagnosed with shin splints and told to stop running for a month, frustrated at having pushed through the pain.
+retrieval:
+  - query: when did I start dating Sam
+    expectEntry: 2026-06-15-told-sam
+  - query: when I finished my first half marathon
+    expectEntry: 2026-04-12-first-half-marathon
+  - query: when I got told to stop running because of shin splints
+    expectEntry: 2026-05-22-shin-splints
+  - query: running
+    when: April
+    expectEntry: 2026-04-12-first-half-marathon
+  - query: running
+    when: May
+    expectEntry: 2026-05-22-shin-splints
+chat:
+  - question: How would you describe my relationship with Sam right now?
+    reference: Sam is the user's boyfriend or partner, not just a friend
+  - question: Am I currently running?
+    reference: "No. The more recent state is time off for shin splints, not the half marathon"
