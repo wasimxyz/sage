@@ -1,3 +1,8 @@
+// Seeds one person into the throwaway Sage in SAGE_AUTOMATION_CWD, writes the
+// journal-id manifest, and waits for Dream. The runner starts this script once
+// per person, on a Dream cache miss. `SAGE_EVAL_PERSON` names the person and
+// `SAGE_EVAL_MANIFEST` says where the manifest goes.
+
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -5,46 +10,52 @@ import {
   requireOk,
   resultNumber,
 } from "../evals/lib/bridge.ts";
-import { type EvalManifest, loadAllCases } from "../evals/lib/dataset.ts";
 import {
   automationAt,
   callBridge,
+  dreamTimeoutMs,
   saveJournalEntry,
   waitForAutomation,
   waitForDream,
 } from "./automation.ts";
+import { loadOnePerson, type Manifest } from "./eval/people.ts";
 
 const automation = automationAt(
   process.env.SAGE_AUTOMATION_CWD ?? process.cwd()
 );
 
-async function main(): Promise<void> {
-  const manifestPath = process.env.SAGE_EVAL_MANIFEST;
-  if (manifestPath === undefined || manifestPath.length === 0) {
-    throw new Error("SAGE_EVAL_MANIFEST is not set.");
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value.length === 0) {
+    throw new Error(`${name} is not set.`);
   }
+  return value;
+}
+
+async function main(): Promise<void> {
+  const manifestPath = requiredEnv("SAGE_EVAL_MANIFEST");
+  const personId = requiredEnv("SAGE_EVAL_PERSON");
 
   waitForAutomation(automation);
   const wipe = callBridge(automation, "data.deleteAll", {}, "eval-wipe");
   requireOk(wipe, "data.deleteAll");
 
-  const cases = await loadAllCases();
-  if (cases.length === 0) {
-    throw new Error("No eval fixtures found under evals/data.");
+  const person = await loadOnePerson(personId);
+  const journalIds: number[] = [];
+  for (const entry of person.entries) {
+    journalIds.push(saveJournalEntry(automation, person.id, entry));
   }
-
-  const manifest: EvalManifest = { cases: {} };
-  for (const fixture of cases) {
-    const journalIds: number[] = [];
-    for (const entry of fixture.entries) {
-      journalIds.push(saveJournalEntry(automation, fixture.id, entry));
-    }
-    manifest.cases[fixture.id] = { journalIds };
-    console.log(`seeded ${fixture.id}: ${journalIds.join(", ")}`);
-  }
+  const manifest: Manifest = { cases: { [person.id]: { journalIds } } };
+  console.log(`seeded ${person.id}: ${journalIds.join(", ")}`);
 
   mkdirSync(dirname(manifestPath), { recursive: true });
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  if (person.entries.length === 0) {
+    // An empty journal has nothing for Dream to read.
+    console.log(`${person.id} has no entries; Dream has nothing to do.`);
+    return;
+  }
 
   const started = callBridge(
     automation,
@@ -59,7 +70,7 @@ async function main(): Promise<void> {
   if (startTotal === 0) {
     throw new Error("Dream had nothing to process. Seeding may have failed.");
   }
-  waitForDream(automation);
+  waitForDream(automation, dreamTimeoutMs(person.entries.length));
 }
 
 await main();

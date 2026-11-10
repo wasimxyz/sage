@@ -7,3 +7,5 @@ frontend/dist/
 agent/evals/.cache/
 third_party/node/
 third_party/ollama/
+agent/.eval-roots/
+agent/evals/.runs/
