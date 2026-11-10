@@ -10,6 +10,7 @@ import {
   requireOk,
   resultNumber,
 } from "../evals/lib/bridge.ts";
+import { loadPerson, type Manifest } from "../evals/lib/dataset.ts";
 import {
   automationAt,
   callBridge,
@@ -18,7 +19,6 @@ import {
   waitForAutomation,
   waitForDream,
 } from "./automation.ts";
-import { loadOnePerson, type Manifest } from "./eval/people.ts";
 
 const automation = automationAt(
   process.env.SAGE_AUTOMATION_CWD ?? process.cwd()
@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   const wipe = callBridge(automation, "data.deleteAll", {}, "eval-wipe");
   requireOk(wipe, "data.deleteAll");
 
-  const person = await loadOnePerson(personId);
+  const person = await loadPerson(personId);
   const journalIds: number[] = [];
   for (const entry of person.entries) {
     journalIds.push(saveJournalEntry(automation, person.id, entry));

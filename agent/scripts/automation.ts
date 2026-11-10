@@ -19,6 +19,7 @@ import {
   resultNumber,
   utf8Chunks,
 } from "../evals/lib/bridge.ts";
+import type { LoadedEntry } from "../evals/lib/dataset.ts";
 
 const chunkBytes = 4000;
 const minDreamTimeoutMs = 30 * 60 * 1000;
@@ -33,14 +34,6 @@ export function dreamTimeoutMs(items: number): number {
   return Math.max(minDreamTimeoutMs, items * dreamTimeoutPerEntryMs);
 }
 
-/** The parts of an entry that `journal.save` needs. */
-export interface SavableEntry {
-  body: string;
-  date: string;
-  index: number;
-  title: string;
-  wordCount: number;
-}
 
 /** Where a running automation build of Sage keeps its command files. */
 export interface Automation {
@@ -90,7 +83,7 @@ export function callBridge(
 export function saveJournalEntry(
   automation: Automation,
   label: string,
-  entry: SavableEntry
+  entry: LoadedEntry
 ): number {
   const chunks = utf8Chunks(entry.body, chunkBytes);
   let savedId: number | null = null;

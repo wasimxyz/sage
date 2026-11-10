@@ -141,14 +141,19 @@ export async function loadSweep(
   return { name, overrides: applied, path, setups: expandSetups(sweep), sweep };
 }
 
-/** `smoke-20261109T201500Z`. It has no `__`, which the report file names use as a separator. */
+const fractionPattern = /\.\d+Z$/u;
+
+/**
+ * `2026-11-10T031500Z-smoke`: the UTC time, then the sweep's name. The viewer
+ * dates a sweep from the leading `YYYY-MM-DD`. The id has no `__`, which the
+ * report file names use as a separator, and it is safe in a file name.
+ */
 export function makeSweepId(name: string, now = new Date()): string {
   const stamp = now
     .toISOString()
-    .replaceAll("-", "")
     .replaceAll(":", "")
-    .replace(/\.\d+Z$/u, "Z");
-  return `${name}-${stamp}`;
+    .replace(fractionPattern, "Z");
+  return `${stamp}-${name}`;
 }
 
 /** The sweep as JSON, with every default filled in. Eval files read this file. */
