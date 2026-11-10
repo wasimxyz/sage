@@ -1,11 +1,29 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { get, list } from "@vercel/blob";
 import { connection } from "next/server";
 import { cache } from "react";
 
 import { assembleReport, summaryFromXml } from "./reports/assemble.ts";
-import { runIdFromPathname } from "./reports/run-id.ts";
+import {
+  classifyReportFile,
+  sweepSummarySuffix,
+} from "./reports/file-names.ts";
+import { parseSetupReport, parseSweepSummary } from "./reports/sweep-parse.ts";
+import type {
+  ParseOutcome,
+  SetupData,
+  SetupReport,
+  SweepData,
+  SweepListItem,
+  SweepSummary,
+} from "./reports/sweep-types.ts";
+import {
+  compareSweepsNewestFirst,
+  setupLabel,
+  sweepDateIso,
+  varyingDimensions,
+} from "./reports/sweep-view.ts";
 import type { EvalReport, ReportFiles, RunSummary } from "./reports/types.ts";
 
 export const defaultBlobPrefix = "sage-evals";
@@ -16,17 +34,30 @@ export type ReportsSource =
   | { kind: "local"; dir: string }
   | { kind: "none"; reason: string };
 
+/** The files of one legacy JUnit run. */
 interface RunFileIndex {
   log?: string;
   manifest?: string;
   xml?: string;
 }
 
+/** The files of one sweep. `summaryTime` is when the summary file was written. */
+interface SweepFileIndex {
+  setups: Map<string, string>;
+  summary?: string;
+  summaryTime?: string;
+}
+
+interface ReportIndex {
+  runs: Map<string, RunFileIndex>;
+  sweeps: Map<string, SweepFileIndex>;
+}
+
 export const loadRunSummaries = cache(async (): Promise<RunSummary[]> => {
   await connection();
-  const index = await listIndexedFiles();
+  const { runs } = await listIndexedFiles();
   const summaries = await Promise.all(
-    [...index.entries()].map(async ([id, files]) => {
+    [...runs.entries()].map(async ([id, files]) => {
       if (files.xml === undefined) {
         return;
       }
@@ -60,6 +91,85 @@ export const loadReport = cache(
     ]);
     const reportFiles: ReportFiles = { log, manifest, xml };
     return assembleReport(id, reportFiles);
+  }
+);
+
+/** Every sweep that has a summary file, newest first. */
+export const loadSweepList = cache(async (): Promise<SweepListItem[]> => {
+  await connection();
+  const { sweeps } = await listIndexedFiles();
+  const items = await Promise.all(
+    [...sweeps.entries()].map(async ([id, files]) => {
+      if (files.summary === undefined) {
+        return;
+      }
+      const outcome = await readOutcome(
+        files.summary,
+        parseSweepSummary,
+        "sweep summary"
+      );
+      const top =
+        outcome.kind === "ok"
+          ? await topSetup(outcome.value, files)
+          : undefined;
+      const item: SweepListItem = {
+        date: sweepDateIso(id, files.summaryTime),
+        id,
+        outcome,
+        top,
+      };
+      return item;
+    })
+  );
+  return items
+    .filter((item): item is SweepListItem => item !== undefined)
+    .sort(compareSweepsNewestFirst);
+});
+
+/** One sweep with all its setup reports, or null when it has no summary file. */
+export const loadSweep = cache(
+  async (id: string): Promise<SweepData | null> => {
+    await connection();
+    const files = (await listIndexedFiles()).sweeps.get(id);
+    if (files?.summary === undefined) {
+      return null;
+    }
+    const [summary, entries] = await Promise.all([
+      readOutcome(files.summary, parseSweepSummary, "sweep summary"),
+      Promise.all(
+        [...files.setups.entries()].map(
+          async ([setupId, path]) =>
+            [
+              setupId,
+              await readOutcome(path, parseSetupReport, "setup report"),
+            ] as const
+        )
+      ),
+    ]);
+    return {
+      date: sweepDateIso(id, files.summaryTime),
+      id,
+      reports: new Map(entries),
+      summary,
+    };
+  }
+);
+
+/** One setup report, or null when its file is not there. */
+export const loadSetupReport = cache(
+  async (sweepId: string, setupId: string): Promise<SetupData | null> => {
+    await connection();
+    const path = (await listIndexedFiles()).sweeps
+      .get(sweepId)
+      ?.setups.get(setupId);
+    if (path === undefined) {
+      return null;
+    }
+    return {
+      outcome: await readOutcome(path, parseSetupReport, "setup report"),
+      setupId,
+      sweepId,
+    };
   }
 );
 
@@ -119,7 +229,40 @@ function pathsForRun(
   return undefined;
 }
 
-const listIndexedFiles = cache(async (): Promise<Map<string, RunFileIndex>> => {
+async function readOutcome<T>(
+  pathname: string,
+  parse: (raw: string) => ParseOutcome<T>,
+  what: string
+): Promise<ParseOutcome<T>> {
+  const raw = await readText(pathname);
+  if (raw === undefined) {
+    return { kind: "invalid", message: `Could not read the ${what}.` };
+  }
+  return parse(raw);
+}
+
+/** The first setup in a sweep's ranking, named by the dimensions that differ. */
+async function topSetup(
+  summary: SweepSummary,
+  files: SweepFileIndex
+): Promise<SweepListItem["top"]> {
+  const entry = summary.ranking.at(0);
+  if (entry === undefined) {
+    return;
+  }
+  const path = files.setups.get(entry.setupId);
+  const outcome: ParseOutcome<SetupReport> | undefined =
+    path === undefined
+      ? undefined
+      : await readOutcome(path, parseSetupReport, "setup report");
+  const label =
+    outcome?.kind === "ok"
+      ? setupLabel(outcome.value.setup, varyingDimensions(summary.axes))
+      : entry.setupId;
+  return { entry, label };
+}
+
+const listIndexedFiles = cache(async (): Promise<ReportIndex> => {
   const source = resolveSource();
   if (source.kind === "blob") {
     return await listBlobFiles(source.prefix);
@@ -127,13 +270,15 @@ const listIndexedFiles = cache(async (): Promise<Map<string, RunFileIndex>> => {
   if (source.kind === "local") {
     return await listLocalFiles(source.dir);
   }
-  return new Map<string, RunFileIndex>();
+  return emptyIndex();
 });
 
-async function listBlobFiles(
-  prefix: string
-): Promise<Map<string, RunFileIndex>> {
-  const index = new Map<string, RunFileIndex>();
+function emptyIndex(): ReportIndex {
+  return { runs: new Map(), sweeps: new Map() };
+}
+
+async function listBlobFiles(prefix: string): Promise<ReportIndex> {
+  const index = emptyIndex();
   let cursor: string | undefined;
   do {
     // biome-ignore lint/performance/noAwaitInLoops: each Blob list page needs the previous cursor
@@ -142,37 +287,64 @@ async function listBlobFiles(
       prefix: `${prefix}/`,
     });
     for (const blob of page.blobs) {
-      addToIndex(index, blob.pathname);
+      addToIndex(index, blob.pathname, blob.pathname, blob.uploadedAt);
     }
     cursor = page.hasMore ? page.cursor : undefined;
   } while (cursor !== undefined);
   return index;
 }
 
-async function listLocalFiles(dir: string): Promise<Map<string, RunFileIndex>> {
-  const index = new Map<string, RunFileIndex>();
+async function listLocalFiles(dir: string): Promise<ReportIndex> {
+  const index = emptyIndex();
   let names: string[] = [];
   try {
     names = await readdir(dir);
   } catch {
     return index;
   }
-  for (const name of names) {
-    addToIndex(index, join(dir, name), name);
+  const files = await Promise.all(
+    names.map(async (name) => ({
+      name,
+      time: name.endsWith(sweepSummarySuffix)
+        ? await modifiedAt(join(dir, name))
+        : undefined,
+    }))
+  );
+  for (const { name, time } of files) {
+    addToIndex(index, join(dir, name), name, time);
   }
   return index;
 }
 
+async function modifiedAt(pathname: string): Promise<Date | undefined> {
+  try {
+    return (await stat(pathname)).mtime;
+  } catch {
+    return undefined;
+  }
+}
+
 function addToIndex(
-  index: Map<string, RunFileIndex>,
+  index: ReportIndex,
   pathname: string,
-  fileName = pathname
+  fileName: string,
+  time?: Date
 ): void {
-  const id = runIdFromPathname(fileName);
-  if (id === undefined) {
+  const file = classifyReportFile(fileName);
+  if (file === undefined) {
     return;
   }
-  const current = index.get(id) ?? {};
+  if (file.kind === "setup") {
+    sweepEntry(index, file.sweepId).setups.set(file.setupId, pathname);
+    return;
+  }
+  if (file.kind === "sweep") {
+    const entry = sweepEntry(index, file.sweepId);
+    entry.summary = pathname;
+    entry.summaryTime = time?.toISOString();
+    return;
+  }
+  const current = index.runs.get(file.id) ?? {};
   if (fileName.endsWith(".xml") || pathname.endsWith(".xml")) {
     current.xml = pathname;
   } else if (fileName.endsWith(".sage.log") || pathname.endsWith(".sage.log")) {
@@ -183,7 +355,17 @@ function addToIndex(
   ) {
     current.manifest = pathname;
   }
-  index.set(id, current);
+  index.runs.set(file.id, current);
+}
+
+function sweepEntry(index: ReportIndex, sweepId: string): SweepFileIndex {
+  const existing = index.sweeps.get(sweepId);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const created: SweepFileIndex = { setups: new Map() };
+  index.sweeps.set(sweepId, created);
+  return created;
 }
 
 const readText = cache(
