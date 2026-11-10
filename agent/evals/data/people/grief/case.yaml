@@ -1,0 +1,112 @@
+id: grief
+tags:
+  - grief
+  - pet
+about: >-
+  Lives alone in a walk-up apartment, three flights up, and works in an office.
+  Lost their mother in March 2025, and their dog Biscuit, fourteen, in May 2026.
+  Has a sister, Claire, and a close friend, Dev. Writes plainly and a little
+  dryly, in short entries. Most entries are about ordinary life: errands, work,
+  the neighbors, cooking. Grief shows up in only a few of them, and the author
+  does not dwell on it elsewhere. The journal never states the author's gender
+  or age.
+cast:
+  - name: Mom
+    relation: the author's mother
+    pronouns: she/her
+    alive: false
+    note: "Died in March 2025. Every 'Mom' and 'her' in the grief entries means this person."
+  - name: Claire
+    relation: the author's sister
+    pronouns: she/her
+    alive: true
+  - name: Biscuit
+    relation: the author's dog
+    pronouns: he/him
+    alive: false
+    note: "A dog, not a person. Put down in May 2026 at fourteen, from kidney failure."
+  - name: Dev
+    relation: close friend
+    pronouns: he/him
+    alive: true
+  - name: Marcus
+    relation: coworker
+    pronouns: he/him
+    alive: true
+  - name: Mr. Okafor
+    relation: neighbor downstairs
+    pronouns: he/him
+    alive: true
+  - name: Tom
+    relation: former coworker, met by chance in a grocery store
+    pronouns: he/him
+    alive: true
+timeline:
+  - date: 2025-03-16
+    what: "Mom died. The author handled the calls, the flowers and the obituary with Claire, and felt numb."
+    weight: big
+  - date: 2025-08-02
+    what: "Claire visited for a weekend and they took the ferry to the island."
+    weight: small
+  - date: 2025-10-10
+    what: "Smelled Mom's perfume on a stranger and cried on the street, the first time in public."
+    weight: medium
+  - date: 2026-03-07
+    what: "Mom's birthday, the first since she died. The author baked her lemon cake, and it came out wrong."
+    weight: medium
+  - date: 2026-05-20
+    what: "Biscuit was put down at fourteen because his kidneys failed."
+    weight: big
+  - date: 2026-07-04
+    what: "Watched the fireworks from the roof with neighbors."
+    weight: small
+  - date: 2026-10-18
+    what: "Drove out with Dev to see the leaves."
+    weight: small
+facts:
+  - subject: Mom
+    reference: The user's mother has died
+  - subject: user
+    reference: The user has a sister
+  - subject: Biscuit
+    reference: The user's dog Biscuit died
+    stale: The user currently has a living dog named Biscuit
+events:
+  - entry: 2025-03-19-three-days-after
+    reference: The user's mother died
+  - entry: 2025-10-10-her-perfume
+    reference: The user was unexpectedly overwhelmed by grief after smelling their mother's perfume on a stranger
+  - entry: 2026-03-07-moms-birthday-cake
+    reference: The user marked their mother's first birthday since her death by baking her lemon cake recipe
+  - entry: 2026-05-20-putting-biscuit-down
+    reference: The user's dog Biscuit was put down due to kidney failure
+summaries:
+  - entry: 2025-03-19-three-days-after
+    reference: The user describes the days right after their mother's death, feeling numb and disconnected while handling practical tasks.
+  - entry: 2025-10-10-her-perfume
+    reference: The user is caught off guard by a wave of grief after smelling their late mother's perfume on a stranger, months after her death.
+  - entry: 2026-03-07-moms-birthday-cake
+    reference: The user bakes their late mother's lemon cake recipe on what would have been her birthday, and finds the moment bittersweet rather than only painful.
+  - entry: 2026-05-20-putting-biscuit-down
+    reference: The user describes putting down their fourteen-year-old dog Biscuit, and the quiet, disorienting grief of the apartment afterward.
+retrieval:
+  - query: right after my mom died
+    expectEntry: 2025-03-19-three-days-after
+  - query: the time I smelled Mom's perfume
+    expectEntry: 2025-10-10-her-perfume
+  - query: the lemon cake I made for Mom's birthday
+    expectEntry: 2026-03-07-moms-birthday-cake
+  - query: when Biscuit died
+    expectEntry: 2026-05-20-putting-biscuit-down
+chat:
+  - question: What happened with my mom?
+    reference: The user's mother passed away
+  - question: Have I had any moments where grief caught me off guard?
+    reference: The user was ambushed by grief after smelling their mother's perfume on a stranger
+    expectTool: true
+    needs:
+      - 2025-10-10-her-perfume
+  - question: How am I doing with grieving my mom these days?
+    reference: Grief is quieter and sometimes bittersweet, not the numbness of the first days
+  - question: Do I have a dog?
+    reference: Biscuit died. The user should not be treated as still having a living dog
