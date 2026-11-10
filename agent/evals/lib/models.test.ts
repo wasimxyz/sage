@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  chatModel,
-  chatModels,
-  embedModel,
-  judgeModelId,
-  ollamaBaseURL,
-} from "./models.ts";
+import { chatModel, chatModels, embedModel, ollamaBaseURL } from "./models.ts";
 
 test("chatModels splits a comma list and strips the ollama prefix", () => {
   const previous = process.env.SAGE_CHAT_MODELS;
@@ -136,16 +130,6 @@ test("chatModel defaults to qwen3.5:9b", () => {
     restoreEnv("SAGE_CHAT_MODEL", previousCurrent);
     restoreEnv("SAGE_CHAT_MODELS", previousChat);
     restoreEnv("OLLAMA_MODEL", previousOllama);
-  }
-});
-
-test("judgeModelId defaults to qwen3.5:9b", () => {
-  const previous = process.env.SAGE_JUDGE_MODEL;
-  delete process.env.SAGE_JUDGE_MODEL;
-  try {
-    assert.equal(judgeModelId(), "qwen3.5:9b");
-  } finally {
-    restoreEnv("SAGE_JUDGE_MODEL", previous);
   }
 });
 
