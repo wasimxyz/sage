@@ -1,0 +1,124 @@
+id: family
+tags:
+  - parent
+  - breakup
+  - work
+about: >-
+  Lives a drive away from Dad, in a rented apartment with a landlord who is slow
+  to fix things. Close to a sister, Elena, and a friend, Priya, who runs a book
+  club. Dated Theo for two years, broke up with him in April 2026, and got back
+  together with him at the end of May. Over the same months, the relationship
+  with Dad went from forty minutes of small talk to real conversations, and
+  Dad called just to say he loved them. Started a new job in late August 2026
+  and was feeling like an impostor by mid-September. Writes with dry humor and
+  a lot of concrete detail. The journal never states the author's gender or
+  age. The only family it names is Dad and Elena, though Dad speaks of "us
+  kids". No mother appears.
+cast:
+  - name: Dad
+    relation: the author's father
+    pronouns: he/him
+    alive: true
+    note: "His birthday call was on 2026-01-06. He lost his own father young, used to work shifts, and tinkers in the garage."
+  - name: Theo
+    relation: the author's partner of two years
+    pronouns: he/him
+    alive: true
+    note: "They broke up on 2026-04-03 and agreed to try again on the weekend of 2026-05-30. They are together now."
+  - name: Elena
+    relation: the author's sister
+    pronouns: she/her
+    alive: true
+  - name: Priya
+    relation: close friend
+    pronouns: she/her
+    alive: true
+timeline:
+  - date: 2026-01-06
+    what: "Called Dad for his birthday. Forty minutes of weather and sleep, nothing real, and it felt like talking to a coworker."
+    weight: medium
+  - date: 2026-01-28
+    what: "Dad said he used to sit in his car before shifts just to breathe. He had never said anything like that before."
+    weight: medium
+  - date: 2026-02-07
+    what: "Helped Elena move into her new apartment."
+    weight: small
+  - date: 2026-02-22
+    what: "Drove up to see Dad. They talked on the porch for almost two hours. Dad told the author about losing his own father young, and apologized."
+    weight: big
+  - date: 2026-03-27
+    what: "Dad called just to check in and said 'I love you, kid.'"
+    weight: big
+  - date: 2026-04-03
+    what: "Broke up with Theo after two years."
+    weight: big
+  - date: 2026-04-18
+    what: "Two weeks after the breakup, going through the motions and telling people they were 'fine'."
+    weight: medium
+  - date: 2026-05-13
+    what: "Ran into Theo at the farmers market and got coffee. It was easy to talk to him."
+    weight: medium
+  - date: 2026-05-31
+    what: "Talked with Theo for real and both said they wanted to try again."
+    weight: big
+  - date: 2026-06-21
+    what: "Picnic in the park with Priya on the longest day of the year."
+    weight: small
+  - date: 2026-08-24
+    what: "Started a new job. This is about three weeks before the 14 September entry, which says 'three weeks into the new role'."
+    weight: big
+  - date: 2026-09-14
+    what: "Felt like an impostor in a planning meeting at the new job."
+    weight: medium
+  - date: 2026-09-27
+    what: "Picked apples with Elena."
+    weight: small
+facts:
+  - subject: Dad
+    reference: The user's relationship with their father is closer and more open
+    stale: The user's relationship with their father is distant or surface-level
+  - subject: Theo
+    reference: The user and Theo are back together
+    stale: The user and Theo broke up
+  - subject: user
+    reference: The user started a new role recently and has been feeling like an impostor
+events:
+  - entry: 2026-01-06-dads-birthday
+    reference: The user called their father for his birthday and the conversation stayed surface-level
+  - entry: 2026-01-28-dad-on-the-phone
+    reference: The user's father shared that he used to sit in his car before shifts just to breathe
+  - entry: 2026-02-25-porch-conversation
+    reference: The user's father opened up about his own difficult upbringing and apologized
+  - entry: 2026-03-27-dad-called-to-check-in
+    reference: The user's father called just to check in and said he loved them
+  - entry: 2026-04-03-broke-up-with-theo
+    reference: The user and Theo broke up
+  - entry: 2026-04-18-two-weeks-later
+    reference: Two weeks after the breakup the user was going through the motions
+  - entry: 2026-05-13-farmers-market
+    reference: The user ran into Theo at the farmer's market and they got coffee
+  - entry: 2026-06-02-trying-again
+    reference: The user and Theo decided to get back together
+  - entry: 2026-09-14-three-weeks-in
+    reference: The user felt out of their depth during a planning meeting in their new role
+summaries:
+  - entry: 2026-02-25-porch-conversation
+    reference: The user's father opens up about his own difficult childhood and apologizes, and the user shares that they'd felt distant from him.
+  - entry: 2026-05-13-farmers-market
+    reference: The user runs into Theo unexpectedly, and the conversation goes more easily than expected, with Theo suggesting the breakup wasn't as clear-cut as it seemed.
+  - entry: 2026-09-14-three-weeks-in
+    reference: The user describes feeling like an impostor three weeks into a new role, staying quiet in a meeting instead of admitting they lacked context.
+retrieval:
+  - query: when did my dad apologize
+    expectEntry: 2026-02-25-porch-conversation
+  - query: when did Theo and I get back together
+    expectEntry: 2026-06-02-trying-again
+  - query: feeling like an impostor in my new job
+    expectEntry: 2026-09-14-three-weeks-in
+chat:
+  - question: How would you describe my relationship with my dad right now?
+    reference: The relationship is currently warm and open, not the old distant dynamic
+  - question: Are Theo and I still together?
+    reference: "Yes. They reconciled and are currently together, not broken up"
+  - question: How am I feeling about my new job?
+    reference: The user has been feeling self-doubt and like an impostor in the new role
