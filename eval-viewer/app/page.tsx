@@ -1,5 +1,5 @@
 import { HomeDashboard } from "@/components/home-dashboard";
-import { loadRunSummaries } from "@/lib/load-reports";
+import { loadRunSummaries, loadSweepList } from "@/lib/load-reports";
 
 export default async function Page({
   searchParams,
@@ -7,6 +7,9 @@ export default async function Page({
   searchParams: Promise<{ embed?: string }>;
 }) {
   const { embed } = await searchParams;
-  const runs = await loadRunSummaries();
-  return <HomeDashboard embed={embed} runs={runs} />;
+  const [runs, sweeps] = await Promise.all([
+    loadRunSummaries(),
+    loadSweepList(),
+  ]);
+  return <HomeDashboard embed={embed} runs={runs} sweeps={sweeps} />;
 }

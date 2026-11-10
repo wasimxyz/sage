@@ -1,0 +1,27 @@
+"use client";
+
+import { useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+
+export default function SweepError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="text-lg font-medium">Could not load this sweep</h2>
+      <p className="text-muted-foreground text-sm">{error.message}</p>
+      <Button className="w-fit" onClick={reset}>
+        Try again
+      </Button>
+    </div>
+  );
+}
