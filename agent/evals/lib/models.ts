@@ -27,14 +27,6 @@ export function ollamaBaseURL(): string {
   return raw.replace(trailingV1Pattern, "/api");
 }
 
-export function judgeModelId(): string {
-  const value = process.env.SAGE_JUDGE_MODEL;
-  if (value !== undefined && value.length > 0) {
-    return value;
-  }
-  return defaultChatModel;
-}
-
 export function embedModel(): string {
   const current = normalizeModel(process.env.SAGE_EMBED_MODEL);
   if (current !== undefined) {
