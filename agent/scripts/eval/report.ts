@@ -28,7 +28,6 @@ import {
   HARD_CHECK_IDS,
   type HardCheckId,
   type ItemStatus,
-  JOURNAL_ERROR_KINDS,
   journalErrorSchema,
   KINDS_OF_HELP,
   type KindOfHelp,
@@ -36,24 +35,24 @@ import {
   parseItemId,
   parseSetupReport,
   parseSweepSummary,
+  type RankingEntry,
   REPORT_ITEM_KINDS,
   REPORT_SCHEMA_VERSION,
-  type RankingEntry,
   type ReportCheck,
   type ReportItem,
   type ReportItemKind,
   type ReportRubric,
   type ReportTurn,
-  rankSetups,
   rankingEntryFor,
+  rankSetups,
   reportFileName,
-  simulatedUserFlagMarkSchema,
   type Setup,
   type SetupReport,
   type SetupSummary,
-  setupId as setupIdOf,
   type SweepFile,
   type SweepSummary,
+  setupId as setupIdOf,
+  simulatedUserFlagMarkSchema,
   sweepSummaryFileName,
   type TranscriptRow,
 } from "../../evals/lib/schema.ts";
@@ -71,10 +70,14 @@ export interface SwapReading {
 }
 
 export interface AssembleInput {
-  costUsd: number;
   gitCommit: string;
   /** Persons the setup covered, even those with no rows. */
   people: readonly string[];
+  /**
+   * The share of the person pass's judge cost this setup reports. The pass runs
+   * once per Dream snapshot, so the setups that share it split the cost.
+   */
+  personShare?: number;
   promptShas: SetupReport["promptShas"];
   rows: readonly PassRow[];
   setup: Setup;
@@ -106,6 +109,47 @@ function flag(meta: Meta, key: string): boolean {
   return meta?.[key] === true;
 }
 
+function amount(meta: Meta, key: string): number | undefined {
+  const value = meta?.[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+/**
+ * What one judge call cost, and which call it was. One call can back several
+ * checks, and each of them carries the same pair, so callers count a call id
+ * once.
+ */
+function judgeCallOf(
+  assertion: RecordedAssertion
+): { callId: string; costUsd: number } | null {
+  const callId = text(assertion.metadata, "judgeCallId");
+  const costUsd = amount(assertion.metadata, "judgeCostUsd");
+  return callId === undefined || costUsd === undefined
+    ? null
+    : { callId, costUsd };
+}
+
+/**
+ * The judge's spending across rows, counting each call once. The person pass's
+ * calls are scaled by `personShare`.
+ */
+export function judgeCostOf(rows: readonly PassRow[], personShare = 1): number {
+  const seen = new Set<string>();
+  let total = 0;
+  for (const { pass, row } of rows) {
+    for (const assertion of row.assertions) {
+      const call = judgeCallOf(assertion);
+      if (call !== null && !seen.has(call.callId)) {
+        seen.add(call.callId);
+        total += call.costUsd * (pass === "person" ? personShare : 1);
+      }
+    }
+  }
+  return total;
+}
+
 const notGradedPrefix = "not graded";
 
 /** Eval-level skips that mean "the judge did not grade this", not "does not apply". */
@@ -123,7 +167,9 @@ export interface ParsedAssertion {
 }
 
 /** `hard:crisis-handled` becomes `{ tier: "hard", checkId: "crisis-handled" }`. Null for anything else. */
-export function parseAssertion(assertion: RecordedAssertion): ParsedAssertion | null {
+export function parseAssertion(
+  assertion: RecordedAssertion
+): ParsedAssertion | null {
   const metaId = text(assertion.metadata, "checkId");
   const metaTier = text(assertion.metadata, "tier");
   const [labelTier, ...rest] = assertion.name.split(":");
@@ -228,7 +274,14 @@ function inferKind(
   if (transcript !== undefined) {
     return transcript.kind;
   }
-  return parseItemId(itemId)?.kind ?? "fact";
+  // Item ids read `<person>/<kind>/<key>`. The person pass uses fact, event,
+  // summary, and retrieval, which `parseItemId` does not know.
+  const [, segment] = itemId.split("/");
+  return (
+    parseItemId(itemId)?.kind ??
+    REPORT_ITEM_KINDS.find((kind) => kind === segment) ??
+    "fact"
+  );
 }
 
 function refOf(
@@ -262,10 +315,7 @@ function emptyTurn(turn: TranscriptRow["turns"][number]): ReportTurn {
   };
 }
 
-function validList<T>(
-  value: unknown,
-  parse: (item: unknown) => T | null
-): T[] {
+function validList<T>(value: unknown, parse: (item: unknown) => T | null): T[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -283,15 +333,18 @@ function journalErrorsOf(meta: Meta): ReportTurn["journalErrors"] {
 }
 
 function helpSeenOf(meta: Meta): KindOfHelp[] {
-  return validList(meta?.helpSeen, (item) =>
-    KINDS_OF_HELP.find((kind) => kind === item) ?? null
+  return validList(
+    meta?.helpSeen,
+    (item) => KINDS_OF_HELP.find((kind) => kind === item) ?? null
   );
 }
 
 interface ItemBuild {
-  item: ReportItem;
+  /** Judge calls already added to the item's cost. */
+  callIds: Set<string>;
   /** Rows that came from a grade pass, for the "grade never ran" case. */
   gradeRows: number;
+  item: ReportItem;
   notGraded: boolean;
   rowsSkipped: number;
   rowsTotal: number;
@@ -318,6 +371,7 @@ function newItem(
     turns: transcript === undefined ? [] : transcript.turns.map(emptyTurn),
   };
   return {
+    callIds: new Set(),
     gradeRows: 0,
     item,
     notGraded: false,
@@ -327,18 +381,39 @@ function newItem(
   };
 }
 
-function addAssertion(
-  build: ItemBuild,
-  assertion: RecordedAssertion
-): void {
+/**
+ * Soft scores that are not in the schema's check lists (fact-factuality,
+ * summary-quality, current-outranks-stale, ...) go in the item's note. A score
+ * the judge could not give still marks the item not graded.
+ */
+function addSoftScore(build: ItemBuild, assertion: RecordedAssertion): void {
+  const id =
+    text(assertion.metadata, "checkId") ??
+    assertion.name.slice(assertion.name.indexOf(":") + 1);
+  if (flag(assertion.metadata, "notGraded") || assertion.errored === true) {
+    build.notGraded = true;
+    return;
+  }
+  if (assertion.name.length === 0 || !assertion.name.includes(":")) {
+    // eve's own assertions, such as "succeeded", carry no label.
+    return;
+  }
+  if (typeof assertion.score === "number") {
+    build.softNotes.push(`${id} ${assertion.score.toFixed(2)}`);
+  } else if (assertion.passed !== undefined) {
+    build.softNotes.push(`${id} ${assertion.passed ? "pass" : "fail"}`);
+  }
+}
+
+function addAssertion(build: ItemBuild, assertion: RecordedAssertion): void {
+  const call = judgeCallOf(assertion);
+  if (call !== null && !build.callIds.has(call.callId)) {
+    build.callIds.add(call.callId);
+    build.item.costUsd += call.costUsd;
+  }
   const parsed = parseAssertion(assertion);
   if (parsed === null) {
-    const tier = assertion.name.split(":")[0];
-    if (tier === "soft" && typeof assertion.score === "number") {
-      build.softNotes.push(
-        `${assertion.name.slice("soft:".length)} ${assertion.score.toFixed(2)}`
-      );
-    }
+    addSoftScore(build, assertion);
     return;
   }
   const outcome = checkOutcome(assertion);
@@ -408,7 +483,9 @@ function addRow(build: ItemBuild, entry: PassRow): void {
       .join(" ");
     if (pass === "chat") {
       // The turn did not finish, which is a failed "Turn works".
-      const recorded = build.item.checks.some((check) => check.id === "turn-works");
+      const recorded = build.item.checks.some(
+        (check) => check.id === "turn-works"
+      );
       if (!recorded) {
         build.item.checks.push({
           evidence: "",
@@ -486,7 +563,10 @@ export function buildItems(
   for (const [key, build] of builds) {
     build.item.status = settleStatus(build, byKey.has(key));
     if (build.softNotes.length > 0) {
-      build.item.note = [build.item.note, `Reference scores: ${build.softNotes.join(", ")}.`]
+      build.item.note = [
+        build.item.note,
+        `Reference scores: ${build.softNotes.join(", ")}.`,
+      ]
         .filter((part) => part !== undefined)
         .join(" ");
     }
@@ -494,14 +574,14 @@ export function buildItems(
       build.item.simulatedUserFlags.length === 0 &&
       (byKey.get(key)?.simulatedUserFlags.length ?? 0) > 0
     ) {
-      build.item.simulatedUserFlags = (byKey.get(key)?.simulatedUserFlags ?? []).map(
-        (flagName) => ({
-          evidence: "",
-          flag: flagName,
-          reason: "Flagged while the conversation ran.",
-          turn: 0,
-        })
-      );
+      build.item.simulatedUserFlags = (
+        byKey.get(key)?.simulatedUserFlags ?? []
+      ).map((flagName) => ({
+        evidence: "",
+        flag: flagName,
+        reason: "Flagged while the conversation ran.",
+        turn: 0,
+      }));
     }
     items.push(build.item);
   }
@@ -531,7 +611,10 @@ export function median(values: readonly number[]): number | null {
 }
 
 /** Nearest-rank percentile (`p` from 0 to 100). Null for an empty list. */
-export function percentile(values: readonly number[], p: number): number | null {
+export function percentile(
+  values: readonly number[],
+  p: number
+): number | null {
   if (values.length === 0) {
     return null;
   }
@@ -559,7 +642,9 @@ export function spread(values: readonly number[]): number | null {
 }
 
 /** First-word waits of every assistant turn that showed a word, in ms. */
-export function firstWordWaits(transcripts: readonly TranscriptRow[]): number[] {
+export function firstWordWaits(
+  transcripts: readonly TranscriptRow[]
+): number[] {
   const waits: number[] = [];
   for (const row of transcripts) {
     for (const turn of row.turns) {
@@ -628,60 +713,80 @@ function rubricByRepeat(items: readonly ReportItem[]): number[] {
   });
 }
 
-export function summarize(
-  items: readonly ReportItem[],
-  transcripts: readonly TranscriptRow[],
-  sweep: SweepFile,
-  extras: { costUsd: number; swap?: SwapReading }
-): SetupSummary {
-  const graded = items.filter((item) => item.status === "graded").length;
-  const notGraded = items.filter((item) => item.status === "not-graded").length;
-  const skipped = items.filter((item) => item.status === "skipped").length;
+interface HardTally {
+  count: number;
+  detail: string;
+}
 
-  const hard = new Map<HardCheckId, { count: number; detail: string }>();
-  const counted = new Map<string, { failures: number; graded: number }>();
-  const gradedItems = items.filter((item) => item.status !== "skipped");
-  for (const item of gradedItems) {
+interface Tally {
+  counted: Map<string, { failures: number; graded: number }>;
+  hard: Map<HardCheckId, HardTally>;
+}
+
+/** Counts hard failures, and counted passes and failures, across every graded check. */
+function tallyChecks(items: readonly ReportItem[]): Tally {
+  const tally: Tally = { counted: new Map(), hard: new Map() };
+  for (const item of items) {
+    if (item.status === "skipped") {
+      continue;
+    }
     for (const check of allChecks(item)) {
-      const tier = CHECK_TIERS[check.id];
-      if (check.outcome !== "pass" && check.outcome !== "fail") {
-        continue;
-      }
-      if (tier === "hard" && check.outcome === "fail") {
-        const id = check.id as HardCheckId;
-        const seen = hard.get(id);
-        hard.set(id, {
-          count: (seen?.count ?? 0) + 1,
-          detail: seen?.detail ?? check.reason.slice(0, 240),
-        });
-      } else if (tier === "counted") {
-        const seen = counted.get(check.id) ?? { failures: 0, graded: 0 };
-        seen.graded += 1;
-        if (check.outcome === "fail") {
-          seen.failures += 1;
-        }
-        counted.set(check.id, seen);
+      if (check.outcome === "pass" || check.outcome === "fail") {
+        tallyCheck(tally, check);
       }
     }
   }
+  return tally;
+}
 
-  const waits = firstWordWaits(transcripts);
-  const medianMs = median(waits);
-  const p90Ms = percentile(waits, 90);
-  const speed = speedVerdict(medianMs, p90Ms, sweep);
+function tallyCheck(tally: Tally, check: ReportCheck): void {
+  const tier = CHECK_TIERS[check.id];
+  if (tier === "hard" && check.outcome === "fail") {
+    const id = check.id as HardCheckId;
+    const seen = tally.hard.get(id);
+    tally.hard.set(id, {
+      count: (seen?.count ?? 0) + 1,
+      detail: seen?.detail ?? check.reason.slice(0, 240),
+    });
+  } else if (tier === "counted") {
+    const seen = tally.counted.get(check.id) ?? { failures: 0, graded: 0 };
+    seen.graded += 1;
+    if (check.outcome === "fail") {
+      seen.failures += 1;
+    }
+    tally.counted.set(check.id, seen);
+  }
+}
+
+/** The hard checks the runner decides itself: the speed limits and the swap limit. */
+function addRunnerHardFailures(
+  hard: Map<HardCheckId, HardTally>,
+  waits: { medianMs: number | null; p90Ms: number | null },
+  sweep: SweepFile,
+  swap: SwapReading | undefined
+): void {
+  const speed = speedVerdict(waits.medianMs, waits.p90Ms, sweep);
   if (speed.failed && !hard.has("fast-enough")) {
     hard.set("fast-enough", { count: 1, detail: speed.detail });
   }
-  if (extras.swap?.swapGrowthMB !== null && extras.swap?.swapGrowthMB !== undefined) {
-    if (extras.swap.swapGrowthMB > sweep.maxSwapGrowthMB && !hard.has("fits-in-memory")) {
-      hard.set("fits-in-memory", {
-        count: 1,
-        detail: `swap grew ${extras.swap.swapGrowthMB.toFixed(0)} MB, over the ${sweep.maxSwapGrowthMB} MB limit`,
-      });
-    }
+  const growth = swap?.swapGrowthMB;
+  if (
+    growth !== null &&
+    growth !== undefined &&
+    growth > sweep.maxSwapGrowthMB &&
+    !hard.has("fits-in-memory")
+  ) {
+    hard.set("fits-in-memory", {
+      count: 1,
+      detail: `swap grew ${growth.toFixed(0)} MB, over the ${sweep.maxSwapGrowthMB} MB limit`,
+    });
   }
+}
 
-  const countedByCheck = [...counted.entries()]
+function countedSummary(
+  counted: Tally["counted"]
+): SetupSummary["countedByCheck"] {
+  return [...counted.entries()]
     .map(([id, value]) => ({
       failures: value.failures,
       graded: value.graded,
@@ -689,17 +794,31 @@ export function summarize(
       rate: value.graded === 0 ? 0 : value.failures / value.graded,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function summarize(
+  items: readonly ReportItem[],
+  transcripts: readonly TranscriptRow[],
+  sweep: SweepFile,
+  extras: { costUsd: number; swap?: SwapReading }
+): SetupSummary {
+  const graded = items.filter((item) => item.status === "graded").length;
+  const tally = tallyChecks(items);
+  const waits = firstWordWaits(transcripts);
+  const medianMs = median(waits);
+  const p90Ms = percentile(waits, 90);
+  addRunnerHardFailures(tally.hard, { medianMs, p90Ms }, sweep, extras.swap);
+
+  const countedByCheck = countedSummary(tally.counted);
   const countedFailures = countedByCheck.reduce(
     (sum, check) => sum + check.failures,
     0
   );
-
   const rubricScores = items.flatMap((item) =>
     allRubric(item).flatMap((rubric) =>
       rubric.score === null ? [] : [rubric.score]
     )
   );
-
   return {
     costUsd: extras.costUsd,
     countedByCheck,
@@ -708,17 +827,16 @@ export function summarize(
     firstWordMedianMs: medianMs,
     firstWordP90Ms: p90Ms,
     graded,
-    hardFailures: [...hard.entries()]
+    hardFailures: [...tally.hard.entries()]
       .map(([id, value]) => ({ count: value.count, detail: value.detail, id }))
       .sort(
-        (a, b) =>
-          HARD_CHECK_IDS.indexOf(a.id) - HARD_CHECK_IDS.indexOf(b.id)
+        (a, b) => HARD_CHECK_IDS.indexOf(a.id) - HARD_CHECK_IDS.indexOf(b.id)
       ),
     modelSizeMB: extras.swap?.modelSizeMB ?? null,
-    notGraded,
+    notGraded: items.filter((item) => item.status === "not-graded").length,
     rubricMean: mean(rubricScores),
     rubricSpread: spread(rubricByRepeat(items)),
-    skipped,
+    skipped: items.filter((item) => item.status === "skipped").length,
     swapBaselineMB: extras.swap?.swapBaselineMB ?? null,
     swapGrowthMB: extras.swap?.swapGrowthMB ?? null,
   };
@@ -728,15 +846,11 @@ export function summarize(
 // Reports
 // ---------------------------------------------------------------------------
 
-/** A rubric version in the rows' metadata, when the judge records one. */
+/** The rubric hash the judge records in the metadata of each check it graded. */
 export function rubricVersionOf(rows: readonly PassRow[]): string | undefined {
   for (const { row } of rows) {
-    const direct = text(row.metadata, "rubricVersion");
-    if (direct !== undefined) {
-      return direct;
-    }
     for (const assertion of row.assertions) {
-      const found = text(assertion.metadata, "rubricVersion");
+      const found = text(assertion.metadata, "rubric");
       if (found !== undefined) {
         return found;
       }
@@ -765,7 +879,7 @@ export function assembleSetupReport(input: AssembleInput): SetupReport {
     setupId: setupIdOf(input.setup),
     simulatedUser: input.sweep.simulatedUser,
     summary: summarize(items, input.transcripts, input.sweep, {
-      costUsd: input.costUsd,
+      costUsd: judgeCostOf(input.rows, input.personShare ?? 1),
       swap: input.swap,
     }),
     sweepId: input.sweepId,
@@ -841,10 +955,11 @@ export function describeRanking(
     const verdict = entry.passedHard
       ? "passed every hard check"
       : `failed ${entry.hardFailed.join(", ")}`;
-    const mean = entry.rubricMean === null ? "no rubric" : `rubric ${entry.rubricMean.toFixed(2)}`;
+    const rubric =
+      entry.rubricMean === null
+        ? "no rubric"
+        : `rubric ${entry.rubricMean.toFixed(2)}`;
     const incomplete = entry.incomplete ? " (incomplete)" : "";
-    return `${index + 1}. ${name}: ${verdict}, ${entry.countedRate.toFixed(2)} counted failures per item, ${mean}${incomplete} [${entry.setupId}]`;
+    return `${index + 1}. ${name}: ${verdict}, ${entry.countedRate.toFixed(2)} counted failures per item, ${rubric}${incomplete} [${entry.setupId}]`;
   });
 }
-
-export { JOURNAL_ERROR_KINDS };

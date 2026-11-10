@@ -8,17 +8,21 @@
 import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { baselineDreamPrompt, dreamPromptsDir, repoRoot } from "../../evals/lib/cache.ts";
+import {
+  baselineDreamPrompt,
+  dreamPromptsDir,
+  repoRoot,
+} from "../../evals/lib/cache.ts";
 import { evalDataRoot } from "../../evals/lib/dataset.ts";
 import {
-  dreamKeyId,
   type Memory,
   type Setup,
-  setupId as setupIdOf,
   type SweepFile,
+  setupId as setupIdOf,
 } from "../../evals/lib/schema.ts";
-import type { CostMeter } from "./cost.ts";
+import { type PassFiles, personPassFiles, setupPassFiles } from "./collect.ts";
 import {
+  type DigestLookup,
   type DreamKey,
   dreamKeyFor,
   needsDream,
@@ -27,11 +31,6 @@ import {
   snapshotDream,
 } from "./dream.ts";
 import { readServerToken, startEveServer } from "./eve.ts";
-import {
-  personPassFiles,
-  type PassFiles,
-  setupPassFiles,
-} from "./collect.ts";
 import {
   ollamaApiBase,
   unloadModel,
@@ -49,9 +48,9 @@ import {
   type PassOutcome,
   runEvalPass,
 } from "./passes.ts";
-import type { PassName, PlanGroup, PassPrefixes } from "./plan.ts";
 import type { LoadedPerson } from "./people.ts";
-import { prepareDataDir, startSage } from "./sage.ts";
+import type { PassName, PassPrefixes, PlanGroup } from "./plan.ts";
+import { prepareDataDir, type SageRun, startSage } from "./sage.ts";
 
 export interface RunContext {
   abort: { aborted: boolean };
@@ -60,16 +59,15 @@ export interface RunContext {
   /** Chat models that cannot think. Their think-on setups do not run. */
   cannotThink: ReadonlySet<string>;
   credentials: Record<string, string>;
+  /** Model digests, read while an Ollama server was up. No server runs between units. */
+  digests: DigestLookup;
   /** Problems the run met, for the exit code and the summary. */
   failures: string[];
   /** Eve filters from ARGS. */
   filters: readonly string[];
   /** Evals each pass listed, by person and pass, so the list runs once. */
   listCache: Map<string, string[]>;
-  meter: CostMeter | null;
   ollama: { bin: string; host: string };
-  /** The `--url` of the stub target for the person and grade passes. */
-  stubUrl: string;
   overlays: ReadonlyMap<string, Overlay>;
   /** Passes that exited with a failed eval. This sets the exit code. */
   passesWithFailures: number;
@@ -79,6 +77,8 @@ export interface RunContext {
   reportsDir: string;
   root: string;
   runDir: string;
+  /** The `--url` of the stub target for the person and grade passes. */
+  stubUrl: string;
   sweep: SweepFile;
   sweepFile: string;
   sweepId: string;
@@ -93,53 +93,120 @@ function fail(ctx: RunContext, message: string): void {
   console.error(message);
 }
 
-interface EnvFor {
+function setupLabel(setup: Setup): string {
+  return `${setup.chatModel} / ${setup.prompt} / think ${setup.thinking} / ctx ${setup.contextLength}`;
+}
+
+function copyIfPresent(from: string, to: string): void {
+  if (existsSync(from)) {
+    try {
+      copyFileSync(from, to);
+    } catch {
+      // Keeping the log is a courtesy.
+    }
+  }
+}
+
+/**
+ * The data directory. Grade jobs may read it (the manifest, the database)
+ * after Sage stops, so it stays until the unit is over and the last one is
+ * done.
+ */
+class DataDirHold {
+  private pending: number;
+  private finished: boolean;
+  private readonly dir: string;
+
+  constructor(dir: string) {
+    this.dir = dir;
+    this.pending = 0;
+    this.finished = false;
+  }
+
+  begin(): void {
+    this.pending += 1;
+  }
+
+  end(): void {
+    this.pending -= 1;
+    this.sweep();
+  }
+
+  finish(): void {
+    this.finished = true;
+    this.sweep();
+  }
+
+  private sweep(): void {
+    if (this.finished && this.pending === 0) {
+      rmSync(this.dir, { force: true, recursive: true });
+    }
+  }
+}
+
+interface LoadedModel {
+  chat: string;
+  contextLength: number;
+}
+
+/** Everything one unit shares between its steps. */
+interface Unit {
+  ctx: RunContext;
   dataDir: string;
   discoveryFile: string;
-  dreamPromptName: string;
+  first: Setup;
+  group: PlanGroup;
+  hold: DataDirHold;
+  label: string;
+  lists: Record<PassName, string[]>;
+  /** The model Ollama has loaded for Chat right now. */
+  loaded: LoadedModel | null;
+  manifestPath: string;
+  person: LoadedPerson;
+  personFiles: PassFiles;
+  setups: Setup[];
+}
+
+interface EnvFor {
   files: PassFiles;
-  manifest: string;
-  person: string;
   setup: Setup;
   token?: string;
 }
 
-function passEnv(ctx: RunContext, input: EnvFor): Record<string, string> {
+function passEnv(unit: Unit, input: EnvFor): Record<string, string> {
+  const { ctx, group } = unit;
   const envInput: PassEnvInput = {
     agentDir: ctx.agentDir,
     credentials: ctx.credentials,
-    dataDir: input.dataDir,
+    dataDir: unit.dataDir,
     dataRoot: evalDataRoot(),
-    discoveryFile: input.discoveryFile,
+    discoveryFile: unit.discoveryFile,
     dreamPrompts:
-      input.dreamPromptName === baselineDreamPrompt
+      group.dreamPrompt === baselineDreamPrompt
         ? undefined
-        : dreamPromptsDir(repoRoot(), input.dreamPromptName),
-    manifest: input.manifest,
+        : dreamPromptsDir(repoRoot(), group.dreamPrompt),
+    manifest: unit.manifestPath,
     models: {
       chat: input.setup.chatModel,
       embed: input.setup.embedModel,
       summary: input.setup.summaryModel,
     },
-    person: input.person,
+    person: unit.person.id,
     repoRoot: repoRoot(),
     results: input.files.results,
     runDir: ctx.runDir,
     setupId: setupIdOf(input.setup),
     sweepFile: ctx.sweepFile,
+    sweepId: ctx.sweepId,
     token: input.token,
     transcripts: input.files.transcripts,
   };
   return buildPassEnv(envInput);
 }
 
-async function listFor(
-  ctx: RunContext,
-  pass: PassName,
-  person: string,
-  env: Record<string, string>
-): Promise<string[]> {
-  const key = `${person}|${pass}`;
+async function listFor(unit: Unit, pass: PassName): Promise<string[]> {
+  const { ctx } = unit;
+  const key = `${unit.person.id}|${pass}`;
   const cached = ctx.listCache.get(key);
   if (cached !== undefined) {
     return cached;
@@ -149,7 +216,10 @@ async function listFor(
     filters: ctx.filters,
     prefixes: ctx.prefixes[pass],
   };
-  const listed = await listEvals(command, env);
+  const listed = await listEvals(
+    command,
+    passEnv(unit, { files: unit.personFiles, setup: unit.first })
+  );
   if (!listed.ok) {
     throw new Error(listed.message);
   }
@@ -167,19 +237,11 @@ function noteOutcome(
     log(`${label} finished in ${seconds} s`);
   } else if (outcome.status === "evals-failed") {
     ctx.passesWithFailures += 1;
-    log(`${label} finished in ${seconds} s; some evals failed (see the report)`);
+    log(
+      `${label} finished in ${seconds} s; some evals failed (see the report)`
+    );
   } else {
     fail(ctx, `${label} crashed (exit ${outcome.code}).`);
-  }
-}
-
-function copyIfPresent(from: string, to: string): void {
-  if (existsSync(from)) {
-    try {
-      copyFileSync(from, to);
-    } catch {
-      // Keeping the log is a courtesy.
-    }
   }
 }
 
@@ -212,71 +274,88 @@ async function runUnit(
   label: string
 ): Promise<void> {
   const setups = group.prompts.flatMap((prompt) => prompt.setups);
-  const first = setups[0];
-  const binary = ctx.builds.get(group.memory);
-  if (first === undefined || binary === undefined) {
-    throw new Error("No setups or no Sage build for this unit.");
+  const [first] = setups;
+  if (first === undefined) {
+    throw new Error("This unit has no setups.");
   }
   const dataDir = prepareDataDir(ctx.root);
-  const manifestPath = join(dataDir, "manifest.json");
-  const discoveryFile = join(dataDir, "agent-server.json");
+  const hold = new DataDirHold(dataDir);
   const personFiles = personPassFiles(ctx.runDir, group.dreamKeyId, person.id);
   mkdirSync(personFiles.dir, { recursive: true });
-
-  // What would run? Skip the unit before the first Sage start when nothing
-  // matches the filters.
-  const listEnv = passEnv(ctx, {
+  const unit: Unit = {
+    ctx,
     dataDir,
-    discoveryFile,
-    dreamPromptName: group.dreamPrompt,
-    files: personFiles,
-    manifest: manifestPath,
-    person: person.id,
-    setup: first,
-  });
-  const lists = {
-    chat: await listFor(ctx, "chat", person.id, listEnv),
-    grade: await listFor(ctx, "grade", person.id, listEnv),
-    person: await listFor(ctx, "person", person.id, listEnv),
-  };
-  if (lists.chat.length + lists.grade.length + lists.person.length === 0) {
-    log(`${label}: no evals match; skipping`);
-    rmSync(dataDir, { force: true, recursive: true });
-    return;
-  }
-
-  // Grade jobs may read the data directory (the manifest, the database) after
-  // Sage stops, so the directory stays until the last one is done.
-  let pendingGrades = 0;
-  let unitDone = false;
-  const removeDataDir = (): void => {
-    if (unitDone && pendingGrades === 0) {
-      rmSync(dataDir, { force: true, recursive: true });
-    }
-  };
-
-  const unit = {
-    dreamPrompt: group.dreamPrompt,
-    embedModel: group.embedModel,
-    memory: group.memory,
+    discoveryFile: join(dataDir, "agent-server.json"),
+    first,
+    group,
+    hold,
+    label,
+    lists: { chat: [], grade: [], person: [] },
+    loaded: null,
+    manifestPath: join(dataDir, "manifest.json"),
     person,
-    summaryModel: group.summaryModel,
+    personFiles,
+    setups,
   };
-  let dreamKey: DreamKey | null = null;
-  let restored = false;
-  if (needsDream(person)) {
-    dreamKey = await dreamKeyFor(unit, ctx.ollama.host);
-    restored = restoreSnapshot({
-      dataDir,
-      key: dreamKey.key,
-      manifestPath,
-    });
+  try {
+    // What would run? Skip the unit before the first Sage start when nothing
+    // matches the filters.
+    unit.lists = {
+      chat: await listFor(unit, "chat"),
+      grade: await listFor(unit, "grade"),
+      person: await listFor(unit, "person"),
+    };
+    const total =
+      unit.lists.chat.length +
+      unit.lists.grade.length +
+      unit.lists.person.length;
+    if (total === 0) {
+      log(`${label}: no evals match; skipping`);
+      return;
+    }
+    await runWithSage(unit);
+  } finally {
+    hold.finish();
   }
+}
+
+async function dreamKeyOf(unit: Unit): Promise<DreamKey | null> {
+  if (!needsDream(unit.person)) {
+    return null;
+  }
+  const { group } = unit;
+  return await dreamKeyFor(
+    {
+      dreamPrompt: group.dreamPrompt,
+      embedModel: group.embedModel,
+      memory: group.memory,
+      person: unit.person,
+      summaryModel: group.summaryModel,
+    },
+    unit.ctx.digests
+  );
+}
+
+async function runWithSage(unit: Unit): Promise<void> {
+  const { ctx, group, label, person } = unit;
+  const binary = ctx.builds.get(group.memory);
+  if (binary === undefined) {
+    throw new Error(`No Sage build for memory ${group.memory}.`);
+  }
+  const dreamKey = await dreamKeyOf(unit);
+  // The snapshot goes in before Sage starts, so Sage opens the restored file.
+  const restored =
+    dreamKey !== null &&
+    restoreSnapshot({
+      dataDir: unit.dataDir,
+      key: dreamKey.key,
+      manifestPath: unit.manifestPath,
+    });
 
   log(`${label}: starting Sage`);
   const sage = await startSage({
     binary,
-    dataDir,
+    dataDir: unit.dataDir,
     dreamPromptsDir:
       group.dreamPrompt === baselineDreamPrompt
         ? undefined
@@ -285,278 +364,213 @@ async function runUnit(
     ollamaBin: ctx.ollama.bin,
     summaryModel: group.summaryModel,
   });
-  let currentModel: { chat: string; contextLength: number } | null = null;
   try {
-    if (restored && dreamKey !== null) {
-      log(`${label}: using cached Dream artifacts (${dreamKey.key.slice(0, 12)})`);
-    } else {
-      log(
-        `${label}: ${needsDream(person) ? "seeding and running Dream" : "seeding an empty journal"}`
-      );
-      await seedPerson({
-        automationCwd: sage.automationCwd,
-        dataDir,
-        logFile: join(personFiles.dir, "seed.log"),
-        manifestPath,
-        personId: person.id,
-        root: ctx.root,
-      });
-      if (dreamKey !== null) {
-        snapshotDream({
-          dataDir,
-          dreamPrompt: group.dreamPrompt,
-          key: dreamKey,
-          manifestPath,
-        });
-      }
-    }
+    await seedOrRestore(unit, sage, dreamKey, restored);
     await unloadModel(ctx.ollama.host, group.summaryModel);
-
-    if (lists.person.length > 0 && !ctx.abort.aborted) {
-      await runPersonPass(ctx, {
-        dataDir,
-        discoveryFile,
-        files: personFiles,
-        group,
-        label,
-        manifestPath,
-        person,
-        setups,
-      });
+    if (unit.lists.person.length > 0 && !ctx.abort.aborted) {
+      await runPersonPass(unit);
     }
-
-    if (lists.chat.length > 0) {
+    if (unit.lists.chat.length > 0) {
       for (const prompt of group.prompts) {
         if (ctx.abort.aborted) {
           break;
         }
-        const overlay = ctx.overlays.get(prompt.prompt);
-        if (overlay === undefined) {
-          throw new Error(`No overlay for Chat prompt ${prompt.prompt}.`);
-        }
-        const server = await startEveServer({
-          agentDir: ctx.agentDir,
-          discoveryFile,
-          logFile: join(personFiles.dir, `eve-${prompt.prompt}.log`),
-          ollamaBaseUrl: ollamaApiBase(ctx.ollama.host),
-          root: overlay.root,
-          withWorkflowGuard: true,
-        });
-        // The overlay keeps its build cache between people, but its sessions
-        // belong to one server.
-        const token = readServerToken(discoveryFile);
-        try {
-          for (const setup of prompt.setups) {
-            if (ctx.abort.aborted) {
-              break;
-            }
-            if (setup.thinking === "on" && ctx.cannotThink.has(setup.chatModel)) {
-              log(`${label}: ${setup.chatModel} cannot think; skipping think-on`);
-              continue;
-            }
-            currentModel = await prepareModel(ctx, currentModel, setup);
-            const files = setupPassFiles(
-              ctx.runDir,
-              setupIdOf(setup),
-              person.id,
-              "chat"
-            );
-            mkdirSync(files.dir, { recursive: true });
-            const outcome = await runEvalPass(
-              {
-                agentDir: ctx.agentDir,
-                concurrency: PASS_CONCURRENCY.chat,
-                filters: ctx.filters,
-                prefixes: ctx.prefixes.chat,
-                url: server.url,
-              },
-              {
-                echoPrefix: `[chat ${person.id} ${setupIdOf(setup)}]`,
-                env: passEnv(ctx, {
-                  dataDir,
-                  discoveryFile,
-                  dreamPromptName: setup.dreamPrompt,
-                  files,
-                  manifest: manifestPath,
-                  person: person.id,
-                  setup,
-                  token,
-                }),
-                logFile: files.log,
-                secrets: [token],
-              }
-            );
-            noteOutcome(ctx, `${label}: chat ${setupLabel(setup)}`, outcome);
-            if (lists.grade.length > 0) {
-              pendingGrades += 1;
-              await ctx.pool.submit(async () => {
-                try {
-                  await runGrade(ctx, {
-                    dataDir,
-                    discoveryFile,
-                    label,
-                    manifestPath,
-                    person,
-                    setup,
-                  });
-                } finally {
-                  pendingGrades -= 1;
-                  removeDataDir();
-                }
-              });
-            }
-          }
-        } finally {
-          await server.stop();
-        }
+        // biome-ignore lint/performance/noAwaitInLoops: one Chat server at a time.
+        await runPrompt(unit, prompt.prompt, prompt.setups);
       }
     }
   } finally {
-    if (currentModel !== null) {
-      await unloadModel(ctx.ollama.host, currentModel.chat);
-    }
-    await sage.stop();
-    copyIfPresent(
-      sage.logFile,
-      join(ctx.reportsDir, `${ctx.sweepId}__${group.dreamKeyId}__${person.id}.sage.log`)
+    await stopSage(unit, sage);
+  }
+  log(`${label}: done with ${person.id}`);
+}
+
+async function seedOrRestore(
+  unit: Unit,
+  sage: SageRun,
+  dreamKey: DreamKey | null,
+  restored: boolean
+): Promise<void> {
+  const { ctx, group, label, person } = unit;
+  if (restored && dreamKey !== null) {
+    log(
+      `${label}: using cached Dream artifacts (${dreamKey.key.slice(0, 12)})`
     );
-    copyIfPresent(
-      manifestPath,
-      join(
-        ctx.reportsDir,
-        `${ctx.sweepId}__${group.dreamKeyId}__${person.id}.manifest.json`
-      )
-    );
-    try {
-      await waitForOllamaGone(ctx.ollama.host);
-    } finally {
-      unitDone = true;
-      removeDataDir();
-    }
+    return;
+  }
+  log(
+    `${label}: ${needsDream(person) ? "seeding and running Dream" : "seeding an empty journal"}`
+  );
+  await seedPerson({
+    automationCwd: sage.automationCwd,
+    dataDir: unit.dataDir,
+    logFile: join(unit.personFiles.dir, "seed.log"),
+    manifestPath: unit.manifestPath,
+    personId: person.id,
+    root: ctx.root,
+  });
+  if (dreamKey !== null) {
+    snapshotDream({
+      dataDir: unit.dataDir,
+      dreamPrompt: group.dreamPrompt,
+      key: dreamKey,
+      manifestPath: unit.manifestPath,
+    });
   }
 }
 
-function setupLabel(setup: Setup): string {
-  return `${setup.chatModel} / ${setup.prompt} / think ${setup.thinking} / ctx ${setup.contextLength}`;
+/** Stops Sage, keeps its log and manifest, and waits for its Ollama to go. */
+async function stopSage(unit: Unit, sage: SageRun): Promise<void> {
+  const { ctx, group, person } = unit;
+  if (unit.loaded !== null) {
+    await unloadModel(ctx.ollama.host, unit.loaded.chat);
+    unit.loaded = null;
+  }
+  await sage.stop();
+  const stem = `${ctx.sweepId}__${group.dreamKeyId}__${person.id}`;
+  copyIfPresent(sage.logFile, join(ctx.reportsDir, `${stem}.sage.log`));
+  copyIfPresent(
+    unit.manifestPath,
+    join(ctx.reportsDir, `${stem}.manifest.json`)
+  );
+  await waitForOllamaGone(ctx.ollama.host);
+}
+
+/** One Chat server from one overlay, then each of the prompt's setups in order. */
+async function runPrompt(
+  unit: Unit,
+  promptName: string,
+  setups: readonly Setup[]
+): Promise<void> {
+  const { ctx } = unit;
+  const overlay = ctx.overlays.get(promptName);
+  if (overlay === undefined) {
+    throw new Error(`No overlay for Chat prompt ${promptName}.`);
+  }
+  const server = await startEveServer({
+    agentDir: ctx.agentDir,
+    discoveryFile: unit.discoveryFile,
+    logFile: join(unit.personFiles.dir, `eve-${promptName}.log`),
+    ollamaBaseUrl: ollamaApiBase(ctx.ollama.host),
+    root: overlay.root,
+    withWorkflowGuard: true,
+  });
+  try {
+    const token = readServerToken(unit.discoveryFile);
+    for (const setup of setups) {
+      if (ctx.abort.aborted) {
+        break;
+      }
+      // biome-ignore lint/performance/noAwaitInLoops: setups run one after another; local generation never overlaps.
+      await runSetup(unit, setup, server.url, token);
+    }
+  } finally {
+    await server.stop();
+  }
+}
+
+async function runSetup(
+  unit: Unit,
+  setup: Setup,
+  serverUrl: string,
+  token: string
+): Promise<void> {
+  const { ctx, label, person } = unit;
+  if (setup.thinking === "on" && ctx.cannotThink.has(setup.chatModel)) {
+    log(`${label}: ${setup.chatModel} cannot think; skipping think-on`);
+    return;
+  }
+  await prepareModel(unit, setup);
+  const id = setupIdOf(setup);
+  const files = setupPassFiles(ctx.runDir, id, person.id, "chat");
+  mkdirSync(files.dir, { recursive: true });
+  const outcome = await runEvalPass(
+    {
+      agentDir: ctx.agentDir,
+      concurrency: PASS_CONCURRENCY.chat,
+      filters: ctx.filters,
+      prefixes: ctx.prefixes.chat,
+      url: serverUrl,
+    },
+    {
+      echoPrefix: `[chat ${person.id} ${id}]`,
+      env: passEnv(unit, { files, setup, token }),
+      logFile: files.log,
+      secrets: [token],
+    }
+  );
+  noteOutcome(ctx, `${label}: chat ${setupLabel(setup)}`, outcome);
+  if (unit.lists.grade.length > 0) {
+    unit.hold.begin();
+    await ctx.pool.submit(async () => {
+      try {
+        await runGrade(unit, setup);
+      } finally {
+        unit.hold.end();
+      }
+    });
+  }
 }
 
 /** Loads the model the setup needs, and unloads the one it replaces. */
-async function prepareModel(
-  ctx: RunContext,
-  current: { chat: string; contextLength: number } | null,
-  setup: Setup
-): Promise<{ chat: string; contextLength: number }> {
+async function prepareModel(unit: Unit, setup: Setup): Promise<void> {
+  const { loaded } = unit;
   if (
-    current !== null &&
-    current.chat === setup.chatModel &&
-    current.contextLength === setup.contextLength
+    loaded !== null &&
+    loaded.chat === setup.chatModel &&
+    loaded.contextLength === setup.contextLength
   ) {
-    return current;
-  }
-  if (current !== null && current.chat !== setup.chatModel) {
-    await unloadModel(ctx.ollama.host, current.chat);
-  }
-  await warmUpModel(ctx.ollama.host, setup.chatModel, setup.contextLength);
-  return { chat: setup.chatModel, contextLength: setup.contextLength };
-}
-
-async function runPersonPass(
-  ctx: RunContext,
-  input: {
-    dataDir: string;
-    discoveryFile: string;
-    files: PassFiles;
-    group: PlanGroup;
-    label: string;
-    manifestPath: string;
-    person: LoadedPerson;
-    setups: Setup[];
-  }
-): Promise<void> {
-  const [first] = input.setups;
-  if (first === undefined) {
     return;
   }
-  const job = `person:${input.group.dreamKeyId}:${input.person.id}`;
-  ctx.meter?.start(job, input.setups.map((setup) => setupIdOf(setup)));
-  try {
-    const outcome = await runEvalPass(
-      {
-        agentDir: ctx.agentDir,
-        concurrency: PASS_CONCURRENCY.person,
-        filters: ctx.filters,
-        prefixes: ctx.prefixes.person,
-        url: ctx.stubUrl,
-      },
-      {
-        echoPrefix: `[person ${input.person.id}]`,
-        env: passEnv(ctx, {
-          dataDir: input.dataDir,
-          discoveryFile: input.discoveryFile,
-          dreamPromptName: input.group.dreamPrompt,
-          files: input.files,
-          manifest: input.manifestPath,
-          person: input.person.id,
-          setup: first,
-        }),
-        logFile: input.files.log,
-      }
-    );
-    noteOutcome(ctx, `${input.label}: person checks`, outcome);
-  } finally {
-    ctx.meter?.end(job);
+  const { host } = unit.ctx.ollama;
+  if (loaded !== null && loaded.chat !== setup.chatModel) {
+    await unloadModel(host, loaded.chat);
   }
+  await warmUpModel(host, setup.chatModel, setup.contextLength);
+  unit.loaded = { chat: setup.chatModel, contextLength: setup.contextLength };
 }
 
-async function runGrade(
-  ctx: RunContext,
-  input: {
-    dataDir: string;
-    discoveryFile: string;
-    label: string;
-    manifestPath: string;
-    person: LoadedPerson;
-    setup: Setup;
-  }
-): Promise<void> {
-  const id = setupIdOf(input.setup);
-  const files = setupPassFiles(ctx.runDir, id, input.person.id, "grade");
-  const job = `grade:${id}:${input.person.id}`;
-  ctx.meter?.start(job, [id]);
-  try {
-    const outcome = await runEvalPass(
-      {
-        agentDir: ctx.agentDir,
-        concurrency: PASS_CONCURRENCY.grade,
-        filters: ctx.filters,
-        prefixes: ctx.prefixes.grade,
-        url: ctx.stubUrl,
-      },
-      {
-        env: passEnv(ctx, {
-          dataDir: input.dataDir,
-          discoveryFile: input.discoveryFile,
-          dreamPromptName: input.setup.dreamPrompt,
-          files: {
-            ...files,
-            // The grade pass reads the transcripts the chat pass wrote.
-            transcripts: setupPassFiles(ctx.runDir, id, input.person.id, "chat")
-              .transcripts,
-          },
-          manifest: input.manifestPath,
-          person: input.person.id,
-          setup: input.setup,
-        }),
-        logFile: files.log,
-      }
-    );
-    noteOutcome(ctx, `${input.label}: grade ${setupLabel(input.setup)}`, outcome);
-  } finally {
-    ctx.meter?.end(job);
-  }
+async function runPersonPass(unit: Unit): Promise<void> {
+  const { ctx, label, person } = unit;
+  const outcome = await runEvalPass(
+    {
+      agentDir: ctx.agentDir,
+      concurrency: PASS_CONCURRENCY.person,
+      filters: ctx.filters,
+      prefixes: ctx.prefixes.person,
+      url: ctx.stubUrl,
+    },
+    {
+      echoPrefix: `[person ${person.id}]`,
+      env: passEnv(unit, { files: unit.personFiles, setup: unit.first }),
+      logFile: unit.personFiles.log,
+    }
+  );
+  noteOutcome(ctx, `${label}: person checks`, outcome);
 }
 
-/** The Dream key id, for callers that group by it. */
-export function groupKeyOf(setup: Setup): string {
-  return dreamKeyId(setup);
+async function runGrade(unit: Unit, setup: Setup): Promise<void> {
+  const { ctx, label, person } = unit;
+  // The grade pass reads the transcripts file the chat pass wrote, which sits
+  // beside its own results file.
+  const files = setupPassFiles(
+    ctx.runDir,
+    setupIdOf(setup),
+    person.id,
+    "grade"
+  );
+  const outcome = await runEvalPass(
+    {
+      agentDir: ctx.agentDir,
+      concurrency: PASS_CONCURRENCY.grade,
+      filters: ctx.filters,
+      prefixes: ctx.prefixes.grade,
+      url: ctx.stubUrl,
+    },
+    {
+      env: passEnv(unit, { files, setup }),
+      logFile: files.log,
+    }
+  );
+  noteOutcome(ctx, `${label}: grade ${setupLabel(setup)}`, outcome);
 }

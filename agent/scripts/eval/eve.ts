@@ -13,8 +13,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { type Env, withoutSecrets } from "./env.ts";
-import { hasExited, readLogTail, spawnTracked, stopProcess, waitFor } from "./proc.ts";
+import { addNodeOption, type Env, prependPath, withoutSecrets } from "./env.ts";
+import {
+  hasExited,
+  readLogTail,
+  spawnTracked,
+  stopProcess,
+  waitFor,
+} from "./proc.ts";
 
 /** Where eve installs its CLI. */
 export function eveBin(agentDir: string): string {
@@ -63,15 +69,20 @@ export function eveDevEnv(options: EveDevEnvOptions): Record<string, string> {
     ...base,
     EVE_TELEMETRY_DISABLED: "1",
     OLLAMA_BASE_URL: options.ollamaBaseUrl,
-    PATH: `${join(options.agentDir, "node_modules", ".bin")}:${base.PATH ?? ""}`,
+    PATH: prependPath(
+      join(options.agentDir, "node_modules", ".bin"),
+      base.PATH
+    ),
     SAGE_TODAY: EVAL_TODAY,
   };
   if (options.discoveryFile !== undefined) {
     env.SAGE_DISCOVERY_FILE = options.discoveryFile;
   }
   if (options.withWorkflowGuard) {
-    const existing = base.NODE_OPTIONS;
-    env.NODE_OPTIONS = `${existing === undefined || existing.length === 0 ? "" : `${existing} `}--import="${workflowGuardPreload(options.agentDir)}"`;
+    env.NODE_OPTIONS = addNodeOption(
+      base.NODE_OPTIONS,
+      `--import="${workflowGuardPreload(options.agentDir)}"`
+    );
   }
   return env;
 }
@@ -103,9 +114,10 @@ export function readServerToken(discoveryFile: string): string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(discoveryFile, "utf8"));
-  } catch {
+  } catch (error) {
     throw new Error(
-      `Could not read the agent-server token from ${discoveryFile}.`
+      `Could not read the agent-server token from ${discoveryFile}.`,
+      { cause: error }
     );
   }
   const token =
@@ -120,7 +132,7 @@ export function readServerToken(discoveryFile: string): string {
 
 export interface EveServer {
   logFile: string;
-  stop(): Promise<void>;
+  stop: () => Promise<void>;
   url: string;
 }
 

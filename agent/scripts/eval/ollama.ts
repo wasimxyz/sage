@@ -69,14 +69,14 @@ function ollamaEnv(host: string): Record<string, string> {
   return {
     ...withoutSecrets(),
     OLLAMA_HOST: host,
-    OLLAMA_NOPRUNE: "1",
     OLLAMA_NO_CLOUD: "1",
+    OLLAMA_NOPRUNE: "1",
   };
 }
 
 export interface PullServer {
   logFile: string;
-  stop(): Promise<void>;
+  stop: () => Promise<void>;
 }
 
 /**
@@ -201,7 +201,9 @@ export async function showModel(
     return null;
   }
   if (!response.ok) {
-    throw new Error(`Ollama /api/show for ${model} returned ${response.status}.`);
+    throw new Error(
+      `Ollama /api/show for ${model} returned ${response.status}.`
+    );
   }
   return parseModelInfo(await response.json());
 }
@@ -216,7 +218,7 @@ export function parseModelInfo(payload: unknown): ModelInfo {
         (value): value is string => typeof value === "string"
       )
     : null;
-  const thinking = record.thinking;
+  const { thinking } = record;
   let thinkingValues: (boolean | string)[] | null = null;
   if (
     thinking !== null &&
@@ -237,10 +239,7 @@ export function canThink(info: ModelInfo): boolean {
     return true;
   }
   // `[false]` alone means the model does not support thinking.
-  return (
-    info.thinkingValues !== null &&
-    info.thinkingValues.some((value) => value !== false)
-  );
+  return info.thinkingValues?.some((value) => value !== false) === true;
 }
 
 export type ModelRole = "chat" | "embed" | "summary";
@@ -344,7 +343,9 @@ export async function warmUpModel(
     loadTimeoutMs
   );
   if (!response.ok) {
-    throw new Error(`Ollama could not load ${model} (HTTP ${response.status}).`);
+    throw new Error(
+      `Ollama could not load ${model} (HTTP ${response.status}).`
+    );
   }
   await response.arrayBuffer();
 }

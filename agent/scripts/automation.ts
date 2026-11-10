@@ -34,7 +34,6 @@ export function dreamTimeoutMs(items: number): number {
   return Math.max(minDreamTimeoutMs, items * dreamTimeoutPerEntryMs);
 }
 
-
 /** Where a running automation build of Sage keeps its command files. */
 export interface Automation {
   cwd: string;

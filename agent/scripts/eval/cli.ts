@@ -58,6 +58,59 @@ function optionName(arg: string): string {
   return equals === -1 ? arg : arg.slice(0, equals);
 }
 
+/** Hands out the arguments one at a time, and reads an option's value. */
+class ArgReader {
+  private index = 0;
+  private readonly argv: readonly string[];
+
+  constructor(argv: readonly string[]) {
+    this.argv = argv;
+  }
+
+  next(): string | undefined {
+    const arg = this.argv[this.index];
+    this.index += 1;
+    return arg;
+  }
+
+  /** The value after an option, which must not look like another option. */
+  value(name: string): string {
+    const next = this.argv[this.index];
+    if (next === undefined || next.startsWith("--")) {
+      throw new CliError(`${name} needs a value.`);
+    }
+    this.index += 1;
+    return next;
+  }
+}
+
+function applyArg(options: CliOptions, arg: string, reader: ArgReader): void {
+  const name = optionName(arg);
+  const takeValue = (): string =>
+    arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : reader.value(name);
+  if (name === "--sweep") {
+    options.sweep = takeValue();
+  } else if (valueOptions.has(name)) {
+    options.eveFilters.push(name, takeValue());
+  } else if (switchOptions.has(name)) {
+    options.eveFilters.push(name);
+  } else if (name === "--dry-run") {
+    options.dryRun = true;
+  } else if (name === "--yes" || arg === "-y") {
+    options.yes = true;
+  } else if (name === "--help" || arg === "-h") {
+    options.help = true;
+  } else if (ownedOptions.has(name)) {
+    throw new CliError(`${name} is set by the runner. Remove it from ARGS.`);
+  } else if (arg.startsWith("-")) {
+    throw new CliError(`Unknown option ${arg}.\n\n${USAGE}`);
+  } else {
+    throw new CliError(
+      `Unexpected argument "${arg}". The sweep file's tests say which evals run; use --sweep to pick a file.\n\n${USAGE}`
+    );
+  }
+}
+
 export function parseCli(argv: readonly string[]): CliOptions {
   // The URL check comes first, so no other option can hide it.
   for (const arg of argv) {
@@ -72,44 +125,9 @@ export function parseCli(argv: readonly string[]): CliOptions {
     sweep: "default",
     yes: false,
   };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index] ?? "";
-    const name = optionName(arg);
-    const inline = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : null;
-    const takeValue = (): string => {
-      if (inline !== null) {
-        return inline;
-      }
-      const next = argv[index + 1];
-      if (next === undefined || next.startsWith("--")) {
-        throw new CliError(`${name} needs a value.`);
-      }
-      index += 1;
-      return next;
-    };
-    if (name === "--sweep") {
-      options.sweep = takeValue();
-    } else if (name === "--dry-run") {
-      options.dryRun = true;
-    } else if (name === "--yes" || arg === "-y") {
-      options.yes = true;
-    } else if (name === "--help" || arg === "-h") {
-      options.help = true;
-    } else if (valueOptions.has(name)) {
-      options.eveFilters.push(name, takeValue());
-    } else if (switchOptions.has(name)) {
-      options.eveFilters.push(name);
-    } else if (ownedOptions.has(name)) {
-      throw new CliError(
-        `${name} is set by the runner. Remove it from ARGS.`
-      );
-    } else if (arg.startsWith("-")) {
-      throw new CliError(`Unknown option ${arg}.\n\n${USAGE}`);
-    } else {
-      throw new CliError(
-        `Unexpected argument "${arg}". The sweep file's tests say which evals run; use --sweep to pick a file.\n\n${USAGE}`
-      );
-    }
+  const reader = new ArgReader(argv);
+  for (let arg = reader.next(); arg !== undefined; arg = reader.next()) {
+    applyArg(options, arg, reader);
   }
   return options;
 }

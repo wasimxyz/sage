@@ -17,7 +17,7 @@ import {
   type Setup,
   type SweepFile,
 } from "../../evals/lib/schema.ts";
-import type { Env } from "./env.ts";
+import { type Env, isNotFound } from "./env.ts";
 
 const sweepNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
 const ollamaPrefix = "ollama/";
@@ -94,10 +94,10 @@ export function thinkingProblems(sweep: Pick<SweepFile, "thinking">): string[] {
 }
 
 export interface LoadedSweep {
-  /** Variables whose model lists replaced the file's. */
-  overrides: string[];
   /** The sweep file's name, such as `smoke`. */
   name: string;
+  /** Variables whose model lists replaced the file's. */
+  overrides: string[];
   /** Absolute path of the YAML file. */
   path: string;
   setups: Setup[];
@@ -119,15 +119,11 @@ export async function loadSweep(
   try {
     doc = await loadYaml(path);
   } catch (error) {
-    if (
-      error !== null &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code: string }).code === "ENOENT"
-    ) {
+    if (isNotFound(error)) {
       const known = availableSweeps(dir);
       throw new Error(
-        `No sweep file ${path}.${known.length > 0 ? ` Sweeps here: ${known.join(", ")}.` : ""}`
+        `No sweep file ${path}.${known.length > 0 ? ` Sweeps here: ${known.join(", ")}.` : ""}`,
+        { cause: error }
       );
     }
     throw error;
@@ -136,7 +132,9 @@ export async function loadSweep(
   const sweep = parseSweepFile(withOverrides, `sweep file ${name}.yaml`);
   const problems = thinkingProblems(sweep);
   if (problems.length > 0) {
-    throw new Error(`Invalid sweep file ${name}.yaml\n  ${problems.join("\n  ")}`);
+    throw new Error(
+      `Invalid sweep file ${name}.yaml\n  ${problems.join("\n  ")}`
+    );
   }
   return { name, overrides: applied, path, setups: expandSetups(sweep), sweep };
 }

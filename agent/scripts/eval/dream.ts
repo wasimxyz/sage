@@ -39,13 +39,43 @@ export interface DreamKey {
   parts: CacheKeyParts;
 }
 
+/** Looks up Ollama's digest for each model. A model Ollama lacks has none. */
+export type DigestLookup = (
+  models: string[]
+) => Promise<Partial<Record<string, string>>>;
+
 /**
- * The cache key for a unit and whether a snapshot exists. `ollamaHost` is
- * where the model digests come from; a model Ollama lacks has no digest.
+ * A lookup that reads `/api/tags` once, from an Ollama server that is up now,
+ * and answers from that copy later. No server runs between units, but the
+ * digests of the pulled models do not change during a run.
  */
+export async function snapshotDigests(
+  models: readonly string[],
+  ollamaHost: string
+): Promise<DigestLookup> {
+  let known: Partial<Record<string, string>> = {};
+  try {
+    known = await fetchOllamaDigests([...models], ollamaApiBase(ollamaHost));
+  } catch {
+    console.warn(
+      "Could not read Ollama model digests; cache keys use names only."
+    );
+  }
+  return (wanted) =>
+    Promise.resolve(
+      Object.fromEntries(
+        wanted.flatMap((model) => {
+          const digest = known[model];
+          return digest === undefined ? [] : [[model, digest]];
+        })
+      )
+    );
+}
+
+/** The cache key for a unit, and whether a snapshot exists for it. */
 export async function dreamKeyFor(
   unit: DreamUnit,
-  ollamaHost: string
+  digests: DigestLookup
 ): Promise<DreamKey> {
   const parts = await loadCacheKeyParts(
     {
@@ -55,7 +85,7 @@ export async function dreamKeyFor(
       person: unit.person.id,
       summaryModel: unit.summaryModel,
     },
-    (models) => fetchOllamaDigests(models, ollamaApiBase(ollamaHost))
+    digests
   );
   const key = computeCacheKey(parts);
   return {

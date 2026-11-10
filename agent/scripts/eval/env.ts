@@ -30,16 +30,33 @@ export function isSecretName(name: string): boolean {
   return secretNamePattern.test(name);
 }
 
+/** True for the error `readFile` and friends throw when the file is not there. */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+/** `dir` ahead of an existing PATH. */
+export function prependPath(dir: string, existing: string | undefined): string {
+  return existing === undefined || existing.length === 0
+    ? dir
+    : `${dir}:${existing}`;
+}
+
+/** Adds one option to a NODE_OPTIONS value, keeping what is there. */
+export function addNodeOption(
+  existing: string | undefined,
+  option: string
+): string {
+  return existing === undefined || existing.length === 0
+    ? option
+    : `${existing} ${option}`;
+}
+
 function readIfPresent(path: string): string | null {
   try {
     return readFileSync(path, "utf8");
   } catch (error) {
-    if (
-      error !== null &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code: string }).code === "ENOENT"
-    ) {
+    if (isNotFound(error)) {
       return null;
     }
     throw error;
@@ -49,7 +66,15 @@ function readIfPresent(path: string): string | null {
 /** The variables in one env file. A missing file gives an empty object. */
 export function readEnvFile(path: string): Record<string, string> {
   const text = readIfPresent(path);
-  return text === null ? {} : { ...parseEnv(text) };
+  const found: Record<string, string> = {};
+  if (text !== null) {
+    for (const [name, value] of Object.entries(parseEnv(text))) {
+      if (value !== undefined) {
+        found[name] = value;
+      }
+    }
+  }
+  return found;
 }
 
 /** `.env`, then `.env.local`. A value in `.env.local` wins. */
@@ -64,7 +89,10 @@ export function loadEnvFiles(agentDir: string): Record<string, string> {
  * Puts the env files' variables into `env`. A variable already set there,
  * even to an empty string, keeps its value. Returns the names it added.
  */
-export function loadEvalEnv(agentDir: string, env: Env = process.env): string[] {
+export function loadEvalEnv(
+  agentDir: string,
+  env: Env = process.env
+): string[] {
   const added: string[] = [];
   for (const [name, value] of Object.entries(loadEnvFiles(agentDir))) {
     if (env[name] === undefined) {
@@ -87,7 +115,9 @@ export function withoutSecrets(env: Env = process.env): Record<string, string> {
 }
 
 /** Only the gateway credentials that are set in `env`. */
-export function gatewayCredentials(env: Env = process.env): Record<string, string> {
+export function gatewayCredentials(
+  env: Env = process.env
+): Record<string, string> {
   const found: Record<string, string> = {};
   for (const name of GATEWAY_ENV_KEYS) {
     const value = env[name];

@@ -25,9 +25,9 @@ export function sleep(ms: number): Promise<void> {
 }
 
 export interface WaitOptions {
-  intervalMs?: number;
   /** Returns a reason to stop waiting early, or null to keep waiting. */
   giveUp?: () => string | null;
+  intervalMs?: number;
   timeoutMs: number;
 }
 
@@ -49,7 +49,6 @@ export async function waitFor(
     if (reason !== null) {
       return { ok: false, reason };
     }
-    // biome-ignore lint/performance/noAwaitInLoops: the polls are sequential on purpose.
     await sleep(interval);
   }
   if (await check()) {
@@ -75,15 +74,15 @@ export function readLogTail(logFile: string, maxLines = 40): string {
 
 export interface SpawnLogOptions {
   cwd?: string;
+  /** Start in a new process group, so the whole tree can be stopped. */
+  detached?: boolean;
+  /** Print each output line to the console with this prefix. */
+  echoPrefix?: string;
   /** Plain environment for the child. Nothing is inherited from this process. */
   env: Record<string, string>;
   logFile: string;
-  /** Print each output line to the console with this prefix. */
-  echoPrefix?: string;
   /** Secret values to replace in logs and console output. */
   redactions?: readonly string[];
-  /** Start in a new process group, so the whole tree can be stopped. */
-  detached?: boolean;
 }
 
 function pipeOutput(child: ChildProcess, options: SpawnLogOptions): void {

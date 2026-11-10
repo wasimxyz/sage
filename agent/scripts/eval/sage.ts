@@ -8,7 +8,7 @@
 // (11436) and starts it at launch. It never touches the real journal: it opens
 // only the folder `SAGE_DATA_DIR` names.
 
-import { type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -154,7 +154,7 @@ export interface SageRun {
   discoveryFile: string;
   logFile: string;
   manifestPath: string;
-  stop(): Promise<void>;
+  stop: () => Promise<void>;
 }
 
 export interface StartSageOptions extends SageEnvOptions {
@@ -192,7 +192,8 @@ export async function startSage(options: StartSageOptions): Promise<SageRun> {
   const ready = await waitFor(
     () => existsSync(discoveryFile) && existsSync(automationDir),
     {
-      giveUp: () => (hasExited(child) ? "Sage exited before it was ready." : null),
+      giveUp: () =>
+        hasExited(child) ? "Sage exited before it was ready." : null,
       intervalMs: 100,
       timeoutMs: options.startTimeoutMs ?? 30_000,
     }

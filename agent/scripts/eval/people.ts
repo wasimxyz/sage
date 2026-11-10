@@ -91,9 +91,9 @@ export function selectPeople(
 
 export interface ItemCounts {
   chatRefs: number;
+  conversations: number;
   /** Replies the simulated user's conversations can reach, at maxTurns. */
   conversationTurns: number;
-  conversations: number;
   entries: number;
   /** Fact, event, and summary references, which the judge scores. */
   judgedRefs: number;
@@ -115,11 +115,11 @@ export function countItems(
   );
   return {
     chatRefs: chat.length,
+    conversations: matchingConversations.length,
     conversationTurns: matchingConversations.reduce(
       (sum, conversation) => sum + conversation.maxTurns,
       0
     ),
-    conversations: matchingConversations.length,
     entries: person.entries.length,
     judgedRefs: facts.length + events.length + summaries.length,
     openers: openers.filter((opener) =>

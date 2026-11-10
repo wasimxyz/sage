@@ -60,7 +60,10 @@ export function availablePrompts(agentDir: string): string[] {
   } catch {
     // No prompts folder yet.
   }
-  return [BASELINE_PROMPT, ...names.filter((n) => n !== BASELINE_PROMPT)].sort();
+  return [
+    BASELINE_PROMPT,
+    ...names.filter((n) => n !== BASELINE_PROMPT),
+  ].sort();
 }
 
 /** The path of the file that holds a prompt's text. `baseline` is the live instructions. */
@@ -173,9 +176,14 @@ export function infoProblems(
   const shape: InfoShape =
     info !== null && typeof info === "object" ? (info as InfoShape) : {};
   if (shape.status !== "ready") {
-    problems.push(`eve reports status ${JSON.stringify(shape.status)}, not "ready".`);
+    problems.push(
+      `eve reports status ${JSON.stringify(shape.status)}, not "ready".`
+    );
   }
-  if (typeof shape.diagnostics?.errors === "number" && shape.diagnostics.errors > 0) {
+  if (
+    typeof shape.diagnostics?.errors === "number" &&
+    shape.diagnostics.errors > 0
+  ) {
     problems.push(`eve reports ${shape.diagnostics.errors} error(s).`);
   }
   if (typeof shape.appRoot !== "string") {
@@ -220,12 +228,16 @@ export async function verifyRoot(
   let info: unknown;
   try {
     info = JSON.parse(result.stdout);
-  } catch {
-    throw new Error(`eve info in ${root} did not print JSON.`);
+  } catch (error) {
+    throw new Error(`eve info in ${root} did not print JSON.`, {
+      cause: error,
+    });
   }
   const problems = infoProblems(info, { root, tools });
   if (problems.length > 0) {
-    throw new Error(`The root ${root} is not ready:\n  ${problems.join("\n  ")}`);
+    throw new Error(
+      `The root ${root} is not ready:\n  ${problems.join("\n  ")}`
+    );
   }
   return { info };
 }

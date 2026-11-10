@@ -14,6 +14,7 @@ import { EVAL_ENV } from "../../evals/lib/schema.ts";
 import {
   type Env,
   gatewayCredentials,
+  prependPath,
   redact,
   withoutSecrets,
 } from "./env.ts";
@@ -26,6 +27,9 @@ import {
   succeeded,
 } from "./proc.ts";
 
+/** Not in EVAL_ENV: the grader reads it to tag its gateway calls. */
+export const ENV_SWEEP_ID = "SAGE_EVAL_SWEEP_ID";
+
 /** Chat generation runs one eval at a time, because local models cannot share the GPU. */
 export const PASS_CONCURRENCY: Readonly<Record<PassName, number>> = {
   chat: 1,
@@ -37,6 +41,8 @@ export const PASS_CONCURRENCY: Readonly<Record<PassName, number>> = {
 export const MAX_GRADE_PROCESSES = 2;
 
 export interface PassEnvInput {
+  agentDir: string;
+  base?: Env;
   /** Credentials for the cloud judge and simulated user. */
   credentials: Record<string, string>;
   dataDir: string;
@@ -52,11 +58,11 @@ export interface PassEnvInput {
   runDir: string;
   setupId: string;
   sweepFile: string;
+  /** The sweep's id. The grader tags its gateway calls with it. */
+  sweepId: string;
   /** Sage's token. Only the chat pass sends it. */
   token?: string;
   transcripts: string;
-  agentDir: string;
-  base?: Env;
 }
 
 /**
@@ -69,7 +75,7 @@ export function buildPassEnv(input: PassEnvInput): Record<string, string> {
     ...base,
     ...input.credentials,
     EVE_TELEMETRY_DISABLED: "1",
-    PATH: `${join(input.agentDir, "node_modules", ".bin")}:${base.PATH ?? ""}`,
+    PATH: prependPath(join(input.agentDir, "node_modules", ".bin"), base.PATH),
     SAGE_CHAT_MODEL: input.models.chat,
     SAGE_DATA_DIR: input.dataDir,
     SAGE_EMBED_MODEL: input.models.embed,
@@ -83,6 +89,7 @@ export function buildPassEnv(input: PassEnvInput): Record<string, string> {
     [EVAL_ENV.runDir]: input.runDir,
     [EVAL_ENV.setupId]: input.setupId,
     [EVAL_ENV.sweepFile]: input.sweepFile,
+    [ENV_SWEEP_ID]: input.sweepId,
     [EVAL_ENV.today]: EVAL_TODAY,
     [EVAL_ENV.transcripts]: input.transcripts,
   };
@@ -96,7 +103,9 @@ export function buildPassEnv(input: PassEnvInput): Record<string, string> {
   return env;
 }
 
-export function credentialsFrom(env: Env = process.env): Record<string, string> {
+export function credentialsFrom(
+  env: Env = process.env
+): Record<string, string> {
   return gatewayCredentials(env);
 }
 
@@ -131,9 +140,11 @@ export function evalListArgs(command: EvalCommand): string[] {
   return ["eval", ...command.prefixes, "--list", "--json", ...command.filters];
 }
 
+const listStartPattern = /^\[/mu;
+
 /** The JSON array in `--list --json` output, which can follow other lines. */
 export function parseEvalList(stdout: string): string[] | null {
-  const start = stdout.search(/^\[/mu);
+  const start = stdout.search(listStartPattern);
   if (start === -1) {
     return null;
   }

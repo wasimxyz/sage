@@ -26,6 +26,8 @@ import {
 } from "./cache.ts";
 
 const sha256HexPattern = /^[a-f0-9]{64}$/u;
+const missingPattern = /Missing/u;
+const noFolderPattern = /No Dream prompt folder/u;
 
 test("computeCacheKey is stable for fixed inputs", () => {
   const fixture = makeFixture();
@@ -169,7 +171,7 @@ test("computeCacheKey throws for a person with no folder", () => {
   const fixture = makeFixture();
   assert.throws(
     () => computeCacheKey({ ...fixture.parts, person: "nobody" }),
-    /Missing/u
+    missingPattern
   );
 });
 
@@ -185,7 +187,7 @@ test("readDreamPrompts is null for baseline and reads a variant's files", () => 
   });
   assert.throws(
     () => readDreamPrompts(fixture.repoRoot, "missing"),
-    /No Dream prompt folder/u
+    noFolderPattern
   );
 });
 
@@ -362,7 +364,12 @@ test("snapshotDreamRun stamps the person, memory flag, and Dream prompt, and res
     false
   );
   assert.equal(
-    restoreDreamCache({ cacheDir, dataDir: fresh, key, manifestPath: freshManifest }),
+    restoreDreamCache({
+      cacheDir,
+      dataDir: fresh,
+      key,
+      manifestPath: freshManifest,
+    }),
     true
   );
   assert.equal(existsSync(join(fresh, "app.db")), true);

@@ -9,13 +9,15 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { costUsd } from "../../evals/lib/prices.ts";
 import {
   parseSetupReport,
   REPORT_SUFFIX,
+  type Setup,
   type SetupReport,
   type SweepFile,
 } from "../../evals/lib/schema.ts";
-import { type ModelPrice, priceUsd } from "./cloud.ts";
+import type { ModelPrice } from "./cloud.ts";
 import type { PlanGroup, RunPlan } from "./plan.ts";
 
 /** What the estimate assumes when it has nothing better. Seconds unless noted. */
@@ -32,10 +34,14 @@ export const ESTIMATE_DEFAULTS = {
 
 /** Tokens per cloud call. The judge's prompt is mostly a cacheable prefix. */
 export const ESTIMATE_TOKENS = {
-  dreamSourceJudge: { cachedShare: 0, inputTokens: 5000, outputTokens: 1000 },
-  factJudge: { cachedShare: 0, inputTokens: 3000, outputTokens: 400 },
-  replyJudge: { cachedShare: 0.8, inputTokens: 12_000, outputTokens: 2000 },
-  simulatedUserTurn: { cachedShare: 0, inputTokens: 2000, outputTokens: 250 },
+  dreamSourceJudge: { inputTokens: 5000, outputTokens: 1000 },
+  factJudge: { inputTokens: 3000, outputTokens: 400 },
+  replyJudge: {
+    cachedInputTokens: 9600,
+    inputTokens: 12_000,
+    outputTokens: 2000,
+  },
+  simulatedUserTurn: { inputTokens: 2000, outputTokens: 250 },
 } as const;
 
 export function dreamMissKey(dreamKeyId: string, person: string): string {
@@ -97,7 +103,7 @@ export function historyKey(chatModel: string, thinking: string): string {
 }
 
 export interface EstimateInput {
-  /** Chat prompt overlays and Sage builds are rebuilt every run. */
+  /** `dreamMissKey` of each group and person whose Dream the cache cannot answer. */
   dreamMisses: ReadonlySet<string>;
   history: TimingHistory;
   plan: RunPlan;
@@ -116,7 +122,8 @@ function replyCount(
   counts: RunPlan["people"][number]["counts"],
   sweep: SweepFile
 ): { conversationTurns: number; replies: number } {
-  const wants = (test: SweepFile["tests"][number]) => sweep.tests.includes(test);
+  const wants = (test: SweepFile["tests"][number]) =>
+    sweep.tests.includes(test);
   const conversationTurns = wants("conversations")
     ? counts.conversationTurns * sweep.repeats
     : 0;
@@ -131,49 +138,87 @@ function dreamSeconds(group: PlanGroup, entries: number): number {
   return entries * ESTIMATE_DEFAULTS.dreamSecondsPerEntry[group.memory];
 }
 
-export function estimateRun(input: EstimateInput): Estimate {
-  const { dreamMisses, history, plan, prices, sweep } = input;
-  const defaults = ESTIMATE_DEFAULTS;
-  const wants = (test: SweepFile["tests"][number]) => sweep.tests.includes(test);
-  let dreamSecs = 0;
-  let missCount = 0;
-  let personSecs = 0;
-  let chatSecs = 0;
-  let judgeUsd = 0;
-  let simUsd = 0;
+/** Running sums while the estimate walks the plan. */
+interface Sums {
+  chatSecs: number;
+  dreamSecs: number;
+  judgeUsd: number;
+  missCount: number;
+  personSecs: number;
+  simUsd: number;
+}
 
+type Person = RunPlan["people"][number];
+
+/** Dream, the person checks, and the judge's share of both, for one person under one snapshot. */
+function addPersonPass(
+  sums: Sums,
+  input: EstimateInput,
+  group: PlanGroup,
+  person: Person
+): void {
+  const { dreamMisses, prices, sweep } = input;
+  const wants = (test: SweepFile["tests"][number]) =>
+    sweep.tests.includes(test);
+  if (
+    !person.empty &&
+    dreamMisses.has(dreamMissKey(group.dreamKeyId, person.id))
+  ) {
+    sums.dreamSecs += dreamSeconds(group, person.counts.entries);
+    sums.missCount += 1;
+  }
+  if (wants("person")) {
+    sums.personSecs +=
+      ESTIMATE_DEFAULTS.personCheckSeconds * person.counts.personChecks;
+    const judged =
+      group.memory === "on"
+        ? person.counts.judgedRefs
+        : person.counts.summaryRefs;
+    sums.judgeUsd += judged * costUsd(prices.judge, ESTIMATE_TOKENS.factJudge);
+  }
+  if (wants("dream-accuracy")) {
+    sums.judgeUsd +=
+      person.counts.entries *
+      costUsd(prices.judge, ESTIMATE_TOKENS.dreamSourceJudge);
+  }
+}
+
+/** Chat replies, the judge's grading of them, and the simulated user, for one setup. */
+function addSetupChat(
+  sums: Sums,
+  input: EstimateInput,
+  setup: Setup,
+  person: Person
+): void {
+  const { history, prices, sweep } = input;
+  const { conversationTurns, replies } = replyCount(person.counts, sweep);
+  const perReply =
+    history.get(historyKey(setup.chatModel, setup.thinking)) ??
+    ESTIMATE_DEFAULTS.replySeconds[setup.thinking === "off" ? "off" : "on"];
+  sums.chatSecs += replies * perReply;
+  sums.judgeUsd += replies * costUsd(prices.judge, ESTIMATE_TOKENS.replyJudge);
+  sums.simUsd +=
+    conversationTurns *
+    costUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserTurn);
+}
+
+export function estimateRun(input: EstimateInput): Estimate {
+  const { plan } = input;
+  const defaults = ESTIMATE_DEFAULTS;
+  const sums: Sums = {
+    chatSecs: 0,
+    dreamSecs: 0,
+    judgeUsd: 0,
+    missCount: 0,
+    personSecs: 0,
+    simUsd: 0,
+  };
   for (const group of plan.groups) {
     for (const person of plan.people) {
-      if (!person.empty && dreamMisses.has(dreamMissKey(group.dreamKeyId, person.id))) {
-        dreamSecs += dreamSeconds(group, person.counts.entries);
-        missCount += 1;
-      }
-      if (wants("person")) {
-        personSecs +=
-          defaults.personCheckSeconds * person.counts.personChecks;
-        const judged =
-          group.memory === "on"
-            ? person.counts.judgedRefs
-            : person.counts.summaryRefs;
-        judgeUsd += judged * priceUsd(prices.judge, ESTIMATE_TOKENS.factJudge);
-      }
-      if (wants("dream-accuracy")) {
-        judgeUsd +=
-          person.counts.entries *
-          priceUsd(prices.judge, ESTIMATE_TOKENS.dreamSourceJudge);
-      }
+      addPersonPass(sums, input, group, person);
       for (const prompt of group.prompts) {
         for (const setup of prompt.setups) {
-          const { conversationTurns, replies } = replyCount(person.counts, sweep);
-          const perReply =
-            history.get(historyKey(setup.chatModel, setup.thinking)) ??
-            defaults.replySeconds[setup.thinking === "off" ? "off" : "on"];
-          chatSecs += replies * perReply;
-          judgeUsd +=
-            replies * priceUsd(prices.judge, ESTIMATE_TOKENS.replyJudge);
-          simUsd +=
-            conversationTurns *
-            priceUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserTurn);
+          addSetupChat(sums, input, setup, person);
         }
       }
     }
@@ -186,18 +231,21 @@ export function estimateRun(input: EstimateInput): Estimate {
     stats.eveDevStarts * defaults.eveStartSeconds +
     stats.modelLoads * defaults.modelLoadSeconds +
     defaults.gradeTailMinutes * 60;
-  const totalSecs = fixedSecs + dreamSecs + personSecs + chatSecs;
-  const hours = totalSecs / 3600;
-  const costUsd = judgeUsd + simUsd;
-
+  const totalSecs =
+    fixedSecs + sums.dreamSecs + sums.personSecs + sums.chatSecs;
   const lines = [
-    `Dream: ${missCount} run${missCount === 1 ? "" : "s"} the cache cannot answer, about ${(dreamSecs / 3600).toFixed(1)} h`,
-    `Person checks: about ${(personSecs / 3600).toFixed(2)} h`,
-    `Chat: about ${(chatSecs / 3600).toFixed(1)} h of replies`,
+    `Dream: ${sums.missCount} run${sums.missCount === 1 ? "" : "s"} the cache cannot answer, about ${(sums.dreamSecs / 3600).toFixed(1)} h`,
+    `Person checks: about ${(sums.personSecs / 3600).toFixed(2)} h`,
+    `Chat: about ${(sums.chatSecs / 3600).toFixed(1)} h of replies`,
     `Setup: about ${(fixedSecs / 3600).toFixed(1)} h for builds, ${stats.sageStarts} Sage starts, ${stats.eveDevStarts} Chat server starts, and about ${stats.modelLoads} model loads`,
-    `Cloud: about $${judgeUsd.toFixed(2)} for the judge and $${simUsd.toFixed(2)} for the simulated user`,
+    `Cloud: about $${sums.judgeUsd.toFixed(2)} for the judge and $${sums.simUsd.toFixed(2)} for the simulated user`,
   ];
-  return { costUsd, dreamMissCount: missCount, hours, lines };
+  return {
+    costUsd: sums.judgeUsd + sums.simUsd,
+    dreamMissCount: sums.missCount,
+    hours: totalSecs / 3600,
+    lines,
+  };
 }
 
 export function formatEstimate(

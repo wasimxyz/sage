@@ -104,10 +104,14 @@ export function readTranscripts(path: string): TranscriptRow[] {
       continue;
     }
     try {
-      rows.push(parseTranscriptRow(JSON.parse(trimmed), `${path}:${offset + 1}`));
+      rows.push(
+        parseTranscriptRow(JSON.parse(trimmed), `${path}:${offset + 1}`)
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`Skipping a transcript row in ${path}:${offset + 1}: ${message}`);
+      console.warn(
+        `Skipping a transcript row in ${path}:${offset + 1}: ${message}`
+      );
     }
   }
   return rows;
@@ -135,10 +139,7 @@ export function collectSetupData(
     }
   };
   for (const person of people) {
-    add(
-      "person",
-      personPassFiles(runDir, setup.dreamKeyId, person).results
-    );
+    add("person", personPassFiles(runDir, setup.dreamKeyId, person).results);
     const chat = setupPassFiles(runDir, setup.setupId, person, "chat");
     add("chat", chat.results);
     add(
