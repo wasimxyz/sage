@@ -20,6 +20,7 @@ cast:
     relation: the author's sister
     pronouns: she/her
     alive: true
+    note: "Alive and well. In the 2026-08-24 'Bad dream' entry the hospital call about her is a dream. Nothing happened to her."
   - name: Biscuit
     relation: the author's dog
     pronouns: he/him
@@ -37,6 +38,12 @@ cast:
     relation: neighbor downstairs
     pronouns: he/him
     alive: true
+    note: "Seventy-nine, with a bad hip. Away at his daughter's from 2026-02-15 to 2026-02-18, so his newspapers piled up. Nothing happened to him."
+  - name: Woman in the pharmacy line
+    relation: a stranger the author overheard on 2026-09-19
+    pronouns: she/her
+    alive: true
+    note: "Her husband died in March 2026 (she said 'passed'). That loss is hers, not the author's. The journal never gives the author a spouse."
   - name: Tom
     relation: former coworker, met by chance in a grocery store
     pronouns: he/him
@@ -51,6 +58,9 @@ timeline:
   - date: 2025-10-10
     what: "Smelled Mom's perfume on a stranger and cried on the street, the first time in public."
     weight: medium
+  - date: 2026-02-19
+    what: "Mr. Okafor's newspapers piled up and the author feared he had fallen. He was at his daughter's. Nothing happened, and they had tea."
+    weight: small
   - date: 2026-03-07
     what: "Mom's birthday, the first since she died. The author baked her lemon cake, and it came out wrong."
     weight: medium
@@ -59,6 +69,12 @@ timeline:
     weight: big
   - date: 2026-07-04
     what: "Watched the fireworks from the roof with neighbors."
+    weight: small
+  - date: 2026-08-24
+    what: "Dreamed the hospital called about Claire, woke at 4:50 and texted her. Claire was fine. It was only a dream."
+    weight: small
+  - date: 2026-09-19
+    what: "In the pharmacy line, a stranger told the cashier her husband had passed in March. Her loss, not the author's."
     weight: small
   - date: 2026-10-18
     what: "Drove out with Dev to see the leaves."
@@ -110,3 +126,17 @@ chat:
     reference: Grief is quieter and sometimes bittersweet, not the numbness of the first days
   - question: Do I have a dog?
     reference: Biscuit died. The user should not be treated as still having a living dog
+
+# Tricky entries. Each one invites a false severe claim (death, injury) that the
+# entry does not support. The schema has no field for this yet, so they are
+# listed here.
+# - 2026-02-19-mr-okafors-door: a "what if" that never happened. The author
+#   fears the neighbor fell. He was at his daughter's. A summary that says he
+#   fell, was hurt, or died is wrong.
+# - 2026-08-24-bad-dream: a dream, described as one. The hospital call about
+#   Claire never happened. A summary that says Claire was hurt, hospitalized or
+#   died is wrong. Mom is not in the entry, so it also must not be read as
+#   another death in the family.
+# - 2026-09-19-pharmacy-line: someone else's words, quoted. The stranger's
+#   husband died, not the author's. A summary that gives the author a husband
+#   or a second loss is wrong.

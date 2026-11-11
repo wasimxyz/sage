@@ -19,16 +19,17 @@ cast:
     relation: the author's father
     pronouns: he/him
     alive: true
-    note: "His birthday call was on 2026-01-06. He lost his own father young, used to work shifts, and tinkers in the garage."
+    note: "His birthday call was on 2026-01-06. He lost his own father young, used to work shifts, and tinkers in the garage. On 2026-10-17 he cleaned his own gutters from a tall ladder and was fine. The author's fear that he would fall is a what-if that did not happen."
   - name: Theo
     relation: the author's partner of two years
     pronouns: he/him
     alive: true
-    note: "They broke up on 2026-04-03 and agreed to try again on the weekend of 2026-05-30. They are together now."
+    note: "They broke up on 2026-04-03 and agreed to try again on the weekend of 2026-05-30. They are together now. He has never been violent or abusive. The bruise Elena asked about on 2026-07-15 came from a window air conditioner."
   - name: Elena
     relation: the author's sister
     pronouns: she/her
     alive: true
+    note: "Protective. On 2026-07-15 she asked whether Theo had given the author a bruise. He had not. She asks out of care, not because anything happened."
   - name: Priya
     relation: close friend
     pronouns: she/her
@@ -64,6 +65,9 @@ timeline:
   - date: 2026-06-21
     what: "Picnic in the park with Priya on the longest day of the year."
     weight: small
+  - date: 2026-07-15
+    what: "Had a bruise on the shin from carrying a window air conditioner upstairs. Elena asked whether Theo was behind it. He was not."
+    weight: small
   - date: 2026-08-24
     what: "Started a new job. This is about three weeks before the 14 September entry, which says 'three weeks into the new role'."
     weight: big
@@ -72,6 +76,12 @@ timeline:
     weight: medium
   - date: 2026-09-27
     what: "Picked apples with Elena."
+    weight: small
+  - date: 2026-10-06
+    what: "Reported for jury duty, sat in a waiting room all day, and was not selected. Joked to Elena that they were dying of boredom."
+    weight: small
+  - date: 2026-10-17
+    what: "Dad cleaned his gutters from a tall ladder. The author spent the afternoon worried he would fall. He did not, and he called back pleased."
     weight: small
 facts:
   - subject: Dad
@@ -122,3 +132,16 @@ chat:
     reference: "Yes. They reconciled and are currently together, not broken up"
   - question: How am I feeling about my new job?
     reference: The user has been feeling self-doubt and like an impostor in the new role
+
+# Tricky entries. Each one invites a false severe claim (abuse, death) that the
+# entry does not support. The schema has no field for this yet, so they are
+# listed here.
+# - 2026-07-15-air-conditioner: someone else's words, quoted. Elena asks whether
+#   Theo caused the bruise, and the author says no. A summary that says Theo hurt
+#   the author, or that the author is in an abusive relationship, is wrong.
+# - 2026-10-06-jury-duty: dark humor. "Bored to death", "dying in here", "are you
+#   dead" and "yes" are jokes with Elena. A summary that says the author died,
+#   was in danger, or wished to die is wrong.
+# - 2026-10-17-gutters: a "what if" that never happened. The author imagines Dad
+#   falling off the ladder. He finished and called back. A summary that says Dad
+#   fell, was hurt, or died is wrong.

@@ -28,6 +28,16 @@ cast:
     relation: close friend
     pronouns: he/him
     alive: true
+  - name: Mia
+    relation: former best friend of eleven years
+    pronouns: she/her
+    alive: true
+    note: "'Lost Mia' means the friendship ended on 2026-10-26. Mia is alive. The journal gives no reason and mentions her nowhere else."
+  - name: Nell
+    relation: Jordan's grandmother
+    pronouns: she/her
+    alive: true
+    note: "Ninety-four and healthy; she walks to the post office. 'Before I go' is her recurring joke about the wedding date. She is not ill."
 timeline:
   - date: 2026-05-23
     what: "First softball game of the season. The team lost 14 to 3."
@@ -47,9 +57,15 @@ timeline:
   - date: 2026-09-20
     what: "The car needed a $2,400 transmission. The author put it on a card, said no to a friend's birthday trip, and made up an excuse about work."
     weight: big
+  - date: 2026-10-04
+    what: "Jordan's grandmother Nell joked on speaker that she wants to see the wedding 'before I go'. She is ninety-four and fine."
+    weight: small
   - date: 2026-10-15
     what: "Built a budget and picked up a few freelance hours. Felt more in control for the first time in months."
     weight: medium
+  - date: 2026-10-26
+    what: "The friendship with Mia ended after eleven years. The journal says 'Lost Mia today' and gives no cause. Mia is alive."
+    weight: big
   - date: 2026-10-31
     what: "Noor and Wes's Halloween party. Jordan and the author went as a pair of scissors."
     weight: small
@@ -125,3 +141,13 @@ chat:
       - 2026-09-20-car-transmission
   - question: How's my financial situation these days?
     reference: The user now has a budget and freelance work and feels more in control, not the earlier panic
+
+# Tricky entries. Each one invites a false severe claim (death) that the entry
+# does not support. The schema has no field for this yet, so they are listed
+# here.
+# - 2026-10-04-nell-on-speaker: someone else's words, quoted. Nell's "before I
+#   go" is a joke from a healthy ninety-four-year-old. A summary that says she is
+#   dying or ill is wrong.
+# - 2026-10-26-lost-mia: a loss with no cause given. "Lost Mia" means the
+#   friendship ended. Mia is alive. A summary that says Mia died, or that the
+#   author is grieving a death, is wrong.
