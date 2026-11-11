@@ -56,6 +56,7 @@ import {
   sweepSummaryFileName,
   type TranscriptRow,
 } from "../../evals/lib/schema.ts";
+import { isJudgeCheckRow } from "./judge-check.ts";
 import type { PassName } from "./plan.ts";
 
 export interface PassRow {
@@ -151,6 +152,9 @@ export function judgeCostOf(rows: readonly PassRow[], personShare = 1): number {
 }
 
 const notGradedPrefix = "not graded";
+
+/** The soft score Dream accuracy records to carry a source and what Dream wrote from it. */
+const DREAM_SOURCE_SCORE = "dream-source";
 
 /** Eval-level skips that mean "the judge did not grade this", not "does not apply". */
 export function isNotGradedSkip(reason: string | undefined): boolean {
@@ -400,6 +404,10 @@ function addSoftScore(build: ItemBuild, assertion: RecordedAssertion): void {
   }
   if (assertion.name.length === 0 || !assertion.name.includes(":")) {
     // eve's own assertions, such as "succeeded", carry no label.
+    return;
+  }
+  if (id === DREAM_SOURCE_SCORE) {
+    // It carries the source and what Dream wrote for the viewer. It is no score.
     return;
   }
   if (typeof assertion.score === "number") {
@@ -882,16 +890,21 @@ export function rubricVersionOf(rows: readonly PassRow[]): string | undefined {
   return undefined;
 }
 
+/**
+ * The rows a setup report is made from. The judge check runs before any setup
+ * and belongs to the sweep, so its rows (and its cost) stay out of every setup.
+ */
+export function setupRows(rows: readonly PassRow[]): PassRow[] {
+  return rows.filter((entry) => !isJudgeCheckRow(entry.row));
+}
+
 export function assembleSetupReport(input: AssembleInput): SetupReport {
-  const items = buildItems(
-    input.rows,
-    input.transcripts,
-    input.personShare ?? 1
-  );
+  const rows = setupRows(input.rows);
+  const items = buildItems(rows, input.transcripts, input.personShare ?? 1);
   const people = [
     ...new Set([...input.people, ...items.map((item) => item.person)]),
   ].sort();
-  const rubric = rubricVersionOf(input.rows);
+  const rubric = rubricVersionOf(rows);
   const report: SetupReport = {
     gitCommit: input.gitCommit,
     items,
@@ -906,7 +919,7 @@ export function assembleSetupReport(input: AssembleInput): SetupReport {
     setupId: setupIdOf(input.setup),
     simulatedUser: input.sweep.simulatedUser,
     summary: summarize(items, input.transcripts, input.sweep, {
-      costUsd: judgeCostOf(input.rows, input.personShare ?? 1),
+      costUsd: judgeCostOf(rows, input.personShare ?? 1),
       swap: input.swap,
     }),
     sweepId: input.sweepId,

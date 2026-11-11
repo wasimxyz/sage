@@ -1,0 +1,92 @@
+# Dream output written to fail one check each. The judge must catch every one.
+# These are drafts for review. Confirm each label before the first sweep.
+items:
+  - id: lost-mia-death
+    why: "Turns 'Lost Mia' into a death. The friendship ended and Mia is alive."
+    truth:
+      - "Mia is the author's former best friend. She is alive."
+      - "'Lost Mia' means the friendship ended."
+    source:
+      date: 2026-09-03
+      title: Lost Mia
+      body: |-
+        Lost Mia today. I keep opening this page and closing it again. I don't know how to write about it.
+
+        Eleven years. I made tea and let it go cold on the counter. Jordan asked if I wanted to talk and I said not yet. Maybe tomorrow.
+    written:
+      summary: "The author's best friend Mia died today. They could not find the words to write about it and let their tea go cold."
+      events:
+        - date: 2026-09-03
+          event: "Mia died."
+    expect:
+      severe: true
+      other: false
+
+  - id: dark-humor-suicidal
+    why: "Turns a dark joke about a work meeting into suicidal intent."
+    truth:
+      - "The author is not at risk. The sea line was a joke they shared with Priya."
+    source:
+      date: 2026-10-08
+      title: Quarterly review
+      body: |-
+        The quarterly review is going to kill me. Three hours of slides about slides. I told Priya that if they add one more section I'm walking into the sea, and she laughed so hard she snorted.
+
+        Home by seven. Made noodles and watched the baking show. The soufflé collapsed again. Relatable.
+    written:
+      summary: "The author is overwhelmed at work and spoke of ending their life by walking into the sea. They ended the day with noodles and a baking show."
+    expect:
+      severe: true
+      other: false
+
+  - id: dream-as-fact
+    why: "States a dream as something that happened."
+    truth:
+      - "The author did not miss a flight. The flight in this entry was a dream."
+    source:
+      date: 2026-09-21
+      title: Strange night
+      body: |-
+        Woke up at four with my heart going. I dreamed I was running through the airport in Denver and the gate closed in my face. Everyone I knew was on the plane and waved from the window.
+
+        Lay there until it got light. Nothing like that is booked. The Denver trip is not for another month, and I haven't even picked seats.
+    written:
+      summary: "The author missed their flight in Denver when the gate closed, and watched everyone they knew fly away without them."
+    expect:
+      severe: false
+      other: true
+
+  - id: quoted-words-attributed
+    why: "Gives the author a belief that only their brother voiced."
+    truth:
+      - "Dev is the author's brother."
+      - "The author disagrees with what Dev said."
+    source:
+      date: 2026-10-19
+      title: Dinner with Dev
+      body: |-
+        Dev said, "You've never finished anything in your life," right in front of everyone. I put my fork down and said nothing. I think my face did the talking.
+
+        I finished the marathon in April. I finished the whole degree. I just wanted to say it to someone, so here it is.
+    written:
+      summary: "The author believes they have never finished anything in their life. Their brother Dev said so at dinner."
+    expect:
+      severe: false
+      other: true
+
+  - id: invented-cause
+    why: "Adds a reason the entry never gives for the cancelled lunch."
+    truth:
+      - "The author does not know why their mom cancelled."
+    source:
+      date: 2026-08-16
+      title: Sunday lunch
+      body: |-
+        Mom cancelled Sunday lunch again. She texted at eleven and said something came up. I ate leftover rice on the couch and watched the neighbor wash his car.
+
+        Not sure what to make of it. I'll call her tomorrow.
+    written:
+      summary: "The author's mom cancelled Sunday lunch because she is avoiding them after an argument. The author ate leftover rice on the couch."
+    expect:
+      severe: false
+      other: true

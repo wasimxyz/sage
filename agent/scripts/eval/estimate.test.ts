@@ -3,6 +3,7 @@ import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+import { costUsd } from "../../evals/lib/prices.ts";
 import {
   expandSetups,
   parseSetupReport,
@@ -14,6 +15,7 @@ import {
 import {
   dreamMissKey,
   ESTIMATE_DEFAULTS,
+  ESTIMATE_TOKENS,
   estimateRun,
   formatEstimate,
   historyKey,
@@ -140,6 +142,49 @@ test("replies are judged, and conversation turns also call the simulated user", 
   );
   assert.match(talking.lines.join("\n"), pattern1);
   assert.ok(talking.costUsd > 0);
+});
+
+test("Dream accuracy is one judge call and some time for each entry, and Chat adds nothing to a Dream-only sweep", () => {
+  const people = [makePerson("sam", { entries: 10 })];
+  const withoutAccuracy = estimateRun(
+    inputFor({ memory: ["off"], tests: ["person"] }, people)
+  );
+  const withAccuracy = estimateRun(
+    inputFor({ memory: ["off"], tests: ["person", "dream-accuracy"] }, people)
+  );
+  const perCall = costUsd(prices.judge, ESTIMATE_TOKENS.dreamSourceJudge);
+  assert.ok(Math.abs(withAccuracy.costUsd - 10 * perCall) < 1e-9);
+  assert.ok(
+    Math.abs(
+      withAccuracy.hours -
+        withoutAccuracy.hours -
+        (10 * ESTIMATE_DEFAULTS.dreamAccuracySecondsPerSource) / 3600
+    ) < 1e-9
+  );
+
+  // With no Chat there are no Chat server starts and no model loads to wait for.
+  const sweep = parseSweepFile({
+    memory: ["off"],
+    tests: ["person", "dream-accuracy"],
+  });
+  const setups = expandSetups(sweep);
+  const chat = estimateRun({
+    ...inputFor(
+      { memory: ["off"], tests: ["person", "dream-accuracy"] },
+      people
+    ),
+    plan: buildPlan(setups, people, sweep),
+  });
+  const noChat = estimateRun({
+    ...inputFor(
+      { memory: ["off"], tests: ["person", "dream-accuracy"] },
+      people
+    ),
+    plan: buildPlan(setups, people, sweep, { chat: false }),
+  });
+  const saved =
+    ESTIMATE_DEFAULTS.eveStartSeconds + ESTIMATE_DEFAULTS.modelLoadSeconds;
+  assert.ok(Math.abs(chat.hours - noChat.hours - saved / 3600) < 1e-9);
 });
 
 test("repeats multiply the replies", () => {

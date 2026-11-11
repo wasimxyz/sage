@@ -73,21 +73,24 @@ test("a pass gets every variable in EVAL_ENV that applies, plus the sweep id", (
   assert.ok(env.PATH.startsWith(join("/repo/agent", "node_modules", ".bin")));
 });
 
-test("Dream prompts and the Dream key are set only when there are some", () => {
+test("the Dream key is set only when there is one, and Dream prompts never reach a pass", () => {
   const plain = buildPassEnv(input());
-  assert.equal(plain[EVAL_ENV.dreamPrompts], undefined);
   assert.equal(plain[ENV_DREAM_KEY], undefined);
-  const withBoth = buildPassEnv(
+  assert.equal(
+    buildPassEnv(input({ dreamKey: "abc123" }))[ENV_DREAM_KEY],
+    "abc123"
+  );
+  // Only Sage reads the Dream prompt folder (see sageEnv). A value in the
+  // shell that started the runner does not reach the eval clients either.
+  const shell = buildPassEnv(
     input({
-      dreamKey: "abc123",
-      dreamPrompts: "/repo/agent/evals/dream-prompts/careful",
+      base: {
+        PATH: "/usr/bin",
+        [EVAL_ENV.dreamPrompts]: "/repo/agent/evals/dream-prompts/careful",
+      },
     })
   );
-  assert.equal(
-    withBoth[EVAL_ENV.dreamPrompts],
-    "/repo/agent/evals/dream-prompts/careful"
-  );
-  assert.equal(withBoth[ENV_DREAM_KEY], "abc123");
+  assert.equal(shell[EVAL_ENV.dreamPrompts], undefined);
 });
 
 test("the token and the gateway credentials go in only when given", () => {

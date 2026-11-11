@@ -13,7 +13,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { addNodeOption, type Env, prependPath, withoutSecrets } from "./env.ts";
+import {
+  addNodeOption,
+  type Env,
+  prependPath,
+  withoutSageOnly,
+} from "./env.ts";
 import {
   hasExited,
   readLogTail,
@@ -64,7 +69,7 @@ export interface EveDevEnvOptions {
  * gateway keys, the Blob token, and the eval client's token are not here.
  */
 export function eveDevEnv(options: EveDevEnvOptions): Record<string, string> {
-  const base = withoutSecrets(options.base ?? process.env);
+  const base = withoutSageOnly(options.base ?? process.env);
   const env: Record<string, string> = {
     ...base,
     EVE_TELEMETRY_DISABLED: "1",

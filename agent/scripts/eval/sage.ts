@@ -21,7 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Memory } from "../../evals/lib/schema.ts";
+import { EVAL_ENV, type Memory } from "../../evals/lib/schema.ts";
 import { type Env, withoutSecrets } from "./env.ts";
 import {
   captureCommand,
@@ -143,7 +143,7 @@ export function sageEnv(options: SageEnvOptions): Record<string, string> {
   env.SAGE_OLLAMA_PATH = options.ollamaBin;
   env.SAGE_SUMMARY_MODEL = options.summaryModel;
   if (options.dreamPromptsDir !== undefined) {
-    env.SAGE_EVAL_DREAM_PROMPTS = options.dreamPromptsDir;
+    env[EVAL_ENV.dreamPrompts] = options.dreamPromptsDir;
   }
   return env;
 }

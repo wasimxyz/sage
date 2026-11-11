@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   dreamKeyFor,
+  dreamPromptProblems,
   needsDream,
   restoreSnapshot,
   seedEnv,
@@ -16,6 +17,15 @@ import {
 import { makePerson, tempDir } from "./test-fixtures.ts";
 
 const pattern1 = /^[a-f0-9]{64}$/u;
+const noFolderPattern =
+  /Dream prompt "typo" .* has no folder\. Folders here: careful, terse\. Use baseline/u;
+const noFilesPattern =
+  /holds none of summary\.md, chat-summary\.md, chat-title\.md, extract\.md/u;
+const unknownFilePattern =
+  /"misnamed" .* holds Summary\.md, notes\.txt, which Dream does not read/u;
+const emptyFilePattern = /"blank" .*: extract\.md is empty/u;
+const noPromptFolderPattern =
+  /No Dream prompt folder at .*dream-prompts\/nope/u;
 
 const envNames = [
   "SAGE_EVAL_CACHE",
@@ -65,9 +75,9 @@ function withTempRepo(t: test.TestContext): {
 const digests = () =>
   Promise.resolve({ "embed-m": "sha256:embed", "sum-m": "sha256:sum" });
 
-function unitFor(memory: "off" | "on") {
+function unitFor(memory: "off" | "on", dreamPrompt = "baseline") {
   return {
-    dreamPrompt: "baseline",
+    dreamPrompt,
     embedModel: "embed-m",
     memory,
     person: makePerson("sam"),
@@ -237,4 +247,128 @@ test("the seed script's environment names the person, the folder, and the manife
   assert.equal(env.SAGE_AUTOMATION_CWD, "/tmp/sage-eval-x");
   assert.equal(env.SAGE_DATA_DIR, "/tmp/sage-eval-x");
   assert.equal(env.SAGE_EVAL_DATA, dataRoot);
+});
+
+test("the seed script's environment never carries the Dream prompt folder", (t) => {
+  withTempRepo(t);
+  const previous = process.env.SAGE_EVAL_DREAM_PROMPTS;
+  process.env.SAGE_EVAL_DREAM_PROMPTS = "/stray/prompts";
+  t.after(() => {
+    if (previous === undefined) {
+      delete process.env.SAGE_EVAL_DREAM_PROMPTS;
+    } else {
+      process.env.SAGE_EVAL_DREAM_PROMPTS = previous;
+    }
+  });
+  const env = seedEnv({
+    automationCwd: "/tmp/sage-eval-x",
+    dataDir: "/tmp/sage-eval-x",
+    manifestPath: "/tmp/sage-eval-x/manifest.json",
+    personId: "sam",
+  });
+  assert.equal(env.SAGE_EVAL_DREAM_PROMPTS, undefined);
+});
+
+/** Writes prompt files under `agent/evals/dream-prompts/<name>/` of the temp repo. */
+function writePrompts(
+  repo: string,
+  name: string,
+  files: Record<string, string>
+): void {
+  const dir = join(repo, "agent", "evals", "dream-prompts", name);
+  mkdirSync(dir, { recursive: true });
+  for (const [file, text] of Object.entries(files)) {
+    writeFileSync(join(dir, file), text);
+  }
+}
+
+/** The temp repo `withTempRepo` made. */
+function repoOf(): string {
+  return process.env.SAGE_REPO_ROOT ?? "";
+}
+
+test("the Dream key includes the text of the resolved prompt files", async (t) => {
+  withTempRepo(t);
+  const repo = repoOf();
+  writePrompts(repo, "careful", { "summary.md": "Summarize with care." });
+  writePrompts(repo, "same", { "summary.md": "Summarize with care." });
+  writePrompts(repo, "terse", { "summary.md": "Summarize tersely." });
+  const baseline = await dreamKeyFor(unitFor("off"), digests);
+  const careful = await dreamKeyFor(unitFor("off", "careful"), digests);
+  assert.notEqual(careful.key, baseline.key);
+  assert.deepEqual(careful.parts.dreamPrompts, {
+    "summary.md": "Summarize with care.",
+  });
+  assert.equal(baseline.parts.dreamPrompts, null);
+
+  // The key follows the text, not the folder's name.
+  assert.equal(
+    (await dreamKeyFor(unitFor("off", "same"), digests)).key,
+    careful.key
+  );
+  assert.notEqual(
+    (await dreamKeyFor(unitFor("off", "terse"), digests)).key,
+    careful.key
+  );
+
+  // Editing a file, or adding another, runs Dream again.
+  writePrompts(repo, "careful", { "summary.md": "Summarize with great care." });
+  const edited = await dreamKeyFor(unitFor("off", "careful"), digests);
+  assert.notEqual(edited.key, careful.key);
+  writePrompts(repo, "careful", { "extract.md": "Extract only what is said." });
+  assert.notEqual(
+    (await dreamKeyFor(unitFor("off", "careful"), digests)).key,
+    edited.key
+  );
+});
+
+test("a Dream prompt with no folder cannot make a key", async (t) => {
+  withTempRepo(t);
+  await assert.rejects(
+    dreamKeyFor(unitFor("off", "nope"), digests),
+    noPromptFolderPattern
+  );
+});
+
+test("dreamPromptProblems accepts baseline and folders with real prompt files", (t) => {
+  withTempRepo(t);
+  const repo = repoOf();
+  writePrompts(repo, "careful", {
+    ".DS_Store": "",
+    "chat-title.md": "Title it.",
+    "summary.md": "Summarize.",
+  });
+  assert.deepEqual(dreamPromptProblems(repo, ["baseline", "careful"]), []);
+});
+
+test("dreamPromptProblems names a missing folder and the folders that exist", (t) => {
+  withTempRepo(t);
+  const repo = repoOf();
+  writePrompts(repo, "careful", { "summary.md": "Summarize." });
+  writePrompts(repo, "terse", { "summary.md": "Tersely." });
+  const [problem, ...rest] = dreamPromptProblems(repo, ["typo"]);
+  assert.match(problem ?? "", noFolderPattern);
+  assert.deepEqual(rest, []);
+});
+
+test("dreamPromptProblems catches a variant that would quietly run the built-in prompts", (t) => {
+  withTempRepo(t);
+  const repo = repoOf();
+  writePrompts(repo, "empty", {});
+  writePrompts(repo, "misnamed", {
+    "notes.txt": "x",
+    "Summary.md": "Summarize.",
+  });
+  writePrompts(repo, "blank", {
+    "extract.md": "  \n",
+    "summary.md": "Summarize.",
+  });
+  assert.match(dreamPromptProblems(repo, ["empty"]).join("\n"), noFilesPattern);
+  const misnamed = dreamPromptProblems(repo, ["misnamed"]).join("\n");
+  assert.match(misnamed, unknownFilePattern);
+  assert.match(misnamed, noFilesPattern);
+  assert.match(
+    dreamPromptProblems(repo, ["blank"]).join("\n"),
+    emptyFilePattern
+  );
 });

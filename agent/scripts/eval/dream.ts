@@ -4,12 +4,16 @@
 // The cache key is per person (see lib/cache.ts), so editing one person's
 // entries runs Dream again for that person only.
 
-import { join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
+  baselineDreamPrompt,
   type CacheKeyParts,
   cachedDreamEntry,
   computeCacheKey,
+  dreamPromptFiles,
+  dreamPromptsDir,
   evalCacheDir,
   evalCacheEnabled,
   fetchOllamaDigests,
@@ -20,7 +24,7 @@ import {
 } from "../../evals/lib/cache.ts";
 import { evalDataRoot } from "../../evals/lib/dataset.ts";
 import type { Memory } from "../../evals/lib/schema.ts";
-import { withoutSecrets } from "./env.ts";
+import { withoutSageOnly } from "./env.ts";
 import { ollamaApiBase } from "./ollama.ts";
 import type { LoadedPerson } from "./people.ts";
 import { runCommand, succeeded } from "./proc.ts";
@@ -95,6 +99,71 @@ export async function dreamKeyFor(
   };
 }
 
+function isFolder(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Problems with the Dream prompt folders a sweep names, one line each. Sage
+ * keeps a built-in prompt for any file it cannot use and only logs it, so a
+ * variant with a typo in a file name would run the built-in prompts for hours
+ * and look like a real comparison. This catches that before anything starts.
+ * `baseline` is not a folder. A name with no folder, a folder with none of the
+ * four files, an unknown file, and a file with only whitespace are problems.
+ */
+export function dreamPromptProblems(
+  repo: string,
+  names: readonly string[]
+): string[] {
+  const problems: string[] = [];
+  const files = dreamPromptFiles.join(", ");
+  for (const name of names) {
+    if (name === baselineDreamPrompt) {
+      continue;
+    }
+    const dir = dreamPromptsDir(repo, name);
+    const where = `Dream prompt "${name}" (${dir})`;
+    if (!isFolder(dir)) {
+      const known = isFolder(dirname(dir))
+        ? readdirSync(dirname(dir)).filter((entry) =>
+            isFolder(join(dirname(dir), entry))
+          )
+        : [];
+      problems.push(
+        `${where} has no folder.${known.length > 0 ? ` Folders here: ${known.sort().join(", ")}.` : ""} Use ${baselineDreamPrompt} for the built-in prompts.`
+      );
+      continue;
+    }
+    const present = readdirSync(dir).filter((entry) => !entry.startsWith("."));
+    const read = dreamPromptFiles.filter((file) => present.includes(file));
+    const unknown = present.filter(
+      (entry) => !(dreamPromptFiles as readonly string[]).includes(entry)
+    );
+    if (read.length === 0) {
+      problems.push(
+        `${where} holds none of ${files}, so it would run the built-in prompts. Use ${baselineDreamPrompt}, or add a file.`
+      );
+    }
+    if (unknown.length > 0) {
+      problems.push(
+        `${where} holds ${unknown.sort().join(", ")}, which Dream does not read. The files it reads are ${files}.`
+      );
+    }
+    for (const file of read) {
+      if (readFileSync(join(dir, file), "utf8").trim().length === 0) {
+        problems.push(
+          `${where}: ${file} is empty, so Dream keeps its built-in prompt for it.`
+        );
+      }
+    }
+  }
+  return problems;
+}
+
 /** True when this person's journal has anything for Dream to read. */
 export function needsDream(person: LoadedPerson): boolean {
   return person.entries.length > 0;
@@ -120,7 +189,7 @@ export function seedEnv(options: {
   personId: string;
 }): Record<string, string> {
   return {
-    ...withoutSecrets(),
+    ...withoutSageOnly(),
     SAGE_AUTOMATION_CWD: options.automationCwd,
     SAGE_DATA_DIR: options.dataDir,
     SAGE_EVAL_DATA: evalDataRoot(),
