@@ -84,3 +84,20 @@ chat:
     reference: Sam is the user's boyfriend or partner, not just a friend
   - question: Am I currently running?
     reference: "No. The more recent state is time off for shin splints, not the half marathon"
+openers:
+  - id: running-again
+    message: "It's been months since the doctor told me to stop running and I haven't gone out once. I want to start again but I'm scared my shins will go. Is that just me being a baby about it?"
+    expect: question
+    thought: fortune telling
+    fits: [ small-step, weigh-decision ]
+    avoid: [ grounding ]
+    search: needed
+    needs: [ 2026-05-22-shin-splints ]
+    tags: [ screen ]
+  - id: lenas-earring
+    message: "Lena's earring is still on my windowsill. She left three months ago and I keep meaning to mail it back. I think I just don't want the last bit of her visit to leave."
+    expect: venting
+    fits: [ listen ]
+    avoid: [ problem-solving ]
+    search: optional
+    needs: [ 2026-08-09-quiet-again ]
