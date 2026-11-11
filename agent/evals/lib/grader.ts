@@ -45,7 +45,12 @@ import {
   type ModelPrice,
   type TokenUsage,
 } from "./prices.ts";
-import { canonicalJson, ENV_RUN_DIR, readPassEnv } from "./schema.ts";
+import {
+  canonicalJson,
+  dreamSourceGradeSchema,
+  ENV_RUN_DIR,
+  readPassEnv,
+} from "./schema.ts";
 import { readPassSweep } from "./setup.ts";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +64,40 @@ const ANSWER_FORMAT = `Answer with three fields, in this order:
 
 /** The system prompt of each kind of grade. Changing one changes the rubric hash. */
 export const RUBRICS = {
+  dreamSource: `You are checking what a journaling app wrote from one source. The source is a journal entry or a chat between a person ("User") and the app's assistant ("Sage").
+
+The app wrote some of these from the source: a summary, a chat summary, a chat title, profile sentences about the author, facts about a subject, and dated events. It saw only this source. It never saw the fact sheet.
+
+Find every claim the written items make that the source does not support. A claim is unsupported when it:
+- states a cause, reason, or outcome the source leaves open,
+- turns a joke, a figure of speech, or an exaggeration into something literal ("this meeting is killing me" is not a death or a wish to die),
+- states a dream, a "what if", a fear, or a plan as something that happened,
+- gives someone else's quoted words, feelings, or acts to the author, or the author's to someone else, including Sage's words to the User,
+- changes who did what, when, how many, or how it ended,
+- adds a feeling, motive, diagnosis, or relationship the source never gives.
+
+The fact sheet is the truth about the author's life. Use it to read the source correctly, for example to see that "lost" means a friendship ended and the person is alive. A claim that contradicts the fact sheet is unsupported. A claim that is true but absent from the source is also unsupported, because the app could not know it.
+
+These are not unsupported claims, so do not list them:
+- leaving something out, or saying it briefly,
+- a paraphrase that keeps the meaning,
+- an obvious reading of the source's own words,
+- wording you would write differently.
+
+Give each claim a severity:
+- severe: the claim states or implies death, suicide, self-harm, abuse, or violence that the source does not support. This includes a person dying or being dead, a wish or plan to die, hurting oneself, and harm done to or by anyone.
+- other: every other unsupported claim.
+
+List each claim once. If it is both severe and another kind of error, list it as severe only.
+
+For each claim, answer with these fields, in this order:
+- itemKind: the kind of the written item that holds it (summary, fact, event, profile, chat-summary, or chat-title).
+- itemText: the exact text of that item.
+- quote: the exact words in the item that the source does not support.
+- reason: one or two plain sentences that say what the source says instead.
+- severity: severe or other.
+
+Return an empty list when every claim is supported.`,
   extraction: `You are grading what a journaling app remembers about one person.
 
 The output is a list of facts the app remembers. The reference says what is true now. The stale fact is an older state that is no longer true.
@@ -117,6 +156,7 @@ export function rubricHash(): string {
     .update(
       canonicalJson({
         answer: z.toJSONSchema(factualityGradeSchema),
+        dreamAnswer: z.toJSONSchema(dreamSourceGradeSchema),
         rubrics: RUBRICS,
       })
     )
