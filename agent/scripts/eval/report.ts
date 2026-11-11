@@ -346,6 +346,8 @@ interface ItemBuild {
   gradeRows: number;
   item: ReportItem;
   notGraded: boolean;
+  /** The share of a person-pass call's cost this item carries. */
+  personShare: number;
   rowsSkipped: number;
   rowsTotal: number;
   softNotes: string[];
@@ -353,7 +355,8 @@ interface ItemBuild {
 
 function newItem(
   ref: ItemRef,
-  transcript: TranscriptRow | undefined
+  transcript: TranscriptRow | undefined,
+  personShare: number
 ): ItemBuild {
   const item: ReportItem = {
     checks: [],
@@ -375,6 +378,7 @@ function newItem(
     gradeRows: 0,
     item,
     notGraded: false,
+    personShare,
     rowsSkipped: 0,
     rowsTotal: 0,
     softNotes: [],
@@ -405,11 +409,18 @@ function addSoftScore(build: ItemBuild, assertion: RecordedAssertion): void {
   }
 }
 
-function addAssertion(build: ItemBuild, assertion: RecordedAssertion): void {
+function addAssertion(
+  build: ItemBuild,
+  assertion: RecordedAssertion,
+  pass: PassName
+): void {
   const call = judgeCallOf(assertion);
   if (call !== null && !build.callIds.has(call.callId)) {
     build.callIds.add(call.callId);
-    build.item.costUsd += call.costUsd;
+    // The same scaling as the summary: setups that share a Dream snapshot split
+    // the person pass's cost, so the items add up to the summary's cost.
+    build.item.costUsd +=
+      call.costUsd * (pass === "person" ? build.personShare : 1);
   }
   const parsed = parseAssertion(assertion);
   if (parsed === null) {
@@ -475,7 +486,7 @@ function addRow(build: ItemBuild, entry: PassRow): void {
     return;
   }
   for (const assertion of row.assertions) {
-    addAssertion(build, assertion);
+    addAssertion(build, assertion, pass);
   }
   if (row.error !== undefined) {
     build.item.note = [build.item.note, row.error]
@@ -530,7 +541,8 @@ function settleStatus(build: ItemBuild, hasTranscript: boolean): ItemStatus {
 
 export function buildItems(
   rows: readonly PassRow[],
-  transcripts: readonly TranscriptRow[]
+  transcripts: readonly TranscriptRow[],
+  personShare = 1
 ): ReportItem[] {
   const byKey = new Map<string, TranscriptRow>();
   for (const transcript of transcripts) {
@@ -542,7 +554,7 @@ export function buildItems(
     const key = itemKeyOf(ref.itemId, ref.repeat);
     let build = builds.get(key);
     if (build === undefined) {
-      build = newItem(ref, byKey.get(key));
+      build = newItem(ref, byKey.get(key), personShare);
       builds.set(key, build);
     }
     addRow(build, entry);
@@ -556,7 +568,7 @@ export function buildItems(
         person: transcript.person,
         repeat: transcript.repeat,
       };
-      builds.set(key, newItem(ref, transcript));
+      builds.set(key, newItem(ref, transcript, personShare));
     }
   }
   const items: ReportItem[] = [];
@@ -641,17 +653,22 @@ export function spread(values: readonly number[]): number | null {
   return Math.sqrt(variance);
 }
 
-/** First-word waits of every assistant turn that showed a word, in ms. */
+/**
+ * The wait for the first word of every assistant turn, in ms. A turn that never
+ * showed a word counts at its total time: the wait was at least that long, and
+ * leaving it out would let a setup that mostly never answers pass.
+ */
 export function firstWordWaits(
   transcripts: readonly TranscriptRow[]
 ): number[] {
   const waits: number[] = [];
   for (const row of transcripts) {
     for (const turn of row.turns) {
-      const wait = turn.timing?.firstVisibleMs;
-      if (turn.role === "assistant" && wait !== undefined && wait !== null) {
-        waits.push(wait);
+      const { timing } = turn;
+      if (turn.role !== "assistant" || timing === undefined) {
+        continue;
       }
+      waits.push(timing.firstVisibleMs ?? timing.totalMs);
     }
   }
   return waits;
@@ -723,7 +740,13 @@ interface Tally {
   hard: Map<HardCheckId, HardTally>;
 }
 
-/** Counts hard failures, and counted passes and failures, across every graded check. */
+/**
+ * Counts hard failures, and counted passes and failures. A hard failure counts
+ * in any item that applies, because it is a failure however the rest went. The
+ * counted checks count only in graded items, so the failures and the graded
+ * items they are divided by come from the same set. An item that was not graded
+ * (the spending cap, a judge error) says nothing about the rate.
+ */
 function tallyChecks(items: readonly ReportItem[]): Tally {
   const tally: Tally = { counted: new Map(), hard: new Map() };
   for (const item of items) {
@@ -732,14 +755,14 @@ function tallyChecks(items: readonly ReportItem[]): Tally {
     }
     for (const check of allChecks(item)) {
       if (check.outcome === "pass" || check.outcome === "fail") {
-        tallyCheck(tally, check);
+        tallyCheck(tally, check, item.status === "graded");
       }
     }
   }
   return tally;
 }
 
-function tallyCheck(tally: Tally, check: ReportCheck): void {
+function tallyCheck(tally: Tally, check: ReportCheck, graded: boolean): void {
   const tier = CHECK_TIERS[check.id];
   if (tier === "hard" && check.outcome === "fail") {
     const id = check.id as HardCheckId;
@@ -748,7 +771,7 @@ function tallyCheck(tally: Tally, check: ReportCheck): void {
       count: (seen?.count ?? 0) + 1,
       detail: seen?.detail ?? check.reason.slice(0, 240),
     });
-  } else if (tier === "counted") {
+  } else if (tier === "counted" && graded) {
     const seen = tally.counted.get(check.id) ?? { failures: 0, graded: 0 };
     seen.graded += 1;
     if (check.outcome === "fail") {
@@ -860,7 +883,11 @@ export function rubricVersionOf(rows: readonly PassRow[]): string | undefined {
 }
 
 export function assembleSetupReport(input: AssembleInput): SetupReport {
-  const items = buildItems(input.rows, input.transcripts);
+  const items = buildItems(
+    input.rows,
+    input.transcripts,
+    input.personShare ?? 1
+  );
   const people = [
     ...new Set([...input.people, ...items.map((item) => item.person)]),
   ].sort();

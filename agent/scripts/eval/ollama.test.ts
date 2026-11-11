@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   canThink,
   checkModels,
+  fetchPinnedOllama,
   type ModelInfo,
   modelProblems,
   ollamaApiBase,
@@ -278,4 +279,35 @@ test("pullModel runs ollama pull against the host and reports a failure", async 
 test("waitForOllamaGone fails while something still answers", async (t) => {
   const { host } = await fakeOllama(t);
   await assert.rejects(waitForOllamaGone(host, 300), pattern10);
+});
+
+test("fetch-ollama.sh gets no gateway credentials", async (t) => {
+  const root = tempDir(t);
+  mkdirSync(join(root, "scripts"), { recursive: true });
+  const seen = join(root, "seen.txt");
+  writeFileSync(
+    join(root, "scripts", "fetch-ollama.sh"),
+    `printf '%s|%s' "\${AI_GATEWAY_API_KEY:-}" "\${VERCEL_OIDC_TOKEN:-}" > ${JSON.stringify(seen)}\necho /none/ollama\n`
+  );
+  // main() runs loadEvalEnv first, which copies agent/.env.local into process.env.
+  const previous = {
+    key: process.env.AI_GATEWAY_API_KEY,
+    oidc: process.env.VERCEL_OIDC_TOKEN,
+  };
+  process.env.AI_GATEWAY_API_KEY = "gw-key-0123456789abcdef";
+  process.env.VERCEL_OIDC_TOKEN = "oidc-0123456789abcdef";
+  t.after(() => {
+    for (const [name, value] of [
+      ["AI_GATEWAY_API_KEY", previous.key],
+      ["VERCEL_OIDC_TOKEN", previous.oidc],
+    ] as const) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  });
+  assert.equal(await fetchPinnedOllama(root), "/none/ollama");
+  assert.equal(readFileSync(seen, "utf8"), "|");
 });

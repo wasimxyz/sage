@@ -8,14 +8,15 @@
 // Every pass has its own results file, so two grade processes never append to
 // the same one. Logs sit beside them.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
   loadRecordedResults,
   type RecordedEvalResult,
 } from "../../evals/lib/recorder.ts";
 import {
+  itemIdFor,
   parseTranscriptRow,
   type TranscriptRow,
 } from "../../evals/lib/schema.ts";
@@ -76,6 +77,36 @@ export function setupPassFiles(
     results: join(dir, `${pass}.results.jsonl`),
     transcripts: join(dir, "transcripts.jsonl"),
   };
+}
+
+/**
+ * Records a setup whose chat pass could not start, such as a model that will
+ * not load. The row is a failed chat item with an error, which the report
+ * shows as a failed "Turn works" with the message as its reason.
+ */
+export function recordSetupFailure(
+  resultsPath: string,
+  failure: { message: string; person: string; setupId: string }
+): void {
+  const itemId = itemIdFor(failure.person, "chat", "setup");
+  const now = new Date().toISOString();
+  const row: RecordedEvalResult = {
+    assertions: [],
+    completedAt: now,
+    error: failure.message,
+    id: itemId,
+    metadata: {
+      itemId,
+      kind: "chat",
+      person: failure.person,
+      repeat: 1,
+      setupId: failure.setupId,
+    },
+    startedAt: now,
+    verdict: "failed",
+  };
+  mkdirSync(dirname(resultsPath), { recursive: true });
+  appendFileSync(resultsPath, `${JSON.stringify(row)}\n`, "utf8");
 }
 
 function readRows(path: string): RecordedEvalResult[] {

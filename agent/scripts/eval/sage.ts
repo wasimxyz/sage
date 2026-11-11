@@ -8,11 +8,12 @@
 // (11436) and starts it at launch. It never touches the real journal: it opens
 // only the folder `SAGE_DATA_DIR` names.
 
-import type { ChildProcess } from "node:child_process";
+import { type ChildProcess, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -25,6 +26,7 @@ import { type Env, withoutSecrets } from "./env.ts";
 import {
   captureCommand,
   hasExited,
+  onKillAll,
   readLogTail,
   runCommand,
   spawnTracked,
@@ -146,6 +148,52 @@ export function sageEnv(options: SageEnvOptions): Record<string, string> {
   return env;
 }
 
+/** Where Sage writes the pid of the Ollama it starts (src/ollama_server.zig). */
+export function ollamaPidFileOf(dataDir: string): string {
+  return join(dataDir, "ollama", "serve.pid");
+}
+
+/** The command line of a process, or null when there is no such process. */
+function commandLineOf(pid: number): string | null {
+  const result = spawnSync("/bin/ps", ["-o", "command=", "-p", String(pid)], {
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+/**
+ * Ends the Ollama a Sage left running. Sage starts it in a group of its own and
+ * stops it only on a normal quit, so a Sage that was killed leaves it holding
+ * the port. The pid file names it. It is ended only when that pid is still a
+ * process running `ollamaBin`, so a reused pid is left alone. Synchronous, for
+ * exit handlers. Returns true when it ended something.
+ */
+export function endLeftoverOllama(dataDir: string, ollamaBin: string): boolean {
+  const pidFile = ollamaPidFileOf(dataDir);
+  let pid: number;
+  try {
+    pid = Number.parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+  } catch {
+    return false;
+  }
+  if (!Number.isInteger(pid) || pid <= 1) {
+    return false;
+  }
+  if (commandLineOf(pid)?.includes(ollamaBin) !== true) {
+    return false;
+  }
+  for (const target of [-pid, pid]) {
+    try {
+      process.kill(target, "SIGKILL");
+      break;
+    } catch {
+      // The group may be gone while the process is not.
+    }
+  }
+  rmSync(pidFile, { force: true });
+  return true;
+}
+
 export interface SageRun {
   /** The folder with `.zig-cache/native-sdk-automation`, which the seed script drives. */
   automationCwd: string;
@@ -184,8 +232,14 @@ export async function startSage(options: StartSageOptions): Promise<SageRun> {
     env,
     logFile,
   });
+  // A run that is interrupted ends Sage with SIGKILL, which leaves its Ollama.
+  const forget = onKillAll(() => {
+    endLeftoverOllama(dataDir, options.ollamaBin);
+  });
   const stop = async (): Promise<void> => {
     await stopProcess(child, { graceMs: 20_000, group: true });
+    endLeftoverOllama(dataDir, options.ollamaBin);
+    forget();
   };
   const discoveryFile = discoveryFileOf(dataDir);
   const automationDir = automationDirOf(dataDir);

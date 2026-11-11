@@ -20,7 +20,12 @@ import {
   type SweepFile,
   setupId as setupIdOf,
 } from "../../evals/lib/schema.ts";
-import { type PassFiles, personPassFiles, setupPassFiles } from "./collect.ts";
+import {
+  type PassFiles,
+  personPassFiles,
+  recordSetupFailure,
+  setupPassFiles,
+} from "./collect.ts";
 import {
   type DigestLookup,
   type DreamKey,
@@ -494,10 +499,28 @@ async function runSetup(
     log(`${label}: ${setup.chatModel} cannot think; skipping think-on`);
     return;
   }
-  await prepareModel(unit, setup);
   const id = setupIdOf(setup);
   const files = setupPassFiles(ctx.runDir, id, person.id, "chat");
   mkdirSync(files.dir, { recursive: true });
+  try {
+    await prepareModel(unit, setup);
+  } catch (error) {
+    // One model that will not load (too big for this Mac, say) must not end
+    // the other setups of the unit. The report shows it as a failed turn.
+    if (!ctx.abort.aborted) {
+      const message = error instanceof Error ? error.message : String(error);
+      recordSetupFailure(files.results, {
+        message,
+        person: person.id,
+        setupId: id,
+      });
+      fail(
+        ctx,
+        `${label}: chat ${setupLabel(setup)} could not start: ${message}`
+      );
+    }
+    return;
+  }
   const outcome = await runEvalPass(
     {
       agentDir: ctx.agentDir,
@@ -540,6 +563,8 @@ async function prepareModel(unit: Unit, setup: Setup): Promise<void> {
   if (loaded !== null && loaded.chat !== setup.chatModel) {
     await unloadModel(host, loaded.chat);
   }
+  // Whatever happens next, the model that was loaded is gone or about to be.
+  unit.loaded = null;
   await warmUpModel(host, setup.chatModel, setup.contextLength);
   unit.loaded = { chat: setup.chatModel, contextLength: setup.contextLength };
 }

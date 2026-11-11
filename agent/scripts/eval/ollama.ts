@@ -36,6 +36,8 @@ export function fetchPinnedOllama(root: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("sh", [join(root, "scripts", "fetch-ollama.sh")], {
       cwd: root,
+      // The script downloads a pinned archive. It needs no credential.
+      env: withoutSecrets(),
       stdio: ["ignore", "pipe", "inherit"],
     });
     let out = "";

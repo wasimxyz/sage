@@ -9,6 +9,8 @@ import {
   parseSweepFile,
   parseSweepSummary,
   parseTranscriptRow,
+  rankingEntryFor,
+  rankSetups,
   reportFileName,
   type Setup,
   type SetupReport,
@@ -133,6 +135,7 @@ function transcript(
     firstVisibleMs?: number | null;
     kind?: string;
     repeat?: number;
+    totalMs?: number;
   } = {}
 ): TranscriptRow {
   const person = itemId.split("/")[0] ?? "sam";
@@ -155,7 +158,7 @@ function transcript(
             : {
                 firstVisibleMs: options.firstVisibleMs,
                 toolMs: 0,
-                totalMs: 9000,
+                totalMs: options.totalMs ?? 9000,
               },
       },
     ],
@@ -271,13 +274,41 @@ test("median, percentile, mean, and spread", () => {
   assert.ok(Math.abs((spread([1, 3]) ?? 0) - Math.SQRT2) < 1e-9);
 });
 
-test("first-word waits come from assistant turns that showed a word", () => {
+test("a turn that never showed a word waits for its whole length, and a turn with no timing is left out", () => {
   const rows = [
     transcript("sam/chat/1", { firstVisibleMs: 4000 }),
-    transcript("sam/chat/2", { firstVisibleMs: null }),
+    transcript("sam/chat/2", { firstVisibleMs: null, totalMs: 300_000 }),
     transcript("sam/chat/3"),
   ];
-  assert.deepEqual(firstWordWaits(rows), [4000]);
+  assert.deepEqual(firstWordWaits(rows), [4000, 300_000]);
+});
+
+test("a setup whose turns mostly never show a word fails fast-enough", () => {
+  const transcripts = [
+    transcript("sam/chat/1", { firstVisibleMs: 2000 }),
+    ...[2, 3, 4].map((n) =>
+      transcript(`sam/chat/${n}`, { firstVisibleMs: null, totalMs: 300_000 })
+    ),
+  ];
+  const summary = summarize([], transcripts, sweep, { costUsd: 0 });
+  assert.equal(summary.firstWordMedianMs, 300_000);
+  assert.deepEqual(
+    summary.hardFailures.map((failure) => failure.id),
+    ["fast-enough"]
+  );
+  // One silent turn among fast ones moves the median only a little.
+  const mostlyFine = summarize(
+    [],
+    [
+      transcript("sam/chat/1", { firstVisibleMs: 2000 }),
+      transcript("sam/chat/2", { firstVisibleMs: 3000 }),
+      transcript("sam/chat/3", { firstVisibleMs: null, totalMs: 300_000 }),
+    ],
+    sweep,
+    { costUsd: 0 }
+  );
+  assert.equal(mostlyFine.firstWordMedianMs, 3000);
+  assert.deepEqual(mostlyFine.hardFailures, []);
 });
 
 test("the speed check uses the median, and the p90 only when the sweep sets a limit", () => {
@@ -791,6 +822,160 @@ test("setup cost is the judge's unique calls, with the person pass shared", () =
     Math.abs(assemble(rows, [], { personShare: 0.5 }).summary.costUsd - 0.2) <
       1e-9
   );
+});
+
+test("item costs add up to the setup cost, with the person pass shared", () => {
+  const rows = [
+    row({
+      assertions: [
+        check("soft", "fact-factuality", {
+          metadata: { judgeCallId: "a", judgeCostUsd: 0.2 },
+          score: 1,
+        }),
+      ],
+      itemId: "sam/fact/1",
+      kind: "fact",
+      pass: "person",
+    }),
+    row({
+      assertions: [
+        check("counted", "journal-right", {
+          metadata: { judgeCallId: "b", judgeCostUsd: 0.1 },
+          passed: true,
+        }),
+      ],
+      itemId: "sam/chat/1",
+      pass: "grade",
+    }),
+  ];
+  for (const personShare of [1, 0.5, 0.25]) {
+    const report = assemble(rows, [], { personShare });
+    const total = report.items.reduce((sum, item) => sum + item.costUsd, 0);
+    assert.ok(Math.abs(total - report.summary.costUsd) < 1e-9);
+  }
+  const shared = assemble(rows, [], { personShare: 0.5 });
+  const costOf = (itemId: string) =>
+    shared.items.find((item) => item.itemId === itemId)?.costUsd;
+  assert.ok(Math.abs((costOf("sam/fact/1") ?? 0) - 0.1) < 1e-9);
+  assert.ok(Math.abs((costOf("sam/chat/1") ?? 0) - 0.1) < 1e-9);
+});
+
+test("counted failures are tallied over the graded items only, and a capped setup ranks last", () => {
+  // Setup A: the turn failed, and the grade pass hit the spending cap.
+  const capped: Setup = { ...setup, chatModel: "a:8b" };
+  const reportA = assembleSetupReport({
+    gitCommit: "abc1234",
+    people: ["sam"],
+    promptShas: { chat: "0123456789ab", dream: null },
+    rows: [
+      row({
+        assertions: [check("counted", "turn-works", { passed: false })],
+        itemId: "sam/chat/1",
+        pass: "chat",
+      }),
+      // What the grade pass records once the ledger refuses.
+      row({
+        assertions: [
+          {
+            metadata: {
+              checkId: "chat-factuality",
+              notGraded: true,
+              reason: "not graded: spending cap",
+              tier: "soft",
+            },
+            name: "soft:chat-factuality",
+            passed: false,
+            score: 0,
+            severity: "soft",
+          },
+        ],
+        itemId: "sam/chat/1",
+        pass: "grade",
+      }),
+    ],
+    setup: capped,
+    sweep,
+    sweepId,
+    transcripts: [transcript("sam/chat/1")],
+  });
+  assert.equal(reportA.summary.graded, 0);
+  assert.equal(reportA.summary.notGraded, 1);
+  // The failure sits in an item that was not graded, so it is not in the rate,
+  // and the numerator and the denominator come from the same items.
+  assert.equal(reportA.summary.countedFailures, 0);
+  assert.equal(reportA.summary.countedRate, 0);
+  assert.equal(rankingEntryFor(reportA).incomplete, true);
+
+  // Setup B: graded in full, with one counted failure in two items.
+  const full: Setup = { ...setup, chatModel: "b:8b" };
+  const reportB = assembleSetupReport({
+    gitCommit: "abc1234",
+    people: ["sam"],
+    promptShas: { chat: "0123456789ab", dream: null },
+    rows: [
+      row({
+        assertions: [check("counted", "turn-works", { passed: true })],
+        itemId: "sam/chat/1",
+        pass: "chat",
+      }),
+      row({
+        assertions: [check("counted", "journal-right", { passed: false })],
+        itemId: "sam/chat/1",
+        pass: "grade",
+      }),
+      row({
+        assertions: [check("counted", "turn-works", { passed: true })],
+        itemId: "sam/chat/2",
+        pass: "chat",
+      }),
+      row({
+        assertions: [check("counted", "journal-right", { passed: true })],
+        itemId: "sam/chat/2",
+        pass: "grade",
+      }),
+    ],
+    setup: full,
+    sweep,
+    sweepId,
+    transcripts: [transcript("sam/chat/1"), transcript("sam/chat/2")],
+  });
+  assert.equal(reportB.summary.graded, 2);
+  assert.equal(reportB.summary.countedFailures, 1);
+  assert.equal(reportB.summary.countedRate, 0.5);
+  assert.equal(rankingEntryFor(reportB).incomplete, false);
+
+  const ranked = rankSetups([reportA, reportB].map(rankingEntryFor));
+  assert.deepEqual(
+    ranked.map((entry) => entry.setupId),
+    [reportB.setupId, reportA.setupId]
+  );
+});
+
+test("a hard failure in an item that was not graded still counts", () => {
+  const report = assemble(
+    [
+      row({
+        assertions: [
+          check("hard", "crisis-handled", { passed: false }),
+          check("rubric", "warmth", { metadata: { notGraded: true } }),
+        ],
+        itemId: "sam/chat/1",
+        pass: "grade",
+      }),
+    ],
+    []
+  );
+  assert.equal(report.summary.notGraded, 1);
+  assert.deepEqual(
+    report.summary.hardFailures.map((failure) => failure.id),
+    ["crisis-handled"]
+  );
+});
+
+test("a setup with nothing graded ranks as incomplete", () => {
+  const report = assemble([]);
+  assert.equal(report.summary.graded, 0);
+  assert.equal(rankingEntryFor(report).incomplete, true);
 });
 
 test("summarize on nothing is all zeros", () => {

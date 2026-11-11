@@ -27,6 +27,7 @@ import {
 
 const sha256HexPattern = /^[a-f0-9]{64}$/u;
 const missingPattern = /Missing/u;
+const busyPattern = /busy/u;
 const noFolderPattern = /No Dream prompt folder/u;
 
 test("computeCacheKey is stable for fixed inputs", () => {
@@ -321,6 +322,57 @@ test("snapshotDreamCache copies a checkpointed database into a key-named dir", (
     assert.equal(row?.n, 7);
   } finally {
     copied.close();
+  }
+});
+
+test("snapshotDreamCache fails while the WAL cannot be checkpointed, and copies the changes once it can", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "sage-eval-busy-data-"));
+  const cacheDir = mkdtempSync(join(tmpdir(), "sage-eval-busy-cache-"));
+  makeDatabase(dataDir);
+  writeFileSync(join(dataDir, "manifest.json"), '{"cases":{}}\n');
+  const options = {
+    cacheDir,
+    dataDir,
+    key: "busy123",
+    stamp: {
+      createdAt: "2026-09-15T00:00:00.000Z",
+      embedDigest: "",
+      embedModel: "nomic-embed-text",
+      key: "busy123",
+      summaryDigest: "",
+      summaryModel: "qwen3:8b",
+    },
+  };
+  // A reader holds an older snapshot while a write lands in the log. The
+  // checkpoint answers busy instead of throwing, and a copy of app.db alone
+  // would miss the write.
+  const writer = new DatabaseSync(join(dataDir, "app.db"));
+  const reader = new DatabaseSync(join(dataDir, "app.db"));
+  try {
+    writer.exec("PRAGMA journal_mode=WAL;");
+    reader.exec("BEGIN;");
+    reader.prepare("SELECT n FROM memory").get();
+    writer.exec("INSERT INTO memory (n) VALUES (8);");
+    assert.throws(() => snapshotDreamCache(options), busyPattern);
+    assert.equal(existsSync(join(cacheDir, "busy123")), false);
+
+    reader.exec("COMMIT;");
+    const dest = snapshotDreamCache(options);
+    const copied = new DatabaseSync(join(dest, "app.db"), { readOnly: true });
+    try {
+      const rows = copied.prepare("SELECT n FROM memory ORDER BY n").all() as {
+        n: number;
+      }[];
+      assert.deepEqual(
+        rows.map((row) => row.n),
+        [7, 8]
+      );
+    } finally {
+      copied.close();
+    }
+  } finally {
+    reader.close();
+    writer.close();
   }
 });
 

@@ -4,8 +4,6 @@
 // When the gateway's price list cannot be read (no network), the estimate
 // falls back to the default prices below and says so.
 
-import { join } from "node:path";
-
 import { totals } from "../../evals/lib/ledger.ts";
 import { loadPrices, type ModelPrice } from "../../evals/lib/prices.ts";
 
@@ -48,11 +46,6 @@ export async function loadPriceBook(
     }
   }
   return { defaulted, prices };
-}
-
-/** Where the runner keeps the price list it read, so the processes of a sweep share it. */
-export function priceCacheFile(agentDir: string): string {
-  return join(agentDir, "evals", ".runs", "prices.json");
 }
 
 /** The sweep's settled spending so far, in dollars. Zero before the ledger exists. */

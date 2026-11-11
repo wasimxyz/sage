@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -10,12 +11,19 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { hasExited } from "./proc.ts";
+import {
+  hasExited,
+  killAllTracked,
+  terminateAllTracked,
+  waitFor,
+} from "./proc.ts";
 import {
   automationDirOf,
   discoveryFileOf,
+  endLeftoverOllama,
   installPrefix,
   nativeBuildArgs,
+  ollamaPidFileOf,
   prepareDataDir,
   removeBuilds,
   sageBinary,
@@ -206,4 +214,158 @@ test("startSage stops Sage when automation never answers", async (t) => {
     }),
     pattern3
   );
+});
+
+// ---------------------------------------------------------------------------
+// An interrupted run must not leave Sage's Ollama on the port
+// ---------------------------------------------------------------------------
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function gone(pid: number): Promise<boolean> {
+  const result = await waitFor(() => !alive(pid), {
+    intervalMs: 25,
+    timeoutMs: 5000,
+  });
+  return result.ok;
+}
+
+// How a stand-in Sage answers SIGTERM:
+//   quits    stops its Ollama and removes the pid file, like a normal quit
+//   ignores  does nothing, like a hung Sage
+//   dies     exits at once and leaves its Ollama, like a Sage with no handler
+type Mode = "dies" | "ignores" | "quits";
+
+// Like src/ollama_server.zig: the server leads a group of its own (`.pgid = 0`),
+// and its pid goes in `ollama/serve.pid`.
+const sageWithOllama = (mode: Mode) => `#!/usr/bin/env node
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const ollama = spawn(process.env.SAGE_OLLAMA_PATH, ["serve"], { detached: true, stdio: "ignore" });
+fs.mkdirSync("ollama", { recursive: true });
+fs.writeFileSync("ollama/serve.pid", String(ollama.pid) + "\\n");
+fs.mkdirSync(".zig-cache/native-sdk-automation", { recursive: true });
+fs.writeFileSync("agent-server.json", JSON.stringify({ token: "sage-token-0123456789" }));
+const mode = ${JSON.stringify(mode)};
+process.on("SIGTERM", () => {
+  fs.writeFileSync("got-sigterm", "yes");
+  if (mode === "ignores") {
+    return;
+  }
+  if (mode === "quits") {
+    try { process.kill(-ollama.pid, "SIGTERM"); } catch {}
+    fs.rmSync("ollama/serve.pid", { force: true });
+  }
+  process.exit(0);
+});
+setInterval(() => {}, 1000);
+`;
+
+const fakeOllama = "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n";
+
+async function startSageWithOllama(
+  t: test.TestContext,
+  mode: Mode
+): Promise<{
+  dataDir: string;
+  ollamaPid: number;
+  run: Awaited<ReturnType<typeof startSage>>;
+}> {
+  const dir = tempDir(t);
+  const dataDir = prepareDataDir("/repo", dir);
+  const ollamaBin = join(dir, "ollama");
+  writeFileSync(ollamaBin, fakeOllama);
+  chmodSync(ollamaBin, 0o755);
+  const run = await startSage({
+    automateWait: () => Promise.resolve(true),
+    binary: installFake(dir, sageWithOllama(mode)),
+    dataDir,
+    embedModel: "nomic-embed-text",
+    ollamaBin,
+    startTimeoutMs: 15_000,
+    summaryModel: "qwen3.5:9b",
+  });
+  const ollamaPid = Number(readFileSync(ollamaPidFileOf(dataDir), "utf8"));
+  t.after(() => {
+    killAllTracked();
+    try {
+      process.kill(-ollamaPid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  });
+  assert.ok(alive(ollamaPid));
+  return { dataDir, ollamaPid, run };
+}
+
+test("a normal stop lets Sage stop its own Ollama", async (t) => {
+  const { dataDir, ollamaPid, run } = await startSageWithOllama(t, "quits");
+  await run.stop();
+  assert.equal(await gone(ollamaPid), true);
+  assert.equal(existsSync(ollamaPidFileOf(dataDir)), false);
+});
+
+test("a normal stop also ends an Ollama that Sage left when it died", async (t) => {
+  const { ollamaPid, run } = await startSageWithOllama(t, "dies");
+  await run.stop();
+  assert.equal(hasExited(run.child), true);
+  assert.equal(await gone(ollamaPid), true);
+});
+
+test("killAllTracked also ends the Ollama that Sage's group does not hold", async (t) => {
+  const { ollamaPid, run } = await startSageWithOllama(t, "ignores");
+  // What the exit handler and the second Ctrl-C do. Sage gets SIGKILL, and its
+  // Ollama is in a group of its own.
+  killAllTracked();
+  const exited = await waitFor(() => hasExited(run.child), {
+    timeoutMs: 5000,
+  });
+  assert.equal(exited.ok, true);
+  assert.equal(await gone(ollamaPid), true);
+});
+
+test("Ctrl-C asks Sage first, so it stops its own Ollama before anything is killed", async (t) => {
+  const { dataDir, ollamaPid, run } = await startSageWithOllama(t, "quits");
+  await terminateAllTracked(5000);
+  assert.equal(hasExited(run.child), true);
+  assert.equal(
+    readFileSync(join(dataDir, "got-sigterm"), "utf8"),
+    "yes",
+    "Sage got SIGTERM and ran its own quit path"
+  );
+  assert.equal(await gone(ollamaPid), true);
+});
+
+test("Ctrl-C ends a Sage that ignores SIGTERM after the grace period, and its Ollama with it", async (t) => {
+  const { ollamaPid, run } = await startSageWithOllama(t, "ignores");
+  const started = Date.now();
+  await terminateAllTracked(300);
+  assert.ok(Date.now() - started >= 250, "it waited for the grace period");
+  const exited = await waitFor(() => hasExited(run.child), {
+    timeoutMs: 5000,
+  });
+  assert.equal(exited.ok, true);
+  assert.equal(await gone(ollamaPid), true);
+});
+
+test("a pid file that names some other process is left alone", (t) => {
+  const dir = tempDir(t);
+  const dataDir = prepareDataDir("/repo", dir);
+  const other = spawn("sleep", ["300"], { stdio: "ignore" });
+  t.after(() => other.kill("SIGKILL"));
+  mkdirSync(join(dataDir, "ollama"), { recursive: true });
+  writeFileSync(ollamaPidFileOf(dataDir), `${other.pid}\n`);
+  assert.equal(endLeftoverOllama(dataDir, join(dir, "ollama")), false);
+  assert.ok(other.pid !== undefined && alive(other.pid));
+  // A pid file that is not a number, and no pid file, end nothing either.
+  writeFileSync(ollamaPidFileOf(dataDir), "not a pid\n");
+  assert.equal(endLeftoverOllama(dataDir, join(dir, "ollama")), false);
+  assert.equal(endLeftoverOllama(join(dir, "nowhere"), "/o"), false);
 });

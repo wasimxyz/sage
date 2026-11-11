@@ -14,10 +14,14 @@ import { parseEnv } from "node:util";
 
 export type Env = Record<string, string | undefined>;
 
-/** Credentials for the cloud judge and simulated user. Client processes only. */
+/**
+ * Credentials for the cloud judge and simulated user. Client processes only.
+ * These are the two the gateway SDK authenticates with. A base URL is not a
+ * credential: the SDK never reads `AI_GATEWAY_BASE_URL`, so it must not satisfy
+ * the key check.
+ */
 export const GATEWAY_ENV_KEYS = [
   "AI_GATEWAY_API_KEY",
-  "AI_GATEWAY_BASE_URL",
   "VERCEL_OIDC_TOKEN",
 ] as const;
 
@@ -126,6 +130,28 @@ export function gatewayCredentials(
     }
   }
   return found;
+}
+
+/**
+ * The environment for the report upload: nothing that looks like a credential,
+ * except the Blob token or store. The OIDC token goes along only when the store
+ * id is the way in, because that is the one case where the upload reads it.
+ */
+export function uploadEnv(env: Env = process.env): Record<string, string> {
+  const clean = withoutSecrets(env);
+  const token = env.BLOB_READ_WRITE_TOKEN ?? "";
+  const storeId = env.BLOB_STORE_ID ?? "";
+  const oidc = env.VERCEL_OIDC_TOKEN ?? "";
+  if (token.length > 0) {
+    clean.BLOB_READ_WRITE_TOKEN = token;
+  }
+  if (storeId.length > 0) {
+    clean.BLOB_STORE_ID = storeId;
+  }
+  if (token.length === 0 && storeId.length > 0 && oidc.length > 0) {
+    clean.VERCEL_OIDC_TOKEN = oidc;
+  }
+  return clean;
 }
 
 /** Replaces each secret value in `text` with `[redacted]`. */

@@ -26,7 +26,7 @@
  * from `schema.ts`, such as `replyGradeSchema` or `dreamSourceGradeSchema`.
  */
 import { createHash } from "node:crypto";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 
 import {
   createGateway,
@@ -43,6 +43,7 @@ import {
   estimateUsd,
   loadPrices,
   type ModelPrice,
+  priceCacheFile,
   type TokenUsage,
 } from "./prices.ts";
 import { canonicalJson, ENV_RUN_DIR, readPassEnv } from "./schema.ts";
@@ -332,7 +333,7 @@ export function createGrader(options: GraderOptions): Grader {
       return Promise.resolve(options.price);
     }
     price ??= loadPrices([options.modelId], {
-      cacheFile: join(options.runDir, "prices.json"),
+      cacheFile: priceCacheFile(options.runDir),
     }).then((prices) => {
       const found = prices[options.modelId];
       if (found === undefined) {

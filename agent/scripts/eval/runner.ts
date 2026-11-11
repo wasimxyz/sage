@@ -20,6 +20,7 @@ import {
   readDreamPrompts,
   repoRoot,
 } from "../../evals/lib/cache.ts";
+import { priceCacheFile } from "../../evals/lib/prices.ts";
 import {
   dreamKeyId,
   type Memory,
@@ -33,7 +34,6 @@ import {
   DEFAULT_PRICE,
   DEFAULT_SIMULATED_USER_PRICE,
   loadPriceBook,
-  priceCacheFile,
   spentUsd,
 } from "./cloud.ts";
 import { collectSetupData } from "./collect.ts";
@@ -43,7 +43,12 @@ import {
   needsDream,
   snapshotDigests,
 } from "./dream.ts";
-import { gatewayCredentials, loadEvalEnv, withoutSecrets } from "./env.ts";
+import {
+  gatewayCredentials,
+  loadEvalEnv,
+  uploadEnv,
+  withoutSecrets,
+} from "./env.ts";
 import {
   dreamMissKey,
   type Estimate,
@@ -85,7 +90,7 @@ import {
   type RunPlan,
   resolveTests,
 } from "./plan.ts";
-import { captureCommand, killAllTracked } from "./proc.ts";
+import { captureCommand, killAllTracked, terminateAllTracked } from "./proc.ts";
 import {
   assembleSetupReport,
   assembleSweepSummary,
@@ -107,6 +112,9 @@ const agentDir = fileURLToPath(new URL("../..", import.meta.url)).replace(
   ""
 );
 const root = dirname(agentDir);
+
+/** How long the children get to stop on the first Ctrl-C before they are ended. */
+const SIGNAL_GRACE_MS = 5000;
 
 function log(message: string): void {
   console.log(message);
@@ -170,6 +178,12 @@ function modelRoles(setups: readonly Setup[]) {
     embed: distinct(setups, "embedModel"),
     summary: distinct(setups, "summaryModel"),
   };
+}
+
+/** Every model the setups use, once each. */
+function modelsOf(setups: readonly Setup[]): string[] {
+  const roles = modelRoles(setups);
+  return [...new Set([...roles.summary, ...roles.embed, ...roles.chat])];
 }
 
 /** Drops think-on setups for models that cannot think. */
@@ -314,7 +328,7 @@ interface Cleanup {
   pull: PullServer | null;
 }
 
-interface OllamaCheck {
+export interface OllamaCheck {
   bin: string;
   check: ModelCheck;
   digests: DigestLookup;
@@ -339,8 +353,11 @@ async function inspectModels(
     }
     console.error(message);
   }
-  const models = [...roles.summary, ...roles.embed, ...roles.chat];
-  return { bin, check, digests: await snapshotDigests(models, OLLAMA_HOST) };
+  return {
+    bin,
+    check,
+    digests: await snapshotDigests(modelsOf(setups), OLLAMA_HOST),
+  };
 }
 
 async function dreamMissesFor(
@@ -381,7 +398,8 @@ async function dreamMissesFor(
 async function printEstimate(
   planned: Planned,
   plan: RunPlan,
-  digests: DigestLookup
+  digests: DigestLookup,
+  runDir: string
 ): Promise<Estimate> {
   const { sweep } = planned.loaded;
   const book = await loadPriceBook(
@@ -389,7 +407,7 @@ async function printEstimate(
       { fallback: DEFAULT_PRICE, id: sweep.judge.model },
       { fallback: DEFAULT_SIMULATED_USER_PRICE, id: sweep.simulatedUser.model },
     ],
-    priceCacheFile(agentDir)
+    priceCacheFile(runDir)
   );
   const estimate = estimateRun({
     dreamMisses: await dreamMissesFor(plan, planned.peopleById, digests),
@@ -436,20 +454,38 @@ async function confirmRun(options: CliOptions): Promise<void> {
   }
 }
 
-/** Pulls what is missing, then checks again. Returns the models that cannot think. */
-async function pullMissing(
+export interface PullDeps {
+  host: string;
+  pull: (bin: string, host: string, model: string) => Promise<void>;
+}
+
+export interface PulledModels {
+  /** Chat models that cannot think, including the ones just pulled. */
+  cannotThink: Set<string>;
+  /** Digests read after the pulls, so a model pulled just now has one. */
+  digests: DigestLookup;
+}
+
+/**
+ * Pulls what is missing, then checks again and reads the digests. The digests
+ * of the models that were already there were read earlier, but a model pulled
+ * now has none yet, and the Dream cache key needs it. Ollama is still up here:
+ * the pull server stops after this.
+ */
+export async function pullMissing(
   inspected: OllamaCheck,
-  setups: readonly Setup[]
-): Promise<Set<string>> {
+  setups: readonly Setup[],
+  deps: PullDeps = { host: OLLAMA_HOST, pull: pullModel }
+): Promise<PulledModels> {
   for (const model of inspected.check.missing) {
     // biome-ignore lint/performance/noAwaitInLoops: pulls run one at a time so the progress is readable.
-    await pullModel(inspected.bin, OLLAMA_HOST, model);
+    await deps.pull(inspected.bin, deps.host, model);
   }
   const cannotThink = new Set(inspected.check.cannotThink);
   if (inspected.check.missing.length === 0) {
-    return cannotThink;
+    return { cannotThink, digests: inspected.digests };
   }
-  const again = await checkModels(OLLAMA_HOST, modelRoles(setups));
+  const again = await checkModels(deps.host, modelRoles(setups));
   const problems = [
     ...again.problems,
     ...again.missing.map((model) => `${model} is still not in Ollama.`),
@@ -460,7 +496,10 @@ async function pullMissing(
   for (const model of again.cannotThink) {
     cannotThink.add(model);
   }
-  return cannotThink;
+  return {
+    cannotThink,
+    digests: await snapshotDigests(modelsOf(setups), deps.host),
+  };
 }
 
 async function buildAll(
@@ -561,6 +600,8 @@ async function writeAllReports(
 function offerUpload(): void {
   spawnSync("sh", [join(root, "scripts", "eval-upload.sh")], {
     cwd: root,
+    // The upload needs the Blob variables. It does not need a gateway key.
+    env: uploadEnv(),
     stdio: "inherit",
   });
 }
@@ -607,7 +648,12 @@ async function sweepBody(
   const cannotThink = new Set(inspected.check.cannotThink);
   let setups = withoutImpossibleThinking(planned.setups, cannotThink);
   let plan = buildPlan(setups, planned.selected, sweep);
-  const estimate = await printEstimate(planned, plan, inspected.digests);
+  const estimate = await printEstimate(
+    planned,
+    plan,
+    inspected.digests,
+    runDir
+  );
   const missingKeys = credentialProblems(sweep.judge.model);
   for (const note of missingKeys) {
     console.error(note);
@@ -622,7 +668,8 @@ async function sweepBody(
   await confirmRun(options);
 
   heading("Pulling models");
-  const thinkers = await pullMissing(inspected, planned.setups);
+  const pulled = await pullMissing(inspected, planned.setups);
+  const thinkers = pulled.cannotThink;
   setups = withoutImpossibleThinking(planned.setups, thinkers);
   plan = buildPlan(setups, planned.selected, sweep);
   // Sage binds the port itself, so the pull server goes first.
@@ -646,7 +693,7 @@ async function sweepBody(
     builds,
     cannotThink: thinkers,
     credentials: credentialsFrom(),
-    digests: inspected.digests,
+    digests: pulled.digests,
     failures: [],
     filters: options.eveFilters,
     listCache: new Map(),
@@ -700,7 +747,11 @@ async function runSweep(options: CliOptions): Promise<number> {
     }
     abort.aborted = true;
     console.error(`\n${signal}: stopping. Press Ctrl-C again to quit at once.`);
-    killAllTracked();
+    // Sage gets SIGTERM first, so it can stop its own Ollama. Anything still
+    // running after the grace period is ended, and so is a leftover Ollama.
+    terminateAllTracked(SIGNAL_GRACE_MS).catch(() => {
+      killAllTracked();
+    });
   };
   process.on("SIGINT", () => onSignal("SIGINT"));
   process.on("SIGTERM", () => onSignal("SIGTERM"));

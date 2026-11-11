@@ -468,13 +468,23 @@ function checkpointWal(dbPath: string): void {
     let lastError: unknown;
     for (let attempt = 0; attempt < checkpointAttempts; attempt += 1) {
       try {
-        db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-        return;
+        // A checkpoint that cannot finish does not throw. It answers with a
+        // row whose `busy` column is 1, and the log then still holds changes
+        // that a copy of app.db alone would miss.
+        const row = db.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get() as
+          | { busy?: number | bigint }
+          | undefined;
+        if (Number(row?.busy ?? 0) === 0) {
+          return;
+        }
+        lastError = new Error(
+          "WAL checkpoint could not finish because the database is busy."
+        );
       } catch (error) {
         lastError = error;
-        if (attempt + 1 < checkpointAttempts) {
-          sleepSync(checkpointRetryMs);
-        }
+      }
+      if (attempt + 1 < checkpointAttempts) {
+        sleepSync(checkpointRetryMs);
       }
     }
     throw lastError instanceof Error
