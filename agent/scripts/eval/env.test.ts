@@ -200,3 +200,16 @@ test("isNotFound is true for a missing file only", (t) => {
   assert.ok(!isNotFound(new Error("other")));
   assert.ok(!isNotFound(null));
 });
+
+test("a filter keeps names it does not accept out of the environment", (t) => {
+  const dir = tempAgentDir(t);
+  writeFileSync(
+    join(dir, ".env.local"),
+    "AI_GATEWAY_API_KEY=secret\nBLOB_READ_WRITE_TOKEN=blob\n"
+  );
+  const env: Record<string, string | undefined> = {};
+  const added = loadEvalEnv(dir, env, (name) => name.startsWith("BLOB_"));
+  assert.deepEqual(added, ["BLOB_READ_WRITE_TOKEN"]);
+  assert.equal(env.AI_GATEWAY_API_KEY, undefined);
+  assert.equal(env.BLOB_READ_WRITE_TOKEN, "blob");
+});

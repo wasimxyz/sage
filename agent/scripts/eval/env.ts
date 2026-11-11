@@ -91,14 +91,19 @@ export function loadEnvFiles(agentDir: string): Record<string, string> {
 
 /**
  * Puts the env files' variables into `env`. A variable already set there,
- * even to an empty string, keeps its value. Returns the names it added.
+ * even to an empty string, keeps its value. With `only`, a variable is loaded
+ * only when `only` accepts its name. Returns the names it added.
  */
 export function loadEvalEnv(
   agentDir: string,
-  env: Env = process.env
+  env: Env = process.env,
+  only?: (name: string) => boolean
 ): string[] {
   const added: string[] = [];
   for (const [name, value] of Object.entries(loadEnvFiles(agentDir))) {
+    if (only !== undefined && !only(name)) {
+      continue;
+    }
     if (env[name] === undefined) {
       env[name] = value;
       added.push(name);

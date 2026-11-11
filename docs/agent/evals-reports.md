@@ -64,6 +64,8 @@ A setup with any item that is not graded is marked incomplete in the ranking. Sk
 2. Within each group, the lowest rate of counted failures per graded item ranks first.
 3. Then the highest rubric mean. Means within 0.05 tie. A tie goes to the lower spread across repeats, then the lower median wait for the first word.
 
+An incomplete setup ranks after every complete one, even a complete one that failed a hard check.
+
 Rubric scores do not exist yet, so for now setups with the same counted rate rank by the wait for the first word.
 
 ## Reading a failure
