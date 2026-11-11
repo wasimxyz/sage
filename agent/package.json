@@ -13,8 +13,9 @@
     "eval": "EVE_TELEMETRY_DISABLED=1 eve eval --max-concurrency 1",
     "fix": "ultracite fix",
     "start": "EVE_TELEMETRY_DISABLED=1 eve start",
+    "sweep": "node --experimental-strip-types scripts/eval/run.ts",
     "test:evals": "node --test --experimental-strip-types evals/lib/*.test.ts",
-    "test:scripts": "node --test --experimental-strip-types scripts/*.test.ts",
+    "test:scripts": "node --test --experimental-strip-types scripts/*.test.ts scripts/eval/*.test.ts",
     "test:world": "node --test --experimental-strip-types packages/world-encrypted-local/index.test.ts",
     "typecheck": "tsc"
   },

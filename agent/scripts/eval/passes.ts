@@ -30,6 +30,9 @@ import {
 /** Not in EVAL_ENV: the grader reads it to tag its gateway calls. */
 export const ENV_SWEEP_ID = "SAGE_EVAL_SWEEP_ID";
 
+/** Not in EVAL_ENV: the person pass reads it to key its Dream grades. */
+export const ENV_DREAM_KEY = "SAGE_EVAL_DREAM_KEY";
+
 /** Chat generation runs one eval at a time, because local models cannot share the GPU. */
 export const PASS_CONCURRENCY: Readonly<Record<PassName, number>> = {
   chat: 1,
@@ -48,6 +51,8 @@ export interface PassEnvInput {
   dataDir: string;
   dataRoot: string;
   discoveryFile: string;
+  /** The key of this person's Dream snapshot. The person pass keys its grades by it. */
+  dreamKey?: string;
   /** The folder of Dream prompts, when the setup uses a variant. */
   dreamPrompts?: string;
   manifest: string;
@@ -95,6 +100,9 @@ export function buildPassEnv(input: PassEnvInput): Record<string, string> {
   };
   if (input.dreamPrompts !== undefined) {
     env[EVAL_ENV.dreamPrompts] = input.dreamPrompts;
+  }
+  if (input.dreamKey !== undefined) {
+    env[ENV_DREAM_KEY] = input.dreamKey;
   }
   if (input.token !== undefined) {
     // eve applies this bearer only to a URL target.

@@ -76,7 +76,8 @@ test("the workflow routes need the agent-server token in every launch path", () 
     "desired: `eve dev` loads the guard, so the dev port is locked too."
   );
   assert.ok(
-    read("scripts/eval-run.sh").includes(`--import=\\"$agent/${preload}\\"`),
+    read("agent/scripts/eval/eve.ts").includes("workflow-guard-preload.ts") &&
+      read("agent/scripts/eval/unit.ts").includes("withWorkflowGuard: true"),
     "desired: the eval agent server loads the guard."
   );
   const sidecar = read("src/eve_sidecar.zig");

@@ -5,9 +5,6 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 agent="$root/agent"
 reports="$agent/evals/reports"
 
-# shellcheck disable=SC1091
-. "$root/scripts/eval-env.sh"
-
 list_reports() {
   if [ ! -d "$reports" ]; then
     return 0
@@ -32,8 +29,6 @@ confirm_upload() {
   esac
 }
 
-load_eval_env "$agent"
-
 files=$(list_reports)
 if [ -z "$files" ]; then
   echo "No eval reports to upload."
@@ -51,4 +46,5 @@ if [ ! -d "$agent/node_modules/@vercel/blob" ]; then
   npm --prefix "$agent" install
 fi
 
+# The script loads agent/.env, then agent/.env.local, for the Blob token.
 node --experimental-strip-types "$agent/scripts/upload-eval-reports.ts"

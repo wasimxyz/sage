@@ -49,18 +49,16 @@ test:
 	npm --prefix agent run test:scripts
 	npm --prefix agent run test:world
 	npm --prefix eval-viewer test
-	sh scripts/eval-env.test.sh
 	sh scripts/release-version.test.sh
 	sh scripts/reset-dev.test.sh
 	node --test --experimental-strip-types security-tests/*.test.ts
-	sh security-tests/eval-leftover-automation.sh
-	sh security-tests/eval-server-token.sh
-	sh security-tests/eval-ignores-data-dir.sh
 	sh security-tests/seed-dev-dev-only.sh
 	sh security-tests/agent-dev-modules.sh
 
+# Runs a sweep file from agent/evals/sweeps. SWEEP picks the file. ARGS adds
+# runner options (--dry-run, --yes) and eve filters (--tag example).
 eval:
-	sh scripts/eval-run.sh $(ARGS)
+	node --experimental-strip-types agent/scripts/eval/run.ts --sweep $(or $(SWEEP),default) $(ARGS)
 
 eval-upload:
 	sh scripts/eval-upload.sh

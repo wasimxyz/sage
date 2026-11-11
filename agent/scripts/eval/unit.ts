@@ -154,6 +154,8 @@ interface Unit {
   ctx: RunContext;
   dataDir: string;
   discoveryFile: string;
+  /** The key of the person's Dream snapshot. Null for an empty journal. */
+  dreamKey: string | null;
   first: Setup;
   group: PlanGroup;
   hold: DataDirHold;
@@ -168,6 +170,8 @@ interface Unit {
 }
 
 interface EnvFor {
+  /** The key of the person's Dream snapshot. Only the person pass gets it. */
+  dreamKey?: string;
   files: PassFiles;
   setup: Setup;
   token?: string;
@@ -181,6 +185,7 @@ function passEnv(unit: Unit, input: EnvFor): Record<string, string> {
     dataDir: unit.dataDir,
     dataRoot: evalDataRoot(),
     discoveryFile: unit.discoveryFile,
+    dreamKey: input.dreamKey,
     dreamPrompts:
       group.dreamPrompt === baselineDreamPrompt
         ? undefined
@@ -286,6 +291,7 @@ async function runUnit(
     ctx,
     dataDir,
     discoveryFile: join(dataDir, "agent-server.json"),
+    dreamKey: null,
     first,
     group,
     hold,
@@ -343,6 +349,7 @@ async function runWithSage(unit: Unit): Promise<void> {
     throw new Error(`No Sage build for memory ${group.memory}.`);
   }
   const dreamKey = await dreamKeyOf(unit);
+  unit.dreamKey = dreamKey?.key ?? null;
   // The snapshot goes in before Sage starts, so Sage opens the restored file.
   const restored =
     dreamKey !== null &&
@@ -542,7 +549,11 @@ async function runPersonPass(unit: Unit): Promise<void> {
     },
     {
       echoPrefix: `[person ${person.id}]`,
-      env: passEnv(unit, { files: unit.personFiles, setup: unit.first }),
+      env: passEnv(unit, {
+        dreamKey: unit.dreamKey ?? undefined,
+        files: unit.personFiles,
+        setup: unit.first,
+      }),
       logFile: unit.personFiles.log,
     }
   );

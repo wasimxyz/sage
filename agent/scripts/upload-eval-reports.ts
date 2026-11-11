@@ -10,6 +10,10 @@ import {
   defaultBlobPrefix,
   listReportFiles,
 } from "../evals/lib/upload.ts";
+import { loadEvalEnv } from "./eval/env.ts";
+
+// A value already set in the shell keeps its value.
+loadEvalEnv(fileURLToPath(new URL("..", import.meta.url)));
 
 const reportsDir =
   process.env.SAGE_EVAL_REPORTS ??
