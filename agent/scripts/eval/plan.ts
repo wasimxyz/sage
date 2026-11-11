@@ -19,6 +19,9 @@ import {
 } from "../../evals/lib/schema.ts";
 import { countItems, type ItemCounts, type LoadedPerson } from "./people.ts";
 
+/** The eval id of Dream accuracy, which needs the snapshot's folder for its grades. */
+export const DREAM_ACCURACY_EVAL = "person/dream-accuracy";
+
 export const PASS_NAMES = ["person", "chat", "grade"] as const;
 export type PassName = (typeof PASS_NAMES)[number];
 
@@ -35,7 +38,7 @@ export const TEST_EVALS: Readonly<
     chat: ["chat/conversations"],
     grade: ["grade/conversations"],
   },
-  "dream-accuracy": { person: ["person/dream-accuracy"] },
+  "dream-accuracy": { person: [DREAM_ACCURACY_EVAL] },
   facts: { chat: ["chat/facts"], grade: ["grade/facts"] },
   "head-to-head": {},
   openers: { chat: ["chat/openers"], grade: ["grade/replies"] },
@@ -128,11 +131,21 @@ export interface PlanStats {
 }
 
 export interface RunPlan {
+  /**
+   * False when no test of the sweep sends a Chat message, such as the `dream`
+   * sweep. Then no Chat model is pulled or loaded, and no Chat server starts.
+   */
+  chat: boolean;
   groups: PlanGroup[];
   memoryValues: Memory[];
   people: PlanPerson[];
   setups: Setup[];
   stats: PlanStats;
+}
+
+/** True when the sweep has an eval that talks to the Chat agent. */
+export function needsChat(prefixes: PassPrefixes): boolean {
+  return prefixes.chat.length > 0;
 }
 
 function groupSetups(setups: readonly Setup[]): PlanGroup[] {
@@ -186,8 +199,10 @@ function countModelLoads(groups: readonly PlanGroup[], people: number): number {
 export function buildPlan(
   setups: readonly Setup[],
   people: readonly LoadedPerson[],
-  sweep: Pick<SweepFile, "tags">
+  sweep: Pick<SweepFile, "tags">,
+  options: { chat?: boolean } = {}
 ): RunPlan {
+  const chat = options.chat ?? true;
   const groups = groupSetups(setups);
   const planPeople: PlanPerson[] = people.map((person) => ({
     counts: countItems(person, sweep.tags),
@@ -206,15 +221,16 @@ export function buildPlan(
     0
   );
   return {
+    chat,
     groups,
     memoryValues,
     people: planPeople,
     setups: [...setups],
     stats: {
-      chatPasses: setups.length * personCount,
-      eveDevStarts: promptCount * personCount,
-      gradePasses: setups.length * personCount,
-      modelLoads: countModelLoads(groups, personCount),
+      chatPasses: chat ? setups.length * personCount : 0,
+      eveDevStarts: chat ? promptCount * personCount : 0,
+      gradePasses: chat ? setups.length * personCount : 0,
+      modelLoads: chat ? countModelLoads(groups, personCount) : 0,
       personPasses: groups.length * personCount,
       sageStarts: groups.length * personCount,
     },
@@ -229,16 +245,22 @@ export function describePlan(plan: RunPlan): string[] {
       (sum, prompt) => sum + prompt.setups.length,
       0
     );
+    const chatPrompts = plan.chat
+      ? `, ${group.prompts.length} Chat prompt${group.prompts.length === 1 ? "" : "s"}`
+      : "";
     lines.push(
-      `memory ${group.memory}, summary ${group.summaryModel}, embed ${group.embedModel}, Dream prompt ${group.dreamPrompt}: ${setupCount} setup${setupCount === 1 ? "" : "s"}, ${group.prompts.length} Chat prompt${group.prompts.length === 1 ? "" : "s"}`
+      `memory ${group.memory}, summary ${group.summaryModel}, embed ${group.embedModel}, Dream prompt ${group.dreamPrompt}: ${setupCount} setup${setupCount === 1 ? "" : "s"}${chatPrompts}`
     );
   }
   lines.push(
     `${plan.people.length} ${plan.people.length === 1 ? "person" : "people"}: ${plan.people.map((person) => person.id).join(", ")}`
   );
   const { stats } = plan;
+  const sageStarts = `${stats.sageStarts} Sage start${stats.sageStarts === 1 ? "" : "s"}`;
   lines.push(
-    `${stats.sageStarts} Sage start${stats.sageStarts === 1 ? "" : "s"}, ${stats.eveDevStarts} Chat server start${stats.eveDevStarts === 1 ? "" : "s"}, about ${stats.modelLoads} model load${stats.modelLoads === 1 ? "" : "s"}`
+    plan.chat
+      ? `${sageStarts}, ${stats.eveDevStarts} Chat server start${stats.eveDevStarts === 1 ? "" : "s"}, about ${stats.modelLoads} model load${stats.modelLoads === 1 ? "" : "s"}`
+      : `${sageStarts}, no Chat (the tests send no message)`
   );
   return lines;
 }

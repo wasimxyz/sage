@@ -1,0 +1,14 @@
+# Compares summary models and Dream prompts. It runs only the person pass:
+# today's checks and Dream accuracy, with no Chat.
+#
+# Add models to summaryModels to compare them. Add a folder name from
+# agent/evals/dream-prompts/ to dreamPrompts to compare a prompt. Each
+# combination runs Dream again for every person, so it takes hours the first
+# time. Grades for a Dream snapshot are cached, so a second run is cheaper.
+summaryModels: [ qwen3.5:9b ]
+embedModels: [ nomic-embed-text ]
+dreamPrompts: [ baseline ]
+memory: [ off, on ]
+tests: [ person, dream-accuracy ]
+judge: { model: moonshotai/kimi-k3.1-pro }
+spendingCapUsd: 50

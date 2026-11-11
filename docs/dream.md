@@ -59,6 +59,8 @@ If Sage cannot open the folder, or cannot read a file, it logs one line and keep
 
 Other builds compile this code out, so they never look at the variable. `src/main.zig` gates `zero://inline` with the same build flag.
 
+The eval suite sets the variable for you. A sweep lists folders from `agent/evals/dream-prompts/` in `dreamPrompts`, and the runner points the Sage it starts at each one. [Eval suite](agent/evals.md#comparing-dream-prompts) explains how to compare prompts.
+
 ## The sidebar dot
 
 While Dream is idle, a blue dot sits at the right edge of the Dream item when there is work to do. `dream.status` counts that work with the same query `dream.start` uses, so the dot matches what a run would do. Edits to entries and chats do not reach the Dream provider, so it asks again every 15 seconds. The dot can take that long to appear after an edit. A hidden window skips the check and runs it once when it comes back.

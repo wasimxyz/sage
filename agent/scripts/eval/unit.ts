@@ -10,7 +10,10 @@ import { join } from "node:path";
 
 import {
   baselineDreamPrompt,
+  cachedDreamEntry,
   dreamPromptsDir,
+  evalCacheDir,
+  evalCacheEnabled,
   repoRoot,
 } from "../../evals/lib/cache.ts";
 import { evalDataRoot } from "../../evals/lib/dataset.ts";
@@ -55,7 +58,12 @@ import {
   runEvalPass,
 } from "./passes.ts";
 import type { LoadedPerson } from "./people.ts";
-import type { PassName, PassPrefixes, PlanGroup } from "./plan.ts";
+import {
+  DREAM_ACCURACY_EVAL,
+  type PassName,
+  type PassPrefixes,
+  type PlanGroup,
+} from "./plan.ts";
 import { prepareDataDir, type SageRun, startSage } from "./sage.ts";
 
 export interface RunContext {
@@ -189,7 +197,7 @@ interface EnvFor {
 }
 
 function passEnv(unit: Unit, input: EnvFor): Record<string, string> {
-  const { ctx, group } = unit;
+  const { ctx } = unit;
   const envInput: PassEnvInput = {
     agentDir: ctx.agentDir,
     credentials: ctx.credentials,
@@ -197,10 +205,6 @@ function passEnv(unit: Unit, input: EnvFor): Record<string, string> {
     dataRoot: evalDataRoot(),
     discoveryFile: unit.discoveryFile,
     dreamKey: input.dreamKey,
-    dreamPrompts:
-      group.dreamPrompt === baselineDreamPrompt
-        ? undefined
-        : dreamPromptsDir(repoRoot(), group.dreamPrompt),
     manifest: unit.manifestPath,
     models: {
       chat: input.setup.chatModel,
@@ -569,8 +573,32 @@ async function prepareModel(unit: Unit, setup: Setup): Promise<void> {
   unit.loaded = { chat: setup.chatModel, contextLength: setup.contextLength };
 }
 
+/**
+ * Dream accuracy keeps its grades in the snapshot's folder
+ * (`agent/evals/.cache/dream/<key>/`), and never makes that folder: the folder
+ * holds the snapshot, and the snapshot is moved into place whole. So the
+ * runner does not make it either. A snapshot that was not saved leaves no
+ * folder, and a folder holding only grades would make the next snapshot of
+ * this key fail. The grades are then not kept, and the next run grades again.
+ */
+function noteGradeCache(unit: Unit): void {
+  if (
+    unit.dreamKey === null ||
+    !evalCacheEnabled() ||
+    !unit.ctx.prefixes.person.includes(DREAM_ACCURACY_EVAL)
+  ) {
+    return;
+  }
+  if (cachedDreamEntry(unit.dreamKey, evalCacheDir()) === null) {
+    log(
+      `${unit.label}: the Dream snapshot was not saved, so the Dream accuracy grades will not be kept`
+    );
+  }
+}
+
 async function runPersonPass(unit: Unit): Promise<void> {
   const { ctx, label, person } = unit;
+  noteGradeCache(unit);
   const outcome = await runEvalPass(
     {
       agentDir: ctx.agentDir,

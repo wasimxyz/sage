@@ -7,9 +7,11 @@ import test, { mock } from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
 
+import { formatFactSheet, formatSourceForJudge } from "./dream-judge-input.ts";
 import {
   createGrader,
   DEFAULT_MAX_OUTPUT_TOKENS,
+  dreamSourceCall,
   type FactualityGrade,
   factualityGradeSchema,
   type Grader,
@@ -497,6 +499,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
   const material = rubricMaterial();
   assert.deepEqual(Object.keys(material), [
     "answers",
+    "dreamSourceLayout",
     "journalContext",
     "kinds",
     "maxOutputTokens",
@@ -520,12 +523,16 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     ["evidence", "reason", "pass"]
   );
   assert.deepEqual(Object.keys(material.kinds), [
+    "dreamSource",
     "extraction",
     "factuality",
     "summary",
   ]);
   for (const [kind, probe] of Object.entries(material.kinds)) {
     assert.equal(probe.instructions, RUBRICS[kind as RubricKind]);
+    if (kind === "dreamSource") {
+      continue;
+    }
     assert.equal(probe.schemaName, `${kind}_grade`);
     // The user message goes out as the fact sheet, the transcript, then the item.
     assert.deepEqual(probe.parts.slice(0, 2), [
@@ -535,7 +542,17 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     assert.equal(probe.parts[2], probe.item);
     assert.equal(probe.parts.length, 3);
   }
-  const { extraction, factuality, summary } = material.kinds;
+  const { dreamSource, extraction, factuality, summary } = material.kinds;
+  // A Dream grade has no transcript: the fact sheet, then the source and what Dream wrote.
+  assert.equal(dreamSource.schemaName, "dream_source_grade");
+  assert.deepEqual(dreamSource.parts, [
+    "<fact sheet and journal>",
+    dreamSource.item,
+  ]);
+  assert.equal(
+    dreamSource.item,
+    "Source (a journal entry):\n<source>\n\nWhat the app wrote from this source:\n[summary]\n<written>"
+  );
   assert.equal(
     extraction.item,
     [
@@ -559,6 +576,73 @@ test("the rubric hash material covers every part that shapes a grade", () => {
       "Output to grade:\n<output>",
     ].join("\n\n")
   );
+});
+
+test("the Dream-source rubric, schema, and prompt layout are inside the rubric hash", () => {
+  const before = rubricHash();
+  const original = RUBRICS.dreamSource;
+  (RUBRICS as { dreamSource: string }).dreamSource = `${original} Be strict.`;
+  try {
+    assert.notEqual(rubricHash(), before);
+  } finally {
+    (RUBRICS as { dreamSource: string }).dreamSource = original;
+  }
+  assert.equal(rubricHash(), before);
+
+  const material = rubricMaterial();
+  assert.equal(material.rubrics.dreamSource, RUBRICS.dreamSource);
+  // The judge writes the fields of a claim in this order, so the order is part of the hash.
+  assert.deepEqual(
+    Object.keys(
+      JSON.parse(material.answers.dreamSource).properties.unsupportedClaims
+        .items.properties
+    ),
+    ["itemKind", "itemText", "quote", "reason", "severity"]
+  );
+  // The layout covers both kinds of source, every kind of written item, and the fact sheet.
+  const layout = material.dreamSourceLayout;
+  for (const text of [
+    "# Fact sheet for layout-probe",
+    "Source (a journal entry):",
+    "Source (a chat between User and Sage):",
+    "What the app wrote from this source:",
+    "[summary]",
+    "[profile]",
+    "[fact]",
+    "[event]",
+    "[chat-summary]",
+    "[chat-title]",
+    "(nobody listed)",
+    "(nothing listed)",
+  ]) {
+    assert.ok(layout.includes(text), text);
+  }
+});
+
+test("the Dream-source call is built from the same layout the rubric hash reads", () => {
+  const source = {
+    sourceId: "2026-09-03-lost-mia",
+    sourceKind: "entry",
+    sourceText: '2026-09-03, "Lost Mia"\n\nLost Mia today.',
+    written: [{ itemKind: "summary", text: "Mia died today." }],
+  } as const;
+  const context = formatFactSheet({
+    id: "sam",
+    personCase: { about: "A test author.", cast: [], timeline: [] },
+  });
+  const call = dreamSourceCall({
+    context,
+    label: "dream-accuracy sam/dream/x",
+    source: { ...source, written: [...source.written] },
+  });
+  assert.equal(call.instructions, RUBRICS.dreamSource);
+  assert.equal(call.context, context);
+  assert.equal(
+    call.item,
+    formatSourceForJudge({ ...source, written: [...source.written] })
+  );
+  assert.equal(call.schemaName, rubricMaterial().kinds.dreamSource.schemaName);
+  assert.equal(call.transcript, undefined);
 });
 
 test("the prompts a grader sends are the ones the rubric hash was made from", async () => {

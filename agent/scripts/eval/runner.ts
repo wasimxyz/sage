@@ -40,6 +40,7 @@ import { collectSetupData } from "./collect.ts";
 import {
   type DigestLookup,
   dreamKeyFor,
+  dreamPromptProblems,
   needsDream,
   snapshotDigests,
 } from "./dream.ts";
@@ -57,6 +58,7 @@ import {
   loadTimingHistory,
 } from "./estimate.ts";
 import { EVAL_TODAY, type EveServer, startEveServer } from "./eve.ts";
+import { runJudgeCheck } from "./judge-check.ts";
 import {
   checkModels,
   fetchPinnedOllama,
@@ -86,6 +88,7 @@ import {
   buildPlan,
   describePlan,
   distinct,
+  needsChat,
   type ResolvedTests,
   type RunPlan,
   resolveTests,
@@ -172,17 +175,18 @@ async function ask(question: string): Promise<boolean> {
   }
 }
 
-function modelRoles(setups: readonly Setup[]) {
+/** The models the setups use, by role. With no Chat in the sweep, no chat model is used. */
+function modelRoles(setups: readonly Setup[], chat = true) {
   return {
-    chat: distinct(setups, "chatModel"),
+    chat: chat ? distinct(setups, "chatModel") : [],
     embed: distinct(setups, "embedModel"),
     summary: distinct(setups, "summaryModel"),
   };
 }
 
 /** Every model the setups use, once each. */
-function modelsOf(setups: readonly Setup[]): string[] {
-  const roles = modelRoles(setups);
+function modelsOf(setups: readonly Setup[], chat = true): string[] {
+  const roles = modelRoles(setups, chat);
   return [...new Set([...roles.summary, ...roles.embed, ...roles.chat])];
 }
 
@@ -227,20 +231,6 @@ function personShareOf(plan: RunPlan, setup: Setup): number {
   return 1 / Math.max(1, count);
 }
 
-interface JudgeCheck {
-  misses: SweepSummary["judgeCheck"]["misses"];
-  passed: boolean;
-}
-
-/**
- * The judge check runs first in every sweep and stops it on a miss. It arrives
- * with the judge-check eval, so the runner has nothing to run yet.
- */
-function runJudgeCheck(): JudgeCheck {
-  log("Judge check: not part of this runner yet; the sweep continues.");
-  return { misses: [], passed: true };
-}
-
 // ---------------------------------------------------------------------------
 // Stages
 // ---------------------------------------------------------------------------
@@ -272,6 +262,13 @@ async function planSweep(options: CliOptions): Promise<Planned> {
       2
     );
   }
+  const promptProblems = dreamPromptProblems(repoRoot(), sweep.dreamPrompts);
+  if (promptProblems.length > 0) {
+    throw new Stop(
+      `The sweep's Dream prompts have problems:\n  ${promptProblems.join("\n  ")}`,
+      2
+    );
+  }
   const resolved = resolveTests(sweep.tests, join(agentDir, "evals"));
   statusLine("Tests the runner does not start yet", resolved.deferred);
   statusLine("Eval files that do not exist yet", resolved.missing);
@@ -287,7 +284,9 @@ async function planSweep(options: CliOptions): Promise<Planned> {
     log(`${message} A real run would stop here.`);
   }
   const { setups } = loaded;
-  const plan = buildPlan(setups, selected, sweep);
+  const plan = buildPlan(setups, selected, sweep, {
+    chat: needsChat(resolved.prefixes),
+  });
   for (const line of describePlan(plan)) {
     log(line);
   }
@@ -306,11 +305,17 @@ interface Roots {
   targetRoot: string;
 }
 
-/** Builds each Chat prompt overlay and the stub target, and checks each with `eve info`. */
-async function prepareRoots(setups: readonly Setup[]): Promise<Roots> {
+/**
+ * Builds each Chat prompt overlay and the stub target, and checks each with
+ * `eve info`. A sweep with no Chat has no overlays.
+ */
+async function prepareRoots(
+  setups: readonly Setup[],
+  chat: boolean
+): Promise<Roots> {
   const overlays = new Map<string, Overlay>();
   const tools = liveToolNames(agentDir);
-  for (const prompt of distinct(setups, "prompt")) {
+  for (const prompt of chat ? distinct(setups, "prompt") : []) {
     const overlay = buildOverlay(agentDir, prompt);
     // biome-ignore lint/performance/noAwaitInLoops: eve checks one root at a time.
     await verifyRoot(agentDir, overlay.root, tools);
@@ -338,11 +343,12 @@ export interface OllamaCheck {
 async function inspectModels(
   cleanup: Cleanup,
   setups: readonly Setup[],
-  dryRun: boolean
+  dryRun: boolean,
+  chat: boolean
 ): Promise<OllamaCheck> {
   const bin = await fetchPinnedOllama(root);
   cleanup.pull = await startPullServer({ bin, host: OLLAMA_HOST });
-  const roles = modelRoles(setups);
+  const roles = modelRoles(setups, chat);
   const check = await checkModels(OLLAMA_HOST, roles);
   statusLine("Not pulled yet", check.missing);
   statusLine("Cannot think (think-on setups are skipped)", check.cannotThink);
@@ -356,7 +362,7 @@ async function inspectModels(
   return {
     bin,
     check,
-    digests: await snapshotDigests(modelsOf(setups), OLLAMA_HOST),
+    digests: await snapshotDigests(modelsOf(setups, chat), OLLAMA_HOST),
   };
 }
 
@@ -475,7 +481,8 @@ export interface PulledModels {
 export async function pullMissing(
   inspected: OllamaCheck,
   setups: readonly Setup[],
-  deps: PullDeps = { host: OLLAMA_HOST, pull: pullModel }
+  deps: PullDeps = { host: OLLAMA_HOST, pull: pullModel },
+  chat = true
 ): Promise<PulledModels> {
   for (const model of inspected.check.missing) {
     // biome-ignore lint/performance/noAwaitInLoops: pulls run one at a time so the progress is readable.
@@ -485,7 +492,7 @@ export async function pullMissing(
   if (inspected.check.missing.length === 0) {
     return { cannotThink, digests: inspected.digests };
   }
-  const again = await checkModels(deps.host, modelRoles(setups));
+  const again = await checkModels(deps.host, modelRoles(setups, chat));
   const problems = [
     ...again.problems,
     ...again.missing.map((model) => `${model} is still not in Ollama.`),
@@ -498,7 +505,7 @@ export async function pullMissing(
   }
   return {
     cannotThink,
-    digests: await snapshotDigests(modelsOf(setups), deps.host),
+    digests: await snapshotDigests(modelsOf(setups, chat), deps.host),
   };
 }
 
@@ -535,7 +542,7 @@ async function runLoop(ctx: RunContext, plan: RunPlan): Promise<void> {
 
 interface RunFacts {
   estimate: { costUsd: number; hours: number };
-  judgeCheck: JudgeCheck;
+  judgeCheck: SweepSummary["judgeCheck"];
   started: number;
 }
 
@@ -627,8 +634,9 @@ async function sweepBody(
   const sweepFile = join(runDir, "sweep.json");
   writeFileSync(sweepFile, resolvedSweepJson(sweep));
 
-  heading("Chat prompts and grade target");
-  const { overlays, targetRoot } = await prepareRoots(planned.setups);
+  const { chat } = planned.plan;
+  heading(chat ? "Chat prompts and grade target" : "Grade target");
+  const { overlays, targetRoot } = await prepareRoots(planned.setups, chat);
   const eveStub = await startEveServer({
     agentDir,
     logFile: join(runDir, "logs", "grade-target.log"),
@@ -643,11 +651,12 @@ async function sweepBody(
   const inspected = await inspectModels(
     cleanup,
     planned.setups,
-    options.dryRun
+    options.dryRun,
+    chat
   );
   const cannotThink = new Set(inspected.check.cannotThink);
   let setups = withoutImpossibleThinking(planned.setups, cannotThink);
-  let plan = buildPlan(setups, planned.selected, sweep);
+  let plan = buildPlan(setups, planned.selected, sweep, { chat });
   const estimate = await printEstimate(
     planned,
     plan,
@@ -659,7 +668,9 @@ async function sweepBody(
     console.error(note);
   }
   if (options.dryRun) {
-    log("\nDry run: no models ran, and nothing was built or pulled.");
+    log(
+      "\nDry run: no models ran, and nothing was built or pulled. A real run starts with the judge check."
+    );
     return 0;
   }
   if (missingKeys.length > 0) {
@@ -667,25 +678,35 @@ async function sweepBody(
   }
   await confirmRun(options);
 
+  // The check goes before any local work, so a judge that misses a planted
+  // failure costs a few cents and not a night.
+  heading("Judge check");
+  const judgeCheck = await runJudgeCheck({
+    agentDir,
+    credentials: credentialsFrom(),
+    runDir,
+    stubUrl: eveStub.url,
+    sweepFile,
+    sweepId,
+  });
+  if (!judgeCheck.ok) {
+    throw new Stop(judgeCheck.lines.join("\n"));
+  }
+  for (const line of judgeCheck.lines) {
+    log(line);
+  }
+
   heading("Pulling models");
-  const pulled = await pullMissing(inspected, planned.setups);
+  const pulled = await pullMissing(inspected, planned.setups, undefined, chat);
   const thinkers = pulled.cannotThink;
   setups = withoutImpossibleThinking(planned.setups, thinkers);
-  plan = buildPlan(setups, planned.selected, sweep);
+  plan = buildPlan(setups, planned.selected, sweep, { chat });
   // Sage binds the port itself, so the pull server goes first.
   await cleanup.pull?.stop();
   cleanup.pull = null;
 
   heading("Building Sage");
   const builds = await buildAll(plan, runDir);
-
-  const judgeCheck = runJudgeCheck();
-  if (!judgeCheck.passed) {
-    const lines = judgeCheck.misses.map(
-      (miss) => `  ${miss.kind} ${miss.check} in ${miss.itemId}: ${miss.detail}`
-    );
-    throw new Stop(`The judge check missed:\n${lines.join("\n")}`);
-  }
 
   const ctx: RunContext = {
     abort,
@@ -720,7 +741,7 @@ async function sweepBody(
   heading("Reports");
   const reported = await writeAllReports(ctx, plan, loaded, {
     estimate,
-    judgeCheck,
+    judgeCheck: judgeCheck.summary,
     started,
   });
   if (ctx.failures.length > 0) {

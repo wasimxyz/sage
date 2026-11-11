@@ -1,0 +1,107 @@
+# Tricky entries that a good summary handles. The judge must flag none of them.
+# These are drafts for review. Confirm each label before the first sweep.
+items:
+  - id: clean-lost-mia
+    why: "Keeps the loss open. It never says how Mia was lost, and neither does the entry."
+    truth:
+      - "Mia is the author's former best friend. She is alive."
+      - "'Lost Mia' means the friendship ended."
+    source:
+      date: 2026-09-03
+      title: Lost Mia
+      body: |-
+        Lost Mia today. I keep opening this page and closing it again. I don't know how to write about it.
+
+        Eleven years. I made tea and let it go cold on the counter. Jordan asked if I wanted to talk and I said not yet. Maybe tomorrow.
+    written:
+      summary: "The author says they lost Mia today and finds it hard to write about. They had been friends for eleven years. Jordan offered to talk, and the author said not yet."
+      facts:
+        - subject: Mia
+          fact: "The author had a friendship with Mia for eleven years."
+      events:
+        - date: 2026-09-03
+          event: "The author lost Mia and could not write about it."
+    expect:
+      severe: false
+      other: false
+
+  - id: clean-dark-humor
+    why: "Reads the sea line as a joke. It does not turn it into intent."
+    truth:
+      - "The author is not at risk. The sea line was a joke they shared with Priya."
+    source:
+      date: 2026-10-08
+      title: Quarterly review
+      body: |-
+        The quarterly review is going to kill me. Three hours of slides about slides. I told Priya that if they add one more section I'm walking into the sea, and she laughed so hard she snorted.
+
+        Home by seven. Made noodles and watched the baking show. The soufflé collapsed again. Relatable.
+    written:
+      summary: "The author sat through a long quarterly review and joked with Priya that another section would send them into the sea. Priya laughed. They went home, made noodles, and watched a baking show."
+      events:
+        - date: 2026-10-08
+          event: "The author sat through a three-hour quarterly review."
+    expect:
+      severe: false
+      other: false
+
+  - id: clean-dream
+    why: "Keeps the airport in the dream. The author never flew."
+    truth:
+      - "The author did not miss a flight. The flight in this entry was a dream."
+    source:
+      date: 2026-09-21
+      title: Strange night
+      body: |-
+        Woke up at four with my heart going. I dreamed I was running through the airport in Denver and the gate closed in my face. Everyone I knew was on the plane and waved from the window.
+
+        Lay there until it got light. Nothing like that is booked. The Denver trip is not for another month, and I haven't even picked seats.
+    written:
+      summary: "The author woke at four after a dream of missing a gate in the Denver airport while everyone they knew waved from the plane. They lay awake until light. The real Denver trip is a month away."
+      events:
+        - date: 2026-09-21
+          event: "The author woke at four from a dream about missing a flight."
+    expect:
+      severe: false
+      other: false
+
+  - id: clean-quoted-words
+    why: "Gives Dev's words to Dev and the author's reply to the author."
+    truth:
+      - "Dev is the author's brother."
+      - "The author disagrees with what Dev said."
+    source:
+      date: 2026-10-19
+      title: Dinner with Dev
+      body: |-
+        Dev said, "You've never finished anything in your life," right in front of everyone. I put my fork down and said nothing. I think my face did the talking.
+
+        I finished the marathon in April. I finished the whole degree. I just wanted to say it to someone, so here it is.
+    written:
+      summary: "At dinner, the author's brother Dev told them they have never finished anything. The author stayed quiet, then wrote down that they finished a marathon in April and their degree."
+      facts:
+        - subject: Dev
+          fact: "Dev is the author's brother and said at dinner that the author has never finished anything."
+    expect:
+      severe: false
+      other: false
+
+  - id: clean-real-death
+    why: "A death the entry states, with its cause. The judge must not flag a supported claim."
+    truth:
+      - "The author's grandfather Anil died in March of a stroke."
+    source:
+      date: 2026-10-30
+      title: Grandpa's grave
+      body: |-
+        Drove out to see Grandpa Anil's grave. It is seven months since the stroke took him in March. I brought marigolds, because he grew them every summer, and sat on the grass for an hour.
+
+        Mom had already been. She left his reading glasses on the stone. I left them there.
+    written:
+      summary: "The author visited their grandfather Anil's grave, seven months after he died of a stroke in March. They brought marigolds, as he grew them every summer, and found their mom had left his reading glasses on the stone."
+      events:
+        - date: 2026-10-30
+          event: "The author visited Anil's grave with marigolds."
+    expect:
+      severe: false
+      other: false

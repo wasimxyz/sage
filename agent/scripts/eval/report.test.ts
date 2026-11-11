@@ -35,6 +35,7 @@ import {
   parseAssertion,
   percentile,
   rubricVersionOf,
+  setupRows,
   speedVerdict,
   spread,
   summarize,
@@ -51,6 +52,7 @@ const pattern5 = /Timed out/u;
 const pattern6 = /over the 20 s limit/u;
 const pattern7 = /^1\. qwen3\.5:9b .*passed every hard check/u;
 const pattern8 = /^2\. qwen3:8b .*failed crisis-handled/u;
+const miaDiedPattern = /Mia died/u;
 
 const setup: Setup = {
   chatModel: "qwen3.5:9b",
@@ -1065,4 +1067,108 @@ test("the sweep summary ranks setups and the files are named for the viewer", (t
   assert.equal(lines.length, 2);
   assert.match(lines[0] ?? "", pattern7);
   assert.match(lines[1] ?? "", pattern8);
+});
+
+// ---------------------------------------------------------------------------
+// Dream accuracy
+// ---------------------------------------------------------------------------
+
+test("a Dream source is an item with its two checks, and its carrier score adds no note", () => {
+  const dreamRow = (itemId: string, severe: boolean) =>
+    row({
+      assertions: [
+        check("hard", "no-severe-unsupported", {
+          metadata: {
+            evidence: "Mia died",
+            reason: severe
+              ? '[summary] "Mia died": the entry says she is alive.'
+              : undefined,
+          },
+          passed: !severe,
+        }),
+        check("counted", "dream-supported", { passed: true }),
+        {
+          metadata: { checkId: "dream-source", dream: {}, tier: "soft" },
+          name: "soft:dream-source",
+          passed: true,
+          score: 1,
+          severity: "soft",
+        },
+      ],
+      itemId,
+      kind: "dream-source",
+      pass: "person",
+    });
+  const report = assemble([
+    dreamRow("sam/dream/2026-09-03-lost-mia", true),
+    dreamRow("sam/dream/chat-1", false),
+  ]);
+  assert.deepEqual(
+    report.items.map((item) => [
+      item.itemId,
+      item.kind,
+      item.status,
+      item.note,
+    ]),
+    [
+      ["sam/dream/2026-09-03-lost-mia", "dream-source", "graded", undefined],
+      ["sam/dream/chat-1", "dream-source", "graded", undefined],
+    ]
+  );
+  assert.deepEqual(
+    report.items[0]?.checks.map((c) => `${c.id}:${c.outcome}`),
+    ["no-severe-unsupported:fail", "dream-supported:pass"]
+  );
+  assert.equal(report.summary.hardFailures[0]?.id, "no-severe-unsupported");
+  assert.equal(report.summary.hardFailures[0]?.count, 1);
+  assert.match(report.summary.hardFailures[0]?.detail ?? "", miaDiedPattern);
+  assert.equal(report.summary.graded, 2);
+});
+
+// ---------------------------------------------------------------------------
+// The judge check belongs to the sweep, not to a setup
+// ---------------------------------------------------------------------------
+
+test("judge-check rows stay out of every setup report: items, people, cost, and rubric", () => {
+  const judgeCheckRow = row({
+    assertions: [
+      check("hard", "judge-check", {
+        metadata: {
+          judgeCallId: "judge-check-call",
+          judgeCostUsd: 0.4,
+          misses: [],
+          rubric: "checkrubric1",
+        },
+        passed: false,
+      }),
+    ],
+    itemId: "judge-check/dream/lost-mia-death",
+    kind: "dream-source",
+    pass: "person",
+    person: "judge-check",
+  });
+  const samRow = row({
+    assertions: [
+      check("counted", "retrieval-top-hit", {
+        metadata: {
+          judgeCallId: "sam-call",
+          judgeCostUsd: 0.1,
+          rubric: "samrubric123",
+        },
+        passed: true,
+      }),
+    ],
+    itemId: "sam/retrieval/1",
+    kind: "retrieval",
+    pass: "person",
+  });
+  const without = assemble([samRow]);
+  const mixed = assemble([judgeCheckRow, samRow]);
+  assert.deepEqual(mixed.items, without.items);
+  assert.deepEqual(mixed.people, ["sam"]);
+  assert.equal(mixed.promptShas.rubric, "samrubric123");
+  assert.ok(Math.abs(mixed.summary.costUsd - 0.1) < 1e-9);
+  assert.deepEqual(mixed.summary.hardFailures, []);
+  assert.deepEqual(plain(mixed.summary), plain(without.summary));
+  assert.deepEqual(setupRows([judgeCheckRow, samRow]), [samRow]);
 });
