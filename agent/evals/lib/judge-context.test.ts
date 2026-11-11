@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   formatJournalContext,
   type JournalContextSource,
+  journalContextLayout,
 } from "./judge-context.ts";
 
 const miaLinePattern =
@@ -90,4 +91,27 @@ test("an empty journal says so, and an empty cast and timeline are marked", () =
   assert.match(text, nothingListedPattern);
   assert.match(text, emptyJournalPattern);
   assert.doesNotMatch(text, todayWordsPattern);
+});
+
+test("the layout probe reaches every part of the template", () => {
+  const layout = journalContextLayout();
+  for (const part of [
+    "# Fact sheet for ",
+    "Today is ",
+    "About the author: ",
+    "Who is who to the author:",
+    "- (nobody listed)",
+    "What happened, and how big it was to the author:",
+    "- (nothing listed)",
+    "# Journal",
+    "The journal is empty.",
+    "## Entry 1: ",
+    ", alive.",
+    ", died. Note: ",
+    "they/them",
+    "(big): ",
+  ]) {
+    assert.ok(layout.includes(part), `the layout probe does not reach ${part}`);
+  }
+  assert.equal(layout, journalContextLayout());
 });

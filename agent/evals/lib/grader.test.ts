@@ -15,10 +15,15 @@ import {
   type Grader,
   type GraderOptions,
   graderFromEnv,
+  ITEM_TITLES,
+  JUDGE_TEMPERATURE,
   NOT_GRADED_SPENDING_CAP,
   RUBRICS,
+  type RubricKind,
   rubricHash,
+  rubricMaterial,
 } from "./grader.ts";
+import { journalContextLayout } from "./judge-context.ts";
 import { LEDGER_FILE, reserve, totals } from "./ledger.ts";
 import type { ModelPrice } from "./prices.ts";
 import { ENV_RUN_DIR, ENV_SWEEP_FILE, parseSweepFile } from "./schema.ts";
@@ -429,6 +434,154 @@ test("rubricHash is ten hex characters and follows the rubric text", () => {
     (RUBRICS as { summary: string }).summary = original;
   }
   assert.equal(rubricHash(), before);
+});
+
+/** Runs `change` with the exported prompt titles changed, then puts them back. */
+function withTitle(
+  kind: keyof typeof ITEM_TITLES,
+  name: string,
+  title: string,
+  change: () => void
+): void {
+  const titles = ITEM_TITLES[kind] as Record<string, string>;
+  const original = titles[name];
+  titles[name] = title;
+  try {
+    change();
+  } finally {
+    titles[name] = original;
+  }
+}
+
+test("rubricHash changes with the output cap and the temperature", () => {
+  const before = rubricHash();
+  assert.equal(
+    rubricHash({ maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS }),
+    before
+  );
+  assert.equal(rubricHash({ temperature: JUDGE_TEMPERATURE }), before);
+  assert.notEqual(rubricHash({ maxOutputTokens: 4096 }), before);
+  assert.notEqual(rubricHash({ temperature: 0.7 }), before);
+});
+
+test("a grader's rubric follows the output cap it was built with", () => {
+  const { grader: standard } = graderWith(mockReplying(verdict()));
+  const { grader: short } = graderWith(mockReplying(verdict()), {
+    maxOutputTokens: 512,
+  });
+  assert.equal(standard.rubric, rubricHash());
+  assert.equal(short.rubric, rubricHash({ maxOutputTokens: 512 }));
+  assert.notEqual(short.rubric, standard.rubric);
+});
+
+test("rubricHash changes with the title of any block in the item section", () => {
+  const before = rubricHash();
+  for (const [kind, name] of [
+    ["extraction", "current"],
+    ["extraction", "stale"],
+    ["extraction", "output"],
+    ["factuality", "question"],
+    ["factuality", "reference"],
+    ["factuality", "output"],
+    ["summary", "reference"],
+    ["summary", "output"],
+  ] as const) {
+    withTitle(kind, name, "A different title", () => {
+      assert.notEqual(rubricHash(), before, `${kind}.${name}`);
+    });
+    assert.equal(rubricHash(), before);
+  }
+});
+
+test("the rubric hash material covers every part that shapes a grade", () => {
+  const material = rubricMaterial();
+  assert.deepEqual(Object.keys(material), [
+    "answers",
+    "journalContext",
+    "kinds",
+    "maxOutputTokens",
+    "rubrics",
+    "temperature",
+  ]);
+  assert.deepEqual(material.rubrics, RUBRICS);
+  assert.equal(material.journalContext, journalContextLayout());
+  assert.equal(material.maxOutputTokens, DEFAULT_MAX_OUTPUT_TOKENS);
+  assert.equal(material.temperature, JUDGE_TEMPERATURE);
+  assert.deepEqual(Object.keys(material.answers), [
+    "conversation",
+    "dreamSource",
+    "factuality",
+    "headToHead",
+    "reply",
+  ]);
+  // The judge writes the fields in this order, so the order is part of the hash.
+  assert.deepEqual(
+    Object.keys(JSON.parse(material.answers.factuality).properties),
+    ["evidence", "reason", "pass"]
+  );
+  assert.deepEqual(Object.keys(material.kinds), [
+    "extraction",
+    "factuality",
+    "summary",
+  ]);
+  for (const [kind, probe] of Object.entries(material.kinds)) {
+    assert.equal(probe.instructions, RUBRICS[kind as RubricKind]);
+    assert.equal(probe.schemaName, `${kind}_grade`);
+    // The user message goes out as the fact sheet, the transcript, then the item.
+    assert.deepEqual(probe.parts.slice(0, 2), [
+      "<fact sheet and journal>",
+      "<transcript>",
+    ]);
+    assert.equal(probe.parts[2], probe.item);
+    assert.equal(probe.parts.length, 3);
+  }
+  const { extraction, factuality, summary } = material.kinds;
+  assert.equal(
+    extraction.item,
+    [
+      "Current fact (from the reference):\n<current>",
+      "Stale fact (no longer true):\n<stale>",
+      "Output: what the app remembers:\n<output>",
+    ].join("\n\n")
+  );
+  assert.equal(
+    factuality.item,
+    [
+      "Question the person asked:\n<question>",
+      "Reference (the answer key):\n<reference>",
+      "Output to grade:\n<output>",
+    ].join("\n\n")
+  );
+  assert.equal(
+    summary.item,
+    [
+      "Reference (what a good summary says):\n<reference>",
+      "Output to grade:\n<output>",
+    ].join("\n\n")
+  );
+});
+
+test("the prompts a grader sends are the ones the rubric hash was made from", async () => {
+  const model = mockReplying(verdict());
+  const { grader } = graderWith(model);
+  await grader.factuality({
+    context: "<fact sheet and journal>",
+    label: "probe",
+    output: "<output>",
+    question: "<question>",
+    reference: "<reference>",
+    transcript: "<transcript>",
+  });
+  const [call] = model.doGenerateCalls;
+  const sent = JSON.stringify(call.prompt);
+  const { factuality } = rubricMaterial().kinds;
+  for (const part of factuality.parts) {
+    assert.ok(sent.includes(JSON.stringify(part).slice(1, -1)), part);
+  }
+  assert.ok(sent.indexOf("<fact sheet") < sent.indexOf("<transcript>"));
+  assert.ok(sent.indexOf("<transcript>") < sent.indexOf("Question the person"));
+  assert.equal(call.temperature, JUDGE_TEMPERATURE);
+  assert.equal(call.maxOutputTokens, DEFAULT_MAX_OUTPUT_TOKENS);
 });
 
 test("the factuality schema asks for the quote first, then the reason, then the verdict", () => {

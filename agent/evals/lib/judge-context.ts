@@ -80,3 +80,51 @@ export function formatJournalContext(
   }
   return `${lines.join("\n").trimEnd()}\n`;
 }
+
+const LAYOUT_PROBE_FULL: JournalContextSource = {
+  entries: [
+    {
+      body: "First body.\n",
+      date: "2000-01-01",
+      index: 1,
+      stem: "2000-01-01-first",
+      title: "First",
+    },
+    {
+      body: "Second body.",
+      date: "2000-01-02",
+      index: 2,
+      stem: "2000-01-02-second",
+      title: "Second",
+    },
+  ],
+  id: "layout-probe",
+  personCase: {
+    about: "About text.",
+    cast: [
+      { alive: true, name: "Alive", pronouns: "they/them", relation: "friend" },
+      { alive: false, name: "Gone", note: "A note.", relation: "pet" },
+      { name: "Plain", relation: "colleague" },
+    ],
+    timeline: [{ date: "2000-01-01", weight: "big", what: "Something." }],
+  },
+};
+
+const LAYOUT_PROBE_EMPTY: JournalContextSource = {
+  entries: [],
+  id: "layout-probe-empty",
+  personCase: { about: "", cast: [], timeline: [] },
+};
+
+/**
+ * What `formatJournalContext` writes for two fixed made-up people: one that
+ * uses every part of the layout, and one with nothing in it. The rubric hash
+ * covers this text, so changing a heading or a template in the function above
+ * changes the hash without anyone having to remember to list it.
+ */
+export function journalContextLayout(): string {
+  return [
+    formatJournalContext(LAYOUT_PROBE_FULL, { today: "2000-01-03" }),
+    formatJournalContext(LAYOUT_PROBE_EMPTY),
+  ].join("\n----\n");
+}

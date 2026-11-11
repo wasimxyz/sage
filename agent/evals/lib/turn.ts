@@ -212,11 +212,20 @@ export function toTranscriptToolCalls(
 // ---------------------------------------------------------------------------
 
 const THINK_TAG = /<\/?think(?:ing)?>/iu;
+/**
+ * What a model prints when its tool call comes out as text instead of a call.
+ * The `<|...|>` pattern is any special token, which covers lfm2.5's
+ * `<|tool_call_start|>`, Llama's `<|python_tag|>`, and gpt-oss's
+ * `<|channel|>` and `<|call|>`. It needs both bars and a short name, so a bar
+ * in ordinary writing does not match. gpt-oss also names the function after
+ * `to=functions.`.
+ */
 const TOOL_CALL_SYNTAX = [
   /<\/?tool_call>/iu,
   /<\|?tool_call\|?>/iu,
   /<function[=\s>]/iu,
-  /<\|python_tag\|>/iu,
+  /<\|[^\s<>|]{1,64}\|>/u,
+  /\bto=functions\.\w/u,
   /\[TOOL_CALLS?\]/u,
   /"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:/u,
 ] as const;

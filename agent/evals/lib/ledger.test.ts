@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  unlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -226,16 +229,104 @@ test("a line cut short by a crash is ignored", () => {
   reserveOk(runDir, 1, 0.25);
 });
 
-test("a lock left behind by a dead process is removed once it is old", () => {
+/** The id of a process that has already exited, so no process has it now. */
+function deadPid(): number {
+  const { pid } = spawnSync(process.execPath, ["-e", ""]);
+  assert.ok(typeof pid === "number" && pid > 0);
+  return pid;
+}
+
+function ledgerFilesIn(runDir: string): string[] {
+  return readdirSync(runDir).sort();
+}
+
+function writeLock(runDir: string, text: string, ageMs: number): string {
+  const lock = join(runDir, LEDGER_LOCK_FILE);
+  writeFileSync(lock, text);
+  const when = new Date(Date.now() - ageMs);
+  utimesSync(lock, when, when);
+  return lock;
+}
+
+test("a lock left behind by a dead process is taken over at once", () => {
   const runDir = tempRunDir();
   reserveOk(runDir, 1, 0.1);
-  const lock = join(runDir, LEDGER_LOCK_FILE);
-  writeFileSync(lock, "99999 long ago\n");
-  const old = new Date(Date.now() - 60_000);
-  utimesSync(lock, old, old);
+  const lock = writeLock(
+    runDir,
+    `${deadPid()} 0b9f1c1e-6b1c-4d6f-8d87-2a3c0f1d9a11 2026-11-09T10:00:00.000Z\n`,
+    0
+  );
   reserveOk(runDir, 1, 0.1);
   close(totals(runDir).reservedUsd, 0.2);
   assert.ok(!existsSync(lock));
+  assert.deepEqual(ledgerFilesIn(runDir), [LEDGER_FILE]);
+});
+
+test("a lock in the old format, from a dead process, is taken over", () => {
+  const runDir = tempRunDir();
+  reserveOk(runDir, 1, 0.1);
+  writeLock(runDir, `${deadPid()} long ago\n`, 60_000);
+  reserveOk(runDir, 1, 0.1);
+  assert.deepEqual(ledgerFilesIn(runDir), [LEDGER_FILE]);
+});
+
+test("a lock with no readable owner is taken over once it is old", () => {
+  const runDir = tempRunDir();
+  reserveOk(runDir, 1, 0.1);
+  writeLock(runDir, "", 60_000);
+  reserveOk(runDir, 1, 0.1);
+  assert.deepEqual(ledgerFilesIn(runDir), [LEDGER_FILE]);
+  writeLock(runDir, "not a lock", 60_000);
+  reserveOk(runDir, 1, 0.1);
+  close(totals(runDir).reservedUsd, 0.3);
+  assert.deepEqual(ledgerFilesIn(runDir), [LEDGER_FILE]);
+});
+
+/**
+ * Plants a lock, starts a process that wants it, lets the lock sit for 400 ms,
+ * then removes it. Returns when the removal happened and when the process got
+ * its reservation. A process that took the lock over would finish first.
+ */
+async function waitOutLock(
+  runDir: string,
+  text: string,
+  ageMs: number
+): Promise<{ finishedAt: number; removedAt: number }> {
+  const lock = writeLock(runDir, text, ageMs);
+  const worker = spawnWorker(
+    `
+    import { reserve } from ${JSON.stringify(ledgerUrl)};
+    reserve(process.argv[1], 1, { estimateUsd: 0.1, label: "w", model: "m" });
+    process.stdout.write(String(Date.now()));
+  `,
+    runDir
+  );
+  await sleep(400);
+  const removedAt = Date.now();
+  unlinkSync(lock);
+  const { stdout } = await worker;
+  return { finishedAt: Number(stdout), removedAt };
+}
+
+test("a lock held by a live process is never taken over, however old", async () => {
+  const runDir = tempRunDir();
+  reserveOk(runDir, 1, 0.1);
+  const mine = `${process.pid} 7c1d5e0a-2f4b-4c1b-9d3e-5a6b7c8d9e0f 2026-11-09T10:00:00.000Z\n`;
+  const { finishedAt, removedAt } = await waitOutLock(runDir, mine, 3_600_000);
+  assert.ok(
+    finishedAt >= removedAt,
+    `the lock was taken over ${removedAt - finishedAt} ms before its owner released it`
+  );
+  close(totals(runDir).reservedUsd, 0.2);
+});
+
+test("a lock with no readable owner is left alone while it is new", async () => {
+  const runDir = tempRunDir();
+  reserveOk(runDir, 1, 0.1);
+  // This is how a lock looks in the moment between its creation and its first write.
+  const { finishedAt, removedAt } = await waitOutLock(runDir, "", 0);
+  assert.ok(finishedAt >= removedAt);
+  close(totals(runDir).reservedUsd, 0.2);
 });
 
 function spawnWorker(source: string, runDir: string) {
@@ -331,4 +422,136 @@ test("two processes that do not settle are held to exactly the cap", async () =>
   ]);
   assert.equal(Number(a.stdout) + Number(b.stdout), cap);
   close(totals(runDir).reservedUsd, cap);
+});
+
+// ---------------------------------------------------------------------------
+// Taking over a stale lock while another process does the same
+// ---------------------------------------------------------------------------
+
+const SLEEP_SOURCE =
+  "(ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)";
+
+/**
+ * A worker that reserves $1 against a $1 cap, with `hooks` wrapped around the
+ * file system calls it makes. The hooks stand in for the scheduler pausing a
+ * process at a bad moment. The worker waits for `startAt` first, so two of
+ * them begin together. It prints whether it got the reservation and how many
+ * times a hook fired.
+ */
+function racer(label: string, hooks: string): string {
+  return `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const sleep = ${SLEEP_SOURCE};
+    const [runDir, startAt] = [process.argv[1], Number(process.argv[2])];
+    let hits = 0;
+    ${hooks}
+    syncBuiltinESMExports();
+    const { reserve } = await import(${JSON.stringify(ledgerUrl)});
+    while (Date.now() < startAt) {}
+    const ok = reserve(runDir, 1, { estimateUsd: 1, label: ${JSON.stringify(label)}, model: "m" }).ok;
+    process.stdout.write(JSON.stringify({ hits, ok }));
+  `;
+}
+
+/** The slow process pauses for 150 ms right after it looks at the stale lock. */
+const PAUSE_AFTER_LOOKING = `
+  const realStat = fs.statSync;
+  let paused = false;
+  fs.statSync = function (path, ...rest) {
+    const stats = realStat.call(fs, path, ...rest);
+    if (!paused && String(path).endsWith("ledger.lock")) {
+      paused = true;
+      hits += 1;
+      sleep(150);
+    }
+    return stats;
+  };
+`;
+
+/** The slow process pauses for 150 ms right before it moves the stale lock. */
+const PAUSE_BEFORE_MOVING = `
+  const realRename = fs.renameSync;
+  fs.renameSync = function (from, ...rest) {
+    if (String(from).endsWith("ledger.lock")) {
+      hits += 1;
+      sleep(150);
+    }
+    return realRename.call(fs, from, ...rest);
+  };
+`;
+
+/** The quick process holds the lock for 400 ms after it reads the ledger. */
+const PAUSE_INSIDE_LOCK = `
+  const realRead = fs.readFileSync;
+  let held = false;
+  fs.readFileSync = function (path, ...rest) {
+    const out = realRead.call(fs, path, ...rest);
+    if (!held && String(path).endsWith("ledger.jsonl")) {
+      held = true;
+      hits += 1;
+      sleep(400);
+    }
+    return out;
+  };
+`;
+
+function spawnRacer(source: string, runDir: string, startAt: number) {
+  return run(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--no-warnings",
+      "--input-type=module",
+      "-e",
+      source,
+      runDir,
+      String(startAt),
+    ],
+    { cwd: fileURLToPath(new URL(".", import.meta.url)) }
+  );
+}
+
+/**
+ * Two processes find a lock its owner left behind. The slow one pauses with
+ * `slowHooks`. The quick one starts 40 ms later, takes the lock over, and
+ * holds it for 400 ms. When the slow one wakes, the lock it judged stale is
+ * gone and the quick one's live lock is in its place. It must not remove that
+ * lock, or both would read the ledger before either wrote and both would pass
+ * a $1 cap.
+ */
+async function raceForStaleLock(slowHooks: string): Promise<void> {
+  const runDir = join(mkdtempSync(join(tmpdir(), "sage-ledger-race-")), "run");
+  // A crashed process left the lock behind, and the ledger already exists.
+  reserveOk(runDir, 10, 0);
+  writeLock(
+    runDir,
+    `${deadPid()} 3f6c2a58-5d3e-4b0a-9e47-8c1d2b7a6f10 2026-11-09T10:00:00.000Z\n`,
+    60_000
+  );
+  const startAt = Date.now() + 2500;
+  const [slow, quick] = (
+    await Promise.all([
+      spawnRacer(racer("slow", slowHooks), runDir, startAt),
+      spawnRacer(racer("quick", PAUSE_INSIDE_LOCK), runDir, startAt + 40),
+    ])
+  ).map((out) => JSON.parse(out.stdout) as { hits: number; ok: boolean });
+  assert.equal(slow.hits, 1, "the slow process was never paused");
+  assert.equal(quick.hits, 1, "the quick process never held the lock");
+  assert.equal(quick.ok, true, "the process that held the lock got no room");
+  assert.equal(slow.ok, false, "both reservations passed a $1 cap");
+  close(totals(runDir).reservedUsd, 1);
+  assert.deepEqual(
+    ledgerFilesIn(runDir),
+    [LEDGER_FILE],
+    "a lock or a moved lock was left behind"
+  );
+}
+
+test("a process that looked at a stale lock, then paused, leaves the lock that replaced it", async () => {
+  await raceForStaleLock(PAUSE_AFTER_LOOKING);
+});
+
+test("a process that moves the lock that replaced the stale one gives it back", async () => {
+  await raceForStaleLock(PAUSE_BEFORE_MOVING);
 });

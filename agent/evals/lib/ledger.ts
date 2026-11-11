@@ -12,9 +12,26 @@
  * steps must not interleave with another process's. They run inside an
  * exclusive lock: a `ledger.lock` file created with the `wx` flag, which the
  * operating system makes atomic. A process that finds the lock waits a few
- * milliseconds and tries again. A lock older than `STALE_LOCK_MS` was left by
- * a process that died, and is removed. The work inside the lock is a read and
- * an append, so the lock is held for about a millisecond.
+ * milliseconds and tries again. The work inside the lock is a read and an
+ * append, so the lock is held for about a millisecond.
+ *
+ * A process that dies inside the lock leaves it behind. The lock holds its
+ * owner's process id and a random token, and a lock whose owner is gone is
+ * taken over. A lock with no readable owner (cut short by a crash) is taken
+ * over once it is older than `STALE_LOCK_MS`. A lock whose owner is alive is
+ * never taken over, however old it is.
+ *
+ * Taking over is the careful part, because "look, then remove" can remove a
+ * lock that another process took in between. So a process never removes the
+ * lock by name. It looks twice, renames the lock to a name only it knows,
+ * and checks that what it moved is the lock it judged. If it moved some other
+ * process's live lock by mistake, it links that lock straight back. The file
+ * system has no "remove this file only if it is still that one", so one
+ * window is left: the microseconds between that rename and that link. A third
+ * process that arrives in that window, after a crashed owner and two
+ * processes taking over at once, would share the lock for about a
+ * millisecond. A process releases the lock only if it is still its own, so
+ * that cannot spread.
  *
  * Money counts like this:
  * - A settled call counts what it cost.
@@ -25,9 +42,11 @@ import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   closeSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeSync,
@@ -37,11 +56,13 @@ import { join } from "node:path";
 export const LEDGER_FILE = "ledger.jsonl";
 export const LEDGER_LOCK_FILE = "ledger.lock";
 
+/** How old a lock with no readable owner must be before it is taken over. */
 const STALE_LOCK_MS = 10_000;
 const LOCK_TIMEOUT_MS = 30_000;
 const RETRY_MIN_MS = 3;
 const RETRY_SPREAD_MS = 17;
 const LINE_BREAK = /\r?\n/u;
+const LOCK_OWNER = /^(\d+)\s/u;
 /** Costs are summed as floats, so compare with a little slack. */
 const CAP_SLACK_USD = 1e-12;
 
@@ -155,48 +176,151 @@ function isFileError(error: unknown, code: string): boolean {
   return isRecord(error) && (error as { code?: unknown }).code === code;
 }
 
-function removeStaleLock(lockPath: string): void {
+/** What a lock file said and was, when a process looked at it. */
+interface LockFile {
+  ino: number;
+  mtimeMs: number;
+  /** The process that took the lock, if the file says. */
+  pid: number | undefined;
+  text: string;
+}
+
+function lockOwner(text: string): number | undefined {
+  const match = LOCK_OWNER.exec(text);
+  const pid = match === null ? Number.NaN : Number(match[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+/** Looks at a lock file. Undefined when it is not there. */
+function inspectLock(path: string): LockFile | undefined {
   try {
-    const age = Date.now() - statSync(lockPath).mtimeMs;
-    if (age > STALE_LOCK_MS) {
-      unlinkSync(lockPath);
-    }
+    const { ino, mtimeMs } = statSync(path);
+    const text = readFileSync(path, "utf8");
+    return { ino, mtimeMs, pid: lockOwner(text), text };
   } catch (error) {
-    // Another process released or removed it first.
+    if (isFileError(error, "ENOENT")) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function sameLock(a: LockFile, b: LockFile): boolean {
+  return a.ino === b.ino && a.mtimeMs === b.mtimeMs && a.text === b.text;
+}
+
+/** True when no process has this id. A process we may not signal still exists. */
+function processIsGone(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return isFileError(error, "ESRCH");
+  }
+}
+
+function isStale(lock: LockFile): boolean {
+  if (lock.pid === undefined) {
+    return Date.now() - lock.mtimeMs > STALE_LOCK_MS;
+  }
+  return processIsGone(lock.pid);
+}
+
+function removeFile(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch (error) {
     if (!isFileError(error, "ENOENT")) {
       throw error;
     }
   }
 }
 
-function acquireLock(lockPath: string): void {
+/** Gives a lock we moved by mistake back to its owner, unless a new one took its place. */
+function putBack(moved: string, lockPath: string): void {
+  try {
+    linkSync(moved, lockPath);
+  } catch (error) {
+    if (!isFileError(error, "EEXIST")) {
+      throw error;
+    }
+  } finally {
+    removeFile(moved);
+  }
+}
+
+/**
+ * Removes the lock when its owner is gone. It looks twice, so a lock that
+ * changed hands while this process was paused is left alone, and then moves
+ * the lock aside and checks what it moved.
+ */
+function takeOverStaleLock(lockPath: string): void {
+  const seen = inspectLock(lockPath);
+  if (seen === undefined || !isStale(seen)) {
+    return;
+  }
+  const again = inspectLock(lockPath);
+  if (again === undefined || !sameLock(seen, again)) {
+    return;
+  }
+  const moved = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+  try {
+    renameSync(lockPath, moved);
+  } catch (error) {
+    // Another process took it over first.
+    if (isFileError(error, "ENOENT")) {
+      return;
+    }
+    throw error;
+  }
+  const taken = inspectLock(moved);
+  if (taken !== undefined && sameLock(seen, taken)) {
+    removeFile(moved);
+    return;
+  }
+  // Between the second look and the rename, another process replaced the
+  // stale lock with its own. That lock is live, so it goes back.
+  putBack(moved, lockPath);
+}
+
+function lockHolderNote(lockPath: string): string {
+  const pid = inspectLock(lockPath)?.pid;
+  return pid === undefined ? "" : ` (held by process ${pid})`;
+}
+
+/** Takes the lock and returns the token that proves it is ours. */
+function acquireLock(lockPath: string): string {
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  const token = `${process.pid} ${randomUUID()} ${new Date().toISOString()}\n`;
   for (;;) {
     try {
       const fd = openSync(lockPath, "wx");
-      writeSync(fd, `${process.pid} ${new Date().toISOString()}\n`);
+      writeSync(fd, token);
       closeSync(fd);
-      return;
+      return token;
     } catch (error) {
       if (!isFileError(error, "EEXIST")) {
         throw error;
       }
     }
-    removeStaleLock(lockPath);
+    takeOverStaleLock(lockPath);
     if (Date.now() > deadline) {
       throw new Error(
-        `The spending ledger stayed locked for ${LOCK_TIMEOUT_MS / 1000} seconds: ${lockPath}`
+        `The spending ledger stayed locked for ${LOCK_TIMEOUT_MS / 1000} seconds: ${lockPath}${lockHolderNote(lockPath)}`
       );
     }
     sleepSync(RETRY_MIN_MS + Math.floor(Math.random() * RETRY_SPREAD_MS));
   }
 }
 
-function releaseLock(lockPath: string): void {
+/** Removes the lock only if it is still the one this process took. */
+function releaseLock(lockPath: string, token: string): void {
   try {
-    unlinkSync(lockPath);
+    if (readFileSync(lockPath, "utf8") === token) {
+      unlinkSync(lockPath);
+    }
   } catch (error) {
-    // Already gone: a process that judged the lock stale removed it.
+    // Already gone.
     if (!isFileError(error, "ENOENT")) {
       throw error;
     }
@@ -206,11 +330,11 @@ function releaseLock(lockPath: string): void {
 function withLock<T>(runDir: string, work: () => T): T {
   mkdirSync(runDir, { recursive: true });
   const lockPath = join(runDir, LEDGER_LOCK_FILE);
-  acquireLock(lockPath);
+  const token = acquireLock(lockPath);
   try {
     return work();
   } finally {
-    releaseLock(lockPath);
+    releaseLock(lockPath, token);
   }
 }
 

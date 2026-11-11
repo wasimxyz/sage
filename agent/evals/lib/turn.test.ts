@@ -330,6 +330,40 @@ test("checkTurnWorks fails a reply that leaks tool-call syntax", () => {
   }
 });
 
+test("checkTurnWorks fails a reply that leaks the tool-call tokens of lfm2.5 and gpt-oss", () => {
+  for (const reply of [
+    '<|tool_call_start|>[search_journal(query="rent")]<|tool_call_end|>',
+    'I will look. <|tool_call_start|>[search_journal(query="rent")]',
+    '<|channel|>commentary to=functions.search_journal <|constrain|>json<|message|>{"query":"rent"}<|call|>',
+    "<|start|>assistant<|channel|>analysis<|message|>The user asks about rent.",
+    "commentary to=functions.search_journal",
+    "Sure.<|im_end|>",
+    "<|eot_id|>",
+  ]) {
+    assert.deepEqual(
+      works({ replyText: reply }).problems,
+      ["the reply leaks tool-call syntax"],
+      reply
+    );
+  }
+});
+
+test("checkTurnWorks leaves writing about functions and bars alone", () => {
+  for (const reply of [
+    "Functions of rest: recovery, and a chance to think. I'll go back to functions.",
+    "I want to go back to writing functions at work, but not yet.",
+    "Rent | Food | Savings\n--- | --- | ---\n1200 | 400 | 300",
+    "Pick one | the other | neither.",
+    "x <| y is not a thing we say, and neither is a |> b.",
+    "Her note said <|3 and she laughed, then wrote |> at the end.",
+    "Is 3 < 5 | 4 > 2 true? You asked about <b>bold</b> text.",
+    "Two options: <a|b>. Either one works.",
+    "The to=functions idea, with no dot, is just a phrase.",
+  ]) {
+    assert.deepEqual(works({ replyText: reply }).problems, [], reply);
+  }
+});
+
 test("checkTurnWorks leaves ordinary writing about names and quotes alone", () => {
   assert.equal(
     works({

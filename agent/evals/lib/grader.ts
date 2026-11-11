@@ -24,6 +24,12 @@
  * To add a kind of grade in a later PR, add its instructions to `RUBRICS`
  * (the rubric hash changes with it) and call `Grader.judge` with the schema
  * from `schema.ts`, such as `replyGradeSchema` or `dreamSourceGradeSchema`.
+ * If the kind builds its item section from titled blocks, give it an entry in
+ * `GRADE_CALLS` and a probe in `rubricMaterial`, so its layout is hashed too.
+ *
+ * The rubric hash (`rubricHash`) covers everything that shapes a grade: the
+ * rubric texts, the answer schemas, the layout of each prompt, the fact sheet
+ * and journal layout, the temperature, and the output cap.
  */
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
@@ -37,6 +43,7 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import { journalContextLayout } from "./judge-context.ts";
 import { reserve, settle } from "./ledger.ts";
 import {
   costUsd,
@@ -45,7 +52,15 @@ import {
   type ModelPrice,
   type TokenUsage,
 } from "./prices.ts";
-import { canonicalJson, ENV_RUN_DIR, readPassEnv } from "./schema.ts";
+import {
+  canonicalJson,
+  conversationGradeSchema,
+  dreamSourceGradeSchema,
+  ENV_RUN_DIR,
+  headToHeadSchema,
+  readPassEnv,
+  replyGradeSchema,
+} from "./schema.ts";
 import { readPassSweep } from "./setup.ts";
 
 // ---------------------------------------------------------------------------
@@ -105,24 +120,6 @@ export const factualityGradeSchema = z.strictObject({
   pass: z.boolean(),
 });
 export type FactualityGrade = z.infer<typeof factualityGradeSchema>;
-
-const RUBRIC_HASH_LENGTH = 10;
-
-/**
- * A short hash of every rubric and the schema it answers in. It goes in the
- * metadata of every graded check, so a change to a rubric shows in the reports.
- */
-export function rubricHash(): string {
-  return createHash("sha256")
-    .update(
-      canonicalJson({
-        answer: z.toJSONSchema(factualityGradeSchema),
-        rubrics: RUBRICS,
-      })
-    )
-    .digest("hex")
-    .slice(0, RUBRIC_HASH_LENGTH);
-}
 
 // ---------------------------------------------------------------------------
 // Results
@@ -225,6 +222,8 @@ export interface ExtractionInput extends GradeInputBase {
 
 /** Reasoning models spend output tokens thinking, so the cap leaves room for that. */
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
+/** Every judge call asks for the same answer each time it can. */
+export const JUDGE_TEMPERATURE = 0;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const MAX_RETRIES = 2;
 const ERROR_TEXT_LIMIT = 300;
@@ -320,10 +319,169 @@ function itemText(sections: [string, string | undefined][]): string {
     .join("\n\n");
 }
 
+/** The title of each block in the item section. Changing one changes the rubric hash. */
+export const ITEM_TITLES = {
+  extraction: {
+    current: "Current fact (from the reference)",
+    output: "Output: what the app remembers",
+    stale: "Stale fact (no longer true)",
+  },
+  factuality: {
+    output: "Output to grade",
+    question: "Question the person asked",
+    reference: "Reference (the answer key)",
+  },
+  summary: {
+    output: "Output to grade",
+    reference: "Reference (what a good summary says)",
+  },
+} as const;
+
+type GradeCall = JudgeCall<typeof factualityGradeSchema>;
+
+/**
+ * The call each kind of grade makes, from its input. One place builds both the
+ * real calls and the probe calls the rubric hash reads, so they cannot differ.
+ */
+const GRADE_CALLS = {
+  extraction: (input: ExtractionInput): GradeCall => ({
+    context: input.context,
+    instructions: RUBRICS.extraction,
+    item: itemText([
+      [ITEM_TITLES.extraction.current, input.current],
+      [ITEM_TITLES.extraction.stale, input.stale],
+      [ITEM_TITLES.extraction.output, input.output],
+    ]),
+    label: input.label,
+    schema: factualityGradeSchema,
+    schemaName: "extraction_grade",
+    transcript: input.transcript,
+  }),
+  factuality: (input: FactualityInput): GradeCall => ({
+    context: input.context,
+    instructions: RUBRICS.factuality,
+    item: itemText([
+      [ITEM_TITLES.factuality.question, input.question],
+      [ITEM_TITLES.factuality.reference, input.reference],
+      [ITEM_TITLES.factuality.output, input.output],
+    ]),
+    label: input.label,
+    schema: factualityGradeSchema,
+    schemaName: "factuality_grade",
+    transcript: input.transcript,
+  }),
+  summary: (input: SummaryInput): GradeCall => ({
+    context: input.context,
+    instructions: RUBRICS.summary,
+    item: itemText([
+      [ITEM_TITLES.summary.reference, input.reference],
+      [ITEM_TITLES.summary.output, input.output],
+    ]),
+    label: input.label,
+    schema: factualityGradeSchema,
+    schemaName: "summary_grade",
+    transcript: input.transcript,
+  }),
+} as const;
+
+// ---------------------------------------------------------------------------
+// The rubric hash
+// ---------------------------------------------------------------------------
+
+const RUBRIC_HASH_LENGTH = 10;
+
+/** The schemas the judge answers in. The reply, Dream and conversation kinds arrive in later PRs. */
+const ANSWER_SCHEMAS = {
+  conversation: conversationGradeSchema,
+  dreamSource: dreamSourceGradeSchema,
+  factuality: factualityGradeSchema,
+  headToHead: headToHeadSchema,
+  reply: replyGradeSchema,
+} as const;
+
+/** Stands in for the text a real call carries, so the probe shows where each part goes. */
+const PROBE = {
+  context: "<fact sheet and journal>",
+  label: "probe",
+  output: "<output>",
+  transcript: "<transcript>",
+} as const;
+
+/** The knobs of a grader that change what it grades. */
+export interface RubricSettings {
+  /** The output cap. */
+  maxOutputTokens?: number;
+  temperature?: number;
+}
+
+/**
+ * Everything the hash covers, as plain data:
+ *
+ * - every rubric text,
+ * - every answer schema, with its fields in the order the judge writes them,
+ * - each kind of grade as built from stand-in text: its system prompt, its
+ *   item section with the block titles and their order, its schema name, and
+ *   the parts of the user message in order,
+ * - the fact sheet and journal layout, from stand-in people,
+ * - the temperature and the output cap.
+ */
+export function rubricMaterial(settings: RubricSettings = {}) {
+  const probes = {
+    extraction: GRADE_CALLS.extraction({
+      ...PROBE,
+      current: "<current>",
+      stale: "<stale>",
+    }),
+    factuality: GRADE_CALLS.factuality({
+      ...PROBE,
+      question: "<question>",
+      reference: "<reference>",
+    }),
+    summary: GRADE_CALLS.summary({ ...PROBE, reference: "<reference>" }),
+  };
+  return {
+    answers: Object.fromEntries(
+      // Stringified here, so canonicalJson does not sort the fields.
+      Object.entries(ANSWER_SCHEMAS).map(([name, schema]) => [
+        name,
+        JSON.stringify(z.toJSONSchema(schema)),
+      ])
+    ),
+    journalContext: journalContextLayout(),
+    kinds: Object.fromEntries(
+      Object.entries(probes).map(([kind, call]) => [
+        kind,
+        {
+          instructions: call.instructions,
+          item: call.item,
+          parts: promptOf(call).parts,
+          schema: JSON.stringify(z.toJSONSchema(call.schema)),
+          schemaName: call.schemaName,
+        },
+      ])
+    ),
+    maxOutputTokens: settings.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+    rubrics: RUBRICS,
+    temperature: settings.temperature ?? JUDGE_TEMPERATURE,
+  };
+}
+
+/**
+ * A short hash of everything that shapes a grade (see `rubricMaterial`). It
+ * goes in the metadata of every graded check, so any change to a prompt, a
+ * schema, or a setting shows in the reports.
+ */
+export function rubricHash(settings: RubricSettings = {}): string {
+  return createHash("sha256")
+    .update(canonicalJson(rubricMaterial(settings)))
+    .digest("hex")
+    .slice(0, RUBRIC_HASH_LENGTH);
+}
+
 /** Builds a grader. Nothing is read or called until the first `judge`. */
 export function createGrader(options: GraderOptions): Grader {
   const maxOutputTokens = options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
-  const rubric = rubricHash();
+  const rubric = rubricHash({ maxOutputTokens });
   let model: LanguageModel | undefined = options.model;
   let price: Promise<ModelPrice> | undefined;
 
@@ -454,7 +612,7 @@ export function createGrader(options: GraderOptions): Grader {
           },
         },
         system: call.instructions,
-        temperature: 0,
+        temperature: JUDGE_TEMPERATURE,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       });
       const usage = tokenUsageOf(result.usage);
@@ -508,50 +666,12 @@ export function createGrader(options: GraderOptions): Grader {
   };
 
   return {
-    extraction: (input) =>
-      grade({
-        context: input.context,
-        instructions: RUBRICS.extraction,
-        item: itemText([
-          ["Current fact (from the reference)", input.current],
-          ["Stale fact (no longer true)", input.stale],
-          ["Output: what the app remembers", input.output],
-        ]),
-        label: input.label,
-        schema: factualityGradeSchema,
-        schemaName: "extraction_grade",
-        transcript: input.transcript,
-      }),
-    factuality: (input) =>
-      grade({
-        context: input.context,
-        instructions: RUBRICS.factuality,
-        item: itemText([
-          ["Question the person asked", input.question],
-          ["Reference (the answer key)", input.reference],
-          ["Output to grade", input.output],
-        ]),
-        label: input.label,
-        schema: factualityGradeSchema,
-        schemaName: "factuality_grade",
-        transcript: input.transcript,
-      }),
+    extraction: (input) => grade(GRADE_CALLS.extraction(input)),
+    factuality: (input) => grade(GRADE_CALLS.factuality(input)),
     judge,
     modelId: options.modelId,
     rubric,
-    summary: (input) =>
-      grade({
-        context: input.context,
-        instructions: RUBRICS.summary,
-        item: itemText([
-          ["Reference (what a good summary says)", input.reference],
-          ["Output to grade", input.output],
-        ]),
-        label: input.label,
-        schema: factualityGradeSchema,
-        schemaName: "summary_grade",
-        transcript: input.transcript,
-      }),
+    summary: (input) => grade(GRADE_CALLS.summary(input)),
   };
 }
 
