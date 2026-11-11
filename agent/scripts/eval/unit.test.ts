@@ -678,8 +678,12 @@ test("when the snapshot was not saved the runner leaves the folder alone, so the
   assert.equal(existsSync(join(rig.cacheDir, String(person.dreamKey))), false);
 });
 
-test("with the cache off the person pass still runs, and nothing is made for the grades", async (t) => {
+test("with the cache off the person pass still runs, nothing is made for the grades, and the runner says so once", async (t) => {
   const rig = await makeRig(t, dreamOnly);
+  const lines: string[] = [];
+  t.mock.method(console, "log", (line: unknown) => {
+    lines.push(String(line));
+  });
   process.env.SAGE_EVAL_CACHE = "0";
   await runPersonUnit(rig.ctx, rig.group, "sam");
   assert.deepEqual(rig.ctx.failures, []);
@@ -687,6 +691,24 @@ test("with the cache off the person pass still runs, and nothing is made for the
   assert.ok(person);
   assert.equal(person.cacheFolder, false);
   assert.equal(existsSync(rig.cacheDir), false);
+  const notes = lines.filter((line) => line.includes("the cache is off"));
+  assert.equal(notes.length, 1);
+  assert.ok(notes[0]?.includes("SAGE_EVAL_CACHE=0"));
+  assert.ok(notes[0]?.includes("grades will not be kept"));
+});
+
+test("with the cache on the runner does not say the cache is off", async (t) => {
+  const rig = await makeRig(t, dreamOnly);
+  const lines: string[] = [];
+  t.mock.method(console, "log", (line: unknown) => {
+    lines.push(String(line));
+  });
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(
+    lines.some((line) => line.includes("the cache is off")),
+    false
+  );
 });
 
 test("a Dream prompt variant reaches Sage and no other process", async (t) => {

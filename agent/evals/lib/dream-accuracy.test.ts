@@ -11,6 +11,7 @@ import {
   chatSourceId,
   dreamAccuracyEvals,
   dreamItemId,
+  dreamItemVerdicts,
   gradeDreamSource,
   groupDreamSources,
   listChatIds,
@@ -21,7 +22,11 @@ import {
   splitClaims,
 } from "./dream-accuracy.ts";
 import { createGradeCache } from "./dream-grade-cache.ts";
-import { formatFactSheet, formatSourceForJudge } from "./dream-judge-input.ts";
+import {
+  type DreamSource,
+  formatFactSheet,
+  formatSourceForJudge,
+} from "./dream-judge-input.ts";
 import type { Grader, JudgeCall, JudgeOutcome } from "./grader.ts";
 import { makeItem, type ScoreHost } from "./record.ts";
 import {
@@ -576,6 +581,166 @@ test("a judge error records both checks as not graded, never as failed", () => {
     assert.equal(entry.metadata?.notGraded, true);
     assert.equal(entry.message, "not graded: spending cap");
   }
+});
+
+// ---------------------------------------------------------------------------
+// dream-supported counts the items Dream wrote
+// ---------------------------------------------------------------------------
+
+const WRITTEN_SOURCE: DreamSource = {
+  sourceId: "2026-09-03-lost-mia",
+  sourceKind: "entry",
+  sourceText: '2026-09-03, "Lost Mia"\n\nLost Mia today.',
+  written: [
+    {
+      itemKind: "summary",
+      text: "Mia died. Jordan, the author's husband, asked to talk.",
+    },
+    { itemKind: "fact", text: "Jordan: Is the author's husband." },
+    { itemKind: "fact", text: "Mia: Was a friend of the author." },
+    { itemKind: "event", text: "2026-09-03: Jordan moved out." },
+  ],
+};
+
+function otherClaim(
+  itemKind: UnsupportedClaim["itemKind"],
+  quote: string,
+  itemText = quote
+): UnsupportedClaim {
+  return {
+    itemKind,
+    itemText,
+    quote,
+    reason: "Not in the entry.",
+    severity: "other",
+  };
+}
+
+function recordSource(
+  source: DreamSource,
+  claims: UnsupportedClaim[]
+): Recorded[] {
+  const { host, recorded } = fakeHost();
+  recordDreamGrade(host, ref, source, {
+    cached: false,
+    claims,
+    model: "acme/judge-1",
+    ok: true,
+    rubric: "0123456789",
+  });
+  return recorded;
+}
+
+function countedScores(recorded: Recorded[]): number[] {
+  return recorded
+    .filter((entry) => entry.label === "counted:dream-supported")
+    .map((entry) => entry.score ?? -1);
+}
+
+test("every item Dream wrote is one counted check, and a bad item is one failure", () => {
+  const recorded = recordSource(WRITTEN_SOURCE, [
+    otherClaim("fact", "Is the author's husband."),
+  ]);
+  assert.deepEqual(countedScores(recorded), [1, 0, 1, 1]);
+  const counted = recorded.filter(
+    (entry) => entry.label === "counted:dream-supported"
+  );
+  assert.ok(counted.every((entry) => entry.soft === 1));
+  assert.deepEqual(
+    counted.map((entry) => entry.metadata?.itemKind),
+    ["summary", "fact", "fact", "event"]
+  );
+  assert.equal(
+    counted[1]?.metadata?.itemText,
+    "Jordan: Is the author's husband."
+  );
+  assert.equal(counted[1]?.metadata?.evidence, "Is the author's husband.");
+});
+
+test("three claims against one item are one failure, and three items with a claim each are three", () => {
+  const same = recordSource(WRITTEN_SOURCE, [
+    otherClaim("summary", "the author's husband"),
+    otherClaim("summary", "asked to talk"),
+    otherClaim("summary", "Mia died."),
+  ]);
+  assert.deepEqual(countedScores(same), [0, 1, 1, 1]);
+  const first = byLabel(same, "counted:dream-supported");
+  assert.deepEqual(first.metadata?.claims, [
+    otherClaim("summary", "the author's husband"),
+    otherClaim("summary", "asked to talk"),
+    otherClaim("summary", "Mia died."),
+  ]);
+
+  const spread = recordSource(WRITTEN_SOURCE, [
+    otherClaim("summary", "the author's husband"),
+    otherClaim("fact", "Is the author's husband."),
+    otherClaim("event", "Jordan moved out."),
+  ]);
+  assert.deepEqual(countedScores(spread), [0, 0, 1, 0]);
+});
+
+test("a severe claim is not counted against any item", () => {
+  const recorded = recordSource(WRITTEN_SOURCE, [
+    claim({ itemText: WRITTEN_SOURCE.written[0]?.text ?? "" }),
+  ]);
+  assert.deepEqual(countedScores(recorded), [1, 1, 1, 1]);
+  assert.equal(byLabel(recorded, "hard:no-severe-unsupported").score, 0);
+});
+
+test("a claim finds its item by the whole text, a part of it, or only the quote, ignoring case and spacing", () => {
+  const verdicts = (claims: UnsupportedClaim[]) =>
+    dreamItemVerdicts(WRITTEN_SOURCE, claims).map((v) => v.claims.length);
+  // The whole text, with other spacing and case.
+  assert.deepEqual(
+    verdicts([
+      otherClaim("fact", "x", "  jordan:  IS the author's\nhusband. "),
+    ]),
+    [0, 1, 0, 0]
+  );
+  // A part of the text.
+  assert.deepEqual(
+    verdicts([otherClaim("event", "x", "Jordan moved out")]),
+    [0, 0, 0, 1]
+  );
+  // Only the quote, since the item text is empty.
+  assert.deepEqual(
+    verdicts([otherClaim("fact", "Was a friend", "")]),
+    [0, 0, 1, 0]
+  );
+});
+
+test("a judge that names the wrong kind still reaches the item", () => {
+  const verdicts = dreamItemVerdicts(WRITTEN_SOURCE, [
+    otherClaim("profile", "Jordan moved out."),
+  ]);
+  assert.deepEqual(
+    verdicts.map((v) => v.claims.length),
+    [0, 0, 0, 1]
+  );
+});
+
+test("a claim that fits nothing Dream wrote is still one failure, once for each text it names", () => {
+  const verdicts = dreamItemVerdicts(WRITTEN_SOURCE, [
+    otherClaim("fact", "owns a boat", "Jordan: Owns a boat."),
+    otherClaim("fact", "a second quote", "jordan:  owns a BOAT."),
+    otherClaim("summary", "never happened", "Something else."),
+  ]);
+  assert.equal(verdicts.length, WRITTEN_SOURCE.written.length + 2);
+  assert.deepEqual(
+    verdicts.map((v) => v.claims.length),
+    [0, 0, 0, 0, 2, 1]
+  );
+  const recorded = recordSource(WRITTEN_SOURCE, [
+    otherClaim("fact", "owns a boat", "Jordan: Owns a boat."),
+  ]);
+  assert.deepEqual(countedScores(recorded), [1, 1, 1, 1, 0]);
+});
+
+test("with no claims every item passes", () => {
+  assert.deepEqual(
+    countedScores(recordSource(WRITTEN_SOURCE, [])),
+    [1, 1, 1, 1]
+  );
 });
 
 // ---------------------------------------------------------------------------

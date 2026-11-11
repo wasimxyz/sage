@@ -25,6 +25,7 @@ import {
   type CheckId,
   type CheckOutcome,
   type CheckTier,
+  dreamSourceSchema,
   HARD_CHECK_IDS,
   type HardCheckId,
   type ItemStatus,
@@ -398,16 +399,25 @@ function addSoftScore(build: ItemBuild, assertion: RecordedAssertion): void {
   const id =
     text(assertion.metadata, "checkId") ??
     assertion.name.slice(assertion.name.indexOf(":") + 1);
+  if (id === DREAM_SOURCE_SCORE && assertion.name.includes(":")) {
+    // It carries the source and what Dream wrote for the viewer. It is no
+    // score, so it adds no note. What it carries is kept even when the judge
+    // did not grade the source, because Dream still wrote it.
+    const dream = dreamSourceSchema.safeParse(assertion.metadata?.dream);
+    if (dream.success) {
+      build.item.dream = dream.data;
+    }
+    if (flag(assertion.metadata, "notGraded") || assertion.errored === true) {
+      build.notGraded = true;
+    }
+    return;
+  }
   if (flag(assertion.metadata, "notGraded") || assertion.errored === true) {
     build.notGraded = true;
     return;
   }
   if (assertion.name.length === 0 || !assertion.name.includes(":")) {
     // eve's own assertions, such as "succeeded", carry no label.
-    return;
-  }
-  if (id === DREAM_SOURCE_SCORE) {
-    // It carries the source and what Dream wrote for the viewer. It is no score.
     return;
   }
   if (typeof assertion.score === "number") {
