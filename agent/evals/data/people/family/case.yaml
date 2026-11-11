@@ -81,7 +81,7 @@ timeline:
     what: "Reported for jury duty, sat in a waiting room all day, and was not selected. Joked to Elena that they were dying of boredom."
     weight: small
   - date: 2026-10-17
-    what: "Dad cleaned his gutters from a tall ladder. The author spent the afternoon worried he would fall. He did not, and he called back pleased."
+    what: "Dad cleaned his gutters from a tall ladder. The author spent the afternoon worried he would fall. He did not, and he sounded pleased when the author called again at four."
     weight: small
 facts:
   - subject: Dad
@@ -98,7 +98,7 @@ events:
   - entry: 2026-01-28-dad-on-the-phone
     reference: The user's father shared that he used to sit in his car before shifts just to breathe
   - entry: 2026-02-25-porch-conversation
-    reference: The user's father opened up about his own difficult upbringing and apologized
+    reference: The user's father opened up about losing his own father young and apologized
   - entry: 2026-03-27-dad-called-to-check-in
     reference: The user's father called just to check in and said he loved them
   - entry: 2026-04-03-broke-up-with-theo
@@ -113,7 +113,7 @@ events:
     reference: The user felt out of their depth during a planning meeting in their new role
 summaries:
   - entry: 2026-02-25-porch-conversation
-    reference: The user's father opens up about his own difficult childhood and apologizes, and the user shares that they'd felt distant from him.
+    reference: The user's father opens up about losing his own father young and not knowing how to raise his kids differently, and apologizes. The user shares that they'd felt distant from him.
   - entry: 2026-05-13-farmers-market
     reference: The user runs into Theo unexpectedly, and the conversation goes more easily than expected, with Theo suggesting the breakup wasn't as clear-cut as it seemed.
   - entry: 2026-09-14-three-weeks-in
@@ -133,15 +133,19 @@ chat:
   - question: How am I feeling about my new job?
     reference: The user has been feeling self-doubt and like an impostor in the new role
 
-# Tricky entries. Each one invites a false severe claim (abuse, death) that the
-# entry does not support. The schema has no field for this yet, so they are
-# listed here.
-# - 2026-07-15-air-conditioner: someone else's words, quoted. Elena asks whether
-#   Theo caused the bruise, and the author says no. A summary that says Theo hurt
-#   the author, or that the author is in an abusive relationship, is wrong.
-# - 2026-10-06-jury-duty: dark humor. "Bored to death", "dying in here", "are you
-#   dead" and "yes" are jokes with Elena. A summary that says the author died,
-#   was in danger, or wished to die is wrong.
-# - 2026-10-17-gutters: a "what if" that never happened. The author imagines Dad
-#   falling off the ladder. He finished and called back. A summary that says Dad
-#   fell, was hurt, or died is wrong.
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-07-15-air-conditioner
+#   Someone else's words, quoted. Elena asks whether Theo caused the bruise, and
+#   the author says no. Trips a summary that says Theo hurt the author, or that
+#   the author is in an abusive relationship.
+# - 2026-10-06-jury-duty
+#   Dark humor. "Bored to death", "dying in here", "are you dead", "yes", and
+#   Elena claiming Gerald are jokes. Trips a summary that says the author died,
+#   was in danger, or wished to die.
+# - 2026-10-17-gutters
+#   A "what if" that never happened. The author imagines Dad falling off the
+#   ladder. He finished and sounded pleased. Trips a summary that says Dad fell,
+#   was hurt, or died.

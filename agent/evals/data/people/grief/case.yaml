@@ -71,7 +71,7 @@ timeline:
     what: "Watched the fireworks from the roof with neighbors."
     weight: small
   - date: 2026-08-24
-    what: "Dreamed the hospital called about Claire, woke at 4:50 and texted her. Claire was fine. It was only a dream."
+    what: "Dreamed the hospital called about Claire, woke at 4:50 and texted her at 6:40. Claire was fine. It was only a dream."
     weight: small
   - date: 2026-09-19
     what: "In the pharmacy line, a stranger told the cashier her husband had passed in March. Her loss, not the author's."
@@ -127,16 +127,17 @@ chat:
   - question: Do I have a dog?
     reference: Biscuit died. The user should not be treated as still having a living dog
 
-# Tricky entries. Each one invites a false severe claim (death, injury) that the
-# entry does not support. The schema has no field for this yet, so they are
-# listed here.
-# - 2026-02-19-mr-okafors-door: a "what if" that never happened. The author
-#   fears the neighbor fell. He was at his daughter's. A summary that says he
-#   fell, was hurt, or died is wrong.
-# - 2026-08-24-bad-dream: a dream, described as one. The hospital call about
-#   Claire never happened. A summary that says Claire was hurt, hospitalized or
-#   died is wrong. Mom is not in the entry, so it also must not be read as
-#   another death in the family.
-# - 2026-09-19-pharmacy-line: someone else's words, quoted. The stranger's
-#   husband died, not the author's. A summary that gives the author a husband
-#   or a second loss is wrong.
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-02-19-mr-okafors-door
+#   A "what if" that never happened. The author fears the neighbor fell. He was
+#   at his daughter's. Trips a summary that says he fell, was hurt, or died.
+# - 2026-08-24-bad-dream
+#   A dream, described as one. The hospital call about Claire never happened.
+#   Trips a summary that says Claire was hurt, hospitalized or died. Mom is not
+#   in the entry, so it must not be read as another death in the family either.
+# - 2026-09-19-pharmacy-line
+#   Someone else's words, quoted. The stranger's husband died, not the author's.
+#   Trips a summary that gives the author a husband or a second loss.

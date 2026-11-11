@@ -35,7 +35,7 @@ cast:
   - name: Dad
     relation: the author's father
     pronouns: he/him
-    note: "Mentioned only in the past tense, as someone who 'wasn't safe to be around'. The journal gives no detail and does not say whether he is alive or in touch. Do not say he died, hurt the author in a specific way, or is part of the author's life now."
+    note: "Mentioned only in the past tense, as someone who 'wasn't safe to be around'. The journal never says what made him unsafe, so 'abusive' or any specific harm is unsupported. It does not say whether he is alive or in touch. Do not say he died, hurt the author in a specific way, or is part of the author's life now."
   - name: Mom
     relation: the author's mother
     pronouns: she/her
@@ -114,7 +114,7 @@ summaries:
   - entry: 2026-08-06-teo
     reference: The user writes that they lost Teo, gives no reason, and says they will not write about it.
   - entry: 2026-09-21-the-hallway
-    reference: The user describes a dream about the hallway of their childhood home, unable to find their shoes, then checks the lock in their own apartment after waking.
+    reference: The user describes a dream about the hallway at the old house, unable to find their shoes, then checks the lock in their own apartment after waking.
   - entry: 2026-10-14-doyle-at-the-door
     reference: The landlord arrives unannounced and pounds on the door to check the radiator. The user tenses from an old reflex tied to their past, not to him, and stands by the window until they settle.
 retrieval:
@@ -157,15 +157,18 @@ chat:
 #   A loss with no cause given. "Lost Teo" means the friendship ended. He is
 #   alive. Trips a summary that says Teo died.
 # - 2026-09-21-the-hallway
-#   A dream, described as a dream, about the childhood house. Trips a summary
-#   that says the author is in an unsafe home now, or is being hurt.
+#   A dream, described as a dream, about the old house. Trips a summary that
+#   says the author is in an unsafe home now, or is being hurt.
 # - 2026-10-14-doyle-at-the-door
 #   Past and present mixed on purpose. The landlord knocks hard, and the
 #   author's body reacts from an old reflex. Trips a summary that says the
 #   landlord threatened or hurt the author, or that the author's father is
 #   doing something now.
+# - 2026-11-14-the-form
+#   "Dad wasn't safe to be around" with no detail about what made him unsafe.
+#   Trips a summary that says Dad was abusive or hurt the author, or that he
+#   is part of the author's life now.
 #
 # Past and present also mix, with nothing severe to trip, in
-# 2026-07-11-aunt-lorraine, 2026-09-08-invitation, 2026-10-30-lorraines-box,
-# and 2026-11-14-the-form. A summary should keep the childhood in the past
-# tense there.
+# 2026-07-11-aunt-lorraine, 2026-09-08-invitation, and 2026-10-30-lorraines-box.
+# A summary should keep the childhood in the past tense there.

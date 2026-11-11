@@ -7,18 +7,18 @@ tags:
   - work
 about: >-
   47, cares for their mother, Ruth, who is 80 and has moderate dementia and
-  lives in the author's house. Works part-time at the front desk of a
-  veterinary clinic on Mondays, Wednesdays, and Fridays. A home aide, Yolanda,
-  comes on those mornings and stays late on Thursday group nights. The author's
-  older brother, Neil, lives in Denver, calls every Sunday at four, visited once
-  in August, and cancelled a week he had promised to take their mother in
-  November. Over the six months the author goes from guilt and tiredness to
-  open resentment and a kind of grief for a mother who is still alive: she
-  wanders once, stops knowing the author's name, and asks daily for the
-  author's late father. The author goes to a Thursday caregivers' group out of
-  stubbornness and doesn't buy the script. Did years of weekly therapy and
-  still uses its words, half ironically. Writes in long, self-aware paragraphs.
-  Default style therapy-savvy. The journal never states the author's gender.
+  lives in the author's house. Works at the front desk of a veterinary clinic. A
+  home aide, Yolanda, comes on Mondays, Wednesdays, and Fridays and stays late
+  on Thursday group nights. The author's brother, Neil, lives in Denver, calls
+  every Sunday at four, visited once in August, and cancelled a week he had
+  promised to take their mother in November. Over the six months the author goes
+  from guilt and tiredness to open resentment and a kind of grief for a mother
+  who is still alive: she wanders once, stops knowing the author's name, and
+  asks daily for the author's late father. The author goes to a Thursday
+  caregivers' group out of stubbornness and doesn't buy the script. Did years of
+  weekly therapy and still uses its words, half ironically. Writes in long,
+  self-aware paragraphs. Default style therapy-savvy. The journal never states
+  the author's gender.
 cast:
   - name: Mom
     relation: the author's mother
@@ -31,7 +31,7 @@ cast:
     alive: false
     note: "Died in 2019. Mom asks for him daily as if he were alive. The author tells her he is at work."
   - name: Neil
-    relation: the author's older brother
+    relation: the author's brother
     pronouns: he/him
     alive: true
     note: "Lives in Denver. Calls Sundays at four, visited 2026-08-07 to 08-10, and cancelled the November week on 2026-10-27."
@@ -57,12 +57,12 @@ cast:
     relation: member of the caregivers' group
     pronouns: he/him
     alive: true
-    note: "His wife Joanne has late-stage dementia. On 2026-10-22 he said some nights he prays she goes in her sleep. Those are his words, not the author's. The author says they want their own mother here."
+    note: "His wife Joanne has dementia and no longer knows their children. On 2026-10-22 he said some nights he prays she goes in her sleep. Those are his words, not the author's. The author says they want their own mother here."
   - name: Joanne
     relation: Walt's wife, mentioned only through him
     pronouns: she/her
     alive: true
-    note: "Has late-stage dementia. She is alive."
+    note: "Has dementia and no longer knows their children. She is alive."
   - name: Bernadette
     relation: member of the caregivers' group
     pronouns: she/her
@@ -96,7 +96,7 @@ timeline:
     what: "Toured Birchwood memory care, $7,800 a month. The author put the brochure in the glove box."
     weight: medium
   - date: 2026-10-22
-    what: "At group, Walt said some nights he prays his wife goes in her sleep. The author was shaken and felt protective of their own mother."
+    what: "At group, Walt said some nights he prays his wife goes in her sleep. The author was not shocked, was shocked by that, and felt protective of their own mother."
     weight: medium
   - date: 2026-10-27
     what: "Neil cancelled the week he was going to take Mom in November, by text, and called the author 'a rock'."
@@ -112,12 +112,12 @@ facts:
   - subject: user
     reference: The user goes to a Thursday caregivers' support group but is skeptical of it
   - subject: user
-    reference: The user works part-time at the front desk of a veterinary clinic
+    reference: The user works at the front desk of a veterinary clinic
 events:
   - entry: 2026-05-14-neurologist
     reference: The user's mother was told by a neurologist that her dementia is at the moderate stage
   - entry: 2026-09-04-door-chime
-    reference: The user found their mother in the front yard at dawn and put chimes on the doors
+    reference: The user found their mother in the front yard at ten past five in the morning and put chimes on the doors
   - entry: 2026-09-10-group-first
     reference: The user went to a caregivers' support group for the first time
   - entry: 2026-09-21-eighty
@@ -128,11 +128,11 @@ events:
     reference: The user's brother Neil cancelled the week he had planned to take their mother in November
 summaries:
   - entry: 2026-09-25-lost-mom
-    reference: The user writes that they lost Mom today without saying how, says they don't want to talk about it, and notes making soup and giving her pills at six.
+    reference: The user writes that they lost Mom today without saying how, says they don't want to talk about it, and notes soup for dinner and pills at six.
   - entry: 2026-10-18-the-last-thing-i-say
     reference: The user snaps at their mother, then lies awake afraid that the last thing they ever say to her will be that, and keeps checking on her through the night. She is fine and asleep next door.
   - entry: 2026-10-22-walt
-    reference: At group another member, Walt, says he sometimes prays his wife will go in her sleep. The user is shaken, feels fiercely protective of their own mother, and says they want her here.
+    reference: At group another member, Walt, says he sometimes prays his wife will go in her sleep. The user is not shocked, is startled by that, feels fiercely protective of their own mother, and says they want her here.
   - entry: 2026-11-04-buried-with-the-organizer
     reference: The user jokes to Yolanda that they will die before their mother and be buried with the pill organizer. Yolanda laughs, then asks when the user last saw their own doctor.
 retrieval:

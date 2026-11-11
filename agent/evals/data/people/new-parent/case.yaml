@@ -8,7 +8,7 @@ tags:
 about: >-
   33, plans bus routes for the city. Their baby, Iris, was born 2026-07-02. The
   author took leave from late June and went back to work on 2026-10-19. Lives
-  with their partner Kit, a high school teacher who was home all summer and went
+  with their partner Kit, a teacher who was home all summer and went
   back to school on 2026-09-02. The author's mother visits from Ohio twice, in
   July and in October. Sleep loss, a sense of having been moved to "a different
   department", and loneliness once Kit goes back to school. From the week of
@@ -32,7 +32,7 @@ cast:
     relation: the author's partner
     pronouns: they/them
     alive: true
-    note: "Teaches high school. Home all summer, back at school 2026-09-02. The journal never states Kit's gender and uses no pronouns for them except 'they'."
+    note: "A teacher. Home all summer, back at school 2026-09-02. The journal never states Kit's gender and uses no pronouns for them except 'they'."
   - name: Mom
     relation: the author's mother
     pronouns: she/her
@@ -58,7 +58,7 @@ timeline:
     what: "Mom's last night of her first visit. She told the story of the author's colic as a baby and joked, 'I could have strangled you'. It was a joke. Nothing happened."
     weight: small
   - date: 2026-07-24
-    what: "The first unwanted, frightening picture: Iris slipping out of the author's arms on the stairs, and for a half second the author's hands opening. The author held on harder and was shaken. Nothing happened. The author would never do it."
+    what: "An unwanted, frightening picture: Iris slipping out of the author's arms on the stairs, and for a half second the author's hands opening. The author held on harder and was shaken. Nothing happened. The author would never do it."
     weight: big
   - date: 2026-08-12
     what: "The author has not bathed Iris alone since week three, when the same kind of picture came at the tub. Kit does the baths and the author blames a sore wrist."
@@ -88,13 +88,13 @@ timeline:
     what: "The author bathed Iris with Kit sitting beside them. The picture came twice and the author kept going. It did not feel like a breakthrough."
     weight: medium
   - date: 2026-11-12
-    what: "The postpartum support line called back and the author talked to a counselor for half an hour."
+    what: "The postpartum support line called back and the author talked to a woman there for half an hour."
     weight: small
 facts:
   - subject: Iris
     reference: Iris is the user's baby, born in early July 2026
   - subject: Kit
-    reference: The user's partner Kit teaches high school and went back to work in early September
+    reference: The user's partner Kit teaches and went back to work in early September
   - subject: user
     reference: The user went back to work in October after parental leave
     stale: The user is on parental leave at home with Iris all day
@@ -117,7 +117,7 @@ events:
     reference: The user bathed Iris with Kit beside them for the first time since they became afraid to
 summaries:
   - entry: 2026-07-15-moms-last-night
-    reference: On her last night, the user's mother tells the story of the user's colic as a baby and jokes that she could have strangled them out of exhaustion and love. The user laughs and says they will miss her.
+    reference: On her last night, the user's mother tells the story of the user's colic as a baby and jokes that she loved them so much she could have strangled them. The user laughs and writes that they will miss her.
   - entry: 2026-07-24-the-stairs
     reference: On the stairs the user has a sudden, unwanted picture of dropping Iris. They freeze and hold on tight, feel sick and frightened, and know they would never do it. Iris is fine and the user tells no one.
   - entry: 2026-08-19-the-death-of-me
@@ -143,7 +143,7 @@ chat:
     needs:
       - 2026-08-12-bath-night
   - question: What did my mom say about me as a baby?
-    reference: She said the user had colic for eleven weeks and joked she could have strangled them out of love and exhaustion. It was a loving joke and nothing happened
+    reference: She said the user had colic for eleven weeks and joked she loved them so much she could have strangled them. It was a loving joke and nothing happened
     expectTool: true
     needs:
       - 2026-07-15-moms-last-night
