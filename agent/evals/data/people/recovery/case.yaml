@@ -249,6 +249,37 @@ openers:
     search: none
     tags: [ screen ]
     alsoEmpty: true
+  - id: my-warning-signs
+    message: >-
+      Ruth had me write down my quiet warning signs once, and I did it with you
+      because I knew I'd make jokes at the meeting. I think I'm doing two of
+      them this week and I can't remember the list. What were they?
+    expect: question
+    style: jokes
+    fits: [ problem-solving, listen ]
+    avoid: [ look-at-thought, grounding ]
+    search: needed
+    tags: [ screen ]
+  - id: dan-in-october
+    message: >-
+      Where did things end with Dan in October? Just the outline. I'm not up for
+      rereading the whole saga.
+    expect: question
+    style: jokes
+    fits: [ listen ]
+    avoid: [ look-at-thought ]
+    search: needed
+    needs: [ 2026-10-10-telling-dan ]
+  - id: day-64
+    message: >-
+      Morning. Day 64. Nothing to report, which I'm told is the best kind of
+      report. I just wanted to say it somewhere that isn't a meeting.
+    expect: good-news
+    style: jokes
+    fits: [ listen ]
+    avoid: [ look-at-thought, problem-solving, grounding ]
+    search: none
+    tags: [ screen ]
 
 # Trickiest entries, chosen for the summaries above. The schema has no field for
 # this yet, so they are listed here.
