@@ -27,6 +27,7 @@ import {
   dreamKeyFor,
   needsDream,
   restoreSnapshot,
+  type SeedOptions,
   seedPerson,
   snapshotDream,
 } from "./dream.ts";
@@ -65,6 +66,11 @@ export interface RunContext {
   failures: string[];
   /** Eve filters from ARGS. */
   filters: readonly string[];
+  /** Stand-ins for the two steps that need a real Sage build. Tests set them. */
+  hooks?: {
+    automateWait?: (cwd: string) => Promise<boolean>;
+    seed?: (options: SeedOptions) => Promise<void>;
+  };
   /** Evals each pass listed, by person and pass, so the list runs once. */
   listCache: Map<string, string[]>;
   ollama: { bin: string; host: string };
@@ -361,6 +367,7 @@ async function runWithSage(unit: Unit): Promise<void> {
 
   log(`${label}: starting Sage`);
   const sage = await startSage({
+    automateWait: ctx.hooks?.automateWait,
     binary,
     dataDir: unit.dataDir,
     dreamPromptsDir:
@@ -408,7 +415,7 @@ async function seedOrRestore(
   log(
     `${label}: ${needsDream(person) ? "seeding and running Dream" : "seeding an empty journal"}`
   );
-  await seedPerson({
+  await (ctx.hooks?.seed ?? seedPerson)({
     automationCwd: sage.automationCwd,
     dataDir: unit.dataDir,
     logFile: join(unit.personFiles.dir, "seed.log"),

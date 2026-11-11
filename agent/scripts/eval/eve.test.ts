@@ -96,6 +96,15 @@ server.listen(0, "127.0.0.1", () => {
 process.on("SIGTERM", () => server.close(() => process.exit(0)));
 `;
 
+test("the last listening line wins, so an old server's line cannot mislead", () => {
+  assert.equal(
+    parseListeningPort(
+      "[DEV] server listening at http://127.0.0.1:1111/\n[DEV] server listening at http://127.0.0.1:2222/\n"
+    ),
+    2222
+  );
+});
+
 test("startEveServer runs eve dev from the root, waits for health, and stops it", async (t) => {
   const dir = tempDir(t);
   fakeEve(dir, serverScript);

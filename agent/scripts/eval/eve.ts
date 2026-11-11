@@ -10,8 +10,8 @@
 // token. The token is never printed, never comes from agent/.env, and never
 // goes to the server's own environment.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { addNodeOption, type Env, prependPath, withoutSecrets } from "./env.ts";
 import {
@@ -88,12 +88,15 @@ export function eveDevEnv(options: EveDevEnvOptions): Record<string, string> {
 }
 
 const listeningPattern =
-  /server listening at http:\/\/127\.0\.0\.1:(?<port>\d+)/u;
+  /server listening at http:\/\/127\.0\.0\.1:(?<port>\d+)/gu;
 
-/** The port in eve's "server listening at" line, or null before it appears. */
+/**
+ * The port in eve's last "server listening at" line, or null before one
+ * appears. The last one wins, so a log that holds an earlier server's line
+ * cannot send the runner to a port that is gone.
+ */
 export function parseListeningPort(logText: string): number | null {
-  const match = listeningPattern.exec(logText);
-  const port = match?.groups?.port;
+  const port = [...logText.matchAll(listeningPattern)].at(-1)?.groups?.port;
   return port === undefined ? null : Number(port);
 }
 
@@ -147,6 +150,9 @@ export interface StartEveServerOptions extends EveDevEnvOptions {
 export async function startEveServer(
   options: StartEveServerOptions
 ): Promise<EveServer> {
+  // A fresh log for each server: the port is read from it.
+  mkdirSync(dirname(options.logFile), { recursive: true });
+  writeFileSync(options.logFile, "");
   const child = spawnTracked(eveBin(options.agentDir), EVE_DEV_ARGS, {
     cwd: options.root,
     detached: true,

@@ -130,15 +130,17 @@ export function seedEnv(options: {
   };
 }
 
-/** Seeds the person's journal through the bridge and waits for Dream. */
-export async function seedPerson(options: {
+export interface SeedOptions {
   automationCwd: string;
   dataDir: string;
   logFile: string;
   manifestPath: string;
   personId: string;
   root: string;
-}): Promise<void> {
+}
+
+/** Seeds the person's journal through the bridge and waits for Dream. */
+export async function seedPerson(options: SeedOptions): Promise<void> {
   const script = join(options.root, "agent", "scripts", "seed-dataset.ts");
   const result = await runCommand(
     process.execPath,
