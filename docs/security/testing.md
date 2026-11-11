@@ -8,9 +8,8 @@ This page explains how the lock and encryption are tested: the unit suite, the s
 
 - The Zig tests, against an in-memory SQLite database with no window
 - The frontend unit tests in `frontend/src/lib/`
-- The agent tests: eval fixtures, scripts such as the dev auth hook, and the encrypted session storage in `agent/packages/world-encrypted-local`
+- The agent tests: eval fixtures, the eval runner in `agent/scripts/eval/` (including the order it loads settings in), scripts such as the dev auth hook, and the encrypted session storage in `agent/packages/world-encrypted-local`
 - The eval viewer unit tests in `eval-viewer/lib/reports/`
-- `scripts/eval-env.test.sh`, which checks the order `make eval` loads settings in
 - The security tests in `security-tests/`
 
 `make check` validates `app.json`, checks the pinned Native SDK CLI version, and runs the lint and type checks for the frontend, the agent, and the eval viewer.
@@ -61,7 +60,8 @@ The Zig tests cover:
 - **Web view**: the page allows no inline script, and export writes only to the folder you picked (`csp.test.ts`, `export-dest.test.ts`).
 - **Packaging**: the copy targets `Sage.app`, and the bundle ships no dev modules (`copy-agent-target.test.ts`, `agent-dev-modules.sh`).
 - **Seeding**: `make seed-dev` builds its automation binary under `zig-out/seed`, names only the dev app, and reads the seed files and builds before it resets (`seed-dev-dev-only.sh`).
-- **Evals**: `make eval` sends the token to a URL target, leaves no automation binary in `zig-out/bin/`, and opens only the throwaway `app.db` (`eval-server-token.sh`, `eval-leftover-automation.sh`, `eval-ignores-data-dir.sh`).
+- **Evals**: `make eval` sends the token to a URL target and refuses `--url` in `ARGS` (`eval-server-token.test.ts`). It leaves no automation binary in `zig-out/bin/` (`eval-leftover-automation.test.ts`), and it opens only the throwaway `app.db` (`eval-ignores-data-dir.test.ts`).
+- **Cloud judge**: the AI Gateway keys reach only the `eve eval` processes, never Sage, `eve dev`, Ollama, or the seed script (`eval-gateway-keys.test.ts`). Nothing under `agent/agent/` mentions an eval variable, the eval prompts folder, or the gateway, and the runner swaps only `instructions.md` in its copy of the app (`agent-has-no-eval-hooks.test.ts`).
 
 To run the TypeScript ones alone, use `node --test --experimental-strip-types security-tests/*.test.ts`.
 
@@ -75,7 +75,7 @@ native build -Dautomation=true
 ./zig-out/bin/Sage
 ```
 
-That replaces `zig-out/bin/Sage` with an automation build, so run `make build` afterward for a normal binary. `make eval` and `make seed-dev` avoid this. Each installs its own automation build, under `zig-out/eval` and `zig-out/seed`, as [Eval suite](../agent/evals.md#what-a-run-does) and [Scripts](../../scripts/README.md#seeding-the-dev-app) explain.
+That replaces `zig-out/bin/Sage` with an automation build, so run `make build` afterward for a normal binary. `make eval` and `make seed-dev` avoid this. Each installs its own automation build, under `zig-out/eval-mem0` and `zig-out/eval-mem1` (one for each memory value) and `zig-out/seed`, as [Eval suite](../agent/evals.md#what-a-run-does) and [Scripts](../../scripts/README.md#seeding-the-dev-app) explain.
 
 The automation server watches `.zig-cache/native-sdk-automation/` under the app’s working directory for command files. Call the CLI from that same directory, which is the project directory for a local smoke test:
 
