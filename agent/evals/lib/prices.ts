@@ -12,7 +12,7 @@
  * estimate never comes out low.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface ModelPrice {
   cachedInputPerM?: number;
@@ -189,6 +189,15 @@ function pickPrices(
     }
   }
   return picked;
+}
+
+/**
+ * The price cache of one sweep: `prices.json` in its run folder. The runner
+ * reads prices for its estimate into this file, and the grade processes, which
+ * get the same run folder, reuse that read.
+ */
+export function priceCacheFile(runDir: string): string {
+  return join(runDir, "prices.json");
 }
 
 /**

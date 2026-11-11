@@ -18,6 +18,21 @@ const lineBreakPattern = /\r?\n/u;
 
 const live = new Set<ChildProcess>();
 
+// Cleanups for what a stopped child leaves behind. Sage starts its Ollama in a
+// group of its own, so ending Sage's group does not reach it.
+const afterKill = new Set<() => void>();
+
+/**
+ * Registers a synchronous cleanup that `killAllTracked` runs once it has ended
+ * the children. Returns a function that takes the cleanup back out.
+ */
+export function onKillAll(cleanup: () => void): () => void {
+  afterKill.add(cleanup);
+  return () => {
+    afterKill.delete(cleanup);
+  };
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -200,6 +215,36 @@ export function killAllTracked(): void {
     killGroup(child, "SIGKILL");
   }
   live.clear();
+  for (const cleanup of afterKill) {
+    try {
+      cleanup();
+    } catch {
+      // Keep going: the other cleanups still need to run.
+    }
+  }
+  afterKill.clear();
+}
+
+/**
+ * Asks every tracked child to stop (SIGTERM, to the child itself), waits up to
+ * the grace period, then ends what is left. A Sage that is asked first gets to
+ * stop its own Ollama. The cleanups run last, for the case where it could not.
+ */
+export async function terminateAllTracked(graceMs = 5000): Promise<void> {
+  for (const child of live) {
+    if (!hasExited(child) && child.pid !== undefined) {
+      try {
+        process.kill(child.pid, "SIGTERM");
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+  await waitFor(() => [...live].every(hasExited), {
+    intervalMs: 50,
+    timeoutMs: graceMs,
+  });
+  killAllTracked();
 }
 
 export function trackedCount(): number {

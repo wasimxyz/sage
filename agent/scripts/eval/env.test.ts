@@ -16,6 +16,7 @@ import {
   prependPath,
   readEnvFile,
   redact,
+  uploadEnv,
   withoutSecrets,
 } from "./env.ts";
 
@@ -118,6 +119,51 @@ test("gatewayCredentials returns only the gateway keys that are set", () => {
     }),
     { AI_GATEWAY_API_KEY: "key" }
   );
+});
+
+test("a gateway base URL alone is not a credential", () => {
+  // The gateway SDK authenticates with the API key or the OIDC token only. A
+  // run with just a base URL would start, and every judge call would fail.
+  assert.deepEqual(
+    gatewayCredentials({
+      AI_GATEWAY_BASE_URL: "https://ai-gateway.vercel.sh/v4/ai",
+    }),
+    {}
+  );
+  assert.deepEqual(
+    gatewayCredentials({
+      AI_GATEWAY_BASE_URL: "https://ai-gateway.vercel.sh/v4/ai",
+      VERCEL_OIDC_TOKEN: "oidc",
+    }),
+    { VERCEL_OIDC_TOKEN: "oidc" }
+  );
+});
+
+test("uploadEnv gives the upload the Blob variables and no gateway key", () => {
+  const base = {
+    AI_GATEWAY_API_KEY: "gateway-key",
+    BLOB_READ_WRITE_TOKEN: "blob-token",
+    HOME: "/home/x",
+    PATH: "/bin",
+    SAGE_EVAL_BLOB_ACCESS: "public",
+    VERCEL_OIDC_TOKEN: "oidc",
+  };
+  assert.deepEqual(uploadEnv(base), {
+    BLOB_READ_WRITE_TOKEN: "blob-token",
+    HOME: "/home/x",
+    PATH: "/bin",
+    SAGE_EVAL_BLOB_ACCESS: "public",
+  });
+  // A connected store signs in with the OIDC token, so that one goes along.
+  const { BLOB_READ_WRITE_TOKEN: _token, ...store } = base;
+  assert.deepEqual(uploadEnv({ ...store, BLOB_STORE_ID: "store_1" }), {
+    BLOB_STORE_ID: "store_1",
+    HOME: "/home/x",
+    PATH: "/bin",
+    SAGE_EVAL_BLOB_ACCESS: "public",
+    VERCEL_OIDC_TOKEN: "oidc",
+  });
+  assert.equal(uploadEnv(store).VERCEL_OIDC_TOKEN, undefined);
 });
 
 test("redact hides long secrets and leaves short ones", () => {

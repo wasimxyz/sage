@@ -1192,6 +1192,7 @@ function rankable(id: string, overrides: Partial<Rankable> = {}): Rankable {
   return {
     countedRate: 0.1,
     firstWordMedianMs: 5000,
+    incomplete: false,
     passedHard: true,
     rubricMean: 0.7,
     setupId: id,
@@ -1212,6 +1213,31 @@ test("setups that pass every hard check come before the rest", () => {
     ]),
     ["passes", "fails"]
   );
+});
+
+test("incomplete setups rank after every complete one, then by the usual rules", () => {
+  assert.deepEqual(
+    order([
+      rankable("capped", { countedRate: 0, incomplete: true, rubricMean: 1 }),
+      rankable("fails", { countedRate: 0.9, passedHard: false }),
+      rankable("passes", { countedRate: 0.5, rubricMean: 0.1 }),
+      rankable("capped-fails", {
+        countedRate: 0,
+        incomplete: true,
+        passedHard: false,
+      }),
+      rankable("capped-worse", { countedRate: 0.2, incomplete: true }),
+    ]),
+    ["passes", "fails", "capped", "capped-worse", "capped-fails"]
+  );
+});
+
+test("a setup with nothing graded is incomplete in its ranking entry", () => {
+  const base = sampleReport().summary as Record<string, unknown>;
+  const report = parseSetupReport(
+    sampleReport({ summary: { ...base, graded: 0, notGraded: 0 } })
+  ) as SetupReport;
+  assert.equal(rankingEntryFor(report).incomplete, true);
 });
 
 test("the lowest counted-failure rate ranks first within a group", () => {

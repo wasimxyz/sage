@@ -1439,7 +1439,7 @@ export const rankingEntrySchema = z.strictObject({
   hardFailed: z
     .array(vocabulary("hard check", HARD_CHECK_IDS))
     .default(() => []),
-  /** Some items were not graded. */
+  /** Some items were not graded, or none were. Incomplete setups rank last. */
   incomplete: z.boolean(),
   passedHard: z.boolean(),
   rubricMean: z.number().min(0).max(1).nullable(),
@@ -1485,7 +1485,7 @@ export function rankingEntryFor(report: SetupReport): RankingEntry {
     countedRate: summary.countedRate,
     firstWordMedianMs: summary.firstWordMedianMs,
     hardFailed: summary.hardFailures.map((failure) => failure.id),
-    incomplete: summary.notGraded > 0,
+    incomplete: summary.notGraded > 0 || summary.graded === 0,
     passedHard: summary.hardFailures.length === 0,
     rubricMean: summary.rubricMean,
     setupId: report.setupId,
@@ -1496,6 +1496,8 @@ export function rankingEntryFor(report: SetupReport): RankingEntry {
 export interface Rankable {
   countedRate: number;
   firstWordMedianMs: number | null;
+  /** Some items were not graded, or none were. */
+  incomplete: boolean;
   passedHard: boolean;
   rubricMean: number | null;
   setupId: string;
@@ -1582,16 +1584,27 @@ function rankGroup<T extends Rankable>(group: readonly T[]): T[] {
 }
 
 /**
- * Setups that pass every hard check come first. Within each group the lowest
+ * Setups with every item graded come before setups that are incomplete (some
+ * items not graded, or none), because a rate over part of the items, or over
+ * none, is not one to rank by. Within each of those two groups, setups that pass
+ * every hard check come first. Within each group the lowest
  * counted-failure rate ranks first, then the highest rubric mean. Means within
  * 0.05 of the best in their group tie, and a tie goes to the lower spread, then
  * the lower median wait for the first word. A missing spread counts as 0. A
  * missing mean or wait ranks last.
  */
 export function rankSetups<T extends Rankable>(summaries: readonly T[]): T[] {
-  const passed = summaries.filter((summary) => summary.passedHard);
-  const failed = summaries.filter((summary) => !summary.passedHard);
-  return [...rankGroup(passed), ...rankGroup(failed)];
+  const ranked: T[] = [];
+  for (const incomplete of [false, true]) {
+    const part = summaries.filter(
+      (summary) => summary.incomplete === incomplete
+    );
+    ranked.push(
+      ...rankGroup(part.filter((summary) => summary.passedHard)),
+      ...rankGroup(part.filter((summary) => !summary.passedHard))
+    );
+  }
+  return ranked;
 }
 
 // ---------------------------------------------------------------------------

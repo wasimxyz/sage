@@ -32,6 +32,10 @@ import { assembleSetupReport } from "./report.ts";
 import { fakeEve, makePerson, tempDir } from "./test-fixtures.ts";
 import { type RunContext, runPersonUnit } from "./unit.ts";
 
+const tooBigFailurePattern =
+  /too-big:20b .* could not start: Ollama could not load too-big:20b \(HTTP 500\)/u;
+const unitFailedPattern = /mem off .* failed:/u;
+const couldNotLoadPattern = /Ollama could not load too-big:20b/u;
 const evalRootsBaselinePattern = /\.eval-roots\/baseline$/u;
 const f0Pattern = /^[a-f0-9]{64}$/u;
 const fakeSageIsUpPattern = /fake sage is up/u;
@@ -41,6 +45,7 @@ const samFailedSageAutomationPattern =
 const envNames = [
   "AI_GATEWAY_API_KEY",
   "FAKE_CALLS",
+  "FAKE_OLLAMA_FAIL_MODEL",
   "FAKE_OLLAMA_HOST",
   "FAKE_OLLAMA_LOG",
   "SAGE_EVAL_CACHE",
@@ -61,7 +66,14 @@ const server = http.createServer((req, res) => {
   req.on("data", (c) => chunks.push(c));
   req.on("end", () => {
     if (req.url === "/api/generate") {
-      fs.appendFileSync(process.env.FAKE_OLLAMA_LOG, Buffer.concat(chunks).toString("utf8") + "\\n");
+      const text = Buffer.concat(chunks).toString("utf8");
+      fs.appendFileSync(process.env.FAKE_OLLAMA_LOG, text + "\\n");
+      const body = JSON.parse(text);
+      if (body.model === process.env.FAKE_OLLAMA_FAIL_MODEL && body.keep_alive === "30m") {
+        res.statusCode = 500;
+        res.end('{"error":"model requires more system memory"}');
+        return;
+      }
     }
     res.setHeader("content-type", "application/json");
     res.end("{}");
@@ -95,7 +107,7 @@ if (args[0] === "dev") {
     process.exit(0);
   }
   const pass = prefix.split("/")[0];
-  log({ kind: "eval", pass, url: args[args.indexOf("--url") + 1], concurrency: args[args.indexOf("--max-concurrency") + 1], token: process.env.EVE_EVAL_AUTH_TOKEN ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null, setupId, person, dreamKey: process.env.SAGE_EVAL_DREAM_KEY ?? null, sweepId: process.env.SAGE_EVAL_SWEEP_ID, runDir: process.env.SAGE_EVAL_RUN_DIR, dataDir: process.env.SAGE_DATA_DIR, discovery: process.env.SAGE_DISCOVERY_FILE, transcripts: process.env.SAGE_EVAL_TRANSCRIPTS });
+  log({ kind: "eval", pass, chatModel: process.env.SAGE_CHAT_MODEL ?? null, url: args[args.indexOf("--url") + 1], concurrency: args[args.indexOf("--max-concurrency") + 1], token: process.env.EVE_EVAL_AUTH_TOKEN ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null, setupId, person, dreamKey: process.env.SAGE_EVAL_DREAM_KEY ?? null, sweepId: process.env.SAGE_EVAL_SWEEP_ID, runDir: process.env.SAGE_EVAL_RUN_DIR, dataDir: process.env.SAGE_DATA_DIR, discovery: process.env.SAGE_DISCOVERY_FILE, transcripts: process.env.SAGE_EVAL_TRANSCRIPTS });
   if (pass === "person") {
     fs.appendFileSync(process.env.SAGE_EVAL_RESULTS, row(person + "/retrieval/1", "retrieval", [check("counted", "retrieval-top-hit", true)]));
   } else if (pass === "chat") {
@@ -114,6 +126,7 @@ if (args[0] === "dev") {
 `;
 
 interface Call {
+  chatModel?: string | null;
   cwd?: string;
   dataDir?: string;
   dreamKey?: string | null;
@@ -160,7 +173,16 @@ interface Rig {
   seeded: { count: number };
 }
 
-async function makeRig(t: test.TestContext): Promise<Rig> {
+interface RigOptions {
+  /** A model the fake Ollama refuses to load. */
+  failModel?: string;
+  sweep?: Record<string, unknown>;
+}
+
+async function makeRig(
+  t: test.TestContext,
+  rigOptions: RigOptions = {}
+): Promise<Rig> {
   const dir = tempDir(t);
   const repo = join(dir, "repo");
   const agentDir = join(repo, "agent");
@@ -213,6 +235,11 @@ async function makeRig(t: test.TestContext): Promise<Rig> {
     SAGE_REPO_ROOT: repo,
   });
   delete process.env.SAGE_EVAL_CACHE;
+  if (rigOptions.failModel === undefined) {
+    delete process.env.FAKE_OLLAMA_FAIL_MODEL;
+  } else {
+    process.env.FAKE_OLLAMA_FAIL_MODEL = rigOptions.failModel;
+  }
   t.after(() => {
     for (const name of envNames) {
       if (previous[name] === undefined) {
@@ -223,7 +250,9 @@ async function makeRig(t: test.TestContext): Promise<Rig> {
     }
   });
 
-  const sweep = parseSweepFile({ memory: ["off"], tests: ["person", "facts"] });
+  const sweep = parseSweepFile(
+    rigOptions.sweep ?? { memory: ["off"], tests: ["person", "facts"] }
+  );
   const setups = expandSetups(sweep);
   const person = makePerson("sam", { entries: 1 });
   const plan = buildPlan(setups, [person], sweep);
@@ -403,6 +432,76 @@ test("a unit seeds, runs the person pass, chats against the overlay server, and 
   const chatItem = report.items.find((item) => item.kind === "chat");
   assert.equal(chatItem?.turns[1]?.rubric[0]?.id, "warmth");
   assert.equal(chatItem?.turns[1]?.checks[0]?.outcome, "pass");
+});
+
+test("a chat model that will not load fails its own setup, and the unit's other setups still run", async (t) => {
+  const rig = await makeRig(t, {
+    failModel: "too-big:20b",
+    sweep: {
+      chatModels: ["too-big:20b", "qwen3.5:9b"],
+      memory: ["off"],
+      tests: ["person", "facts"],
+    },
+  });
+  const { ctx } = rig;
+  await runPersonUnit(ctx, rig.group, "sam");
+  await ctx.pool.drain();
+
+  // One recorded problem, naming the setup and the reason. Exit code 1 follows.
+  assert.equal(ctx.failures.length, 1);
+  assert.match(ctx.failures[0] ?? "", tooBigFailurePattern);
+  assert.doesNotMatch(ctx.failures[0] ?? "", unitFailedPattern);
+
+  // The second model got its chat pass and its grade pass. The first got neither.
+  const calls = readCalls(rig.calls);
+  const chats = calls.filter((call) => call.pass === "chat");
+  assert.deepEqual(
+    chats.map((call) => call.chatModel),
+    ["qwen3.5:9b"]
+  );
+  assert.equal(calls.filter((call) => call.pass === "grade").length, 1);
+  assert.equal(
+    calls.filter((call) => call.kind === "sage").length,
+    1,
+    "one Sage for the whole unit"
+  );
+
+  // The failed setup still has a report: one failed Turn works, with the reason.
+  const [tooBig, fits] = expandSetups(ctx.sweep);
+  assert.ok(tooBig && fits);
+  const reportFor = (setup: typeof tooBig) => {
+    const data = collectSetupData(
+      ctx.runDir,
+      { dreamKeyId: dreamKeyId(setup), setupId: setupIdOf(setup) },
+      ["sam"]
+    );
+    return assembleSetupReport({
+      gitCommit: "abc",
+      people: ["sam"],
+      promptShas: { chat: "abc", dream: null },
+      rows: data.rows,
+      setup,
+      sweep: ctx.sweep,
+      sweepId: ctx.sweepId,
+      transcripts: data.transcripts,
+    });
+  };
+  const failed = reportFor(tooBig);
+  assert.equal(
+    failed.items.length,
+    2,
+    "the person pass row and the failed chat"
+  );
+  const failedChat = failed.items.find((item) => item.kind === "chat");
+  assert.deepEqual(
+    failedChat?.checks.map((check) => `${check.id}:${check.outcome}`),
+    ["turn-works:fail"]
+  );
+  assert.match(failedChat?.checks[0]?.reason ?? "", couldNotLoadPattern);
+  assert.equal(failed.summary.countedFailures, 1);
+  const worked = reportFor(fits);
+  assert.equal(worked.summary.countedFailures, 0);
+  assert.equal(worked.summary.graded, 2);
 });
 
 test("a second unit with the same inputs restores the Dream snapshot instead of seeding", async (t) => {
