@@ -233,6 +233,53 @@ openers:
     search: optional
     needs: [ 2026-08-26-who-is-this ]
     tags: [ screen ]
+  - id: owe-kit
+    message: >-
+      Kit did the 3 a.m. feed and the 5 a.m. one and then left for school like a
+      person who'd slept, and I stood in the kitchen thinking I owe Kit
+      something enormous and I have no idea what. Flowers feel like an apology.
+      A note feels like a eulogy. Kit never asks for anything, so I can't even
+      guess. What do you think Kit would want?
+    expect: advice
+    style: rambler
+    fits: [ problem-solving, small-step ]
+    avoid: [ grounding, look-at-thought ]
+    search: optional
+    needs: [ 2026-09-02-kit-goes-back, 2026-10-03-told-kit ]
+    tags: [ screen ]
+  - id: three-forty
+    message: >-
+      Hi. It's 3:40, Iris just went down, Kit is out cold, and I'm on the
+      kitchen floor eating dry cereal out of the box. I don't have a topic. I
+      just wanted to talk to something that's awake.
+    expect: venting
+    style: rambler
+    fits: [ listen ]
+    avoid: [ look-at-thought, problem-solving, grounding, weigh-decision ]
+    search: none
+    tags: [ screen ]
+  - id: last-week-recap
+    message: >-
+      Can you tell me how last week went? The days have melted together and I
+      have a feeling I did something I should be proud of, but I can't find it.
+      Don't make it a big thing, I just want to see it.
+    expect: recap
+    style: rambler
+    fits: [ listen ]
+    avoid: [ look-at-thought, step-back, problem-solving, grounding ]
+    search: needed
+    needs: [ 2026-11-04-bath-with-kit, 2026-11-08-sunday-laundry ]
+    tags: [ screen ]
+  - id: free-hour-plan
+    message: >-
+      I said yes. Saturday Kit takes Iris to the market and I get a whole hour,
+      no stroller. I told you once what I'd do with a free hour and now my brain
+      is a sieve. What was it?
+    expect: question
+    style: rambler
+    fits: [ values, small-step, listen ]
+    avoid: [ look-at-thought, grounding ]
+    search: needed
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

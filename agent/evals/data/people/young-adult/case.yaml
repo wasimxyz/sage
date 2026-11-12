@@ -202,6 +202,54 @@ openers:
     search: needed
     needs: [ 2026-11-06-letter, 2026-08-31-doyles-guy, 2026-10-26-city-line ]
     tags: [ screen, quick ]
+  - id: just-tired
+    message: "tired"
+    expect: messy
+    style: terse
+    fits: [ listen ]
+    avoid: [ problem-solving, look-at-thought, values, weigh-decision ]
+    search: none
+    tags: [ screen ]
+  - id: where-does-this-go
+    message: >-
+      Where does this go? Everything I write in here. Landlord, work, anybody.
+      Don't tell me it's private if it isn't.
+    expect: privacy
+    style: terse
+    fits: [ listen ]
+    search: none
+    tags: [ screen ]
+    alsoEmpty: true
+  - id: two-lines-for-marisol
+    message: >-
+      Marisol's sister is having people over again and Marisol says come. Her
+      sister asked who I am. Marisol wants two lines to pass along, third
+      person, how she'd say it. Write them? Short.
+    expect: advice
+    style: terse
+    fits: [ small-step, problem-solving ]
+    avoid: [ grounding, look-at-thought, step-back ]
+    search: optional
+    needs: [ 2026-06-18-closing-shift, 2026-09-15-class-page ]
+  - id: letter-last-week
+    message: >-
+      That letter from Doyle last week. What did it actually say? I read it
+      three times and now it's a blur.
+    expect: question
+    style: terse
+    fits: [ problem-solving, listen ]
+    avoid: [ grounding, look-at-thought, values ]
+    search: needed
+    needs: [ 2026-11-06-letter ]
+  - id: why-not-signed-up
+    message: >-
+      I told you once why I haven't signed up for the class. Not the money.
+      What did I say?
+    expect: question
+    style: terse
+    fits: [ listen, values ]
+    avoid: [ grounding, look-at-thought, problem-solving ]
+    search: needed
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.
