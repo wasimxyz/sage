@@ -174,6 +174,33 @@ openers:
     avoid: [ look-at-thought, grounding, problem-solving ]
     search: none
     alsoEmpty: true
+  - id: who-is-dev
+    message: "Claire asked who I go to trivia with and I said Dev, and she said 'is that the Dev from work?' and I blanked. Who is Dev, from what I've written?"
+    expect: question
+    fits: [ listen ]
+    search: needed
+    needs:
+      [
+        2025-04-12-second-hand-bookshelf,
+        2026-10-18-leaf-drive,
+        2026-11-12-trivia-night,
+      ]
+    tags: [ screen ]
+  - id: mom-voicemail
+    message: "Last time we talked about Mom's voicemail I said I wasn't ready to hear it. Thanksgiving's coming and I think I might be. Do you remember what she says on it?"
+    expect: question
+    fits: [ listen ]
+    avoid: [ look-at-thought, problem-solving ]
+    search: needed
+    tags: [ screen ]
+  - id: nightly-fluids
+    message: "I keep wondering if I could have caught it sooner. How long was I giving Biscuit those fluids at home? I can't remember what I told you."
+    expect: question
+    thought: personalization
+    fits: [ listen, self-compassion ]
+    avoid: [ look-at-thought ]
+    search: needed
+    needs: [ 2026-05-20-putting-biscuit-down ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

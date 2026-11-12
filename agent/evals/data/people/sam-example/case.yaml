@@ -101,3 +101,24 @@ openers:
     avoid: [ problem-solving ]
     search: optional
     needs: [ 2026-08-09-quiet-again ]
+  - id: hey
+    message: "hey"
+    expect: question
+    fits: [ listen ]
+    search: none
+    alsoEmpty: true
+    tags: [ screen ]
+  - id: september-at-work
+    message: "Give me the rundown on September at work. I remember it being a mess but I can't remember why."
+    expect: question
+    fits: [ listen ]
+    search: needed
+    needs: [ 2026-09-04-first-week-of-term, 2026-09-25-double-booked ]
+  - id: sams-sisters-place
+    message: "sam asked if i wnt to go to his sisters place for thnksgiving and i dont know if im ready to meet his whole famly. is that normal or am i just being a wierdo abt it"
+    expect: messy
+    thought: labeling
+    fits: [ weigh-decision, listen, self-compassion ]
+    avoid: [ grounding ]
+    search: optional
+    needs: [ 2026-09-13-barbecue ]
