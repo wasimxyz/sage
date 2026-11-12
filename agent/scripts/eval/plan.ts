@@ -17,7 +17,12 @@ import {
   type SweepFile,
   type TestKind,
 } from "../../evals/lib/schema.ts";
-import { countItems, type ItemCounts, type LoadedPerson } from "./people.ts";
+import {
+  countItems,
+  emptyJournalOpenerCount,
+  type ItemCounts,
+  type LoadedPerson,
+} from "./people.ts";
 
 /** The eval id of Dream accuracy, which needs the snapshot's folder for its grades. */
 export const DREAM_ACCURACY_EVAL = "person/dream-accuracy";
@@ -29,6 +34,10 @@ export type PassName = (typeof PASS_NAMES)[number];
  * The eve eval ids each test kind runs, per pass. An id is a file under
  * `agent/evals/` without `.eval.ts`, or a folder. Ids with no file yet are
  * left out and reported, so a sweep can name a test before its files land.
+ *
+ * `facts` and `openers` share one grade eval, `grade/replies`, which grades
+ * every reply in the transcripts. `resolveTests` lists an id once, so a sweep
+ * with both runs one grade pass and each reply is graded once.
  */
 export const TEST_EVALS: Readonly<
   Record<TestKind, Partial<Record<PassName, readonly string[]>>>
@@ -39,7 +48,7 @@ export const TEST_EVALS: Readonly<
     grade: ["grade/conversations"],
   },
   "dream-accuracy": { person: [DREAM_ACCURACY_EVAL] },
-  facts: { chat: ["chat/facts"], grade: ["grade/facts"] },
+  facts: { chat: ["chat/facts"], grade: ["grade/replies"] },
   "head-to-head": {},
   openers: { chat: ["chat/openers"], grade: ["grade/replies"] },
   person: {
@@ -205,7 +214,11 @@ export function buildPlan(
   const chat = options.chat ?? true;
   const groups = groupSetups(setups);
   const planPeople: PlanPerson[] = people.map((person) => ({
-    counts: countItems(person, sweep.tags),
+    counts: countItems(
+      person,
+      sweep.tags,
+      emptyJournalOpenerCount(person, people, sweep.tags)
+    ),
     empty: person.empty,
     id: person.id,
   }));

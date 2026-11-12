@@ -11,6 +11,9 @@
  * - A check the judge could not grade is recorded with `notGraded: true`. It
  *   never gates and never carries a bar, because a judge error is not a
  *   failure.
+ * - A check that does not apply (a rubric item that is N/A for this reply) is
+ *   recorded with `notApplicable: true`. The report counts it as skipped, and
+ *   it is never in a mean or a rate.
  *
  * Eval files call these helpers and nothing else to record a result.
  */
@@ -75,6 +78,8 @@ export interface CheckRecord {
   /** Free-form extra metadata, such as the rank of a search hit. */
   extra?: Record<string, unknown>;
   journalErrors?: readonly JournalError[];
+  /** Set when the check does not apply to this item. The report counts it as skipped. */
+  notApplicable?: boolean;
   /** Set when the judge could not grade this check. */
   notGraded?: boolean;
   /** Pass or fail. Gives a score of 1 or 0 unless `score` is set. */
@@ -92,7 +97,7 @@ export function checkLabel(tier: ResultTier, checkId: string): string {
 }
 
 function scoreOf(check: CheckRecord): number {
-  if (check.notGraded === true) {
+  if (check.notGraded === true || check.notApplicable === true) {
     return 0;
   }
   const raw = check.score ?? (check.pass === true ? 1 : 0);
@@ -115,6 +120,7 @@ function metadataOf(
     ...(check.reason === undefined ? {} : { reason: check.reason }),
     ...(check.evidence === undefined ? {} : { evidence: check.evidence }),
     ...(check.notGraded === true ? { notGraded: true } : {}),
+    ...(check.notApplicable === true ? { notApplicable: true } : {}),
     ...(check.journalErrors === undefined || check.journalErrors.length === 0
       ? {}
       : { journalErrors: check.journalErrors }),
@@ -134,7 +140,7 @@ export function recordCheck(
       score: scoreOf(check),
     })
     .label(checkLabel(check.tier, check.checkId));
-  if (check.notGraded === true) {
+  if (check.notGraded === true || check.notApplicable === true) {
     handle.soft();
   } else if (check.tier === "hard") {
     handle.gate(1);

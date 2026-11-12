@@ -163,7 +163,7 @@ test("resolveTests keeps eval ids that have files and reports the rest", (t) => 
   writeFileSync(join(evals, "person", "extraction.eval.ts"), "");
   writeFileSync(join(evals, "person", "retrieval.eval.ts"), "");
   writeFileSync(join(evals, "chat", "facts.eval.ts"), "");
-  writeFileSync(join(evals, "grade", "facts.eval.ts"), "");
+  writeFileSync(join(evals, "grade", "replies.eval.ts"), "");
   const resolved = resolveTests(
     ["person", "facts", "openers", "head-to-head"],
     evals
@@ -173,13 +173,46 @@ test("resolveTests keeps eval ids that have files and reports the rest", (t) => 
     "person/retrieval",
   ]);
   assert.deepEqual(resolved.prefixes.chat, ["chat/facts"]);
-  assert.deepEqual(resolved.prefixes.grade, ["grade/facts"]);
+  assert.deepEqual(resolved.prefixes.grade, ["grade/replies"]);
   assert.deepEqual(resolved.missing.sort(), [
     "chat/openers",
-    "grade/replies",
     "person/summaries",
   ]);
   assert.deepEqual(resolved.deferred, ["head-to-head"]);
+});
+
+test("facts and openers share one grade eval, so each reply is graded once", (t) => {
+  const evals = tempDir(t);
+  for (const dir of ["chat", "grade"]) {
+    mkdirSync(join(evals, dir), { recursive: true });
+  }
+  for (const file of [
+    join("chat", "facts.eval.ts"),
+    join("chat", "openers.eval.ts"),
+    join("grade", "replies.eval.ts"),
+  ]) {
+    writeFileSync(join(evals, file), "");
+  }
+  const both = resolveTests(["facts", "openers"], evals);
+  assert.deepEqual(both.prefixes.chat, ["chat/facts", "chat/openers"]);
+  assert.deepEqual(both.prefixes.grade, ["grade/replies"]);
+  assert.deepEqual(resolveTests(["openers", "facts"], evals).prefixes.grade, [
+    "grade/replies",
+  ]);
+  assert.deepEqual(resolveTests(["facts"], evals).prefixes.grade, [
+    "grade/replies",
+  ]);
+  assert.deepEqual(resolveTests(["openers"], evals).prefixes.grade, [
+    "grade/replies",
+  ]);
+  assert.deepEqual(both.missing, []);
+});
+
+test("the shipped eval files cover openers and facts", () => {
+  const resolved = resolveTests(["facts", "openers"], evalsDir);
+  assert.deepEqual(resolved.missing, []);
+  assert.deepEqual(resolved.prefixes.chat, ["chat/facts", "chat/openers"]);
+  assert.deepEqual(resolved.prefixes.grade, ["grade/replies"]);
 });
 
 test("a folder counts as an eval prefix", (t) => {
@@ -255,11 +288,69 @@ test("the dream sweep runs the person pass and Dream accuracy for each memory va
   assert.match(lines.at(-1) ?? "", noChatPattern);
 });
 
-test("the default sweep adds Dream accuracy to the person pass and keeps Chat's fact questions", async () => {
+test("the default sweep adds Dream accuracy to the person pass and sends Chat's fact questions and the openers", async () => {
   const loaded = await loadSweep("default", {}, defaultSweepsDir());
   const resolved = resolveTests(loaded.sweep.tests, evalsDir);
   assert.deepEqual(resolved.missing, []);
   assert.ok(resolved.prefixes.person.includes("person/dream-accuracy"));
-  assert.deepEqual(resolved.prefixes.chat, ["chat/facts"]);
+  assert.deepEqual(resolved.prefixes.chat, ["chat/facts", "chat/openers"]);
+  assert.deepEqual(resolved.prefixes.grade, ["grade/replies"]);
   assert.equal(needsChat(resolved.prefixes), true);
+});
+
+test("the screen sweep sends the fact questions and the screen openers on nine models and two prompts, with memory off", async () => {
+  const loaded = await loadSweep("screen", {}, defaultSweepsDir());
+  const { sweep } = loaded;
+  assert.deepEqual(sweep.tags, ["screen"]);
+  assert.deepEqual(sweep.tests, ["person", "facts", "openers"]);
+  assert.deepEqual(sweep.memory, ["off"]);
+  assert.deepEqual(sweep.prompts, ["baseline", "companion-v1"]);
+  assert.deepEqual(sweep.thinking, ["off"]);
+  assert.deepEqual(sweep.chatModels, [
+    "qwen3.5:9b",
+    "qwen3.5:9b-mlx",
+    "qwen3:8b",
+    "qwen3:14b",
+    "gemma3:12b",
+    "mistral-nemo:12b",
+    "phi4:14b",
+    "lfm2.5:8b",
+    "gpt-oss:20b",
+  ]);
+  assert.equal(sweep.repeats, 1);
+  assert.equal(sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(sweep.simulatedUser.model, "deepseek/deepseek-v4.1-flash");
+  assert.deepEqual(sweep.simulatedUser.providers, [
+    "morph",
+    "deepinfra",
+    "runinfra",
+    "relace",
+  ]);
+  assert.equal(sweep.spendingCapUsd, 50);
+  assert.equal(loaded.setups.length, 18);
+  const resolved = resolveTests(sweep.tests, evalsDir);
+  assert.deepEqual(resolved.missing, []);
+  assert.deepEqual(resolved.prefixes.chat, ["chat/facts", "chat/openers"]);
+});
+
+test("the empty-journal person's opener count includes the other people's alsoEmpty openers", () => {
+  const grief = makePerson("grief", {
+    openers: [
+      opener("a", ["screen"]),
+      { ...opener("b", ["screen"]), alsoEmpty: true },
+      { ...opener("c"), alsoEmpty: true },
+    ],
+  });
+  const newUser = makePerson("new-user", {
+    entries: 0,
+    openers: [opener("d", ["screen"])],
+  });
+  const { setups, sweep } = setupsFor({ tags: ["screen"] });
+  const plan = buildPlan(setups, [grief, newUser], sweep);
+  const counts = new Map(plan.people.map((p) => [p.id, p.counts.openers]));
+  // grief sends a and b on its own journal. new-user sends d, and grief's b on the empty one.
+  assert.equal(counts.get("grief"), 2);
+  assert.equal(counts.get("new-user"), 2);
+  const all = buildPlan(setups, [grief, newUser], { tags: [] });
+  assert.equal(all.people.find((p) => p.id === "new-user")?.counts.openers, 3);
 });

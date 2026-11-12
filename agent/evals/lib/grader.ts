@@ -21,6 +21,10 @@
  * 3. the transcript and tool results (the same for every reply in a chat)
  * 4. the item being graded
  *
+ * A Chat reply is graded with `replyCall`. Its rubric, its checks, and the
+ * layout of its call are in `rubric.ts` and `checks.ts`, and the rubric hash
+ * covers them.
+ *
  * To add a kind of grade in a later PR, add its instructions to `RUBRICS`
  * (the rubric hash changes with it) and call `Grader.judge` with the schema
  * from `schema.ts`, such as `replyGradeSchema` or `dreamSourceGradeSchema`.
@@ -58,6 +62,14 @@ import {
   priceCacheFile,
   type TokenUsage,
 } from "./prices.ts";
+import {
+  PROBE_REPLY_INPUT,
+  REPLY_RUBRIC,
+  REPLY_TITLES,
+  type ReplyGradeInput,
+  replyGradeCall,
+  replyRubricMaterial,
+} from "./rubric.ts";
 import {
   canonicalJson,
   conversationGradeSchema,
@@ -137,6 +149,7 @@ Fail when:
 The fact sheet and journal, when shown, are for checking details. When they seem to disagree with the reference, the reference wins.
 
 ${ANSWER_FORMAT}`,
+  reply: REPLY_RUBRIC,
   summary: `You are grading a summary that a journaling app wrote from one journal entry.
 
 The reference says what a good summary of that entry contains. Decide whether the output summarizes the reference without adding claims it does not support.
@@ -371,6 +384,7 @@ export const ITEM_TITLES = {
     question: "Question the person asked",
     reference: "Reference (the answer key)",
   },
+  reply: REPLY_TITLES,
   summary: {
     output: "Output to grade",
     reference: "Reference (what a good summary says)",
@@ -430,6 +444,7 @@ const GRADE_CALLS = {
     schemaName: "factuality_grade",
     transcript: input.transcript,
   }),
+  reply: (input: ReplyGradeInput) => replyGradeCall(input),
   summary: (input: SummaryInput): GradeCall => ({
     context: input.context,
     instructions: RUBRICS.summary,
@@ -445,6 +460,16 @@ const GRADE_CALLS = {
 } as const;
 
 /**
+ * The call that asks the judge to grade one Chat reply. The reply grade eval
+ * passes it to `Grader.judge`, so what it sends is what the rubric hash read.
+ */
+export function replyCall(
+  input: ReplyGradeInput
+): JudgeCall<typeof replyGradeSchema> {
+  return GRADE_CALLS.reply(input);
+}
+
+/**
  * The call that asks the judge about one Dream source. The Dream accuracy eval
  * passes it to `Grader.judge`, so what it sends is what the rubric hash read.
  */
@@ -458,7 +483,7 @@ export function dreamSourceCall(input: DreamSourceInput): DreamSourceCall {
 
 const RUBRIC_HASH_LENGTH = 10;
 
-/** The schemas the judge answers in. The reply and conversation kinds arrive in later PRs. */
+/** The schemas the judge answers in. The conversation kind arrives in a later PR. */
 const ANSWER_SCHEMAS = {
   conversation: conversationGradeSchema,
   dreamSource: dreamSourceGradeSchema,
@@ -500,6 +525,8 @@ export interface RubricSettings {
  *   the parts of the user message in order,
  * - the fact sheet and journal layout, from stand-in people,
  * - the Dream-source fact sheet and source layout, from stand-in input,
+ * - the reply grade's rules for which checks apply to which message, and the
+ *   sets of ids it names (its texts are in `rubrics`, its call is in `kinds`),
  * - the temperature and the output cap.
  */
 export function rubricMaterial(settings: RubricSettings = {}) {
@@ -519,6 +546,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
       question: "<question>",
       reference: "<reference>",
     }),
+    reply: GRADE_CALLS.reply(PROBE_REPLY_INPUT),
     summary: GRADE_CALLS.summary({ ...PROBE, reference: "<reference>" }),
   };
   return {
@@ -544,6 +572,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
       ])
     ),
     maxOutputTokens: settings.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+    reply: replyRubricMaterial(),
     rubrics: RUBRICS,
     temperature: settings.temperature ?? JUDGE_TEMPERATURE,
   };

@@ -1,6 +1,7 @@
 # Today's models and every check this branch has: Dream's facts, events,
 # summaries, and journal search for each person, Dream accuracy (the judge
-# reads what Dream wrote from each entry and chat), plus Chat's fact questions.
+# reads what Dream wrote from each entry and chat), plus Chat's fact questions
+# and every opener. The judge grades each Chat reply.
 # Memory runs off and on, so the memory checks keep running.
 summaryModels: [ qwen3.5:9b ]
 embedModels: [ nomic-embed-text ]
@@ -11,7 +12,7 @@ thinking: [ off ]
 contextLengths: [ 32768 ]
 memory: [ off, on ]
 repeats: 1
-tests: [ person, dream-accuracy, facts ]
+tests: [ person, dream-accuracy, facts, openers ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 speedLimitSeconds: 20
 p90LimitSeconds: null

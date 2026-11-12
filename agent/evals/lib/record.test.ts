@@ -198,6 +198,25 @@ test("a check that was not graded never gates and never carries a bar", () => {
   }
 });
 
+test("a check that does not apply never gates, has no bar, and is marked not applicable", () => {
+  for (const tier of ["hard", "counted", "rubric"] as const) {
+    const recorded = record({
+      checkId: "right-help",
+      notApplicable: true,
+      reason: "N/A: the message is a crisis",
+      score: 1,
+      tier,
+    });
+    assert.equal(recorded.gate, undefined, tier);
+    assert.equal(recorded.soft, "none", tier);
+    assert.equal(recorded.metadata?.notApplicable, true);
+    assert.equal(recorded.metadata?.notGraded, undefined);
+    assert.equal(recorded.score, 0);
+  }
+  const graded = record({ checkId: "right-help", score: 0.5, tier: "rubric" });
+  assert.equal("notApplicable" in (graded.metadata ?? {}), false);
+});
+
 test("journal errors are recorded when there are any", () => {
   const journalErrors = [
     {

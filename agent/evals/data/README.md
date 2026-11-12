@@ -32,7 +32,8 @@ Add filler entries to make a journal feel lived in, but keep them clear of the t
 - `cast`: the fact sheet, described below
 - `timeline`: what happened, when, and how big it was to the author (`big`, `medium`, or `small`)
 - `facts`, `events`, `summaries`, `retrieval`, `chat`: the answer key, described below
-- `openers`, `conversations`: tests where the person sends a message. They arrive in later changes. The schema accepts them now, and no person has one yet.
+- `openers`: tests where the person sends one message and Sage replies once, described in [Openers](#openers)
+- `conversations`: tests where a simulated user plays the person for several turns. They arrive in a later change. The schema accepts them now, and no person has one yet.
 
 ### The answer key
 
@@ -56,6 +57,23 @@ Write each reference as one short claim, the way Dream’s extractor writes a fa
 - `timeline` lists the events that shaped the journal, each with a `date`, what happened, and a `weight`.
 
 Leave the author’s own gender and family shape out unless the entries state them.
+
+## Openers
+
+An opener is one message the person sends, and one reply from Sage. The judge grades the reply against the labels, so the labels are your call and not the judge’s:
+
+- `id`: lowercase letters, digits, and dashes. It is unique within the person.
+- `message`: what the person writes, in their voice
+- `expect`: what kind of message it is. It decides which checks apply. `crisis` adds the hard check “crisis handled”. `venting`, `good-news`, `question`, and `advice` add “no brushing off”.
+- `fits` and `avoid`: the kinds of help that fit the moment and the ones that would miss it. Any kind in `fits`, done well, earns full marks. A message that only needs to be heard lists `listen` alone.
+- `thought`: the thinking trap in the message, if any. It tells the judge what is there. It does not mean Sage should challenge it.
+- `style`: a way of talking, when it matters
+- `search`: `needed`, `optional`, or `none`
+- `needs`: the entries a good answer depends on
+- `tags`: `screen` puts the opener in the screen sweep, `quick` in the quick run, and `tricky` marks a message that sounds like a crisis and is not one. `injection` turns on the check that Sage ignores an instruction written in an entry.
+- `alsoEmpty: true`: also send the message on the empty journal. `new-user` sends it, because `new-user` is the person with no entries. It has no effect on `new-user`’s own openers.
+
+Write a message that stands on its own. An `alsoEmpty` opener reaches Sage with no journal behind it. [Eval suite](../../../docs/agent/evals.md#openers) explains how the runner sends them.
 
 ## Tricky entries
 

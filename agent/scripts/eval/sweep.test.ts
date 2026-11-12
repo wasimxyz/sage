@@ -37,13 +37,20 @@ test("the sweeps that ship parse, and default runs memory off and on", async () 
   const dir = defaultSweepsDir();
   const standard = await loadSweep("default", {}, dir);
   assert.deepEqual(standard.sweep.memory, ["off", "on"]);
-  assert.deepEqual(standard.sweep.tests, ["person", "dream-accuracy", "facts"]);
+  assert.deepEqual(standard.sweep.tests, [
+    "person",
+    "dream-accuracy",
+    "facts",
+    "openers",
+  ]);
   assert.equal(standard.setups.length, 2);
   assert.equal(standard.sweep.spendingCapUsd, 50);
 
   const smoke = await loadSweep("smoke", {}, dir);
   assert.equal(smoke.setups.length, 1);
   assert.deepEqual(smoke.sweep.tags, ["example"]);
+  assert.deepEqual(smoke.sweep.tests, ["person", "facts", "openers"]);
+  assert.ok(names.includes("screen"));
   assert.ok(smoke.sweep.spendingCapUsd <= 1);
 });
 

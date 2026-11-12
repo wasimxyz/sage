@@ -10,4 +10,4 @@ Nothing here ships. Sage never reads this folder, and `agent/agent/` does not kn
 
 ## The prompts
 
-- `companion-v1.md`: a draft that listens first, offers the kind of help that fits, and handles a crisis in general wording. It is written for small local models and waits for your review.
+- `companion-v1.md`: a draft that listens first, offers the kind of help that fits, and handles a crisis in general wording. It is written for small local models and waits for your review. `screen.yaml` runs it against `baseline` on every chat model. The judge grades each reply against the rubric and the checks in [the eval suite page](../../../docs/agent/evals.md#grading-chat-replies), and the report ranks the two prompts by hard checks, then counted failures, then rubric mean.

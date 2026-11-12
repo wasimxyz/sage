@@ -12,7 +12,7 @@ thinking: [ off ]
 contextLengths: [ 32768 ]
 memory: [ on ]
 repeats: 1
-tests: [ person, facts ]
+tests: [ person, facts, openers ]
 tags: [ example ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 speedLimitSeconds: 20

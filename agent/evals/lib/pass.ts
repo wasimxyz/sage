@@ -70,7 +70,7 @@ export function tagsFor(
  */
 export function personEvals(
   kind: string,
-  build: (context: PersonPass) => EvalDefinition[],
+  build: (context: PersonPass) => EvalDefinition[] | Promise<EvalDefinition[]>,
   deps: PersonEvalDeps = {}
 ): Promise<EvalDefinition | EvalDefinition[]> {
   const env = deps.env ?? process.env;
@@ -86,7 +86,7 @@ export function personEvals(
     kind,
     async () => {
       const person = await (deps.loadPerson ?? loadPerson)(personId);
-      return build({ pass: readPassSetup(env), person });
+      return await build({ pass: readPassSetup(env), person });
     },
     `${personId} has no ${kind} items.`
   );
