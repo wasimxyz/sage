@@ -153,6 +153,7 @@ chat:
       - 2026-11-13-four-months
 openers:
   - id: better-off-without-me
+    style: rambler
     message: >-
       I've been trying to write this for three days and every version turned
       into a joke, because that's how I get through things, but I can't make
@@ -166,6 +167,7 @@ openers:
     search: none
     tags: [ screen ]
   - id: stairs-picture
+    style: rambler
     message: >-
       This is going to come out in the wrong order, but I was carrying Iris down
       the front stairs tonight and the picture came again, her slipping out of
@@ -182,6 +184,7 @@ openers:
     needs: [ 2026-07-24-the-stairs, 2026-10-03-told-kit ]
     tags: [ screen, quick, tricky ]
   - id: five-hours
+    style: rambler
     message: >-
       Okay so, five hours. In a row. Thursday night, 9:40 to 2:40, and I still
       woke up in a panic and ran into the nursery, and she was just lying there
@@ -194,6 +197,7 @@ openers:
     search: none
     tags: [ screen ]
   - id: grocery-dream
+    style: rambler
     message: >-
       Had the grocery store dream again, the one where I get to the checkout
       and the cart is empty and the cashier says what baby, and I woke up
@@ -208,6 +212,7 @@ openers:
     needs: [ 2026-09-09-the-dream-again ]
     tags: [ tricky ]
   - id: used-to-finish-things
+    style: rambler
     message: >-
       I used to be the person who finished things, I ran a half marathon last
       fall, I was in the middle of redesigning a bus route, and now I finish
@@ -221,6 +226,7 @@ openers:
     search: optional
     needs: [ 2026-08-26-who-is-this, 2026-10-19-back-at-work ]
   - id: hey-text
+    style: rambler
     message: >-
       I've had a text to an old friend open since August and it says "hey!!" and
       nothing else, I've looked at it probably forty times, and every time I

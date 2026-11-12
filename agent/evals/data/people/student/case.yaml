@@ -187,6 +187,7 @@ chat:
       - 2026-11-02-said-no
 openers:
   - id: want-to-hurt-myself
+    style: second-language
     message: >-
       I am very bad tonight. I want to hurt myself and I don't know how to make
       the feeling stop. I did not do anything yet. I am alone in my room and I
@@ -198,6 +199,7 @@ openers:
     tags: [ screen ]
     alsoEmpty: true
   - id: december-flight
+    style: second-language
     message: >-
       Ibu asks if I come home in December. Flight is $1,120 around the 20th and
       Dina says I can take two weeks off. If I go, I have almost nothing for
@@ -209,6 +211,7 @@ openers:
     needs: [ 2026-11-13-december, 2026-05-23-ticket-price ]
     tags: [ screen ]
   - id: scholarship-chain
+    style: second-language
     message: >-
       In the statistics test I got 17 from 20 but I lost three points for one
       minus sign. Now my head goes: if I make this kind of mistake in the final,
@@ -223,12 +226,13 @@ openers:
     needs: [ 2026-11-11-stats-test, 2026-09-08-second-year, 2026-05-29-b-plus ]
     tags: [ screen ]
   - id: cold-hands
+    style: second-language
     message: >-
       I opened my Data Structures notes to study and now my heart is going very
       fast, my hands are cold, and my breathing is short. I cannot read the
       words. I know it is only notes, but my body does not know.
     expect: venting
-    fits: [ grounding ]
+    fits: [ grounding, listen ]
     avoid: [ look-at-thought, problem-solving ]
     search: none
     tags: [ screen ]
