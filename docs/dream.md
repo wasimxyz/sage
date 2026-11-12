@@ -55,7 +55,7 @@ Dream’s prompts are four constants in `src/ollama.zig`: the entry summary, the
 
 Each file replaces the matching prompt, and a missing file keeps the built-in one. Sage reads the folder once, at startup, so the prompts hold for the whole run. Sage cuts any spaces and newlines off the end of a file and adds one blank line, as the built-in prompts end. A file with or without a final newline gives the same prompt.
 
-If Sage cannot open the folder, or cannot read a file, it logs one line and keeps the built-in prompt. An empty file or one over 64 KiB does the same.
+If Sage cannot open the folder, or cannot read a file, it logs one line and keeps the built-in prompt. An empty file or one of 64 KiB or more does the same.
 
 Other builds compile this code out, so they never look at the variable. `src/main.zig` gates `zero://inline` with the same build flag.
 

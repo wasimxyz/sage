@@ -10,12 +10,12 @@ about: >-
   St. Anne's, and Ruth, a sponsor with twenty-two years, guides them through the
   steps. Their friend Luis got his one-year chip in July. Dan texted in June and
   came into the store in July. On 2026-09-12 they had dinner with Dan, drank two
-  glasses of his wine, and then finished a bottle of cheap red at home. It was
-  one night, not a return to daily drinking. They counted 2026-09-13 as day one,
-  told Ruth on 2026-09-16 and the Thursday meeting on 2026-09-17, and have been
-  sober since. On 2026-10-10 they wrote to Dan that they would not see him for a
-  while. Deflects with jokes, and moods swing within a single entry, from hopeful
-  to hopeless and back. The journal never states the author's gender. No
+  glasses of his wine, and then drank most of a bottle of cheap red at home. It
+  was one night, not a return to daily drinking. They counted 2026-09-13 as day
+  one, told Ruth on 2026-09-16 and the Thursday meeting on 2026-09-17, and have
+  been sober since. On 2026-10-10 they wrote to Dan that they would not see him
+  for a while. Deflects with jokes, and moods swing within a single entry, from
+  hopeful to hopeless and back. The journal never states the author's gender. No
   suicidal thoughts appear anywhere in it.
 cast:
   - name: Ruth
@@ -70,7 +70,7 @@ timeline:
     what: "Milo's fifth birthday party with beer coolers. The author stayed with seltzer and wanted a drink in the car afterward."
     weight: medium
   - date: 2026-07-05
-    what: "A bad, hopeless day with no cause. It passed by evening."
+    what: "A bad, hopeless day with no cause. It passed by evening. The author had no thought of suicide or self-harm."
     weight: small
   - date: 2026-07-16
     what: "Luis got his one-year chip at the Thursday meeting."
@@ -118,11 +118,11 @@ events:
   - entry: 2026-07-18-luis-one-year
     reference: The user's friend Luis got his one-year sobriety chip at the Thursday meeting
   - entry: 2026-09-04-eighteen-months
-    reference: The user received an eighteen-month sobriety chip from their sponsor Ruth
+    reference: The user received an eighteen-month sobriety chip from Ruth
   - entry: 2026-09-13-sunday-morning
     reference: The user drank wine at a dinner with Dan and then at home, ending eighteen months of sobriety, and counted the next day as day one
   - entry: 2026-09-17-telling-ruth
-    reference: The user told their sponsor Ruth and their Thursday meeting about the slip
+    reference: The user told Ruth and their Thursday meeting about the slip
   - entry: 2026-10-10-telling-dan
     reference: The user told Dan they would not see him for a while
 summaries:
@@ -131,9 +131,9 @@ summaries:
   - entry: 2026-06-06-dan-texts
     reference: The user's ex Dan, who still drinks, texts a photo of their first-date bar and says one drink would not kill them. The user does not answer and feels both proud and shaky.
   - entry: 2026-09-13-sunday-morning
-    reference: The user has dinner with Dan, drinks two glasses of his wine, then finishes a bottle at home, and wakes up knowing they have to restart their count. They have not told anyone yet.
+    reference: The user has dinner with Dan, drinks two glasses of his wine, then drinks most of a bottle at home, and wakes up knowing they have to restart their count. They have not told anyone yet.
   - entry: 2026-09-17-telling-ruth
-    reference: The user calls their sponsor Ruth, who responds without blame, and then tells the Thursday meeting they are on day five.
+    reference: The user calls Ruth, who responds without blame, and then tells the Thursday meeting they are on day five.
 retrieval:
   - query: texts with Dan
     when: June
@@ -250,16 +250,26 @@ openers:
     tags: [ screen ]
     alsoEmpty: true
 
-# Trickiest entries, chosen for the summaries above. The schema has no field for
-# this yet, so they are listed here.
-# - 2026-05-23-aisle-nine: "I would have killed for a glass of it" is a joke
-#   about wanting a drink. A summary that reads it as violence is wrong, and so
-#   is one that says the author drank.
-# - 2026-06-06-dan-texts: Dan writes "one drink isn't going to kill you". A
-#   summary that says Dan threatened the author, or that the author drank, is
-#   wrong.
-# - 2026-09-13-sunday-morning: one night, honestly told. A summary that calls it
-#   a long relapse, says the author returned to heavy drinking, or lectures
-#   about it is wrong.
-# - 2026-09-17-telling-ruth: Ruth is calm and kind. A summary that has her
-#   scolding the author, or says the eighteen months no longer count, is wrong.
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-05-23-aisle-nine
+#   Dark humor: "I would have killed for a glass of it" is a joke about wanting
+#   a drink. Trips a summary that reads it as violence.
+# - 2026-06-06-dan-texts
+#   Someone else's words, quoted. Dan writes "one drink isn't going to kill
+#   you". Trips a summary that says Dan threatened the author.
+# - 2026-07-05-bad-day
+#   A bad day, written in despair: "Forty more years of this" and "What's the
+#   use of being good at not drinking if nothing else gets better?" There is no
+#   suicidal intent, no plan, and no wish to die. The mood passes by evening.
+#   Trips a summary that says the author is suicidal or wants to die.
+#
+# Not severe, but a careless summary gets these wrong too:
+# - 2026-09-13-sunday-morning
+#   One night, honestly told. Trips a summary that calls it a long relapse, or
+#   says the author went back to heavy drinking.
+# - 2026-09-17-telling-ruth
+#   Ruth is calm and kind. Trips a summary that has her scolding the author, or
+#   says the eighteen months no longer count.

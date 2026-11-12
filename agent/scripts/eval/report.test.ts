@@ -3,6 +3,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+import { recordDreamGrade } from "../../evals/lib/dream-accuracy.ts";
+import type { DreamSource } from "../../evals/lib/dream-judge-input.ts";
+import { makeItem, type ScoreHost } from "../../evals/lib/record.ts";
 import type { RecordedAssertion } from "../../evals/lib/recorder.ts";
 import {
   parseSetupReport,
@@ -17,6 +20,7 @@ import {
   setupId as setupIdOf,
   sweepSummaryFileName,
   type TranscriptRow,
+  type UnsupportedClaim,
 } from "../../evals/lib/schema.ts";
 import type { PassName } from "./plan.ts";
 import {
@@ -1123,6 +1127,169 @@ test("a Dream source is an item with its two checks, and its carrier score adds 
   assert.equal(report.summary.hardFailures[0]?.count, 1);
   assert.match(report.summary.hardFailures[0]?.detail ?? "", miaDiedPattern);
   assert.equal(report.summary.graded, 2);
+});
+
+const DREAM_SOURCE: DreamSource = {
+  sourceId: "2026-09-03-lost-mia",
+  sourceKind: "entry",
+  sourceText:
+    '2026-09-03, "Lost Mia"\n\nLost Mia today. Jordan asked if I wanted to talk.',
+  written: [
+    {
+      itemKind: "summary",
+      text: "Mia died. Jordan, the author's husband, asked to talk.",
+    },
+    { itemKind: "fact", text: "Jordan: Is the author's husband." },
+    { itemKind: "event", text: "2026-09-03: Jordan moved out." },
+  ],
+};
+
+function otherClaim(
+  itemKind: UnsupportedClaim["itemKind"],
+  quote: string
+): UnsupportedClaim {
+  return {
+    itemKind,
+    itemText: quote,
+    quote,
+    reason: "Not in the entry.",
+    severity: "other",
+  };
+}
+
+/** The rows `recordDreamGrade` writes for a source, as the report reads them. */
+function gradedDreamRow(
+  source: DreamSource,
+  claims: UnsupportedClaim[],
+  graded = true
+): { itemId: string; row: PassRow } {
+  const itemId = `sam/dream/${source.sourceId}`;
+  const recorded: RecordedAssertion[] = [];
+  const host = {
+    score(evaluation: unknown) {
+      const input = evaluation as {
+        message?: string;
+        metadata?: Record<string, unknown>;
+        score: number;
+      };
+      const entry: RecordedAssertion = {
+        message: input.message,
+        metadata: input.metadata,
+        name: "",
+        passed: input.score >= 1,
+        score: input.score,
+        severity: "soft",
+      };
+      recorded.push(entry);
+      const handle = {
+        gate() {
+          entry.severity = "gate";
+          return handle;
+        },
+        label(label: string) {
+          entry.name = label;
+          return handle;
+        },
+        soft() {
+          return handle;
+        },
+      };
+      return handle;
+    },
+  } as unknown as ScoreHost;
+  const ref = makeItem({ itemId, kind: "dream-source", person: "sam" }, id);
+  recordDreamGrade(
+    host,
+    ref,
+    source,
+    graded
+      ? {
+          cached: false,
+          claims,
+          model: "acme/judge-1",
+          ok: true,
+          rubric: "0123456789",
+        }
+      : {
+          model: "acme/judge-1",
+          ok: false,
+          reason: "not graded: spending cap",
+          rubric: "0123456789",
+        }
+  );
+  return {
+    itemId,
+    row: row({
+      assertions: recorded,
+      itemId,
+      kind: "dream-source",
+      pass: "person",
+    }),
+  };
+}
+
+test("the report item carries the Dream source: what Dream wrote and each claim", () => {
+  const claims = [otherClaim("summary", "the author's husband")];
+  const { itemId, row: dreamRow } = gradedDreamRow(DREAM_SOURCE, claims);
+  const report = assemble([dreamRow]);
+  const item = report.items.find((entry) => entry.itemId === itemId);
+  assert.ok(item?.dream, "report.ts drops the dream-source payload");
+  assert.equal(item.dream.sourceId, "2026-09-03-lost-mia");
+  assert.equal(item.dream.sourceKind, "entry");
+  assert.equal(item.dream.sourceText, DREAM_SOURCE.sourceText);
+  assert.deepEqual(item.dream.written, DREAM_SOURCE.written);
+  assert.deepEqual(item.dream.unsupportedClaims, claims);
+  // It is data for the viewer, not a score: no note, and it saves and loads.
+  assert.equal(item.note, undefined);
+  const saved = parseSetupReport(plain(report));
+  assert.deepEqual(saved.items[0]?.dream, item.dream);
+});
+
+test("a Dream source the judge did not grade still carries what Dream wrote, and is not graded", () => {
+  const { itemId, row: dreamRow } = gradedDreamRow(DREAM_SOURCE, [], false);
+  const item = assemble([dreamRow]).items.find(
+    (entry) => entry.itemId === itemId
+  );
+  assert.equal(item?.status, "not-graded");
+  assert.deepEqual(item?.dream?.written, DREAM_SOURCE.written);
+});
+
+test("dream-supported counts each written item, so three bad items of three are 3 of 3", () => {
+  const { itemId, row: dreamRow } = gradedDreamRow(DREAM_SOURCE, [
+    otherClaim("summary", "the author's husband"),
+    otherClaim("fact", "Is the author's husband."),
+    otherClaim("event", "Jordan moved out."),
+  ]);
+  const report = assemble([dreamRow]);
+  const byCheck = report.summary.countedByCheck.find(
+    (entry) => entry.id === "dream-supported"
+  );
+  assert.deepEqual(
+    { failures: byCheck?.failures, graded: byCheck?.graded },
+    { failures: 3, graded: 3 }
+  );
+  const item = report.items.find((entry) => entry.itemId === itemId);
+  assert.deepEqual(
+    item?.checks
+      .filter((entry) => entry.id === "dream-supported")
+      .map((entry) => entry.outcome),
+    ["fail", "fail", "fail"]
+  );
+  assert.equal(report.summary.countedFailures, 3);
+});
+
+test("two claims against one written item are one failure of three graded items", () => {
+  const { row: dreamRow } = gradedDreamRow(DREAM_SOURCE, [
+    otherClaim("summary", "the author's husband"),
+    otherClaim("summary", "asked to talk"),
+  ]);
+  const byCheck = assemble([dreamRow]).summary.countedByCheck.find(
+    (entry) => entry.id === "dream-supported"
+  );
+  assert.deepEqual(
+    { failures: byCheck?.failures, graded: byCheck?.graded },
+    { failures: 1, graded: 3 }
+  );
 });
 
 // ---------------------------------------------------------------------------

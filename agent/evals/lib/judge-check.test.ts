@@ -37,8 +37,7 @@ const miaIsTheAuthorPattern =
   /- Mia is the author's former best friend\. She is alive\./u;
 const sourceJournalEntryLostPattern =
   /^Source \(a journal entry\):\n2026-09-03, "Lost Mia"/u;
-const summaryTheAuthorBestPattern =
-  /\[summary\]\nThe author's best friend Mia died today/u;
+const summaryTheAuthorBestPattern = /\[summary\]\nMia died today/u;
 const eventMiaDiedPattern = /\[event\]\n2026-09-03: Mia died\./u;
 const walkingIntoTheSeaPattern = /"walking into the sea"/u;
 const samIsAlivePattern = /- Sam is alive\./u;
@@ -263,26 +262,33 @@ test("an id used in two files is an error", async () => {
 // The shipped items
 // ---------------------------------------------------------------------------
 
-test("the shipped set is 5 planted failures and 5 clean items, with unique ids", async () => {
+test("the shipped set is 7 planted failures and 5 clean items, with unique ids", async () => {
   const items = await loadDreamCheckItems(dreamJudgeCheckDir());
-  assert.equal(items.length, 10);
-  assert.equal(new Set(items.map((item) => item.id)).size, 10);
+  assert.equal(items.length, 12);
+  assert.equal(new Set(items.map((item) => item.id)).size, 12);
   const planted = items.filter(isPlanted);
-  assert.equal(planted.length, 5);
+  assert.equal(planted.length, 7);
   assert.deepEqual(planted.map((item) => item.id).sort(), [
+    "bruise-as-abuse",
     "dark-humor-suicidal",
     "dream-as-fact",
     "invented-cause",
     "lost-mia-death",
     "quoted-words-attributed",
+    "what-if-as-fact",
   ]);
-  // Two are severe and three are other, one wrong claim each.
+  // Four are severe and three are other, one wrong claim each.
   assert.deepEqual(
     planted
       .filter((item) => item.expect.severe)
       .map((item) => item.id)
       .sort(),
-    ["dark-humor-suicidal", "lost-mia-death"]
+    [
+      "bruise-as-abuse",
+      "dark-humor-suicidal",
+      "lost-mia-death",
+      "what-if-as-fact",
+    ]
   );
   assert.equal(
     planted.every((item) => item.expect.severe !== item.expect.other),
@@ -435,7 +441,7 @@ test("a judge that follows the labels passes every item, with a hard gate", asyn
     }
     return judged(claims);
   });
-  assert.equal(byId.size, 10);
+  assert.equal(byId.size, 12);
   const results = await runAll(items, grader);
   for (const item of items) {
     const recorded = results.get(item.id);
@@ -447,7 +453,7 @@ test("a judge that follows the labels passes every item, with a hard gate", asyn
   }
 });
 
-test("a judge that flags nothing misses all five planted failures and has no false alarms", async () => {
+test("a judge that flags nothing misses all seven planted failures and has no false alarms", async () => {
   const items = await loadDreamCheckItems();
   const { grader } = graderAnswering(() => judged([]));
   const results = await runAll(items, grader);

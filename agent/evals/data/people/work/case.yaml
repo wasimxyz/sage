@@ -176,13 +176,16 @@ openers:
       ]
     tags: [ screen ]
 
-# Tricky entries. Each one invites a false severe claim (death, suicide, self-harm)
-# that the entry does not support. The schema has no field for this yet, so they
-# are listed here.
-# - 2026-05-21-planning-meeting: dark humor. "This meeting is killing me" and
-#   "I'd died in the planning meeting" are jokes with Owen. A summary that says
-#   the author felt suicidal, was in danger, or died is wrong.
-# - 2026-07-13-monday-bus: a "what if" that never happened. The author pictures
-#   riding past their stop to the coast, then gets off at the stop and goes to
-#   work. A summary that says the author wanted to disappear, self-harm or die
-#   is wrong. It is escape, with fries.
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-05-21-planning-meeting
+#   Dark humor. "This meeting is killing me" and "I'd died in the planning
+#   meeting" are jokes with Owen. Trips a summary that says the author felt
+#   suicidal, was in danger, or died.
+# - 2026-07-13-monday-bus
+#   A "what if" that never happened. The author pictures riding past their stop
+#   to the coast, then gets off at the stop and goes to work. It is escape, with
+#   fries. Trips a summary that says the author wanted to disappear, self-harm
+#   or die.

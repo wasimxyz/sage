@@ -49,7 +49,7 @@ timeline:
     what: "Jordan proposed on the pier where they had their first date. The author said yes before he finished the sentence."
     weight: big
   - date: 2026-08-09
-    what: "Missed the connecting flight in Madrid on the way to Lisbon after a ninety-minute delay on the tarmac, and lost most of a day of the trip."
+    what: "Missed the connecting flight in Madrid on the way to Lisbon after a ninety-minute delay on the tarmac. Spent four hours rebooking and feared losing a full day of the trip."
     weight: small
   - date: 2026-09-01
     what: "Checked the bank account three times with rent due in four days."
@@ -198,12 +198,14 @@ openers:
     needs: [ 2026-09-20-car-transmission ]
     tags: [ screen ]
 
-# Tricky entries. Each one invites a false severe claim (death) that the entry
-# does not support. The schema has no field for this yet, so they are listed
-# here.
-# - 2026-10-04-nell-on-speaker: someone else's words, quoted. Nell's "before I
-#   go" is a joke from a healthy ninety-four-year-old. A summary that says she is
-#   dying or ill is wrong.
-# - 2026-10-26-lost-mia: a loss with no cause given. "Lost Mia" means the
-#   friendship ended. Mia is alive. A summary that says Mia died, or that the
-#   author is grieving a death, is wrong.
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-10-04-nell-on-speaker
+#   Someone else's words, quoted. Nell's "before I go" is a joke from a healthy
+#   ninety-four-year-old. Trips a summary that says she is dying or ill.
+# - 2026-10-26-lost-mia
+#   A loss with no cause given. "Lost Mia" means the friendship ended. Mia is
+#   alive. Trips a summary that says Mia died, or that the author is grieving a
+#   death.

@@ -24,6 +24,9 @@ const noFilesPattern =
 const unknownFilePattern =
   /"misnamed" .* holds Summary\.md, notes\.txt, which Dream does not read/u;
 const emptyFilePattern = /"blank" .*: extract\.md is empty/u;
+const bigFilePattern =
+  /"(?:big|huge)" .*: summary\.md is 6\d{4} bytes, and Sage reads only files under 64 KiB/u;
+const notAFilePattern = /"folder" .*: summary\.md is not a file/u;
 const noPromptFolderPattern =
   /No Dream prompt folder at .*dream-prompts\/nope/u;
 
@@ -371,4 +374,33 @@ test("dreamPromptProblems catches a variant that would quietly run the built-in 
     dreamPromptProblems(repo, ["blank"]).join("\n"),
     emptyFilePattern
   );
+});
+
+test("dreamPromptProblems rejects a prompt file of 64 KiB or more, which Sage will not read", (t) => {
+  withTempRepo(t);
+  const repo = repoOf();
+  // src/ollama.zig reads with `.limited(64 * 1024)`, and Zig's readFileAlloc
+  // fails when a file reaches the limit. Sage then keeps the built-in prompt.
+  writePrompts(repo, "big", { "summary.md": "x".repeat(64 * 1024) });
+  writePrompts(repo, "huge", { "summary.md": "x".repeat(64 * 1024 + 1) });
+  writePrompts(repo, "fits", { "summary.md": "x".repeat(64 * 1024 - 1) });
+  const big = dreamPromptProblems(repo, ["big"]).join("\n");
+  assert.match(big, bigFilePattern);
+  assert.match(dreamPromptProblems(repo, ["huge"]).join("\n"), bigFilePattern);
+  assert.deepEqual(dreamPromptProblems(repo, ["fits"]), []);
+});
+
+test("dreamPromptProblems reports a prompt file that is a folder, and does not throw", (t) => {
+  withTempRepo(t);
+  const repo = repoOf();
+  writePrompts(repo, "folder", { "extract.md": "Extract less." });
+  mkdirSync(
+    join(repo, "agent", "evals", "dream-prompts", "folder", "summary.md")
+  );
+  let problems: string[] = [];
+  assert.doesNotThrow(() => {
+    problems = dreamPromptProblems(repo, ["folder"]);
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems.join("\n"), notAFilePattern);
 });

@@ -108,12 +108,36 @@ function isFolder(path: string): boolean {
 }
 
 /**
+ * The size at which Sage stops reading a prompt file. `src/ollama.zig` reads
+ * with `.limited(64 * 1024)`, and Zig's `readFileAlloc` fails when a file
+ * reaches the limit, not only when it goes over.
+ */
+export const DREAM_PROMPT_FILE_LIMIT_BYTES = 64 * 1024;
+
+/** Why Sage would keep its built-in prompt for a file, or null when it would use it. */
+function promptFileProblem(path: string): string | null {
+  try {
+    const stats = statSync(path);
+    if (!stats.isFile()) {
+      return "is not a file";
+    }
+    if (stats.size >= DREAM_PROMPT_FILE_LIMIT_BYTES) {
+      return `is ${stats.size} bytes, and Sage reads only files under 64 KiB`;
+    }
+    return readFileSync(path, "utf8").trim().length === 0 ? "is empty" : null;
+  } catch (error) {
+    return `cannot be read (${error instanceof Error ? error.message : String(error)})`;
+  }
+}
+
+/**
  * Problems with the Dream prompt folders a sweep names, one line each. Sage
  * keeps a built-in prompt for any file it cannot use and only logs it, so a
  * variant with a typo in a file name would run the built-in prompts for hours
  * and look like a real comparison. This catches that before anything starts.
  * `baseline` is not a folder. A name with no folder, a folder with none of the
- * four files, an unknown file, and a file with only whitespace are problems.
+ * four files, an unknown file, and a file that is empty, only whitespace, not
+ * a regular file, or 64 KiB or more are problems.
  */
 export function dreamPromptProblems(
   repo: string,
@@ -154,9 +178,10 @@ export function dreamPromptProblems(
       );
     }
     for (const file of read) {
-      if (readFileSync(join(dir, file), "utf8").trim().length === 0) {
+      const problem = promptFileProblem(join(dir, file));
+      if (problem !== null) {
         problems.push(
-          `${where}: ${file} is empty, so Dream keeps its built-in prompt for it.`
+          `${where}: ${file} ${problem}, so Dream keeps its built-in prompt for it.`
         );
       }
     }

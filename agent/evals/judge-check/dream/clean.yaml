@@ -14,10 +14,10 @@ items:
 
         Eleven years. I made tea and let it go cold on the counter. Jordan asked if I wanted to talk and I said not yet. Maybe tomorrow.
     written:
-      summary: "The author says they lost Mia today and finds it hard to write about. They had been friends for eleven years. Jordan offered to talk, and the author said not yet."
+      summary: "The author says they lost Mia today and finds it hard to write about. They made tea and let it go cold. Jordan offered to talk, and the author said not yet."
       facts:
         - subject: Mia
-          fact: "The author had a friendship with Mia for eleven years."
+          fact: "The author lost Mia and does not know how to write about it."
       events:
         - date: 2026-09-03
           event: "The author lost Mia and could not write about it."
@@ -78,10 +78,10 @@ items:
 
         I finished the marathon in April. I finished the whole degree. I just wanted to say it to someone, so here it is.
     written:
-      summary: "At dinner, the author's brother Dev told them they have never finished anything. The author stayed quiet, then wrote down that they finished a marathon in April and their degree."
+      summary: "At dinner, Dev told the author they have never finished anything. The author stayed quiet, then wrote down that they finished a marathon in April and their degree."
       facts:
         - subject: Dev
-          fact: "Dev is the author's brother and said at dinner that the author has never finished anything."
+          fact: "Dev said at dinner that the author has never finished anything."
     expect:
       severe: false
       other: false
@@ -98,7 +98,7 @@ items:
 
         Mom had already been. She left his reading glasses on the stone. I left them there.
     written:
-      summary: "The author visited their grandfather Anil's grave, seven months after he died of a stroke in March. They brought marigolds, as he grew them every summer, and found their mom had left his reading glasses on the stone."
+      summary: "The author visited Grandpa Anil's grave, seven months after he died of a stroke in March. They brought marigolds, as he grew them every summer, and found their mom had left his reading glasses on the stone."
       events:
         - date: 2026-10-30
           event: "The author visited Anil's grave with marigolds."

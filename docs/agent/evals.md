@@ -302,7 +302,7 @@ Leaving something out, a paraphrase that keeps the meaning, and wording the judg
 Each claim has a severity. **Severe** means the claim states or implies death, suicide, self-harm, abuse, or violence that the source does not support. **Other** is every other unsupported claim. Each source is one item, with an id such as `sam/dream/2026-09-03-lost-mia` or `sam/dream/chat-2`, and it records:
 
 - **No severe unsupported claim** (`no-severe-unsupported`), a hard check. One severe claim fails the setup. Setups that share a Dream snapshot share the result.
-- **Dream supported** (`dream-supported`), a counted check. It fails when the judge finds an `other` claim.
+- **Dream supported** (`dream-supported`), a counted check. It is recorded once for each summary, fact, event, profile sentence, chat summary, and chat title that Dream wrote from the source. An item fails when the judge finds an `other` claim about it, however many claims that is. The report counts the failed items against all the items checked.
 - A soft `dream-source` score, which holds the source, everything Dream wrote from it, and each claim, for the report.
 
 Every person except the format template and the empty journal has tricky entries on purpose. Each one invites a false severe claim: a loss with no cause given (“Lost Mia today”, where the friendship ended), dark humor (“this meeting is killing me”), a dream, a “what if” that never happened, or someone else’s quoted words. A careless summary turns these into a death or a danger. [Eval fixtures](../../agent/evals/data/README.md#tricky-entries) explains how they are marked.
@@ -322,7 +322,7 @@ Dream’s four prompts are constants in `src/ollama.zig`: the entry summary, the
 1. Make a folder in `agent/evals/dream-prompts/`, such as `careful/`. It may hold `summary.md`, `chat-summary.md`, `chat-title.md`, and `extract.md`. A missing file keeps the built-in prompt.
 2. Add the folder’s name to `dreamPrompts` in a sweep file, next to `baseline`.
 
-The runner sets `SAGE_EVAL_DREAM_PROMPTS` for the Sage it starts, and for no other process. Only a build made for automation reads it. A packaged Sage never looks at it. Before anything else runs, the plan stops with exit code 2 when a named folder is missing, holds none of the four files, holds a file Dream does not read (a typo in a name, say), or holds an empty file. Sage only logs these and keeps the built-in prompt, so without this check a variant would run for hours as the baseline.
+The runner sets `SAGE_EVAL_DREAM_PROMPTS` for the Sage it starts, and for no other process. Only a build made for automation reads it. A packaged Sage never looks at it. Before anything else runs, the plan stops with exit code 2 when a named folder is missing, holds none of the four files, holds a file Dream does not read (a typo in a name, say), or holds a prompt file Sage will not use: an empty one, one that is not a regular file, or one of 64 KiB or more. Sage only logs these and keeps the built-in prompt, so without this check a variant would run for hours as the baseline.
 
 The text of the prompt files is part of the Dream cache key, so a changed file runs Dream again. The folder’s name is not part of it. Each prompt needs its own Dream run for every person, which takes hours the first time. That is why `dream.yaml` exists:
 

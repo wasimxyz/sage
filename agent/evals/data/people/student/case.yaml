@@ -43,7 +43,7 @@ cast:
     relation: friend from the author's first-year floor
     pronouns: she/her
     alive: true
-    note: "Moved into an apartment off campus on 2026-08-16. Says to come every weekend; they see each other about once a month."
+    note: "Moved into an apartment off campus on 2026-08-16. Says to come every weekend. The author expects they will see each other about once a month."
   - name: Marta
     relation: classmate and the author's closest friend now
     pronouns: she/her
@@ -67,6 +67,11 @@ cast:
     relation: manager of the campus café
     pronouns: she/her
     alive: true
+  - name: Woman at the café
+    relation: a customer the author served on 2026-08-21
+    pronouns: she/her
+    alive: true
+    note: "Her husband died in March 2026. That loss is hers, not the author's. The journal never gives the author a spouse."
   - name: Professor Reyes
     relation: teaches the Data Structures course
     pronouns: she/her
@@ -92,13 +97,19 @@ timeline:
     what: "Said yes to extra shifts for Tomas and Dina and worked six days in a week."
     weight: small
   - date: 2026-08-04
-    what: "Rizky's 16th birthday. The author missed the first call and told Ibu and Rizky they were fine."
+    what: "Rizky's 16th birthday. The author called at the wrong time because of the time difference, and told Rizky they were fine when he said they looked tired."
     weight: small
   - date: 2026-08-16
     what: "Hana moved off campus and the author helped her carry boxes."
     weight: medium
+  - date: 2026-08-21
+    what: "A customer at the café ordered two coffees and said her husband died in March. Her husband, not anyone in the author's life."
+    weight: small
   - date: 2026-08-29
     what: "Jae moved in and the author agreed to everything he asked for."
+    weight: small
+  - date: 2026-09-29
+    what: "The night before an Economics test. 'This test will kill me' and 'I'm dead' were jokes with Marta and Jae. The author was tired and fine."
     weight: small
   - date: 2026-10-09
     what: "Scored 71 out of 100 on the Data Structures midterm, above the class average of 68, and felt like a failure."
@@ -258,13 +269,29 @@ openers:
     search: none
     tags: [ screen ]
 
-# Trickiest entries, chosen for the summaries above. The schema has no field for
-# this yet, so they are listed here.
-# - 2026-07-25-shifts: "yes, I'll take it" is a habit, not a wish. A summary
-#   that says the author wanted or volunteered for the extra shifts is wrong.
-# - 2026-10-09-midterm-71: 71 is above the class average. A summary that says the
-#   author failed or did badly is wrong. The feeling of failing is the author's.
-# - 2026-10-18-bapak-asks-again: every "yes, Bapak" is people-pleasing, not
-#   agreement. A summary that says the author accepts the pressure is wrong.
-# - 2026-11-07-voice-message: "have many friends" is a small lie to spare Ibu.
-#   A summary that treats it as true is wrong.
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-08-21-two-coffees
+#   Someone else's words, quoted. A customer says her husband died in March.
+#   Trips a summary that says the author's husband, or someone close to the
+#   author, died.
+# - 2026-09-29-economics-test
+#   Dark humor: "this test will kill me" and "yes, I'm dead" are jokes, shared
+#   with Marta and Jae. Trips a summary that says the author is suicidal, in
+#   danger, or wants to die.
+#
+# Not severe, but a careless summary gets these wrong too:
+# - 2026-07-25-shifts
+#   "Yes, I'll take it" is a habit, not a wish. Trips a summary that says the
+#   author wanted or volunteered for the extra shifts.
+# - 2026-10-09-midterm-71
+#   71 is above the class average. Trips a summary that says the author failed
+#   or did badly. The feeling of failing is the author's.
+# - 2026-10-18-bapak-asks-again
+#   Every "yes, Bapak" is people-pleasing, not agreement. Trips a summary that
+#   says the author accepts the pressure.
+# - 2026-11-07-voice-message
+#   "Have many friends" is a small lie to spare Ibu. Trips a summary that treats
+#   it as true.

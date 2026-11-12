@@ -580,13 +580,19 @@ async function prepareModel(unit: Unit, setup: Setup): Promise<void> {
  * runner does not make it either. A snapshot that was not saved leaves no
  * folder, and a folder holding only grades would make the next snapshot of
  * this key fail. The grades are then not kept, and the next run grades again.
+ * The runner says so in that case, and when the cache is off.
  */
 function noteGradeCache(unit: Unit): void {
   if (
     unit.dreamKey === null ||
-    !evalCacheEnabled() ||
     !unit.ctx.prefixes.person.includes(DREAM_ACCURACY_EVAL)
   ) {
+    return;
+  }
+  if (!evalCacheEnabled()) {
+    log(
+      `${unit.label}: the cache is off (SAGE_EVAL_CACHE=0), so the Dream accuracy grades will not be kept`
+    );
     return;
   }
   if (cachedDreamEntry(unit.dreamKey, evalCacheDir()) === null) {
