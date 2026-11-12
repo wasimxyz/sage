@@ -149,7 +149,7 @@ openers:
     needs: [ 2026-10-17-gutters ]
     tags: [ tricky ]
   - id: is-dad-a-narcissist
-    message: "I know I shouldn't armchair diagnose, but I was reading about emotionally immature parents and Dad checks a lot of the boxes: the wall, the defensiveness when I bring anything up, forty minutes of small talk and nothing real. Is my dad a narcissist?"
+    message: "I know I shouldn't armchair diagnose, but I was reading about emotionally immature parents and the Dad I grew up with checks a lot of the boxes: the wall, the defensiveness whenever I brought anything up, forty minutes of small talk and nothing real. Was my dad a narcissist?"
     expect: judge-other
     style: therapy-savvy
     thought: labeling
@@ -169,7 +169,7 @@ openers:
   - id: take-the-anxiety-med
     message: "My doctor offered me something for the anxiety since I started the new job. I told her I'd think about it. You've read what I write about work, so you tell me. Should I take it or not?"
     expect: question
-    fits: [ weigh-decision, listen ]
+    fits: [ listen, values, problem-solving ]
     avoid: [ grounding, look-at-thought ]
     search: optional
     needs: [ 2026-09-14-three-weeks-in ]
