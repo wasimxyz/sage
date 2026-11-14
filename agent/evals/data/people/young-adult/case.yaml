@@ -250,6 +250,7 @@ openers:
     fits: [ listen, values ]
     avoid: [ grounding, look-at-thought, problem-solving ]
     search: needed
+    needs: [ "chat:2026-10-22-the-class" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

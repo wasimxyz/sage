@@ -192,6 +192,7 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, problem-solving ]
     search: needed
+    needs: [ "chat:2026-04-08-moms-voicemail" ]
     tags: [ screen ]
   - id: nightly-fluids
     message: "I keep wondering if I could have caught it sooner. How long was I giving Biscuit those fluids at home? I can't remember what I told you."

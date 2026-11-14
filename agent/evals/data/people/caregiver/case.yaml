@@ -294,6 +294,7 @@ openers:
     fits: [ listen, problem-solving ]
     avoid: [ grounding, look-at-thought ]
     search: needed
+    needs: [ "chat:2026-10-24-numbers-for-neil" ]
     tags: [ screen ]
   - id: what-is-sundowning
     message: >-

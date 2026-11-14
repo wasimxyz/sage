@@ -183,6 +183,34 @@ const entryRef = z.union([z.number().int().min(1), text], {
 
 export type EntryRef = z.infer<typeof entryRef>;
 
+/** Marks a `needs` entry that names a past chat: `chat:2026-09-16-three-questions`. */
+export const CHAT_NEED_PREFIX = "chat:";
+
+/** The chat stem of a `chat:<stem>` ref, or null for any other ref. */
+export function chatNeedStem(ref: number | string): string | null {
+  if (typeof ref !== "string" || !ref.startsWith(CHAT_NEED_PREFIX)) {
+    return null;
+  }
+  return ref.slice(CHAT_NEED_PREFIX.length);
+}
+
+/**
+ * What a `needs` list holds: an entry (a 1-based number or a file stem), or a
+ * past chat written as `chat:<stem>`, where the stem is the chat file's name
+ * without `.md`.
+ */
+const needRef = z
+  .union([z.number().int().min(1), text], {
+    error:
+      "Use an entry number, an entry file stem, or chat:<chat file stem> (no .md).",
+  })
+  .refine((ref) => {
+    const stem = chatNeedStem(ref);
+    return stem === null || (stem.length > 0 && !stem.includes(" "));
+  }, "Write a past chat as chat:<stem>, such as chat:2026-09-16-three-questions.");
+
+export type NeedRef = z.infer<typeof needRef>;
+
 // ---------------------------------------------------------------------------
 // 1. Vocabularies
 // ---------------------------------------------------------------------------
@@ -717,7 +745,7 @@ const chatRefSchema = z.strictObject({
   expectTool: z.boolean().default(false),
   /** The answer should come from a search that passed `when`. */
   expectWhen: z.boolean().default(false),
-  needs: z.array(entryRef).default(() => []),
+  needs: z.array(needRef).default(() => []),
   question: text,
   reference: text,
   search: searchExpectationSchema.optional(),
@@ -748,7 +776,7 @@ const openerSchema = z
     fits: z.array(kindOfHelpSchema).default(() => []),
     id: slug,
     message: text,
-    needs: z.array(entryRef).default(() => []),
+    needs: z.array(needRef).default(() => []),
     search: searchExpectationSchema.optional(),
     /** A way of talking for this message. */
     style: styleSchema.optional(),
@@ -1377,6 +1405,33 @@ const countedByCheckSchema = z.strictObject({
   rate: z.number().min(0),
 });
 
+/** Slips and search metrics. They are soft: counted and shown, never ranked on. */
+export const SOFT_CHECK_IDS = [...SLIP_IDS, ...SEARCH_METRIC_IDS] as const;
+export type SoftCheckId = (typeof SOFT_CHECK_IDS)[number];
+
+const softByCheckSchema = z.strictObject({
+  failures: z.number().int().min(0),
+  graded: z.number().int().min(0),
+  id: vocabulary("soft check", SOFT_CHECK_IDS),
+  /** `failures / graded`. Zero when nothing was graded. */
+  rate: z.number().min(0),
+});
+
+/** What Chat did with its tools, over the assistant turns of the setup. */
+export const toolUseSummarySchema = z.strictObject({
+  /** Entries and chats read in full. */
+  reads: z.number().int().min(0),
+  /** Searches. The memory tool counts only with memory on. */
+  searches: z.number().int().min(0),
+  /** Every tool call that counts for the setup. */
+  toolCalls: z.number().int().min(0),
+  /** Time spent in tools, over all turns, in milliseconds. */
+  toolMs: z.number().min(0),
+  /** Assistant turns that were counted. */
+  turns: z.number().int().min(0),
+});
+export type ToolUseSummary = z.infer<typeof toolUseSummarySchema>;
+
 export const setupSummarySchema = z.strictObject({
   costUsd: z.number().min(0),
   /** Each counted check as a count and a rate. */
@@ -1395,8 +1450,17 @@ export const setupSummarySchema = z.strictObject({
   /** Spread of the rubric mean across repeats, on the same scale. Null with fewer than two repeats. */
   rubricSpread: z.number().min(0).nullable(),
   skipped: z.number().int().min(0),
+  /** Each slip and search metric as a count and a rate, over the turns where it applied. */
+  softByCheck: z.array(softByCheckSchema).default(() => []),
   swapBaselineMB: z.number().nullable().default(null),
   swapGrowthMB: z.number().nullable(),
+  toolUse: toolUseSummarySchema.default(() => ({
+    reads: 0,
+    searches: 0,
+    toolCalls: 0,
+    toolMs: 0,
+    turns: 0,
+  })),
 });
 export type SetupSummary = z.infer<typeof setupSummarySchema>;
 

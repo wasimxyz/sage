@@ -236,7 +236,7 @@ openers:
     fits: [ listen, self-compassion ]
     avoid: [ grounding ]
     search: needed
-    needs: [ 2026-09-20-car-transmission ]
+    needs: [ 2026-09-20-car-transmission, "chat:2026-09-22-the-cabin-weekend" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

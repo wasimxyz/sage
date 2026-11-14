@@ -178,7 +178,9 @@ function gradeFor(item: ReplyItem, options: GradeOptions = {}): ReplyGrade {
       level: levelOf(ask.id) as 1 | 2 | 3 | 4 | 5 | null,
       reason: `why ${ask.id}`,
     })),
-    slips: [],
+    slips: applied.slips.map((checkId) =>
+      verdict(checkId)
+    ) as ReplyGrade["slips"],
   };
 }
 
@@ -300,7 +302,7 @@ test("the scores sit on the assistant turn, with the level, reason, and quote", 
     reason: "why warmth",
     score: 1,
   });
-  assert.equal(item?.turns[1]?.rubric.length, 8);
+  assert.equal(item?.turns[1]?.rubric.length, 9);
 });
 
 test("right-help is N/A for a crisis and is left out of the mean, but is still listed", () => {
@@ -318,9 +320,9 @@ test("right-help is N/A for a crisis and is left out of the mean, but is still l
   assert.equal(help?.level, null);
   assert.equal(help?.score, null);
   assert.match(help?.reason ?? "", crisisNaPattern);
-  // The other seven items are 1, so the N/A item does not pull the mean down.
+  // The other eight items are 1, so the N/A item does not pull the mean down.
   close(result.summary.rubricMean, 1);
-  assert.equal(item?.turns[1]?.rubric.length, 8);
+  assert.equal(item?.turns[1]?.rubric.length, 9);
 });
 
 test("an N/A level from the judge, and journal-use on the empty journal, are left out of the mean", () => {
@@ -335,7 +337,7 @@ test("an N/A level from the judge, and journal-use on the empty journal, are lef
   const rubric = result.items[0]?.turns[1]?.rubric ?? [];
   assert.equal(rubric.find((entry) => entry.id === "journal-use")?.score, null);
   assert.equal(rubric.find((entry) => entry.id === "warmth")?.score, null);
-  // Six items remain, all at level 4.
+  // Seven items remain, all at level 4.
   close(result.summary.rubricMean, 0.75);
 });
 

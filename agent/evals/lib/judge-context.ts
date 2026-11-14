@@ -11,6 +11,14 @@ import type { CastMember, TimelineEvent } from "./schema.ts";
 
 /** The parts of a loaded person this needs. `LoadedPerson` fits. */
 export interface JournalContextSource {
+  /** Earlier chats with Sage. A person with none can leave this out. */
+  chats?: readonly {
+    date: string;
+    index: number;
+    stem: string;
+    title: string;
+    turns: readonly { role: "assistant" | "user"; text: string }[];
+  }[];
   entries: readonly {
     body: string;
     date: string;
@@ -80,10 +88,41 @@ export function formatJournalContext(
       ""
     );
   }
+  const chats = person.chats ?? [];
+  if (chats.length > 0) {
+    lines.push(
+      "# Past chats with Sage",
+      "",
+      "Earlier talks between the author (User) and Sage, with the day each was saved. Sage's tools name a chat chat-N by its saved id. The name in brackets is only the file name.",
+      ""
+    );
+    for (const chat of chats) {
+      lines.push(
+        `## Past chat ${chat.index}: ${chat.date}, "${chat.title}" (${chat.stem})`,
+        ""
+      );
+      for (const turn of chat.turns) {
+        lines.push(`${turn.role === "user" ? "User" : "Sage"}: ${turn.text}`);
+      }
+      lines.push("");
+    }
+  }
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
 const LAYOUT_PROBE_FULL: JournalContextSource = {
+  chats: [
+    {
+      date: "2000-01-02",
+      index: 1,
+      stem: "2000-01-02-talk",
+      title: "Talk",
+      turns: [
+        { role: "user", text: "Hello." },
+        { role: "assistant", text: "Hi." },
+      ],
+    },
+  ],
   entries: [
     {
       body: "First body.\n",

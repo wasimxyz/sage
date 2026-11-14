@@ -59,6 +59,7 @@ import {
 } from "./estimate.ts";
 import { EVAL_TODAY, type EveServer, startEveServer } from "./eve.ts";
 import { runJudgeCheck } from "./judge-check.ts";
+import { readSwapReading } from "./memory-pressure.ts";
 import {
   checkModels,
   fetchPinnedOllama,
@@ -577,6 +578,7 @@ async function writeAllReports(
         promptShas: promptShasFor(setup, ctx.overlays),
         rows: data.rows,
         setup,
+        swap: readSwapReading(ctx.runDir, setupIdOf(setup)),
         sweep: ctx.sweep,
         sweepId: ctx.sweepId,
         transcripts: data.transcripts,

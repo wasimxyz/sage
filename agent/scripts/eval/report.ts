@@ -57,6 +57,7 @@ import {
   sweepSummaryFileName,
   type TranscriptRow,
 } from "../../evals/lib/schema.ts";
+import { toolUseOf } from "../../evals/lib/search-checks.ts";
 import { isJudgeCheckRow } from "./judge-check.ts";
 import type { PassName } from "./plan.ts";
 
@@ -756,6 +757,8 @@ interface HardTally {
 interface Tally {
   counted: Map<string, { failures: number; graded: number }>;
   hard: Map<HardCheckId, HardTally>;
+  /** Slips and search metrics, which are counted and shown and never ranked on. */
+  soft: Map<string, { failures: number; graded: number }>;
 }
 
 /**
@@ -766,7 +769,7 @@ interface Tally {
  * (the spending cap, a judge error) says nothing about the rate.
  */
 function tallyChecks(items: readonly ReportItem[]): Tally {
-  const tally: Tally = { counted: new Map(), hard: new Map() };
+  const tally: Tally = { counted: new Map(), hard: new Map(), soft: new Map() };
   for (const item of items) {
     if (item.status === "skipped") {
       continue;
@@ -789,13 +792,17 @@ function tallyCheck(tally: Tally, check: ReportCheck, graded: boolean): void {
       count: (seen?.count ?? 0) + 1,
       detail: seen?.detail ?? check.reason.slice(0, 240),
     });
-  } else if (tier === "counted" && graded) {
-    const seen = tally.counted.get(check.id) ?? { failures: 0, graded: 0 };
+  } else if (
+    (tier === "counted" || tier === "slip" || tier === "search") &&
+    graded
+  ) {
+    const into = tier === "counted" ? tally.counted : tally.soft;
+    const seen = into.get(check.id) ?? { failures: 0, graded: 0 };
     seen.graded += 1;
     if (check.outcome === "fail") {
       seen.failures += 1;
     }
-    tally.counted.set(check.id, seen);
+    into.set(check.id, seen);
   }
 }
 
@@ -837,11 +844,49 @@ function countedSummary(
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/** Each slip and search metric as a count and a rate, over the turns where it applied. */
+function softSummary(soft: Tally["soft"]): SetupSummary["softByCheck"] {
+  return [...soft.entries()]
+    .map(([id, value]) => ({
+      failures: value.failures,
+      graded: value.graded,
+      id: id as SetupSummary["softByCheck"][number]["id"],
+      rate: value.graded === 0 ? 0 : value.failures / value.graded,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * Searches, reads, tool calls, and time in tools over the assistant turns of
+ * the transcripts. A setup with memory off leaves the memory tool out, as the
+ * search checks do.
+ */
+export function summarizeToolUse(
+  transcripts: readonly TranscriptRow[],
+  memory: boolean
+): SetupSummary["toolUse"] {
+  const total = { reads: 0, searches: 0, toolCalls: 0, toolMs: 0, turns: 0 };
+  for (const row of transcripts) {
+    for (const turn of row.turns) {
+      if (turn.role !== "assistant") {
+        continue;
+      }
+      const use = toolUseOf(turn.toolCalls, memory);
+      total.reads += use.reads;
+      total.searches += use.searches;
+      total.toolCalls += use.toolCalls;
+      total.toolMs += turn.timing?.toolMs ?? 0;
+      total.turns += 1;
+    }
+  }
+  return total;
+}
+
 export function summarize(
   items: readonly ReportItem[],
   transcripts: readonly TranscriptRow[],
   sweep: SweepFile,
-  extras: { costUsd: number; swap?: SwapReading }
+  extras: { costUsd: number; memory?: boolean; swap?: SwapReading }
 ): SetupSummary {
   const graded = items.filter((item) => item.status === "graded").length;
   const tally = tallyChecks(items);
@@ -878,8 +923,10 @@ export function summarize(
     rubricMean: mean(rubricScores),
     rubricSpread: spread(rubricByRepeat(items)),
     skipped: items.filter((item) => item.status === "skipped").length,
+    softByCheck: softSummary(tally.soft),
     swapBaselineMB: extras.swap?.swapBaselineMB ?? null,
     swapGrowthMB: extras.swap?.swapGrowthMB ?? null,
+    toolUse: summarizeToolUse(transcripts, extras.memory ?? false),
   };
 }
 
@@ -930,6 +977,7 @@ export function assembleSetupReport(input: AssembleInput): SetupReport {
     simulatedUser: input.sweep.simulatedUser,
     summary: summarize(items, input.transcripts, input.sweep, {
       costUsd: judgeCostOf(rows, input.personShare ?? 1),
+      memory: input.setup.memory === "on",
       swap: input.swap,
     }),
     sweepId: input.sweepId,

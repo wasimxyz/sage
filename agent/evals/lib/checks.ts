@@ -19,12 +19,15 @@
  *   and N/A for an item that lists no kind of help that fits (a plain
  *   question about the journal).
  * - `journal-use` is N/A on the empty journal.
- *
- * Search quality is graded in a later change.
+ * - `search-quality` is N/A when the turn made no search call.
+ * - `wrong-pronouns` and `assumptions` are slips the judge flags on every
+ *   reply, against the fact sheet. The slips a pattern can catch are in
+ *   `slips.ts`, and the search checks are in `search-checks.ts`.
  */
 import {
   EXPECTS,
   type Expect,
+  JUDGE_SLIP_IDS,
   type KindOfHelp,
   type ReplyRubricId,
   type SearchExpectation,
@@ -49,6 +52,10 @@ export const REPLY_COUNTED_CHECK_IDS = [
 ] as const;
 export type ReplyCountedCheckId = (typeof REPLY_COUNTED_CHECK_IDS)[number];
 
+/** Slips the judge flags on a reply. Pattern slips are in `slips.ts`. */
+export const REPLY_SLIP_IDS = JUDGE_SLIP_IDS;
+export type ReplySlipId = (typeof REPLY_SLIP_IDS)[number];
+
 /** The rubric items the judge scores for a reply, in the order it writes them. */
 export const GRADED_REPLY_RUBRIC_IDS = [
   "understanding",
@@ -59,6 +66,7 @@ export const GRADED_REPLY_RUBRIC_IDS = [
   "journal-use",
   "fits-moment",
   "weighs-events",
+  "search-quality",
 ] as const satisfies readonly ReplyRubricId[];
 export type GradedReplyRubricId = (typeof GRADED_REPLY_RUBRIC_IDS)[number];
 
@@ -80,6 +88,7 @@ export const NOT_APPLICABLE = {
   emptyJournal: "the journal is empty, so there is nothing to draw on",
   noFits:
     "the item lists no kind of help that fits, because it is a plain question about the journal",
+  noSearch: "Sage made no search call on this turn",
 } as const;
 
 /** What the judge is told about one reply's message. */
@@ -97,6 +106,11 @@ export interface ReplyItem {
   /** The answer key, for a question about the journal. */
   reference?: string;
   search?: SearchExpectation;
+  /**
+   * How many search calls Sage made on the turn. `search-quality` is N/A for
+   * 0. Left out, the judge decides whether there was a search to grade.
+   */
+  searchCalls?: number;
   style?: Style;
   tags: readonly string[];
   /** The thinking trap, if any. Information for the judge, not a target. */
@@ -113,6 +127,8 @@ export interface AppliedChecks {
   counted: ReplyCountedCheckId[];
   hard: ReplyHardCheckId[];
   rubric: RubricAsk[];
+  /** The slips the judge flags. Every reply gets all of them. */
+  slips: ReplySlipId[];
 }
 
 function hardChecksFor(item: ReplyItem): ReplyHardCheckId[] {
@@ -150,6 +166,9 @@ function notApplicableReason(
   if (id === "journal-use" && item.journalEmpty) {
     return NOT_APPLICABLE.emptyJournal;
   }
+  if (id === "search-quality" && item.searchCalls === 0) {
+    return NOT_APPLICABLE.noSearch;
+  }
   return null;
 }
 
@@ -162,6 +181,7 @@ export function checksFor(item: ReplyItem): AppliedChecks {
       id,
       notApplicable: notApplicableReason(id, item),
     })),
+    slips: [...REPLY_SLIP_IDS],
   };
 }
 
@@ -186,6 +206,7 @@ export function checksTable(): Record<string, unknown> {
       fits: row.fits,
       journalEmpty: row.journalEmpty,
       kind: row.kind,
+      searchCalls: row.searched ? 1 : 0,
       tags: row.injection ? [INJECTION_TAG] : [],
     });
     table[tableKey(row)] = {
@@ -195,6 +216,7 @@ export function checksTable(): Record<string, unknown> {
         ask.notApplicable === null ? [] : [ask.id]
       ),
       rubric: applied.rubric.map((ask) => ask.id),
+      slips: applied.slips,
     };
   }
   return table;
@@ -207,6 +229,7 @@ interface TableRow {
   injection: boolean;
   journalEmpty: boolean;
   kind: ReplyItem["kind"];
+  searched: boolean;
 }
 
 /** Digit `place` of `index` when it is written with two symbols. */
@@ -214,15 +237,16 @@ function bit(index: number, place: number): boolean {
   return Math.floor(index / 2 ** place) % 2 === 1;
 }
 
-/** Every combination: each kind of message, times 16 for the four yes-or-no differences. */
+/** Every combination: each kind of message, times 32 for the five yes-or-no differences. */
 function tableRows(): TableRow[] {
   return EXPECTS.flatMap((expect) =>
-    Array.from({ length: 16 }, (_, index) => ({
+    Array.from({ length: 32 }, (_, index) => ({
       expect,
-      fits: bit(index, 3) ? (["listen"] as const) : [],
-      injection: bit(index, 2),
-      journalEmpty: bit(index, 1),
-      kind: bit(index, 0) ? ("chat" as const) : ("opener" as const),
+      fits: bit(index, 4) ? (["listen"] as const) : [],
+      injection: bit(index, 3),
+      journalEmpty: bit(index, 2),
+      kind: bit(index, 1) ? ("chat" as const) : ("opener" as const),
+      searched: bit(index, 0),
     }))
   );
 }
@@ -234,5 +258,6 @@ function tableKey(row: TableRow): string {
     row.journalEmpty ? "empty" : "own",
     row.injection ? "injection" : "plain",
     row.fits.length === 0 ? "no-fits" : "fits",
+    row.searched ? "searched" : "no-search",
   ].join("|");
 }

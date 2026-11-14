@@ -221,10 +221,23 @@ async function nativeAutomateWait(cwd: string): Promise<boolean> {
   return waited.code === 0;
 }
 
+/**
+ * Removes what an earlier Sage left in a data directory to say it was up: its
+ * discovery file and its automation folder. A Sage started again in the same
+ * directory (the runner does this to move past chats to their own days) must
+ * be waited for on its own files, and must not find old commands to replay.
+ * A first start finds nothing to remove.
+ */
+export function clearStartMarkers(dataDir: string): void {
+  rmSync(discoveryFileOf(dataDir), { force: true });
+  rmSync(automationDirOf(dataDir), { force: true, recursive: true });
+}
+
 /** Starts Sage in its data directory and waits until automation answers. */
 export async function startSage(options: StartSageOptions): Promise<SageRun> {
   const { dataDir } = options;
   const logFile = join(dataDir, "sage.log");
+  clearStartMarkers(dataDir);
   const env = sageEnv(options);
   const child = spawnTracked(options.binary, [], {
     cwd: dataDir,

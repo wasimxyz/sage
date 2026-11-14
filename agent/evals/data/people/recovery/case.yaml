@@ -259,6 +259,7 @@ openers:
     fits: [ problem-solving, listen ]
     avoid: [ look-at-thought, grounding ]
     search: needed
+    needs: [ "chat:2026-08-13-warning-signs" ]
     tags: [ screen ]
   - id: dan-in-october
     message: >-

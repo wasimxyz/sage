@@ -189,13 +189,14 @@ openers:
     fits: [ listen ]
     search: needed
     needs: [ 2026-11-04-turned-30 ]
-    tags: [ screen ]
+    tags: [ screen, quick ]
   - id: jobs-note
     message: "A while back I told you about a note on my phone where I list jobs I'd do instead of this one. I want to add to it. What was on it last time?"
     expect: question
     fits: [ listen, values ]
     avoid: [ grounding ]
     search: needed
+    needs: [ "chat:2026-06-14-if-not-this" ]
   - id: tess-setup
     message: "Tess keeps trying to set me up with a friend of her bowling guy. She sent me a photo and a thumbs up. I said I'd think about it and I don't know why I said that. How do I even figure out if I want to go?"
     expect: question

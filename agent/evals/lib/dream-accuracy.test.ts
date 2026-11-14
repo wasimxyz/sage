@@ -78,6 +78,7 @@ const RUN: LoadedEntry = {
 };
 
 const person: LoadedPerson = {
+  chats: [],
   dir: "/nowhere",
   empty: false,
   entries: [MIA, RUN],

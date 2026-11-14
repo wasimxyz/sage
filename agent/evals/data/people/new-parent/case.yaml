@@ -280,6 +280,7 @@ openers:
     fits: [ values, small-step, listen ]
     avoid: [ look-at-thought, grounding ]
     search: needed
+    needs: [ "chat:2026-10-27-first-drop-off" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

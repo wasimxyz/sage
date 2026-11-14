@@ -140,6 +140,18 @@ export function requireOk(
   }
 }
 
+/**
+ * The stages of the seed step (`scripts/seed-dataset.ts`). A person with past
+ * chats is seeded in two: `content` saves the entries and chats, then the
+ * runner stops Sage and rewrites the chat times, and `dream` runs Dream.
+ * `all` does both in one go, and is for a person with no chats.
+ */
+export const SEED_STAGES = ["all", "content", "dream"] as const;
+export type SeedStage = (typeof SEED_STAGES)[number];
+
+/** The variable that tells the seed script which stage to run. */
+export const ENV_SEED_STAGE = "SAGE_EVAL_SEED_STAGE";
+
 export function utf8Chunks(text: string, maxBytes: number): string[] {
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length === 0) {

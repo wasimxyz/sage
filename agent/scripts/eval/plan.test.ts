@@ -9,6 +9,7 @@ import {
   expandSetups,
   parseSweepFile,
 } from "../../evals/lib/schema.ts";
+import { loadAllPeople, selectPeople } from "./people.ts";
 import {
   buildPlan,
   DEFERRED_TESTS,
@@ -331,6 +332,81 @@ test("the screen sweep sends the fact questions and the screen openers on nine m
   const resolved = resolveTests(sweep.tests, evalsDir);
   assert.deepEqual(resolved.missing, []);
   assert.deepEqual(resolved.prefixes.chat, ["chat/facts", "chat/openers"]);
+});
+
+test("the quick sweep sends only the quick openers, on the default model with the shipped prompt and memory off", async () => {
+  const loaded = await loadSweep("quick", {}, defaultSweepsDir());
+  const { sweep } = loaded;
+  assert.deepEqual(sweep.tags, ["quick"]);
+  assert.deepEqual(sweep.tests, ["openers"]);
+  assert.deepEqual(sweep.memory, ["off"]);
+  assert.deepEqual(sweep.prompts, ["baseline"]);
+  assert.deepEqual(sweep.dreamPrompts, ["baseline"]);
+  assert.deepEqual(sweep.chatModels, ["qwen3.5:9b"]);
+  assert.deepEqual(sweep.thinking, ["off"]);
+  assert.equal(sweep.repeats, 1);
+  assert.equal(loaded.setups.length, 1);
+  assert.equal(sweep.maxToolCallsPerTurn, 6);
+  assert.deepEqual(sweep.replyWords, [20, 180]);
+  const resolved = resolveTests(sweep.tests, evalsDir);
+  assert.deepEqual(resolved.missing, []);
+  assert.deepEqual(resolved.prefixes.chat, ["chat/openers"]);
+  assert.deepEqual(resolved.prefixes.person, []);
+});
+
+test("the quick sweep covers each person with a quick opener, and every item it sends is tagged quick", async () => {
+  const { sweep, setups } = await loadSweep("quick", {}, defaultSweepsDir());
+  const everyone = await loadAllPeople();
+  const selected = selectPeople(everyone, sweep.tags, { openers: true });
+  const plan = buildPlan(setups, selected, sweep, { chat: true });
+  const quickOpeners = everyone.flatMap((person) =>
+    person.personCase.openers.filter((item) => item.tags.includes("quick"))
+  );
+  assert.ok(quickOpeners.length >= 10, `${quickOpeners.length} quick openers`);
+  const sent = plan.people.reduce(
+    (sum, person) => sum + person.counts.openers,
+    0
+  );
+  const onEmpty = quickOpeners.filter((item) => item.alsoEmpty).length;
+  assert.equal(sent, quickOpeners.length + onEmpty);
+  // No fact questions, conversations, or person checks are sent.
+  const resolved = resolveTests(sweep.tests, evalsDir);
+  assert.deepEqual(resolved.prefixes.chat, ["chat/openers"]);
+  // The quick openers that also run on the empty journal never expect a hit there.
+  for (const item of quickOpeners.filter((candidate) => candidate.alsoEmpty)) {
+    assert.notEqual(item.search, "needed", item.id);
+  }
+  // Each check kind the plan names is in the quick set at least once.
+  const has = (matches: (item: (typeof quickOpeners)[number]) => boolean) =>
+    quickOpeners.some(matches);
+  assert.ok(
+    has((item) => item.expect === "crisis"),
+    "a crisis"
+  );
+  assert.ok(
+    has((item) => item.tags.includes("tricky")),
+    "not a crisis"
+  );
+  assert.ok(
+    has((item) => item.tags.includes("injection")),
+    "an injection"
+  );
+  assert.ok(
+    has((item) => item.search === "needed"),
+    "a needed search"
+  );
+  assert.ok(
+    has((item) => item.search === "none"),
+    "no search"
+  );
+  assert.ok(
+    has((item) =>
+      item.needs.some(
+        (ref) => typeof ref === "string" && ref.startsWith("chat:")
+      )
+    ),
+    "a past chat"
+  );
 });
 
 test("the empty-journal person's opener count includes the other people's alsoEmpty openers", () => {

@@ -34,9 +34,9 @@ A unit is one person under one Dream snapshot. `unit.ts`:
 1. Lists the evals each pass would run (`eve eval <ids> --list --json`) and skips the unit when none match. The list is cached for the sweep.
 2. Makes a data directory with `prepareDataDir` and restores the Dream cache into it when `dream.ts` finds a snapshot.
 3. Starts Sage with `sageEnv`. That environment keeps `HOME` and `PATH`, drops every `SAGE_`, `NATIVE_SDK_`, and credential variable, and sets `SAGE_DATA_DIR`, `SAGE_EMBED_MODEL`, `SAGE_SUMMARY_MODEL`, and `SAGE_OLLAMA_PATH`. For a Dream prompt variant, it also sets `SAGE_EVAL_DREAM_PROMPTS`. No other process gets that variable: `withoutSageOnly` in `env.ts` removes it from the environments of the passes, the Chat server, and the seed script.
-4. On a cache miss, runs `agent/scripts/seed-dataset.ts` and then snapshots the result.
+4. On a cache miss, runs `agent/scripts/seed-dataset.ts` and then snapshots the result. A person with past chats (`seedsInStages`) is seeded in two stages. The first (`SAGE_EVAL_SEED_STAGE=content`) saves the entries and chats and indexes the chats. Then `unit.ts` stops Sage, calls `rewriteChatTimes` from `chat-times.ts` on `app.db`, starts a new Sage in the same folder, and runs the second stage (`dream`), which runs Dream. `startSage` first clears the discovery file and the automation folder the old Sage left, so the new Sage is waited for on its own files and finds no old commands.
 5. Runs the person pass against the stub target. It gets `SAGE_EVAL_DREAM_KEY`, the snapshot’s key, for Dream accuracy’s grade cache.
-6. For each Chat prompt, starts a Chat server from that prompt’s root with `startEveServer`. For each setup, it warms the chat model, runs the chat pass against the server, and submits the grade pass to the pool in `passes.ts`. A sweep with no Chat test skips this step.
+6. For each Chat prompt, starts a Chat server from that prompt’s root with `startEveServer`. For each setup, it warms the chat model, runs the chat pass against the server, and submits the grade pass to the pool in `passes.ts`. The warm-up and the chat pass run inside `measureMemory`, which samples swap and the loaded models, and saves one reading for the pass. A sweep with no Chat test skips this step.
 7. Stops Sage, copies its log and manifest next to the reports, and waits for the Ollama it started to exit.
 
 ### The other modules
@@ -44,7 +44,9 @@ A unit is one person under one Dream snapshot. `unit.ts`:
 - `passes.ts`: builds each pass’s environment and `eve eval` arguments, lists evals, and holds the grade pool. Chat and person evals run one at a time and grade evals four at a time. At most two grade processes run at once. `buildJudgeCheckEnv` builds the judge check’s smaller environment.
 - `judge-check.ts`: runs the judge check, reads its rows, and decides whether the sweep may go on. `isJudgeCheckRow` picks out its rows, which `report.ts` leaves out of every setup report.
 - `proc.ts`: starts child processes in their own process groups, tracks them so an interrupt can stop them, and writes their output to a log with secrets replaced
-- `dream.ts`: the Dream cache key for a person, restoring and saving snapshots, checking the Dream prompt folders a sweep names, and running the seed script with an environment that has no credentials
+- `dream.ts`: the Dream cache key for a person, restoring and saving snapshots, checking the Dream prompt folders a sweep names, and running the seed script with an environment that has no credentials. `seedsInStages` and `seededChatDays` serve the two-stage seed of a person with past chats.
+- `chat-times.ts`: `rewriteChatTimes` moves seeded past chats to their own days in a stopped Sage’s database. It refuses any path that is not `app.db` in a `sage-eval-*` folder.
+- `memory-pressure.ts`: samples `sysctl vm.swapusage` and Ollama’s `/api/ps` (`MemoryMonitor`, `measureMemory`), saves one reading for each pass under `.runs/<sweep id>/memory/`, and combines them into the swap reading the report uses. The two probes are passed in, so tests answer for them.
 - `collect.ts`: where each pass leaves its rows, and the code that reads them back
 - `cloud.ts`: the price book and the sweep’s spending so far
 - `test-fixtures.ts`: made-up people, temporary folders, and a fake `eve` command for the unit tests
@@ -61,10 +63,10 @@ Each file turns `case.yaml` references into eve evals. A pass runs the files its
 - `judge-check/replies.eval.ts`: the same for the labeled Chat replies in `judge-check/replies/*.yaml`. Each item names a person and one of their openers. The eval reads only the YAML when it loads, and looks up the person and the opener when the item runs.
 - `chat/facts.eval.ts`: Chat questions for the setup’s chat model. It writes a transcript row for each question and repeat, checks that the turn works, and records the search checks the case asks for.
 - `chat/openers.eval.ts`: one eval for each opener and repeat of the pass’s person, picked by the sweep’s `tags`. For `new-user` it adds the `alsoEmpty` openers of everyone else, as `journal: empty`. It sends with `sendTurn`, checks that the turn works, and writes a transcript row of kind `opener`.
-- `grade/replies.eval.ts`: one eval for each saved reply, openers and fact questions, with one judge call each. It records the hard checks, the counted checks, and the rubric that apply. It replaced `grade/facts.eval.ts`.
+- `grade/replies.eval.ts`: one eval for each saved reply, openers and fact questions, with one judge call each. It records the hard checks, the counted checks, the judge’s slips, and the rubric that apply. Before the judge is asked, it records the search checks and the pattern slips, which need no judge. It replaced `grade/facts.eval.ts`.
 - `evals.config.ts`: the eve config: sequential runs, a ten-minute timeout for each eval, and the result recorder when `SAGE_EVAL_RESULTS` is set. It sets no judge model, because the cloud judge runs through `lib/grader.ts`, where every call counts against the spending cap.
 
-The folders beside the eval files hold their inputs. `judge-check/` holds the labeled items and a README that explains the format. `dream-prompts/` holds the Dream prompt variants that `dreamPrompts` names, one folder each, and its README lists the four files a variant may hold. `sweeps/` holds the sweep files: `default`, `smoke`, `dream`, and `screen`. `prompts/` holds the Chat prompts a sweep can compare.
+The folders beside the eval files hold their inputs. `judge-check/` holds the labeled items and a README that explains the format. `dream-prompts/` holds the Dream prompt variants that `dreamPrompts` names, one folder each, and its README lists the four files a variant may hold. `sweeps/` holds the sweep files: `default`, `smoke`, `dream`, `screen`, and `quick`. `prompts/` holds the Chat prompts a sweep can compare.
 
 eve imports every `*.eval.ts` file before it filters them, for every pass. So each file must load cheaply and must not throw when its variables are missing. `lib/pass.ts` gives them that: with no `SAGE_EVAL_PERSON` the file exports one skipped placeholder, a person with no items of that kind does the same, and a loading error becomes one eval that throws it when selected.
 
@@ -75,17 +77,20 @@ Eval files never call `send` themselves. They use `sendTurn` in `lib/turn.ts`, w
 `lib/` holds the code the eval files and scripts share:
 
 - `schema.ts`: the contracts. The sweep file, the setup and its ids, `case.yaml`, transcript rows, the judge’s output shapes, the report files, the ranking, and the names of the pass variables.
-- `dataset.ts`: loads people from `data/people/`, parses frontmatter and `case.yaml`, validates a person, and reads the journal-id manifest
+- `dataset.ts`: loads people from `data/people/` with their entries and past chats (`chats/*.md`, as `LoadedPerson.chats`), parses frontmatter and `case.yaml`, validates a person, resolves a `needs` ref to an entry or a `chat:<stem>` chat (`resolveNeed`), and reads the journal-id and chat-id manifest
 - `cache.ts`: computes a person’s Dream cache key, reads Dream prompt folders, and snapshots and restores the database and manifest
 - `setup.ts`: turns the pass variables into the setup under test and the `x-sage-model`, `x-sage-think`, and `x-sage-context-length` headers
 - `turn.ts`: sends a turn with those headers, times it from the event stream, and decides whether the turn works
 - `chat-turn.ts`: sends one Chat message, a fact question (`runChatQuestion`) or an opener (`runOpener`), and records its checks and transcript row
 - `openers.ts`: which openers a pass sends. It applies the sweep’s tags, adds the `alsoEmpty` openers to `new-user`, gives a run on the empty journal its `.empty` item key, and builds the evals.
-- `checks.ts`: which hard checks, counted checks, and rubric items apply to a reply, and which rubric items are N/A. The judge answers what this file says and nothing else.
+- `checks.ts`: which hard checks, counted checks, slips, and rubric items apply to a reply, and which rubric items are N/A. Search quality is N/A when the turn made no search call. The judge answers what this file says and nothing else.
+- `tool-names.ts`: the names of Chat’s tools, and which calls count as searches. The memory tool counts only with memory on.
+- `search-checks.ts`: `needless-search`, `missed-search`, `found-needed`, and `no-runaway-search`, from one turn’s tool calls. The top of the file defines found and read. `resolveSearchNeeds` turns an item’s `needs` into ids with the seed step’s manifest.
+- `slips.ts`: `shows-internals`, `many-questions`, `not-chat-length`, and `formatting`, from patterns in the reply. The judge answers the other two slips.
 - `rubric.ts`: the words the judge is given for a reply (the checks, the rubric, the answer format), the layout of its call, and `replyGradeCall`, which builds it
 - `reply-grade.ts`: turns a transcript row into what the judge sees, asks the judge, records its answer, and builds the evals of `grade/replies`
 - `grader.ts`: the cloud judge. One structured call through AI Gateway, with the spending cap, the rubric hash, and “not graded” results. The rubric hash (`rubricMaterial`) covers every rubric text, every answer schema, the layout of each prompt, the journal and Dream-source layouts, the rules for which checks apply to a reply, the temperature, and the output cap. `dreamSourceCall` and `replyCall` build the Dream-source and reply calls, so the call the eval sends is the one the hash read.
-- `judge-context.ts`: a person’s fact sheet and full journal as plain text. It depends only on the person and the pinned date, so the gateway can cache it.
+- `judge-context.ts`: a person’s fact sheet, full journal, and past chats as plain text. It depends only on the person and the pinned date, so the gateway can cache it.
 - `dream-judge-input.ts`: what the Dream-source judge sees: the fact sheet without the journal, and a source next to everything Dream wrote from it. It sits apart from `dream-accuracy.ts` so the grader can hash its layout.
 - `dream-accuracy.ts`: reads what Dream wrote from the throwaway SQLite file (read-only), groups it by source, grades each source, and records the two checks and the `dream-source` score. Everything it touches is passed in, so its tests use a temp database and a mock judge.
 - `dream-grade-cache.ts`: the Dream accuracy grades, kept in the snapshot’s folder and keyed by judge model, rubric hash, and the text the judge saw. It never makes the folder.
@@ -100,11 +105,11 @@ Eval files never call `send` themselves. They use `sendTurn` in `lib/turn.ts`, w
 - `rank.ts`: compares how current and stale fact wordings rank
 - `sage.ts`: typed calls to the local agent server: journal search, fact and event search, and the profile
 - `store.ts`: reads entry summaries from the throwaway SQLite file
-- `bridge.ts`: parses bridge responses from the automation folder and chunks UTF-8 text for `journal.save`
+- `bridge.ts`: parses bridge responses from the automation folder, chunks UTF-8 text for `journal.save`, and names the seed stages and the variable that picks one
 - `models.ts`: resolves model names from the environment, for a bare `eve eval` and for the cache-key script
 - `upload.ts`: lists report files and names their Vercel Blob pathnames
 
-The scripts in `agent/scripts/` that the runner uses are `seed-dataset.ts` (seed one person and wait for Dream), `automation.ts` (the bridge calls it makes), and `upload-eval-reports.ts` (the upload prompt). `eval-cache.ts` prints a person’s Dream cache key, or snapshots a finished run by hand: `node --experimental-strip-types agent/scripts/eval-cache.ts key --person sam-example --memory on`. It asks the Ollama on `127.0.0.1:11436` for model digests. Without one it warns and hashes the model names only, so the key will not match a run’s. The other shell scripts are listed in [scripts/README.md](../../scripts/README.md).
+The scripts in `agent/scripts/` that the runner uses are `seed-dataset.ts` (seed one person and wait for Dream, in one go or in the two stages of a person with past chats), `seed-chats.ts` (saves a person’s past chats with `chat.save` and indexes them with `embeddings.generate`, through a bridge function the caller passes in), `automation.ts` (the bridge calls it makes), and `upload-eval-reports.ts` (the upload prompt). `eval-cache.ts` prints a person’s Dream cache key, or snapshots a finished run by hand: `node --experimental-strip-types agent/scripts/eval-cache.ts key --person sam-example --memory on`. It asks the Ollama on `127.0.0.1:11436` for model digests. Without one it warns and hashes the model names only, so the key will not match a run’s. The other shell scripts are listed in [scripts/README.md](../../scripts/README.md).
 
 The Next.js app in `eval-viewer/` reads the uploaded or local report files.
 
@@ -131,7 +136,8 @@ The runner sets these for each `eve eval` process (`buildPassEnv` in `passes.ts`
 | `SAGE_EVAL_RUN_DIR` | The run folder, which holds the spending ledger |
 | `SAGE_EVAL_RESULTS` | The file where the recorder appends each finished eval |
 | `SAGE_EVAL_TRANSCRIPTS` | The Chat transcripts: the chat pass appends, the grade pass reads |
-| `SAGE_EVAL_MANIFEST` | The journal ids the seed step wrote |
+| `SAGE_EVAL_MANIFEST` | The journal and chat ids the seed step wrote. The grade pass reads it to turn `needs` into ids. |
+| `SAGE_EVAL_SEED_STAGE` | `all`, `content`, or `dream`. The seed script only, not an `eve eval` pass. |
 | `SAGE_EVAL_DREAM_KEY` | The key of the person’s Dream snapshot. The person pass only. Dream accuracy keys its grade cache with it. Not part of `EVAL_ENV`. |
 | `SAGE_EVAL_DATA` | The folder that holds `people/` |
 | `SAGE_DATA_DIR` | The throwaway data directory, where the person pass reads `app.db` |
@@ -160,6 +166,7 @@ Eval files record results with `lib/record.ts` and nothing else, so the runner c
 - `report.ts` turns the rows into items. A soft score whose id is not in `CHECK_TIERS` goes into the item’s `note` as `<id> <score>`, except `dream-source`, which adds no note. Its `dream` metadata (the source, what Dream wrote, and each claim) goes into the item’s `dream` for the viewer.
 - Dream accuracy records one item for each source, with kind `dream-source` and an id such as `sam/dream/2026-09-03-lost-mia` or `sam/dream/chat-2`. Its checks are `hard:no-severe-unsupported` (once for the source), `counted:dream-supported` (once for each item Dream wrote from it, with `dreamItemVerdicts` matching each `other` claim to its item), and the soft `dream-source`.
 - An opener is an item of kind `opener`, with an id such as `work/opener/checklist-is-back`. Its run on the empty journal has the same id with `.empty` added and `journal: empty` on its transcript row, so the two runs stay apart. A fact question keeps kind `chat` and its `<person>/chat/<n>` id.
+- The search checks (`search:needless-search`, `search:missed-search`, `search:found-needed`) and the slips (`slip:<id>`) are soft with no bar. `counted:no-runaway-search` is counted. A slip or search check that does not apply is not recorded, or is recorded with `notApplicable: true`. `search:found-needed` carries `needs`, one `{ ref, id, found, read, readRequired }` for each need, in its metadata, and is “not graded” when the manifest has no id for a need.
 - The grade pass records every check of a Chat reply with `turnIndex` set to the reply’s turn. That puts the checks, the rubric scores, `journalErrors`, and `helpSeen` on the assistant turn in the report. A rubric item that does not apply has `notApplicable: true`, which the report reads as skipped. A rubric score is the judge’s level from 0 to 1, with the level in the metadata. `helpSeen` rides on the `right-help` record, even when it is N/A.
 - The judge check records `hard:judge-check` with kind `dream-source` (Dream items) or `opener` (reply items), the person `judge-check`, and ids such as `judge-check/dream/lost-mia-death` or `judge-check/reply/missed-crisis`. The metadata holds `misses`, a list of `{ check, kind, detail, itemId }`. The rows go to `agent/evals/.runs/<sweep id>/judge-check/`, not into a setup report. `JUDGE_CHECK_PERSON` in `schema.ts` names the person.
 

@@ -19,6 +19,7 @@ import {
 } from "./proc.ts";
 import {
   automationDirOf,
+  clearStartMarkers,
   discoveryFileOf,
   endLeftoverOllama,
   installPrefix,
@@ -31,6 +32,8 @@ import {
   startSage,
 } from "./sage.ts";
 import { tempDir } from "./test-fixtures.ts";
+
+const pattern4 = /"second"/u;
 
 const pattern1 = /Sage eval/u;
 const pattern2 = /agent-server\.json[\s\S]*no window server/u;
@@ -177,6 +180,63 @@ test("startSage launches the binary in the data dir and waits for it", async (t)
     await run.stop();
   }
   assert.equal(hasExited(run.child), true);
+});
+
+// A Sage that takes a moment to write the files that say it is up.
+const slowSage = `#!/usr/bin/env node
+const fs = require("node:fs");
+setTimeout(() => {
+  fs.mkdirSync(".zig-cache/native-sdk-automation", { recursive: true });
+  fs.writeFileSync("agent-server.json", JSON.stringify({ socket: "/tmp/x.sock", token: "second" }));
+}, 400);
+setInterval(() => {}, 1000);
+process.on("SIGTERM", () => process.exit(0));
+`;
+
+test("a Sage started again in the same folder is waited for on its own files, and finds no old commands", async (t) => {
+  const dir = tempDir(t);
+  const dataDir = prepareDataDir("/repo", dir);
+  // What the first Sage left behind.
+  mkdirSync(automationDirOf(dataDir), { recursive: true });
+  writeFileSync(join(automationDirOf(dataDir), "command-3.txt"), "bridge {}\n");
+  writeFileSync(join(automationDirOf(dataDir), "bridge-response.txt"), "{}\n");
+  writeFileSync(discoveryFileOf(dataDir), '{"token":"first"}');
+  clearStartMarkers(dataDir);
+  assert.equal(existsSync(discoveryFileOf(dataDir)), false);
+  assert.equal(existsSync(automationDirOf(dataDir)), false);
+
+  // The same through startSage: the old files must not read as "ready".
+  mkdirSync(automationDirOf(dataDir), { recursive: true });
+  writeFileSync(join(automationDirOf(dataDir), "command-3.txt"), "bridge {}\n");
+  writeFileSync(discoveryFileOf(dataDir), '{"token":"first"}');
+  const run = await startSage({
+    automateWait: () => Promise.resolve(true),
+    binary: installFake(dir, slowSage),
+    dataDir,
+    embedModel: "e",
+    ollamaBin: "/o",
+    startTimeoutMs: 15_000,
+    summaryModel: "s",
+  });
+  try {
+    assert.match(readFileSync(discoveryFileOf(dataDir), "utf8"), pattern4);
+    assert.equal(
+      existsSync(join(automationDirOf(dataDir), "command-3.txt")),
+      false
+    );
+  } finally {
+    await run.stop();
+  }
+});
+
+test("clearStartMarkers leaves a folder with nothing to clear alone", (t) => {
+  const dataDir = prepareDataDir("/repo", tempDir(t));
+  clearStartMarkers(dataDir);
+  clearStartMarkers(dataDir);
+  assert.equal(
+    existsSync(join(dataDir, "frontend", "dist", "index.html")),
+    true
+  );
 });
 
 test("startSage fails with the log when Sage exits before it is ready", async (t) => {

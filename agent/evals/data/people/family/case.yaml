@@ -210,6 +210,8 @@ openers:
     fits: [ problem-solving, listen ]
     avoid: [ grounding, look-at-thought ]
     search: needed
+    needs: [ "chat:2026-09-16-three-questions" ]
+    tags: [ quick ]
   - id: gym-status
     message: "Did I ever actually get out of that gym membership? I can't tell from my bank statement whether it's still going out."
     expect: question
