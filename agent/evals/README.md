@@ -93,7 +93,7 @@ Eval files never call `send` themselves. They use `sendTurn` in `lib/turn.ts`, w
 - `judge-context.ts`: a person’s fact sheet, full journal, and past chats as plain text. It depends only on the person and the pinned date, so the gateway can cache it.
 - `dream-judge-input.ts`: what the Dream-source judge sees: the fact sheet without the journal, and a source next to everything Dream wrote from it. It sits apart from `dream-accuracy.ts` so the grader can hash its layout.
 - `dream-accuracy.ts`: reads what Dream wrote from the throwaway SQLite file (read-only), groups it by source, grades each source, and records the two checks and the `dream-source` score. Everything it touches is passed in, so its tests use a temp database and a mock judge.
-- `dream-grade-cache.ts`: the Dream accuracy grades, kept in the snapshot’s folder and keyed by judge model, rubric hash, and the text the judge saw. It never makes the folder.
+- `dream-grade-cache.ts`: the Dream accuracy grades, kept in the snapshot’s folder and keyed by judge model, the Dream-source rubric hash (`dreamSourceRubricHash`, which leaves out the reply rubric), and the text the judge saw. It never makes the folder.
 - `judge-check.ts`: parses the labeled items of both halves, grades them with the real Dream-source and reply calls, and compares the verdicts with the labels. It names each miss and records `hard:judge-check`.
 - `ledger.ts`: the spending ledger. A call reserves its estimate under a file lock, and settles with its real cost.
 - `prices.ts`: reads prices from AI Gateway’s public catalog, caches them for an hour, and works out the cost of a call

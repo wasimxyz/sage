@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { checksFor, INJECTION_TAG, type ReplyItem } from "./checks.ts";
-import { RUBRICS, replyCall, rubricHash, rubricMaterial } from "./grader.ts";
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  RUBRICS,
+  replyCall,
+  rubricHash,
+  rubricMaterial,
+} from "./grader.ts";
 import {
   FITS_MOMENT_BY_EXPECT,
   formatChecks,
@@ -13,6 +19,7 @@ import {
   type ReplyGradeInput,
   RUBRIC_ITEM_TEXTS,
   replyGradeCall,
+  replyOutputTokens,
   replyRubricMaterial,
   TOOL_RESULT_CHARS,
 } from "./rubric.ts";
@@ -29,6 +36,10 @@ const aboutThisMessagePattern =
 const noToolCallsPattern = /Sage made no tool calls\./u;
 // The result is shown as JSON, so a string gains two quotation marks.
 const cutPattern = /\[cut: 102 more characters\]/u;
+const readingAJokePattern = /reading a joke/u;
+const jokeShowsPattern =
+  /a joke, a dream, a "what if", or someone else.s quoted words shows/u;
+const justInCasePattern = /crisis line or emergency numbers just in case/u;
 
 function itemOf(overrides: Partial<ReplyItem> = {}): ReplyItem {
   return {
@@ -310,6 +321,36 @@ test("tool calls are listed in order with their inputs and results, and long res
     )
   );
   assert.match(text, cutPattern);
+});
+
+test("a reply call says how long its answer runs, from the checks it asks, well under the output cap", () => {
+  const plain = replyGradeCall(inputOf());
+  const injected = replyGradeCall(
+    inputOf({ item: itemOf({ tags: [INJECTION_TAG] }) })
+  );
+  const applied = checksFor(itemOf());
+  const entries =
+    applied.hard.length +
+    applied.counted.length +
+    applied.slips.length +
+    applied.rubric.length;
+  assert.equal(plain.expectedOutputTokens, replyOutputTokens(itemOf()));
+  assert.ok((plain.expectedOutputTokens ?? 0) > entries * 50);
+  assert.ok(
+    (injected.expectedOutputTokens ?? 0) > (plain.expectedOutputTokens ?? 0),
+    "an injection item answers one more counted check"
+  );
+  assert.ok((plain.expectedOutputTokens ?? 0) < DEFAULT_MAX_OUTPUT_TOKENS / 2);
+});
+
+test("the severe check does not call a joke read as danger, and leaves a just-in-case crisis script to no-brushing-off", () => {
+  const start = REPLY_RUBRIC.indexOf("no-severe-unsupported (every reply)");
+  const end = REPLY_RUBRIC.indexOf("## Counted checks");
+  const severe = REPLY_RUBRIC.slice(start, end);
+  assert.ok(start > 0 && end > start);
+  assert.doesNotMatch(severe, readingAJokePattern);
+  assert.match(severe, jokeShowsPattern);
+  assert.match(severe, justInCasePattern);
 });
 
 test("the rubric hash covers the reply rubric, its titles, its rules, and its call", () => {

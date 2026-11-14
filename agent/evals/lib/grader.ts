@@ -10,9 +10,13 @@
  * journal text must never be passed to it.
  *
  * Every call reserves its estimated cost in the sweep's ledger first, and
- * settles with the real cost after. When the cap would be passed, the call is
- * not made and the item is "not graded: spending cap". Any other judge error
- * is also "not graded". A judge error is never a failed check.
+ * settles with the real cost after. The estimate counts the prompt and the
+ * output the answer is expected to take (`expectedOutputTokens`), not the
+ * output cap. The cap is far above any real answer, and a ledger that reserved
+ * it for every call would refuse work with most of the money unspent. The cap
+ * still limits the request itself. When the spending cap would be passed, the
+ * call is not made and the item is "not graded: spending cap". Any other judge
+ * error is also "not graded". A judge error is never a failed check.
  *
  * The prompt is laid out so the Gateway can cache the front of it:
  *
@@ -34,6 +38,10 @@
  * The rubric hash (`rubricHash`) covers everything that shapes a grade: the
  * rubric texts, the answer schemas, the layout of each prompt, the fact sheet
  * and journal layout, the temperature, and the output cap.
+ *
+ * The Dream grade cache is named by a narrower hash (`dreamSourceRubricHash`)
+ * that covers only what shapes a Dream-source grade, so a change to the reply
+ * rubric does not clear the cached Dream grades.
  */
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
@@ -212,6 +220,11 @@ export type JudgeOutcome<T> =
 export interface JudgeCall<S extends z.ZodType> {
   /** The fact sheet and full journal. The same text for every call about a person. */
   context?: string;
+  /**
+   * About how many output tokens the answer takes. The ledger reserves this
+   * many, not the output cap. Without it, the call reserves the whole cap.
+   */
+  expectedOutputTokens?: number;
   /** The rubric: the system prompt. */
   instructions: string;
   /** The thing to grade, last. */
@@ -226,6 +239,11 @@ export interface JudgeCall<S extends z.ZodType> {
 }
 
 export interface Grader {
+  /**
+   * The hash of what shapes a Dream-source grade alone (`dreamSourceRubricHash`).
+   * It names the Dream grade cache, which a reply rubric change must not clear.
+   */
+  readonly dreamRubric: string;
   /** Checks that memory holds the current fact and not only the stale one. */
   extraction: (input: ExtractionInput) => Promise<Graded>;
   /** Compares a Chat reply, a fact, or an event with its reference. */
@@ -277,6 +295,15 @@ export interface ExtractionInput extends GradeInputBase {
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 /** Every judge call asks for the same answer each time it can. */
 export const JUDGE_TEMPERATURE = 0;
+/**
+ * What a judge answer runs to, by kind of grade, in output tokens. A yes-or-no
+ * grade is a quote, a reason, and a verdict. A Dream source grade lists each
+ * unsupported claim with its item, quote, and reason. A reply grade has its
+ * own count (`replyOutputTokens` in `rubric.ts`), because it answers a
+ * different number of checks for each message.
+ */
+export const YES_NO_OUTPUT_TOKENS = 400;
+export const DREAM_SOURCE_OUTPUT_TOKENS = 800;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const MAX_RETRIES = 2;
 const ERROR_TEXT_LIMIT = 300;
@@ -412,6 +439,7 @@ type DreamSourceCall = JudgeCall<typeof dreamSourceGradeSchema>;
 const GRADE_CALLS = {
   dreamSource: (input: DreamSourceInput): DreamSourceCall => ({
     context: input.context,
+    expectedOutputTokens: DREAM_SOURCE_OUTPUT_TOKENS,
     instructions: RUBRICS.dreamSource,
     item: formatSourceForJudge(input.source),
     label: input.label,
@@ -420,6 +448,7 @@ const GRADE_CALLS = {
   }),
   extraction: (input: ExtractionInput): GradeCall => ({
     context: input.context,
+    expectedOutputTokens: YES_NO_OUTPUT_TOKENS,
     instructions: RUBRICS.extraction,
     item: itemText([
       [ITEM_TITLES.extraction.current, input.current],
@@ -433,6 +462,7 @@ const GRADE_CALLS = {
   }),
   factuality: (input: FactualityInput): GradeCall => ({
     context: input.context,
+    expectedOutputTokens: YES_NO_OUTPUT_TOKENS,
     instructions: RUBRICS.factuality,
     item: itemText([
       [ITEM_TITLES.factuality.question, input.question],
@@ -447,6 +477,7 @@ const GRADE_CALLS = {
   reply: (input: ReplyGradeInput) => replyGradeCall(input),
   summary: (input: SummaryInput): GradeCall => ({
     context: input.context,
+    expectedOutputTokens: YES_NO_OUTPUT_TOKENS,
     instructions: RUBRICS.summary,
     item: itemText([
       [ITEM_TITLES.summary.reference, input.reference],
@@ -531,11 +562,7 @@ export interface RubricSettings {
  */
 export function rubricMaterial(settings: RubricSettings = {}) {
   const probes = {
-    dreamSource: GRADE_CALLS.dreamSource({
-      context: PROBE.context,
-      label: PROBE.label,
-      source: PROBE_DREAM_SOURCE,
-    }),
+    dreamSource: dreamSourceProbe(),
     extraction: GRADE_CALLS.extraction({
       ...PROBE,
       current: "<current>",
@@ -560,21 +587,32 @@ export function rubricMaterial(settings: RubricSettings = {}) {
     dreamSourceLayout: dreamSourceLayout(),
     journalContext: journalContextLayout(),
     kinds: Object.fromEntries(
-      Object.entries(probes).map(([kind, call]) => [
-        kind,
-        {
-          instructions: call.instructions,
-          item: call.item,
-          parts: promptOf(call).parts,
-          schema: JSON.stringify(z.toJSONSchema(call.schema)),
-          schemaName: call.schemaName,
-        },
-      ])
+      Object.entries(probes).map(([kind, call]) => [kind, kindMaterial(call)])
     ),
     maxOutputTokens: settings.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
     reply: replyRubricMaterial(),
     rubrics: RUBRICS,
     temperature: settings.temperature ?? JUDGE_TEMPERATURE,
+  };
+}
+
+/** The Dream-source call made of stand-in text. */
+function dreamSourceProbe(): DreamSourceCall {
+  return GRADE_CALLS.dreamSource({
+    context: PROBE.context,
+    label: PROBE.label,
+    source: PROBE_DREAM_SOURCE,
+  });
+}
+
+/** What one kind of call is made of: its system prompt, item section, prompt parts, and answer format. */
+function kindMaterial(call: JudgeCall<z.ZodType>) {
+  return {
+    instructions: call.instructions,
+    item: call.item,
+    parts: promptOf(call).parts,
+    schema: JSON.stringify(z.toJSONSchema(call.schema)),
+    schemaName: call.schemaName,
   };
 }
 
@@ -590,10 +628,37 @@ export function rubricHash(settings: RubricSettings = {}): string {
     .slice(0, RUBRIC_HASH_LENGTH);
 }
 
+/**
+ * Everything that shapes a Dream-source grade and nothing else: its rubric
+ * text and answer format, its prompt as built from stand-in text, the fact
+ * sheet and source layout, the temperature, and the output cap.
+ */
+export function dreamSourceMaterial(settings: RubricSettings = {}) {
+  return {
+    kind: kindMaterial(dreamSourceProbe()),
+    layout: dreamSourceLayout(),
+    maxOutputTokens: settings.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+    temperature: settings.temperature ?? JUDGE_TEMPERATURE,
+  };
+}
+
+/**
+ * A short hash of `dreamSourceMaterial`. The Dream grade cache is named by it,
+ * so a change to the reply rubric, which Dream never sees, does not throw away
+ * the Dream grades. The rubric hash still goes in the metadata of every check.
+ */
+export function dreamSourceRubricHash(settings: RubricSettings = {}): string {
+  return createHash("sha256")
+    .update(canonicalJson(dreamSourceMaterial(settings)))
+    .digest("hex")
+    .slice(0, RUBRIC_HASH_LENGTH);
+}
+
 /** Builds a grader. Nothing is read or called until the first `judge`. */
 export function createGrader(options: GraderOptions): Grader {
   const maxOutputTokens = options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
   const rubric = rubricHash({ maxOutputTokens });
+  const dreamRubric = dreamSourceRubricHash({ maxOutputTokens });
   let model: LanguageModel | undefined = options.model;
   let price: Promise<ModelPrice> | undefined;
 
@@ -680,7 +745,10 @@ export function createGrader(options: GraderOptions): Grader {
     try {
       reservation = reserve(options.runDir, options.capUsd, {
         estimateUsd: estimateUsd(modelPrice, {
-          maxOutputTokens,
+          outputTokens: Math.min(
+            call.expectedOutputTokens ?? maxOutputTokens,
+            maxOutputTokens
+          ),
           promptChars: prompt.chars,
         }),
         label: call.label,
@@ -778,6 +846,7 @@ export function createGrader(options: GraderOptions): Grader {
   };
 
   return {
+    dreamRubric,
     extraction: (input) => grade(GRADE_CALLS.extraction(input)),
     factuality: (input) => grade(GRADE_CALLS.factuality(input)),
     judge,

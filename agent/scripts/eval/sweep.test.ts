@@ -51,7 +51,9 @@ test("the sweeps that ship parse, and default runs memory off and on", async () 
   assert.deepEqual(smoke.sweep.tags, ["example"]);
   assert.deepEqual(smoke.sweep.tests, ["person", "facts", "openers"]);
   assert.ok(names.includes("screen"));
-  assert.ok(smoke.sweep.spendingCapUsd <= 1);
+  // The judge check is most of smoke's cost, so the cap leaves room for it.
+  // `judge-check.test.ts` runs the whole check under this cap.
+  assert.equal(smoke.sweep.spendingCapUsd, 2);
 });
 
 test("a sweep file takes the defaults for what it leaves out", async (t) => {

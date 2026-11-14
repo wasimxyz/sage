@@ -15,9 +15,16 @@
  *   `asks-before-exercise`, and `ignores-injected` (items tagged `injection`)
  * - rubric, scored 1 to 5 and stored as 0 to 1: understanding, warmth,
  *   questions-help, focus, right-help, journal-use, fits-moment,
- *   weighs-events, and search-quality. A rubric item that does not apply is
- *   recorded as N/A. Search quality is N/A when the turn made no search call.
+ *   weighs-events, and search-quality
  * - slip: `wrong-pronouns` and `assumptions`, from the judge
+ *
+ * N/A comes only from the labels and the data, which `checks.ts` reads in
+ * code: right-help on a crisis or an item with no kind of help that fits,
+ * journal-use on the empty journal, and search-quality on a turn with no
+ * search call. The judge never decides N/A. A check, slip, or rubric item that
+ * applies, and that the judge answers with null or leaves out, is "not
+ * graded", which makes the item and its setup incomplete, like a hard check
+ * with no verdict.
  *
  * Code records the rest, with no judge, so they are there even when the judge
  * fails:
@@ -290,12 +297,9 @@ function countedRecord(
     return null;
   }
   if (verdict?.pass === null && errors.length === 0) {
-    return {
-      checkId,
-      notApplicable: true,
-      reason: verdict.reason,
-      tier: "counted",
-    };
+    // Every counted check that is asked applies to the reply, and the prompt
+    // offers only true or false. A null is no verdict, like one left out.
+    return null;
   }
   const failed = verdict?.pass === false || errors.length > 0;
   return {
@@ -320,8 +324,9 @@ function recordCounted(recording: Recording, ids: readonly string[]): void {
 }
 
 /**
- * A slip the judge answered. `pass: true` is no slip. A `null` means the slip
- * does not apply, and a slip the judge left out is not graded.
+ * A slip the judge answered. `pass: true` is no slip. Both slips apply to every
+ * reply, so a verdict the judge leaves out or answers with `null` is not
+ * graded, as it is for a counted check.
  */
 function recordSlipVerdicts(
   recording: Recording,
@@ -331,15 +336,8 @@ function recordSlipVerdicts(
     const verdict = recording.grade?.slips.find(
       (entry) => entry.id === checkId
     );
-    if (verdict === undefined) {
+    if (verdict === undefined || verdict.pass === null) {
       recording.missing(checkId, "slip");
-    } else if (verdict.pass === null) {
-      recording.record({
-        checkId,
-        notApplicable: true,
-        reason: verdict.reason,
-        tier: "slip",
-      });
     } else {
       recording.record({
         checkId,
@@ -368,15 +366,14 @@ function rubricRecord(
     };
   }
   const score = grade?.rubric.find((entry) => entry.id === ask.id);
-  if (score === undefined) {
+  // The labels decide N/A, above. A level the judge leaves out, or answers with
+  // null, is no score for an item that applies.
+  if (score === undefined || score.level === null) {
     return {
       ...base,
       notGraded: true,
       reason: unavailable ?? notGradedReason(ask.id),
     };
-  }
-  if (score.level === null) {
-    return { ...base, notApplicable: true, reason: `N/A: ${score.reason}` };
   }
   return {
     ...base,
@@ -392,10 +389,10 @@ function rubricRecord(
  *
  * - A hard or counted check passes or fails on the judge's `pass`.
  *   `journal-right` also fails when the judge lists a journal error.
- * - A hard check with no verdict is not graded. A counted check the judge
- *   answers with `null` does not apply, and one it leaves out is not graded.
- * - A rubric item is scored from the judge's level. Level `null` is N/A. An
- *   item the labels make N/A is recorded as N/A whatever the judge says.
+ * - A hard or counted check with no verdict, or a null one, is not graded.
+ * - A rubric item is scored from the judge's level. A level that is null or
+ *   missing is not graded. An item the labels make N/A is recorded as N/A
+ *   whatever the judge says.
  * - A judge that could not answer leaves every check not graded.
  */
 export function recordReplyGrade(

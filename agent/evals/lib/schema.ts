@@ -1108,7 +1108,7 @@ const RUBRIC_LEVELS = [1, 2, 3, 4, 5] as const;
 const rubricLevelSchema = z.literal(RUBRIC_LEVELS);
 export type RubricLevel = (typeof RUBRIC_LEVELS)[number];
 
-/** A yes or no check. `pass: null` means it does not apply to this reply. */
+/** A yes or no check. `pass: null` is no verdict, so the check is not graded. The code decides which checks apply, never the judge. */
 function verdictSchema<const T extends readonly [string, ...string[]]>(
   label: string,
   ids: T
@@ -1122,7 +1122,7 @@ function verdictSchema<const T extends readonly [string, ...string[]]>(
   });
 }
 
-/** A 1 to 5 score. `level: null` means N/A. */
+/** A 1 to 5 score. `level: null` answers an item the labels call N/A. For any other item it is no score, so the item is not graded. */
 function rubricScoreSchema<const T extends readonly [string, ...string[]]>(
   ids: T
 ) {
@@ -1342,7 +1342,7 @@ export type ReportCheck = z.infer<typeof reportCheckSchema>;
 export const reportRubricSchema = z.strictObject({
   evidence: z.string().default(""),
   id: vocabulary("rubric item", RUBRIC_IDS),
-  /** 1 to 5. Null is N/A. */
+  /** 1 to 5. Null is N/A or not graded, and the reason says which. */
   level: rubricLevelSchema.nullable(),
   reason: z.string().default(""),
   /** `level` on the 0 to 1 scale. Null when `level` is null. */

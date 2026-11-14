@@ -1,8 +1,10 @@
 # The screen night: the shipped Chat prompt against companion-v1, on the nine
-# chat models pulled for this Mac. It sends the fact questions and the openers
-# tagged `screen`, once each, with memory off like a shipped build. Dream stays
-# fixed (one summary model, one Dream prompt), so the night compares Chat only.
-# The judge check runs first, as in every sweep.
+# chat models pulled for this Mac. It sends the openers tagged `screen`, once
+# each, with memory off like a shipped build. It leaves out the fact questions,
+# which `default` runs and `deep` runs later, so the night fits in eight hours
+# and under its cap. Dream stays fixed (one summary model, one Dream prompt),
+# so the night compares Chat only. The judge check runs first, as in every
+# sweep.
 #
 # `tags: [screen]` covers every person who has a `screen` opener, and sends only
 # those openers. new-user is covered too, because the openers marked alsoEmpty
@@ -27,7 +29,7 @@ thinking: [ off ]
 contextLengths: [ 32768 ]
 memory: [ off ]
 repeats: 1
-tests: [ person, facts, openers ]
+tests: [ person, openers ]
 tags: [ screen ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 simulatedUser:

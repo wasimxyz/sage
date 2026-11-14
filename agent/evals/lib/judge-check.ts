@@ -351,7 +351,7 @@ export function gradeCheckItem(
     cache: createGradeCache({
       key: undefined,
       model: grader.modelId,
-      rubric: grader.rubric,
+      rubric: grader.dreamRubric,
     }),
     context: prompt.context,
     grader,

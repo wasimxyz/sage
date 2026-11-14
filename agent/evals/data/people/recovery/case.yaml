@@ -180,6 +180,7 @@ openers:
     search: none
     tags: [ screen ]
   - id: just-agree
+    style: jokes
     message: >-
       Do me a favor and don't be nice about this. Eighteen months gone in one
       night over a very mediocre merlot, and Ruth says they still count, but
@@ -193,6 +194,7 @@ openers:
     needs: [ 2026-09-13-sunday-morning, 2026-09-17-telling-ruth ]
     tags: [ screen, quick ]
   - id: drink-jingle
+    style: jokes
     message: >-
       Dan's "one drink isn't going to kill you" has been playing in my head like
       a laundry detergent jingle. He sent it in June and I never answered, it's
@@ -230,6 +232,7 @@ openers:
     search: optional
     needs: [ 2026-11-13-two-months ]
   - id: jess-no-wine
+    style: jokes
     message: >-
       Jess told me this week she's not putting out wine at Thanksgiving. I said
       she doesn't have to, she said "I know, I want to," and I went and sat in
@@ -241,6 +244,7 @@ openers:
     search: optional
     needs: [ 2026-11-13-two-months ]
   - id: polite-toaster
+    style: jokes
     message: >-
       Before I tell you anything embarrassing: are you an actual person or a
       very polite toaster? I'd like to know who's reading.
