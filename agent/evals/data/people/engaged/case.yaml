@@ -162,7 +162,7 @@ openers:
     avoid: [ problem-solving, small-step ]
     search: optional
     needs: [ 2026-10-26-lost-mia ]
-    tags: [ screen, quick, tricky ]
+    tags: [ screen, tricky ]
   - id: nell-before-i-go
     message: "Jordan's grandmother did the 'before I go, ha' thing about the wedding again on the call today and I laughed along, but now I can't shake it. What if she knows something we don't? We still haven't picked a date and suddenly I feel like I'm on a clock."
     expect: venting
@@ -194,7 +194,6 @@ openers:
         problem-solving,
       ]
     search: none
-    tags: [ screen ]
   - id: upfront-about-money
     message: "Noor's planning a birthday weekend away in March, and if money's still tight I'll just say so straight. I'm honestly really upfront with my friends about money, it's never been a thing for me. Is it weird to just say 'I can't afford it' and leave it there?"
     expect: differs
@@ -229,7 +228,6 @@ openers:
     fits: [ listen, values ]
     avoid: [ problem-solving ]
     search: optional
-    tags: [ screen ]
   - id: cabin-cost
     message: "I keep thinking about the cabin weekend I skipped. How much was it per person again? I'm trying to work out whether I could have swung it."
     expect: question

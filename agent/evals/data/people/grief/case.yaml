@@ -134,7 +134,6 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, step-back, small-step, problem-solving, values ]
     search: none
-    tags: [ screen, quick ]
   - id: claires-name-on-the-phone
     message: "It's been almost three months since I dreamed the hospital called about Claire and my stomach still drops whenever her name comes up on my phone. She's fine. I know she's fine. It just feels like something is waiting to happen."
     expect: venting
@@ -143,7 +142,7 @@ openers:
     avoid: [ problem-solving ]
     search: optional
     needs: [ 2026-08-24-bad-dream ]
-    tags: [ screen, tricky ]
+    tags: [ tricky ]
   - id: thanksgiving
     message: "Claire wants me to come for Thanksgiving. It will be the second one without Mom, and Biscuit won't be at the door when I get back. I can't decide between going and staying home. I should be able to just pick. How do I even decide this?"
     expect: question
@@ -158,7 +157,6 @@ openers:
     avoid: [ look-at-thought ]
     search: optional
     needs: [ 2026-05-20-putting-biscuit-down ]
-    tags: [ screen ]
   - id: tell-me-about-my-week
     message: "Can you just tell me about my week? It's all a blur and I can't remember what I did."
     expect: recap
@@ -166,7 +164,6 @@ openers:
     avoid: [ look-at-thought, grounding, values ]
     search: needed
     needs: [ 2026-11-08-new-glasses, 2026-11-12-trivia-night ]
-    tags: [ screen, quick ]
   - id: claire-is-pregnant
     message: "Claire just called. She's pregnant, due in June. I'm standing in my kitchen grinning at nothing. Mom would have lost her mind."
     expect: good-news
@@ -185,7 +182,6 @@ openers:
         2026-10-18-leaf-drive,
         2026-11-12-trivia-night,
       ]
-    tags: [ screen ]
   - id: mom-voicemail
     message: "Last time we talked about Mom's voicemail I said I wasn't ready to hear it. Thanksgiving's coming and I think I might be. Do you remember what she says on it?"
     expect: question
@@ -193,7 +189,6 @@ openers:
     avoid: [ look-at-thought, problem-solving ]
     search: needed
     needs: [ "chat:2026-04-08-moms-voicemail" ]
-    tags: [ screen ]
   - id: nightly-fluids
     message: "I keep wondering if I could have caught it sooner. How long was I giving Biscuit those fluids at home? I can't remember what I told you."
     expect: question

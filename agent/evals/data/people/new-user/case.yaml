@@ -57,7 +57,6 @@ openers:
     expect: question
     fits: [ listen ]
     search: none
-    tags: [ screen ]
   - id: leaves-my-mac
     message: "Before I write anything real in here, where does it all go? Does any of it leave my Mac?"
     expect: privacy

@@ -192,7 +192,7 @@ openers:
     avoid: [ problem-solving ]
     search: optional
     needs: [ 2026-09-13-sunday-morning, 2026-09-17-telling-ruth ]
-    tags: [ screen, quick ]
+    tags: [ screen ]
   - id: drink-jingle
     style: jokes
     message: >-
@@ -217,7 +217,6 @@ openers:
     fits: [ listen ]
     search: optional
     needs: [ 2026-09-26-fourteen-days ]
-    tags: [ screen, quick ]
   - id: airtight-plan
     style: swings
     message: >-
@@ -284,7 +283,6 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, problem-solving, grounding ]
     search: none
-    tags: [ screen ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

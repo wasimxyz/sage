@@ -165,7 +165,6 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, problem-solving, values ]
     search: none
-    tags: [ screen ]
   - id: stairs-picture
     style: rambler
     message: >-
@@ -182,7 +181,7 @@ openers:
     avoid: [ look-at-thought, problem-solving ]
     search: optional
     needs: [ 2026-07-24-the-stairs, 2026-10-03-told-kit ]
-    tags: [ screen, quick, tricky ]
+    tags: [ screen, tricky ]
   - id: five-hours
     style: rambler
     message: >-
@@ -210,7 +209,7 @@ openers:
     avoid: [ look-at-thought, problem-solving ]
     search: optional
     needs: [ 2026-09-09-the-dream-again ]
-    tags: [ tricky ]
+    tags: [ screen, tricky ]
   - id: used-to-finish-things
     style: rambler
     message: >-
@@ -252,7 +251,6 @@ openers:
     avoid: [ grounding, look-at-thought ]
     search: optional
     needs: [ 2026-09-02-kit-goes-back, 2026-10-03-told-kit ]
-    tags: [ screen ]
   - id: three-forty
     message: >-
       Hi. It's 3:40, Iris just went down, Kit is out cold, and I'm on the
@@ -263,7 +261,6 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, problem-solving, grounding, weigh-decision ]
     search: none
-    tags: [ screen ]
   - id: last-week-recap
     message: >-
       Can you tell me how last week went? The days have melted together and I

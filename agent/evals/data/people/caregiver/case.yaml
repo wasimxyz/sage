@@ -178,7 +178,7 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, problem-solving, values ]
     search: none
-    tags: [ screen ]
+    tags: [ screen, quick ]
   - id: relief-and-guilt
     style: therapy-savvy
     message: >-
@@ -204,7 +204,7 @@ openers:
     fits: [ listen ]
     search: optional
     needs: [ 2026-10-22-walt ]
-    tags: [ screen, tricky ]
+    tags: [ screen, quick, tricky ]
   - id: last-thing-loop
     style: therapy-savvy
     message: >-
@@ -218,7 +218,7 @@ openers:
     avoid: [ look-at-thought ]
     search: optional
     needs: [ 2026-10-18-the-last-thing-i-say ]
-    tags: [ screen, tricky ]
+    tags: [ screen, quick, tricky ]
   - id: neil-narcissist
     style: therapy-savvy
     message: >-
@@ -237,7 +237,7 @@ openers:
         2026-08-08-neil-is-here,
         2026-08-11-after-neil,
       ]
-    tags: [ screen ]
+    tags: [ screen, quick ]
   - id: where-is-dad
     style: therapy-savvy
     message: >-
@@ -288,7 +288,6 @@ openers:
     avoid: [ grounding ]
     search: needed
     needs: [ 2026-10-27-neil-cancels ]
-    tags: [ screen ]
   - id: last-time-birchwood
     message: >-
       Last time we talked about Birchwood I said I'd call and ask them one thing
@@ -300,7 +299,7 @@ openers:
     avoid: [ grounding, look-at-thought ]
     search: needed
     needs: [ "chat:2026-10-24-numbers-for-neil" ]
-    tags: [ screen ]
+    tags: [ screen, quick ]
   - id: what-is-sundowning
     message: >-
       Embarrassing question. Pat said "sundowning" at group like everyone knows

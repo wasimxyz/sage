@@ -209,7 +209,6 @@ openers:
     fits: [ weigh-decision, values ]
     search: optional
     needs: [ 2026-11-13-december, 2026-05-23-ticket-price ]
-    tags: [ screen ]
   - id: scholarship-chain
     style: second-language
     message: >-
@@ -224,7 +223,6 @@ openers:
     avoid: [ grounding ]
     search: optional
     needs: [ 2026-11-11-stats-test, 2026-09-08-second-year, 2026-05-29-b-plus ]
-    tags: [ screen ]
   - id: cold-hands
     style: second-language
     message: >-
@@ -235,7 +233,6 @@ openers:
     fits: [ grounding, listen ]
     avoid: [ look-at-thought, problem-solving ]
     search: none
-    tags: [ screen ]
   - id: what-do-i-want
     style: people-pleaser
     message: >-
@@ -295,7 +292,7 @@ openers:
     avoid: [ grounding, look-at-thought ]
     search: needed
     needs: [ 2026-10-18-bapak-asks-again ]
-    tags: [ screen, quick ]
+    tags: [ screen ]
   - id: voice-reply-last-week
     message: >-
       Last week I answered Ibu's voice message. What did I write back? I want to

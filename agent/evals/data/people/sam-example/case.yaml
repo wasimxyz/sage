@@ -93,7 +93,6 @@ openers:
     avoid: [ grounding ]
     search: needed
     needs: [ 2026-05-22-shin-splints ]
-    tags: [ screen ]
   - id: lenas-earring
     message: "Lena's earring is still on my windowsill. She left three months ago and I keep meaning to mail it back. I think I just don't want the last bit of her visit to leave."
     expect: venting
@@ -107,7 +106,6 @@ openers:
     fits: [ listen ]
     search: none
     alsoEmpty: true
-    tags: [ screen ]
   - id: september-at-work
     message: "Give me the rundown on September at work. I remember it being a mess but I can't remember why."
     expect: question
