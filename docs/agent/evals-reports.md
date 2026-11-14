@@ -61,8 +61,8 @@ A counted check’s rate is its failures divided by the items graded for that ch
 
 The judge scores every Chat reply on eight items: understanding, warmth, questions help, focus, the right kind of help, journal use, fits the moment, and weighs events right. [Grading Chat replies](evals.md#grading-chat-replies) says what each one means. In the report, each score sits on the reply’s turn as `{ id, level, score, reason, evidence }`. `level` is the judge’s 1 to 5, and `score` is that on a 0 to 1 scale: level 1 is 0, level 3 is 0.5, and level 5 is 1.
 
-- **N/A** is a `null` level and a `null` score. The reason says why. Right kind of help is N/A for a crisis, because `crisis-handled` grades the care, and N/A for a fact question, which lists no kind of help that fits. Journal use is N/A on the empty journal. The judge may also mark an item N/A.
-- **Not graded** is a judge error. The score is missing, and the item is “not graded”.
+- **N/A** is a `null` level and a `null` score. The reason says why. Right kind of help is N/A for a crisis, because `crisis-handled` grades the care, and N/A for a fact question, which lists no kind of help that fits. Journal use is N/A on the empty journal. Only the labels and the data decide N/A, never the judge.
+- **Not graded** is a judge error, or a verdict or score the judge left out or answered with `null` for an item that applies. The score is missing, and the item is “not graded”.
 - The **rubric mean** is the mean of every score that was graded, over all replies and all repeats. N/A items and items that were not graded are left out.
 - The **rubric spread** is the deviation of the rubric mean across repeats. It is `null` with one repeat.
 - The turn also lists the **kinds of help** the judge saw in the reply (`helpSeen`), and each **journal error** with its kind (`journalErrors`).

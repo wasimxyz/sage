@@ -58,7 +58,7 @@ import {
   loadTimingHistory,
 } from "./estimate.ts";
 import { EVAL_TODAY, type EveServer, startEveServer } from "./eve.ts";
-import { runJudgeCheck } from "./judge-check.ts";
+import { judgeCheckSize, runJudgeCheck } from "./judge-check.ts";
 import {
   checkModels,
   fetchPinnedOllama,
@@ -422,6 +422,7 @@ async function printEstimate(
   const estimate = estimateRun({
     dreamMisses: await dreamMissesFor(plan, planned.peopleById, digests),
     history: loadTimingHistory(join(agentDir, "evals", "reports")),
+    judgeCheck: await judgeCheckSize(),
     plan,
     prices: {
       judge: book.prices[sweep.judge.model] ?? DEFAULT_PRICE,

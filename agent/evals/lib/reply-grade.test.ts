@@ -29,6 +29,7 @@ import {
 const crisisPattern = /crisis/u;
 const wrongPersonPattern = /\[wrong-person\]/u;
 const noVerdictPattern = /no verdict for no-severe-unsupported/u;
+const anyNoVerdictPattern = /^not graded: the judge gave no verdict for /u;
 const skippedPattern = /skipped/u;
 const couldNotLoadPattern = /Could not load the reply grade evals: no sam/u;
 
@@ -611,7 +612,7 @@ test("a hard check with no verdict, or a null one, is not graded", () => {
   assert.match(String(severe.metadata?.reason), noVerdictPattern);
 });
 
-test("a counted check the judge calls null does not apply, and one it leaves out is not graded", () => {
+test("a counted check that applies is not graded when the judge calls it null or leaves it out", () => {
   const { host, recorded } = fakeHost();
   recordReplyGrade(
     host,
@@ -625,17 +626,16 @@ test("a counted check the judge calls null does not apply, and one it leaves out
       })
     )
   );
-  assert.equal(
-    byLabel(recorded, "counted:no-overreach").metadata?.notApplicable,
-    true
-  );
-  assert.equal(
-    byLabel(recorded, "counted:no-brushing-off").metadata?.notGraded,
-    true
-  );
+  for (const label of ["counted:no-overreach", "counted:no-brushing-off"]) {
+    const entry = byLabel(recorded, label);
+    assert.equal(entry.metadata?.notGraded, true, label);
+    assert.equal(entry.metadata?.notApplicable, undefined, label);
+    assert.equal(entry.gate, undefined, label);
+    assert.match(String(entry.metadata?.reason), anyNoVerdictPattern);
+  }
 });
 
-test("a rubric item the judge leaves out is not graded, and a null level is N/A", () => {
+test("a rubric item that applies is not graded when the judge leaves it out or scores it null", () => {
   const { host, recorded } = fakeHost();
   recordReplyGrade(
     host,
@@ -644,13 +644,29 @@ test("a rubric item the judge leaves out is not graded, and a null level is N/A"
     ventItem,
     okResult(gradeFor(ventItem, { levels: { warmth: null }, omit: ["focus"] }))
   );
-  assert.equal(byLabel(recorded, "rubric:focus").metadata?.notGraded, true);
-  const warmth = byLabel(recorded, "rubric:warmth");
-  assert.equal(warmth.metadata?.notApplicable, true);
-  assert.equal(warmth.metadata?.notGraded, undefined);
+  for (const id of ["focus", "warmth"]) {
+    const entry = byLabel(recorded, `rubric:${id}`);
+    assert.equal(entry.metadata?.notGraded, true, id);
+    assert.equal(entry.metadata?.notApplicable, undefined, id);
+    assert.equal(entry.metadata?.level, undefined, id);
+  }
 });
 
-test("the judge's N/A for an item the labels do not make N/A still counts as N/A, and the labels win the other way", () => {
+test("a null level on right-help keeps the kinds of help the judge saw", () => {
+  const { host, recorded } = fakeHost();
+  recordReplyGrade(
+    host,
+    ref,
+    1,
+    ventItem,
+    okResult(gradeFor(ventItem, { levels: { "right-help": null } }))
+  );
+  const entry = byLabel(recorded, "rubric:right-help");
+  assert.equal(entry.metadata?.notGraded, true);
+  assert.deepEqual(entry.metadata?.helpSeen, ["listen"]);
+});
+
+test("the judge's 5 for an item the labels make N/A is ignored", () => {
   const item = { ...ventItem, journalEmpty: true };
   const { host, recorded } = fakeHost();
   recordReplyGrade(

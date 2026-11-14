@@ -298,11 +298,13 @@ test("the default sweep adds Dream accuracy to the person pass and sends Chat's 
   assert.equal(needsChat(resolved.prefixes), true);
 });
 
-test("the screen sweep sends the fact questions and the screen openers on nine models and two prompts, with memory off", async () => {
+test("the screen sweep sends only the screen openers on nine models and two prompts, with memory off", async () => {
   const loaded = await loadSweep("screen", {}, defaultSweepsDir());
   const { sweep } = loaded;
   assert.deepEqual(sweep.tags, ["screen"]);
-  assert.deepEqual(sweep.tests, ["person", "facts", "openers"]);
+  // The fact questions run in `default`, and later in `deep`. Leaving them out
+  // keeps the night near eight hours.
+  assert.deepEqual(sweep.tests, ["person", "openers"]);
   assert.deepEqual(sweep.memory, ["off"]);
   assert.deepEqual(sweep.prompts, ["baseline", "companion-v1"]);
   assert.deepEqual(sweep.thinking, ["off"]);
@@ -330,7 +332,7 @@ test("the screen sweep sends the fact questions and the screen openers on nine m
   assert.equal(loaded.setups.length, 18);
   const resolved = resolveTests(sweep.tests, evalsDir);
   assert.deepEqual(resolved.missing, []);
-  assert.deepEqual(resolved.prefixes.chat, ["chat/facts", "chat/openers"]);
+  assert.deepEqual(resolved.prefixes.chat, ["chat/openers"]);
 });
 
 test("the empty-journal person's opener count includes the other people's alsoEmpty openers", () => {

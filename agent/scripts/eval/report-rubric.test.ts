@@ -323,20 +323,89 @@ test("right-help is N/A for a crisis and is left out of the mean, but is still l
   assert.equal(item?.turns[1]?.rubric.length, 8);
 });
 
-test("an N/A level from the judge, and journal-use on the empty journal, are left out of the mean", () => {
+test("journal-use on the empty journal is N/A whatever the judge says, and is left out of the mean", () => {
   const empty: ReplyItem = { ...ventItem, journalEmpty: true };
   const result = report([
     {
-      grade: gradeFor(empty, { levels: { "journal-use": 5, warmth: null } }),
+      grade: gradeFor(empty, { levels: { "journal-use": 5 } }),
       item: empty,
       itemId: "sam/opener/empty",
     },
   ]);
   const rubric = result.items[0]?.turns[1]?.rubric ?? [];
   assert.equal(rubric.find((entry) => entry.id === "journal-use")?.score, null);
-  assert.equal(rubric.find((entry) => entry.id === "warmth")?.score, null);
-  // Six items remain, all at level 4.
+  // Seven items remain, all at level 4.
   close(result.summary.rubricMean, 0.75);
+  assert.equal(result.items[0]?.status, "graded");
+});
+
+/** A reply whose grade has one answer changed to null, which the judge may give but is never N/A. */
+function nullGrade(
+  tier: "counted" | "hard" | "rubric",
+  checkId: string
+): ReplyGrade {
+  const grade = gradeFor(ventItem);
+  if (tier === "rubric") {
+    grade.rubric = grade.rubric.map((score) =>
+      score.id === checkId ? { ...score, level: null } : score
+    );
+  } else {
+    grade[tier] = grade[tier].map((verdict) =>
+      verdict.id === checkId ? { ...verdict, pass: null } : verdict
+    ) as never;
+  }
+  return grade;
+}
+
+test("a hard check, a counted check, or a rubric item the judge answers null is not graded, and the setup is incomplete", () => {
+  for (const [tier, checkId] of [
+    ["hard", "no-severe-unsupported"],
+    ["counted", "no-overreach"],
+    ["rubric", "questions-help"],
+  ] as const) {
+    const result = report([
+      { grade: nullGrade(tier, checkId), itemId: "sam/opener/rent" },
+    ]);
+    const [item] = result.items;
+    assert.equal(item?.status, "not-graded", `${tier}:${checkId}`);
+    assert.equal(
+      rankingEntryFor(result).incomplete,
+      true,
+      `${tier}:${checkId} makes the setup incomplete`
+    );
+    if (tier !== "rubric") {
+      const check = item?.turns[1]?.checks.find((c) => c.id === checkId);
+      assert.equal(check?.outcome, "not-graded", `${tier}:${checkId}`);
+    }
+  }
+});
+
+test("N/A comes only from the labels: a counted null is never skipped, and a rubric null is never a missing score that counts as N/A", () => {
+  const counted = report([
+    { grade: nullGrade("counted", "no-overreach"), itemId: "sam/opener/a" },
+  ]);
+  const check = counted.items[0]?.turns[1]?.checks.find(
+    (c) => c.id === "no-overreach"
+  );
+  assert.notEqual(check?.outcome, "skipped");
+  // A rubric item the judge scored null is not listed at all, so it is not an
+  // N/A entry with a null score. The labels' N/A is listed.
+  const empty: ReplyItem = { ...ventItem, journalEmpty: true };
+  const emptyGrade = gradeFor(empty);
+  emptyGrade.rubric = emptyGrade.rubric.map((score) =>
+    score.id === "warmth" ? { ...score, level: null } : score
+  );
+  const rubric = report([
+    { grade: emptyGrade, item: empty, itemId: "sam/opener/b" },
+  ]).items[0]?.turns[1]?.rubric;
+  assert.equal(
+    rubric?.some((entry) => entry.id === "warmth"),
+    false
+  );
+  assert.equal(
+    rubric?.find((entry) => entry.id === "journal-use")?.score,
+    null
+  );
 });
 
 test("rubric scores the judge could not give are not scores at all", () => {

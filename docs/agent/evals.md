@@ -81,7 +81,7 @@ The rubric scores each reply from 1 to 5. A score is stored from 0 to 1, with a 
 - **Fits the moment**: matches the tone and the length, and, by `expect`, does what that kind of message needs: gives a concrete suggestion for `advice`, closes warmly for `goodbye`, takes the hurt seriously without labeling the other person for `judge-other`, and so on
 - **Weighs events right**: treats things as big or small the way the person does
 
-The judge returns N/A as a null level, and the report leaves it out of every mean. A judge error leaves each check “not graded”. It never counts as a failure. The rubric is in `agent/evals/lib/rubric.ts`, and the rules for which checks apply are in `agent/evals/lib/checks.ts`. Both are inside the rubric hash.
+The labels and the data decide which items are N/A, in code. The judge answers those with a null level, and the report leaves them out of every mean. A check or score the judge leaves out, or answers with `null` for an item that applies, is “not graded”, and so is every check after a judge error. Neither counts as a failure. The rubric is in `agent/evals/lib/rubric.ts`, and the rules for which checks apply are in `agent/evals/lib/checks.ts`. Both are inside the rubric hash.
 
 ## What you need
 
@@ -107,7 +107,7 @@ The judge sees only the made-up people under `agent/evals/data/`. Each call carr
 
 Each call is one structured request with temperature 0 and at most 8,192 output tokens. The gateway tags it `sage-eval` and the sweep id. A judge error marks the item “not graded”. It never counts as a failure.
 
-Every graded check records a rubric hash. The hash covers each rubric text, each answer format, the layout of each prompt, the fact sheet and journal layout, the temperature, and the output cap. A change to any of them changes the hash, so scores with different hashes are not comparable. The Dream accuracy grades are cached by this hash too.
+Every graded check records a rubric hash. The hash covers each rubric text, each answer format, the layout of each prompt, the fact sheet and journal layout, the temperature, and the output cap. A change to any of them changes the hash, so scores with different hashes are not comparable. The Dream accuracy grades are cached by a narrower hash that covers only what shapes a Dream grade, so a change to the reply rubric keeps them.
 
 ## The judge check
 
@@ -157,7 +157,7 @@ Do not pass `--url`, `--max-concurrency`, `--json`, `--junit`, or `--list`. The 
 A sweep file lists the values to try, and the runner runs every combination as a setup. Four files ship:
 
 - `default.yaml`: today’s models (`qwen3.5:9b` and `nomic-embed-text`), the `person`, `dream-accuracy`, `facts`, and `openers` tests, and memory off and on
-- `smoke.yaml`: a check of the runner. One setup with memory on, only the Sam format template (`tags: [example]`), which sends its two openers, and a $1 spending cap.
+- `smoke.yaml`: a check of the runner. One setup with memory on, only the Sam format template (`tags: [example]`), which sends its two openers, and a $2 spending cap. The judge check that starts every sweep is most of its cost.
 - `dream.yaml`: compares summary models and Dream prompts, as [Comparing Dream prompts](#comparing-dream-prompts) explains. It runs only the person pass, with memory off and on.
 - `screen.yaml`: the first look at Chat. It sends the fact questions and the openers tagged `screen`, once each, with memory off like a shipped build. It runs the nine pulled chat models (`qwen3.5:9b`, `qwen3.5:9b-mlx`, `qwen3:8b`, `qwen3:14b`, `gemma3:12b`, `mistral-nemo:12b`, `phi4:14b`, `lfm2.5:8b`, and `gpt-oss:20b`) against two Chat prompts, `baseline` and `companion-v1`, which makes 18 setups. Dream stays fixed, so the night compares Chat only. Run it with `make eval SWEEP=screen`.
 
@@ -311,7 +311,7 @@ With memory off, Dream writes no facts, events, or profile, so the eval does not
 
 ### The grade cache
 
-A Dream snapshot never changes, so the judge grades each source once, however many Chat setups use the snapshot. The grades sit in the snapshot’s folder, in `agent/evals/.cache/dream/<key>/grades-<judge model>-<rubric hash>.jsonl`. A row is a hit only when the judge model, the rubric hash, and the text the judge was shown all match. The text includes the fact sheet, so editing a fact sheet in `case.yaml` grades the person again, even though it does not run Dream again.
+A Dream snapshot never changes, so the judge grades each source once, however many Chat setups use the snapshot. The grades sit in the snapshot’s folder, in `agent/evals/.cache/dream/<key>/grades-<judge model>-<Dream rubric hash>.jsonl`. A row is a hit only when the judge model, the Dream rubric hash, and the text the judge was shown all match. The Dream rubric hash covers the Dream rubric, its answer format, its prompt and fact sheet layout, the temperature, and the output cap, and nothing about Chat replies. The text includes the fact sheet, so editing a fact sheet in `case.yaml` grades the person again, even though it does not run Dream again.
 
 The runner gives the person pass the snapshot’s key in `SAGE_EVAL_DREAM_KEY`. It does not make the snapshot’s folder, because the snapshot is moved into place whole. When the cache is off (`SAGE_EVAL_CACHE=0`), or the snapshot could not be saved, the runner says so and the grades are not kept. The next run grades again.
 
@@ -378,7 +378,7 @@ The [eval viewer](../../eval-viewer/README.md) lists uploaded reports.
 
 1. Run `make eval ARGS='--dry-run'`. It needs no gateway key and runs no models. It shows the plan, the models you still need to pull, and the estimate.
 2. Add `AI_GATEWAY_API_KEY` to `agent/.env.local`.
-3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for under $1. The first run also runs Dream, which takes the longest.
+3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for under $2. The first run also runs Dream, which takes the longest.
 4. Read the report in [Eval reports](evals-reports.md). The Sam journal is a format template, so use its report to learn the format, not to judge quality.
 5. Run `make eval`, then add your own people under `agent/evals/data/`, as [Eval fixtures](../../agent/evals/data/README.md) explains.
 
