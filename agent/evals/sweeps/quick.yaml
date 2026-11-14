@@ -13,10 +13,10 @@
 # Dream's code, changed since the last run runs Dream again, and the estimate
 # adds those hours. The estimate prints before anything starts.
 #
-# By the estimate with no earlier timings it takes about 27 minutes. Each person
-# costs a Sage start, a Chat server start, and a model load, and the build and
-# the last grade pass add six. Tag fewer openers `quick`, on fewer people, to
-# make it shorter.
+# By the estimate with no earlier timings it takes about 33 minutes. The judge
+# check, the build, and the last grade pass add 12 before any reply, and each
+# person costs a Sage start, a Chat server start, and a model load. Tag fewer
+# openers `quick`, on fewer people, to make it shorter.
 summaryModels: [ qwen3.5:9b ]
 embedModels: [ nomic-embed-text ]
 dreamPrompts: [ baseline ]
