@@ -24,6 +24,11 @@ const pattern1 = /swap grew 513 MB, over the 512 MB limit/u;
 
 const GB = 1024 ** 3;
 
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 function swapText(usedMB: number): string {
   return `vm.swapusage: total = 4096.00M  used = ${usedMB.toFixed(2)}M  free = ${(4096 - usedMB).toFixed(2)}M  (encrypted)\n`;
 }
@@ -176,7 +181,7 @@ test("a baseline that could not be read is taken from the first sample that can"
   assert.equal(reading.peakGrowthMB, 400);
 });
 
-test("a sample that starts while another is still out is skipped", async () => {
+test("a sample that starts while another is still out does not look again, and waits for the one that is out", async () => {
   let release: () => void = () => undefined;
   let calls = 0;
   const monitor = new MemoryMonitor({
@@ -193,11 +198,48 @@ test("a sample that starts while another is still out is skipped", async () => {
   });
   await monitor.begin();
   const first = monitor.sample();
-  await monitor.sample();
+  const second = monitor.sample();
   assert.equal(calls, 2, "the second sample did not look");
+  assert.equal(second, first, "the second sample is the one that is out");
+  const outcome = await Promise.race([
+    second.then(() => "done"),
+    sleep(5).then(() => "waiting"),
+  ]);
+  assert.equal(outcome, "waiting", "the second sample did not wait");
   release();
-  await first;
+  await second;
   assert.equal(monitor.reading().peakGrowthMB, 50);
+});
+
+test("finish waits for a sample that is out, then looks once more", async () => {
+  let release: () => void = () => undefined;
+  let calls = 0;
+  const monitor = new MemoryMonitor({
+    loadedModels: () => Promise.resolve([]),
+    swapUsage: () => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve(swapText(100));
+      }
+      if (calls === 2) {
+        return new Promise<string>((resolve) => {
+          release = () => resolve(swapText(300));
+        });
+      }
+      return Promise.resolve(swapText(900));
+    },
+  });
+  await monitor.begin();
+  monitor.sample().catch(() => undefined);
+  const finished = monitor.finish();
+  await sleep(5);
+  assert.equal(calls, 2, "finish looked while a sample was still out");
+  release();
+  await finished;
+  assert.equal(calls, 3, "finish took no fresh sample");
+  assert.equal(monitor.reading().peakGrowthMB, 800);
+  await monitor.finish();
+  assert.equal(calls, 4, "finish with nothing out takes one sample");
 });
 
 // ---------------------------------------------------------------------------
@@ -222,6 +264,39 @@ test("measureMemory samples while the work runs and again when it ends, and hand
   assert.equal(readings[0]?.baselineMB, 100);
   assert.equal(readings[0]?.peakGrowthMB, 600);
   assert.ok(probes.looks.swap >= 3, `${probes.looks.swap} looks at swap`);
+});
+
+test("measureMemory waits for a sample that is still out when the work ends, then takes a fresh last one", async () => {
+  // Swap is 100 MB before the pass and 900 MB from then on. The first tick's
+  // look at swap is slow (a slow sysctl, or /api/ps waiting on a busy Ollama),
+  // and it is still out when the 40 ms of work end.
+  let looks = 0;
+  const probes: MemoryProbes = {
+    loadedModels: () => Promise.resolve([]),
+    swapUsage: () => {
+      looks += 1;
+      if (looks === 1) {
+        return Promise.resolve(swapText(100));
+      }
+      if (looks === 2) {
+        return sleep(60).then(() => swapText(900));
+      }
+      return Promise.resolve(swapText(900));
+    },
+  };
+  const readings: MemoryReading[] = [];
+  await measureMemory(probes, () => sleep(40), {
+    intervalMs: 10,
+    onReading: (taken) => readings.push(taken),
+  });
+  // The slow look came back first, then the last sample looked once more.
+  assert.equal(looks, 3, "the last sample did not look at swap");
+  assert.equal(readings.length, 1);
+  assert.equal(readings[0]?.peakGrowthMB, 800);
+  assert.equal(readings[0]?.samples, 3);
+  // No sample outlives the call.
+  await sleep(30);
+  assert.equal(looks, 3, "a sample was still going after measureMemory");
 });
 
 test("measureMemory saves the reading when the work throws, and rethrows", async () => {

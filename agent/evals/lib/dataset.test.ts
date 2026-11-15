@@ -96,22 +96,28 @@ function makeRoot(people: Record<string, Record<string, string>>): string {
   return root;
 }
 
-async function withRoot<T>(
-  root: string,
-  run: () => Promise<T> | T
-): Promise<T> {
-  const previous = process.env.SAGE_EVAL_DATA;
-  process.env.SAGE_EVAL_DATA = root;
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) {
-      delete process.env.SAGE_EVAL_DATA;
-    } else {
-      process.env.SAGE_EVAL_DATA = previous;
+// The data root is one environment variable for the whole process, so two
+// roots cannot be set at once. A call waits for the ones before it, or the
+// last one to finish would put back the root of another call.
+let rootTurn: Promise<unknown> = Promise.resolve();
+
+function withRoot<T>(root: string, run: () => Promise<T> | T): Promise<T> {
+  const result = rootTurn.then(async () => {
+    const previous = process.env.SAGE_EVAL_DATA;
+    process.env.SAGE_EVAL_DATA = root;
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SAGE_EVAL_DATA;
+      } else {
+        process.env.SAGE_EVAL_DATA = previous;
+      }
+      rmSync(root, { force: true, recursive: true });
     }
-    rmSync(root, { force: true, recursive: true });
-  }
+  });
+  rootTurn = result.catch(() => undefined);
+  return result;
 }
 
 const tinyCase = (id: string, extra = "") =>

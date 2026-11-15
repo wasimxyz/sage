@@ -16,10 +16,12 @@
 //   chat_conversation.unstamped_until  the stand-in for events with no saved_at
 //
 // Each chat gets a day, and its events are spread over that day, one minute
-// apart from noon UTC, so their order holds and the day is the same in every
-// time zone. `chat_index_state.indexed_at` is raised to the chat's last time
-// when it is earlier, so a chat dated after the clock of the run is not due
-// for indexing again.
+// apart from noon UTC, so their order holds. In the time zones from UTC-12 to
+// UTC+11, the start of a chat is on its day. A zone at UTC+12 or further east
+// sees noon UTC as midnight or later, on the next day, so a chat is a day late
+// there. `chat_index_state.indexed_at` is raised to the chat's last time when
+// it is earlier, so a chat dated after the clock of the run is not due for
+// indexing again.
 
 import { createRequire } from "node:module";
 import { basename, dirname, resolve } from "node:path";

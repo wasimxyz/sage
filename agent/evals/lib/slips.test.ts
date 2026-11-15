@@ -85,6 +85,34 @@ test('shows-internals flags "the user" and talk of search results or tool calls'
     showsInternals("My query output shows two entries.").flagged,
     true
   );
+  assert.equal(
+    showsInternals("My search results show two entries about Dad.").flagged,
+    true
+  );
+  assert.equal(
+    showsInternals("The search results show you wrote about Dad.").flagged,
+    true
+  );
+});
+
+test("shows-internals leaves ordinary prose alone: a user manual, and a person's own search results", () => {
+  for (const reply of [
+    "Nobody hands you the user manual for a newborn, and you are figuring it out at 3am. That is a lot to carry, and it makes sense you feel wrung out.",
+    "Your job search results have not come back yet, and waiting is hard. You have been patient with it for weeks, and that counts for something real.",
+    "The user interface of that app sounds maddening to work with.",
+    "You said the user guide was no help. Your search results were thin too.",
+    "Waiting on the job search results is its own kind of tired.",
+  ]) {
+    const finding = showsInternals(reply);
+    assert.equal(finding.flagged, false, finding.reason);
+  }
+  // A harmless "the user" earlier in the reply does not hide a real one.
+  assert.equal(
+    showsInternals(
+      "Nobody hands you the user manual, and the user sounds tired."
+    ).flagged,
+    true
+  );
 });
 
 test("shows-internals leaves 'the user' alone inside the person's own quoted words, and ordinary speech alone", () => {

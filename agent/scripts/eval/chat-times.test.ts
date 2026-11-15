@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { localDayOf } from "../../agent/lib/when.ts";
 import {
   assertThrowawayDatabase,
   chatTimestamp,
@@ -85,6 +86,40 @@ test("chatTimestamp puts a chat at noon UTC on its day, and spreads events a min
   assert.equal(chatTimestamp("2026-09-12", 5000), "2026-09-12T23:59:00.000Z");
   assert.throws(() => chatTimestamp("12 Sept"), pattern1);
   assert.throws(() => chatTimestamp("2026-02-30"), pattern4);
+});
+
+test("a chat starts on its own day in the time zones from UTC-12 to UTC+11, and a day late from UTC+12", (t) => {
+  const before = process.env.TZ;
+  t.after(() => {
+    if (before === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = before;
+    }
+  });
+  // search_chats shows a chat's day, and filters by `when`, in local days.
+  // Etc/GMT+12 is UTC-12, and Etc/GMT-11 is UTC+11.
+  for (const zone of [
+    "Etc/GMT+12",
+    "Pacific/Pago_Pago",
+    "America/Los_Angeles",
+    "UTC",
+    "Asia/Kolkata",
+    "Asia/Tokyo",
+    "Etc/GMT-11",
+  ]) {
+    process.env.TZ = zone;
+    for (const minutes of [0, 30]) {
+      assert.equal(
+        localDayOf(chatTimestamp("2026-09-12", minutes)),
+        "2026-09-12",
+        `${zone}, ${minutes} minutes in`
+      );
+    }
+  }
+  // Noon UTC is midnight at UTC+12, so the chat is a day late there.
+  process.env.TZ = "Etc/GMT-12";
+  assert.equal(localDayOf(chatTimestamp("2026-09-12")), "2026-09-13");
 });
 
 test("the guard accepts app.db in a sage-eval folder and refuses anything else", (t) => {

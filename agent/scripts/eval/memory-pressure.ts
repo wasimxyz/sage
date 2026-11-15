@@ -109,16 +109,33 @@ export class MemoryMonitor {
     await this.readModels();
   }
 
-  /** Takes one sample. A sample that starts while another is out is skipped. */
+  /**
+   * Takes one sample. A sample that starts while another is out does not look
+   * again. It gives back the one that is out, so awaiting it waits for that
+   * sample.
+   */
   sample(): Promise<void> {
     if (this.sampling !== null) {
-      return Promise.resolve();
+      return this.sampling;
     }
     const run = this.takeSample().finally(() => {
       this.sampling = null;
     });
     this.sampling = run;
     return run;
+  }
+
+  /**
+   * Takes the last sample. Call it when the pass is done. It waits for a sample
+   * that is out, then takes one more, so the last look is after the work and no
+   * sample is left out when it returns.
+   */
+  async finish(): Promise<void> {
+    // Only one sample is out at a time, and it clears itself before it settles.
+    if (this.sampling !== null) {
+      await this.sampling;
+    }
+    await this.sample();
   }
 
   private async takeSample(): Promise<void> {
@@ -174,9 +191,11 @@ export class MemoryMonitor {
 
 /**
  * Runs `work` while sampling memory every `intervalMs`: a baseline first, a
- * sample on each tick, and a last sample when the work is done. The reading
- * comes back even when the work throws, with the error rethrown after it is
- * saved by `onReading`.
+ * sample on each tick, and a last sample when the work is done. A sample that
+ * is still out when the work ends is waited for first, so the last sample is
+ * always a fresh one and none outlives the call. The reading comes back even
+ * when the work throws, with the error rethrown after it is saved by
+ * `onReading`.
  */
 export async function measureMemory<T>(
   probes: MemoryProbes,
@@ -196,7 +215,7 @@ export async function measureMemory<T>(
     return await work();
   } finally {
     clearInterval(timer);
-    await monitor.sample();
+    await monitor.finish();
     options.onReading?.(monitor.reading());
   }
 }

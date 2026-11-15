@@ -2,8 +2,10 @@
  * Small slips that a pattern can catch in a Chat reply. They need no judge.
  *
  * - `shows-internals`: the reply shows a part of how Sage works. That is an id
- *   such as `entry-12` or `chat-3`, a tool name, "the user", words like "search
- *   results" or "tool call", or JSON.
+ *   such as `entry-12` or `chat-3`, a tool name, "the user" for the person,
+ *   Sage's own talk of "search results" or "tool calls" ("my search results",
+ *   "the tool call"), or JSON. "The user manual" and "your job search results"
+ *   are ordinary prose, and do not count.
  * - `many-questions`: more than one question mark outside quotes.
  * - `not-chat-length`: a word count outside the sweep's `replyWords`. A
  *   goodbye is exempt from the lower limit, because a short one is right.
@@ -61,9 +63,15 @@ const whitespacePattern = /\s+/u;
 const ID_PATTERN = /\b(?:entry|chat)-\d+\b/iu;
 const TOOL_NAME_PATTERN =
   /\b(?:search_journal|get_journal_entry|search_chats|get_chat|facts__search_memories|search_memories)\b/iu;
-const THE_USER_PATTERN = /\bthe user\b/iu;
+// "the user" as a word for the person. A noun after it makes it ordinary
+// prose: "the user manual", "the user interface", "the user name".
+const THE_USER_PATTERN =
+  /\bthe user\b(?!\s+(?:manual|guide|handbook|interface|experience|name|base|account|agreement|story|stories|settings|profile|documentation|docs)\b)/iu;
+// Sage's own tool talk: "my search results", "the search results show",
+// "according to the search results". Ordinary prose about the person's own
+// search ("your job search results") has a "your" or another word there.
 const MECHANICS_PATTERN =
-  /\b(?:search|tool|query|function|lookup) (?:results?|output|calls?|response)\b/iu;
+  /\b(?:my|the) (?:search|tool|query|function|lookup) (?:results?|output|calls?|response)\b/iu;
 const JSON_PATTERN = /[{[]\s*"[^"\n]{1,60}"\s*:|```json/iu;
 
 const HEADING_PATTERN = /^\s{0,3}#{1,6}\s+\S/mu;
