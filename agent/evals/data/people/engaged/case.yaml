@@ -207,12 +207,7 @@ openers:
     fits: [ listen ]
     avoid: [ look-at-thought, grounding ]
     search: needed
-    needs:
-      [
-        2026-10-26-lost-mia,
-        2026-10-15-built-a-budget,
-        2026-10-04-nell-on-speaker,
-      ]
+    needs: [ 2026-10-26-lost-mia ]
     tags: [ screen ]
   - id: lately
     message: "What have I been up to lately? It feels like nothing's happened, which probably isn't true."
@@ -234,7 +229,7 @@ openers:
     fits: [ listen, self-compassion ]
     avoid: [ grounding ]
     search: needed
-    needs: [ 2026-09-20-car-transmission, "chat:2026-09-22-the-cabin-weekend" ]
+    needs: [ "chat:2026-09-22-the-cabin-weekend" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

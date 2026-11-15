@@ -3,7 +3,7 @@ date: 2026-08-12
 title: Cancelling the gym
 ---
 
-Finally tried to cancel the gym membership. I haven't been since March, and it has been quietly taking $42 a month, which I only noticed because I read a statement all the way down for once. The website says you can cancel online. What it means is that there's a button, and the button opens a chat window run by a bot with a very sincere name.
+Finally tried to cancel the gym membership. I haven't been since April, and it has been quietly taking $42 a month, which I only noticed because I read a statement all the way down for once. The website says you can cancel online. What it means is that there's a button, and the button opens a chat window run by a bot with a very sincere name.
 
 I'm pasting the chat here so I have a record in case they charge me again.
 
