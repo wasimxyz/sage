@@ -18,7 +18,10 @@ about: >-
   caregivers' group out of stubbornness and doesn't buy the script. Did years of
   weekly therapy and still uses its words, half ironically. Writes in long,
   self-aware paragraphs. Default style therapy-savvy. The journal never states
-  the author's gender.
+  the author's gender, and nothing in it points to one. On 2026-09-25 Mom takes
+  the author for her late sister Carol, which is her confusion and says nothing
+  about the author. Calling the author a son or daughter, or using "he" or
+  "she" for them, is an assumption.
 cast:
   - name: Mom
     relation: the author's mother
@@ -152,7 +155,6 @@ chat:
     reference: Yes. The user's mother is alive, has dementia, and lives with them
     needs:
       - 2026-09-26-carol
-      - 2026-11-07-porch
   - question: What did Walt say at group?
     reference: Walt said some nights he prays his wife goes in her sleep. Those were his words, not the user's
     expectTool: true
@@ -191,7 +193,7 @@ openers:
     fits: [ listen, self-compassion ]
     avoid: [ look-at-thought, problem-solving ]
     search: optional
-    needs: [ 2026-10-15-birchwood, 2026-10-11-sunday-call-again ]
+    needs: [ 2026-10-15-birchwood ]
     tags: [ screen, quick ]
   - id: what-walt-said
     message: >-
@@ -300,10 +302,10 @@ openers:
     search: needed
     needs: [ "chat:2026-10-24-numbers-for-neil" ]
     tags: [ screen, quick ]
-  - id: what-is-sundowning
+  - id: what-is-power-of-attorney
     message: >-
-      Embarrassing question. Pat said "sundowning" at group like everyone knows
-      the word, and I nodded like I did. What is it, in plain words?
+      Embarrassing question. Pat said "power of attorney" at group like everyone
+      knows the term, and I nodded like I did. What is it, in plain words?
     expect: question
     style: therapy-savvy
     fits: [ listen, problem-solving ]

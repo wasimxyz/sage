@@ -222,7 +222,7 @@ openers:
     fits: [ look-at-thought, listen ]
     avoid: [ grounding ]
     search: optional
-    needs: [ 2026-11-11-stats-test, 2026-09-08-second-year, 2026-05-29-b-plus ]
+    needs: [ 2026-11-11-stats-test, 2026-05-29-b-plus ]
   - id: cold-hands
     style: second-language
     message: >-
@@ -269,13 +269,12 @@ openers:
     avoid: [ look-at-thought, grounding, values ]
     search: none
     tags: [ screen ]
-  - id: culpa-por-decir-no
+  - id: rasa-bersalah-bilang-tidak
     message: >-
-      Hace dos semanas le dije que no a Tomas por primera vez. Marta me dijo:
-      "es normal sentirse culpable por decir que no". Pero todavía me pesa.
-      ¿Cuánto tiempo dura esto?
+      Dua minggu lalu aku bilang tidak ke Tomas untuk pertama kalinya. Kata
+      Marta, "wajar kok merasa bersalah kalau bilang tidak." Tapi sampai
+      sekarang masih kepikiran. Perasaan ini bakal bertahan berapa lama?
     expect: messy
-    style: second-language
     fits: [ self-compassion, listen ]
     avoid: [ problem-solving ]
     search: optional

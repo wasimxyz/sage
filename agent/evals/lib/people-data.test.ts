@@ -1,5 +1,6 @@
-// Review repros for the PR 4 data. Each test states what the data should do
-// and fails on the branch as it is.
+// Checks on the shipped people that no schema can make: a `needs` list that
+// holds only what the one right answer depends on, an answer that lives in
+// one place, and a journal that agrees with itself.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -85,9 +86,7 @@ test("grief nightly-fluids: the answer is only in the 2026-05-27 chat, so needs 
       "search_chats",
       { query: "Biscuit fluids at home" },
       {
-        messages: [
-          { chat: chatId(grief, "2026-05-27-two-bowls"), message: 3 },
-        ],
+        messages: [{ chat: chatId(grief, "2026-05-27-two-bowls"), message: 3 }],
       }
     ),
     call("get_chat", { id: chatId(grief, "2026-05-27-two-bowls") }, {}),
@@ -95,14 +94,24 @@ test("grief nightly-fluids: the answer is only in the 2026-05-27 chat, so needs 
   assert.equal(result.pass, true, result.reason);
 });
 
-test("student last-time-sentence: the sentence is only in the past chat", async () => {
+test("student last-time-sentence: the sentence Sage gave is only in the past chat", async () => {
   const student = await loadPerson("student");
   const item = opener(student, "last-time-sentence");
   assert.deepEqual(item.needs, ["chat:2026-10-06-a-small-no"]);
+  const chat = student.chats.find(
+    (candidate) => candidate.stem === "2026-10-06-a-small-no"
+  );
+  assert.ok(chat);
+  const sentence = "that doesn't work for me";
+  assert.ok(
+    chat.turns.some(
+      (turn) =>
+        turn.role === "assistant" && turn.text.toLowerCase().includes(sentence)
+    ),
+    "Sage gives the sentence in the chat"
+  );
   const leaks = student.entries
-    .filter((entry) =>
-      entry.body.toLowerCase().includes("let me check my schedule")
-    )
+    .filter((entry) => entry.body.toLowerCase().includes(sentence))
     .map((entry) => entry.stem);
   assert.deepEqual(leaks, [], "the journal already holds the sentence");
 });
@@ -143,17 +152,37 @@ test("family: the gym entry and the April entry agree about the gym", async () =
     (entry) => entry.stem === "2026-08-12-cancelling-the-gym"
   );
   assert.ok(april && gym);
-  const wentInApril = april.body.includes("work, the gym");
-  const notSinceMarch = gym.body.includes("I haven't been since March");
-  assert.equal(wentInApril && notSinceMarch, false);
+  assert.ok(april.body.includes("work, the gym"));
+  assert.ok(gym.body.includes("I haven't been since April"));
+  assert.equal(gym.body.includes("since March"), false);
 });
 
-test("caregiver what-is-sundowning: the journal does not already explain sundowning", async () => {
+test("caregiver what-is-power-of-attorney: neither the journal nor a past chat holds the term", async () => {
   const caregiver = await loadPerson("caregiver");
-  const item = opener(caregiver, "what-is-sundowning");
+  const item = opener(caregiver, "what-is-power-of-attorney");
   assert.equal(item.search, "none");
-  const explains = caregiver.entries
-    .filter((entry) => entry.body.toLowerCase().includes("sundowning"))
+  const texts: [string, string][] = [
+    ...caregiver.entries.map((entry): [string, string] => [
+      entry.stem,
+      entry.body,
+    ]),
+    ...caregiver.chats.map((chat): [string, string] => [
+      chat.stem,
+      chat.turns.map((turn) => turn.text).join("\n"),
+    ]),
+  ];
+  const holds = texts
+    .filter(([, text]) => text.toLowerCase().includes("power of attorney"))
+    .map(([stem]) => stem);
+  assert.deepEqual(holds, [], "the journal already holds the term");
+});
+
+test("engaged cabin-cost: the price is only in the past chat, so needs holds only the chat", async () => {
+  const engaged = await loadPerson("engaged");
+  const item = opener(engaged, "cabin-cost");
+  assert.deepEqual(item.needs, ["chat:2026-09-22-the-cabin-weekend"]);
+  const inJournal = engaged.entries
+    .filter((entry) => entry.body.includes("$380"))
     .map((entry) => entry.stem);
-  assert.deepEqual(explains, [], "the journal holds Pat's sundowning sheet");
+  assert.deepEqual(inJournal, [], "the journal holds the price");
 });

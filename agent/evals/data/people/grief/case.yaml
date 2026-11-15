@@ -176,12 +176,7 @@ openers:
     expect: question
     fits: [ listen ]
     search: needed
-    needs:
-      [
-        2025-04-12-second-hand-bookshelf,
-        2026-10-18-leaf-drive,
-        2026-11-12-trivia-night,
-      ]
+    needs: [ 2026-11-12-trivia-night ]
   - id: mom-voicemail
     message: "Last time we talked about Mom's voicemail I said I wasn't ready to hear it. Thanksgiving's coming and I think I might be. Do you remember what she says on it?"
     expect: question
@@ -196,7 +191,7 @@ openers:
     fits: [ listen, self-compassion ]
     avoid: [ look-at-thought ]
     search: needed
-    needs: [ 2026-05-20-putting-biscuit-down ]
+    needs: [ "chat:2026-05-27-two-bowls" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.
