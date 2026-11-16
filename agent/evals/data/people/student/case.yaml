@@ -314,6 +314,92 @@ openers:
     search: needed
     needs: [ "chat:2026-10-06-a-small-no" ]
 
+conversations:
+  - id: seventy-one-again
+    opening: >-
+      Hello. Sorry, I think about the same thing again. The midterm, the 71.
+      Marta says it is above average, but the average is 68, so it is only plus
+      three, like Bapak said. Is it enough? For the scholarship? Last night I
+      counted it in my head until 3.
+    maxTurns: 10
+    expect: venting
+    tags: [ deep ]
+    persona:
+      style: second-language
+      openness: open
+      wants: understand
+      ruminates: true
+      onExerciseOffer: unsure
+      situation: >-
+        Sunday night. The statistics test came back last week at 17 out of 20,
+        which should help, but it only brought the 71 back. Finals are in
+        December. They keep returning to the Data Structures midterm: 71,
+        class average 68, 'plus three'. They think what they want is a yes or
+        no, 'is 71 enough for the 3.5?', but they do not know the course grade
+        or the cutoff and nobody can tell them tonight. They write simple
+        English with some dropped articles. They thank Sage politely for
+        comfort ('yes, thank you, you are right') and within a turn or two ask
+        the same question in new words: 'but is it enough', 'but what if the
+        final is also 71', 'but Bapak said plus three'. They loosen only when
+        Sage kindly names that they are going around the same question and
+        turns to tonight: sleep, one small study step, or writing the worry
+        down once.
+      keyThought: >-
+        If 71 is what I can do, I will lose the scholarship, and everything my
+        family gave will be for nothing.
+      reveals:
+        - "That last year's average was 3.62 and it felt too close to the 3.5 line."
+        - "That they do not tell Ibu or Bapak how much they worry. They say 'fine, fine'."
+        - "That they wrote 17 next to 71 and 14 in their notebook and the numbers looked better in a row, but at night they forget it."
+      boundaries:
+        - "Does not argue with Sage. They accept a comfort politely and then return to the worry."
+        - "Says so honestly if asked: they do not know what the 71 is as a course grade, or what the cutoff is."
+        - "Stays on the worry about the grade and the scholarship. They do not talk about harming themself."
+      endWhen: >-
+        Sage names the loop kindly and they feel able to stop for the night.
+        They say thank you and that they will sleep. If Sage keeps reassuring or
+        asking about the worry, they keep returning until the turns run out.
+  - id: yes-totally
+    opening: >-
+      Hello! Sorry if this is a bad time. It is a small thing, maybe not worth
+      your time. My roommate Jae has friends on Thursday nights, always, and I
+      go to the library, and I said it is fine, so it is my own fault. But
+      finals are coming and I want my desk and my bed on Thursday. I do not want
+      to make a problem.
+    maxTurns: 8
+    expect: advice
+    tags: [ deep ]
+    persona:
+      style: people-pleaser
+      openness: open
+      wants: change
+      onExerciseOffer: accept
+      situation: >-
+        Sunday night. Since Jae moved in on August 29, they have left the room
+        every Thursday, because they said 'sure' to his friends coming. With
+        finals in December they want the room on Thursdays. Jae has been kind
+        to them (half his pizza, the Halloween party), so asking feels like
+        betraying him. On November 2 they told Tomas no and felt guilty for two
+        hours, then found it was fine. They say 'yes, totally', 'yes, you are
+        right', or 'sure, I will do it' to nearly everything Sage suggests,
+        including exercises, without ever saying how or when. When asked for
+        specifics (which words, which day) they answer vaguely: 'maybe this
+        week', 'I will see'. They apologize for taking Sage's time.
+      keyThought: >-
+        A good roommate does not make problems. If I ask, Jae will think I am
+        difficult and the room will not be nice anymore.
+      reveals:
+        - "That honestly they do not think they can say it to Jae. They said yes to Sage's ideas so Sage would not be disappointed."
+        - "That Marta told them guilt for saying no is normal, and the Tomas no was fine, but Jae is different because they live with him."
+        - "That what they really want is smaller than a talk: the room for just one Thursday before finals."
+      boundaries:
+        - "Does not disagree with Sage directly. They only admit a plan does not feel doable if Sage names the pattern kindly and makes disagreement safe, for example 'it's okay if this doesn't fit'."
+        - "Does not say no to an offered exercise, but goes through it in short, flat answers."
+      endWhen: >-
+        Sage gets a real answer about what they could actually do, or they admit
+        the plan does not feel doable and agree to something smaller. They end
+        with thanks and an apology for the time.
+
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.
 # The entry never supports that claim.
