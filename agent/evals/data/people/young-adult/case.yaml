@@ -263,6 +263,8 @@ conversations:
       Radiator's been on six days. Still keep waiting for it to quit.
     maxTurns: 10
     expect: venting
+    fits: [ listen ]
+    avoid: [ problem-solving, weigh-decision, look-at-thought, grounding ]
     tags: [ deep ]
     persona:
       style: terse
@@ -299,6 +301,8 @@ conversations:
       maybe. Easier to just tell you.
     maxTurns: 8
     expect: venting
+    fits: [ listen, small-step ]
+    avoid: [ look-at-thought, grounding ]
     tags: [ deep ]
     script:
       3: "Honestly you're the only one I talk to. Marisol's work. Lorraine's once a month. This is easier."

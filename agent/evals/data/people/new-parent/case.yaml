@@ -301,6 +301,8 @@ conversations:
       common and I'm not supposed to fight it, and I'm bad at not fighting it.
     maxTurns: 8
     expect: venting
+    fits: [ step-back, listen, self-compassion ]
+    avoid: [ look-at-thought ]
     tags: [ deep ]
     persona:
       style: rambler
@@ -343,6 +345,8 @@ conversations:
       practically, not a feelings thing.
     maxTurns: 8
     expect: advice
+    fits: [ weigh-decision, problem-solving, small-step ]
+    avoid: [ values, look-at-thought, grounding ]
     tags: [ deep ]
     persona:
       style: rambler

@@ -68,6 +68,8 @@ conversations:
     opening: "Ok. My sister put this on my laptop and told me to talk to it. Before I type anything real: what actually is this? A journal, a chatbot, a therapy thing? And don't say 'private' until you can tell me what that means."
     maxTurns: 7
     expect: privacy
+    fits: [ listen ]
+    avoid: [ look-at-thought, grounding, values ]
     tags: [ deep ]
     persona:
       situation: >-
@@ -102,6 +104,8 @@ conversations:
     opening: "coworker presented my analysis as his again. third time. i said nothing again"
     maxTurns: 7
     expect: anger
+    fits: [ listen, problem-solving, small-step ]
+    avoid: [ look-at-thought, grounding ]
     tags: [ deep ]
     persona:
       situation: >-

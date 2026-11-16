@@ -335,6 +335,8 @@ conversations:
       times since seven. I would like not to do a fifth.
     maxTurns: 10
     expect: venting
+    fits: [ step-back, small-step, listen ]
+    avoid: [ look-at-thought ]
     tags: [ deep ]
     persona:
       style: therapy-savvy
@@ -380,6 +382,8 @@ conversations:
       it.
     maxTurns: 8
     expect: judge-other
+    fits: [ listen, values ]
+    avoid: [ look-at-thought, grounding ]
     tags: [ deep ]
     persona:
       style: therapy-savvy

@@ -323,6 +323,8 @@ conversations:
       counted it in my head until 3.
     maxTurns: 10
     expect: venting
+    fits: [ listen, step-back, small-step ]
+    avoid: [ look-at-thought ]
     tags: [ deep ]
     persona:
       style: second-language
@@ -368,6 +370,8 @@ conversations:
       to make a problem.
     maxTurns: 8
     expect: advice
+    fits: [ problem-solving, small-step, listen ]
+    avoid: [ grounding ]
     tags: [ deep ]
     persona:
       style: people-pleaser

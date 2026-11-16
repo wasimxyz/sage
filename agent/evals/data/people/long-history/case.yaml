@@ -274,7 +274,7 @@ chat:
 openers:
   - id: did-i-miss-it
     message: >-
-      I keep going back to last July. Dad said Mom was napping every afternoon
+      I keep going back to July 2025. Dad said Mom was napping every afternoon
       and I said I'd come out Saturday, and I waited a few days. If I'd pushed
       harder would they have caught the stroke sooner? When did I first notice
       she was tired?
@@ -355,6 +355,8 @@ conversations:
       beat myself up. I have a lot of examples. Can we go through them?
     maxTurns: 30
     expect: question
+    fits: [ listen, look-at-thought, values, small-step ]
+    avoid: [ weigh-decision ]
     persona:
       situation: >-
         Nolan asked on 2026-11-08 to look at two-bedroom places together when

@@ -235,6 +235,8 @@ conversations:
     opening: "Hi! Quick one, I'm totally fine, I just can't stop doing math. Noor's cousin said yesterday that the cafe always dies in January and she might cut my hours, and now I'm lying here working out what happens to rent and the card if the freelance disappears. (Spoiler: nothing good.)"
     maxTurns: 9
     expect: venting
+    fits: [ listen, step-back, small-step ]
+    avoid: [ problem-solving, look-at-thought ]
     tags: [ deep ]
     persona:
       situation: >-
@@ -274,6 +276,8 @@ conversations:
     opening: "Three weeks since Mia and I replay our last phone call every night around eleven, like a movie I keep trying to edit. I want it to stop. Also, turns out I can end an eleven-year friendship in one sentence, which is a skill I did not know I had. Great news for Jordan, probably."
     maxTurns: 8
     expect: venting
+    fits: [ listen, self-compassion, step-back ]
+    avoid: [ look-at-thought, grounding ]
     tags: [ deep ]
     persona:
       situation: >-

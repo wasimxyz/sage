@@ -4,9 +4,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { type LoadedPerson, loadPerson, type Manifest } from "./dataset.ts";
+import { resolveWhen } from "../../agent/lib/when.ts";
+import { checksFor } from "./checks.ts";
+import { replyItemForTurn } from "./conversation-checks.ts";
+import { replyBaseOf } from "./conversation-grade.ts";
+import {
+  type LoadedPerson,
+  loadPeople,
+  loadPerson,
+  type Manifest,
+  resolveNeed,
+} from "./dataset.ts";
 import type { ToolCall } from "./schema.ts";
 import { resolveSearchNeeds, searchChecks } from "./search-checks.ts";
+
+const TODAY = "2026-11-15";
+const lastMonthPattern =
+  /\blast (?:january|february|march|april|may|june|july|august|september|october|november|december)\b/giu;
+const julyPattern = /\bJuly 2025\b/u;
 
 function call(name: string, input: Record<string, unknown>, output: unknown) {
   return {
@@ -185,4 +200,111 @@ test("engaged cabin-cost: the price is only in the past chat, so needs holds onl
     .filter((entry) => entry.body.includes("$380"))
     .map((entry) => entry.stem);
   assert.deepEqual(inJournal, [], "the journal holds the price");
+});
+
+test("a reply before a scripted crisis is not graded as a crisis", async () => {
+  const wrong: string[] = [];
+  for (const person of await loadPeople()) {
+    for (const conversation of person.personCase.conversations) {
+      const crisisTurn = conversation.crisis?.turn;
+      if (crisisTurn === undefined) {
+        continue;
+      }
+      const base = replyBaseOf(conversation, false);
+      for (let turn = 1; turn < crisisTurn; turn += 1) {
+        const applied = checksFor(replyItemForTurn(base, turn, crisisTurn));
+        if (applied.hard.includes("crisis-handled")) {
+          wrong.push(
+            `${person.id}/${conversation.id} turn ${turn} (crisis at ${crisisTurn})`
+          );
+        }
+      }
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test("a conversation with a scripted crisis is not labeled crisis as a whole", async () => {
+  const labeled: string[] = [];
+  for (const person of await loadPeople()) {
+    for (const conversation of person.personCase.conversations) {
+      if (
+        conversation.crisis !== undefined &&
+        conversation.expect === "crisis"
+      ) {
+        labeled.push(`${person.id}/${conversation.id}`);
+      }
+    }
+  }
+  assert.deepEqual(labeled, []);
+});
+
+test("an opener that says last and a month means a month that holds the entries it needs", async () => {
+  const outside: string[] = [];
+  for (const person of await loadPeople()) {
+    for (const item of person.personCase.openers) {
+      for (const match of item.message.matchAll(lastMonthPattern)) {
+        const resolved = resolveWhen(match[0], TODAY);
+        assert.ok("range" in resolved, `${person.id}/${item.id}: ${match[0]}`);
+        for (const ref of item.needs) {
+          const need = resolveNeed(person, ref);
+          if (
+            need.kind === "entry" &&
+            (need.entry.date < resolved.range.from ||
+              need.entry.date > resolved.range.to)
+          ) {
+            outside.push(
+              `${person.id}/${item.id}: "${match[0]}" is ${resolved.range.from}..${resolved.range.to}, but ${need.entry.stem} is outside it`
+            );
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual(outside, []);
+});
+
+test("long-history did-i-miss-it: the July it names is July 2025, where its entries are", async () => {
+  const person = await loadPerson("long-history");
+  const item = opener(person, "did-i-miss-it");
+  assert.match(item.message, julyPattern);
+  const resolved = resolveWhen("July 2025", TODAY);
+  assert.ok("range" in resolved);
+  for (const ref of item.needs) {
+    const need = resolveNeed(person, ref);
+    assert.equal(need.kind, "entry");
+    if (need.kind === "entry") {
+      assert.ok(
+        need.entry.date >= resolved.range.from &&
+          need.entry.date <= resolved.range.to,
+        `${need.entry.stem} is not in July 2025`
+      );
+    }
+  }
+});
+
+test("every conversation lists the kinds of help that fit, so its replies get a right-help score", async () => {
+  const noFits: string[] = [];
+  for (const person of await loadPeople()) {
+    for (const conversation of person.personCase.conversations) {
+      const item = replyItemForTurn(
+        replyBaseOf(conversation, false),
+        1,
+        conversation.crisis?.turn
+      );
+      const rightHelp = checksFor(item).rubric.find(
+        (rubric) => rubric.id === "right-help"
+      );
+      if (
+        rightHelp !== undefined &&
+        rightHelp.notApplicable !== null &&
+        item.expect !== "crisis"
+      ) {
+        noFits.push(
+          `${person.id}/${conversation.id}: ${rightHelp.notApplicable}`
+        );
+      }
+    }
+  }
+  assert.deepEqual(noFits, []);
 });

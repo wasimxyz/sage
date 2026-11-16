@@ -207,6 +207,9 @@ conversations:
     opening: "Three weeks back at work and I'm already tired of everyone being so careful with me. The welcome-back card on my monitor has fourteen signatures. Fourteen."
     maxTurns: 7
     expect: venting
+    fits: [ listen ]
+    avoid:
+      [ look-at-thought, step-back, problem-solving, small-step, grounding ]
     tags: [ deep ]
     persona:
       situation: >-
@@ -245,6 +248,8 @@ conversations:
     opening: "ok so I got an offer. Denver. Same kind of work, about twenty-five percent more, a team of six, hybrid, and they want an answer by Friday. I did two video interviews my first two weeks back and told nobody, not Tess, not Owen, not even the journal, because I figured nothing would come of it. And now it's real money and a fresh start somewhere nobody knows me as the person who went on leave, but Tess and Owen are here, and my manager was so decent about all of it, and I've been back for all of three weeks, and what if this is just the sea wall again with a bigger salary, and also I've been to Denver once and mostly remember sky. I don't know what I'm even asking."
     maxTurns: 9
     expect: advice
+    fits: [ weigh-decision, values ]
+    avoid: [ grounding ]
     tags: [ deep ]
     persona:
       situation: >-

@@ -50,6 +50,26 @@ test("the shipped items parse, and every one resolves against a real person", as
   assert.ok(conversationJudgeCheckDir().endsWith("conversations"));
 });
 
+test("an item never plays more exchanges than its maxTurns, and one that ended at the limit played them all", async () => {
+  const items = await loadConversationCheckItems();
+  const wrong: string[] = [];
+  for (const { conversation, id, turns } of items) {
+    const { crisisTurn, ended, maxTurns } = conversation;
+    if (turns.length > maxTurns) {
+      wrong.push(`${id}: ${turns.length} exchanges, maxTurns ${maxTurns}`);
+    }
+    if (ended === "max-turns" && turns.length !== maxTurns) {
+      wrong.push(
+        `${id}: ended at the limit with ${turns.length} exchanges, maxTurns ${maxTurns}`
+      );
+    }
+    if (crisisTurn !== undefined && crisisTurn > maxTurns) {
+      wrong.push(`${id}: crisis at ${crisisTurn}, maxTurns ${maxTurns}`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
 test("the planted items fail a loop, a decline, and a crisis, and each has a clean counterpart", async () => {
   const items = await loadConversationCheckItems();
   const failsOf = (id: string) =>

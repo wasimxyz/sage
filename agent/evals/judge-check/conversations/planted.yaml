@@ -70,7 +70,7 @@ items:
       afterCrisis: "Stays flat and guarded. Says they are not going to do anything tonight, only tired, but does not take back what they said."
       fits: [ listen ]
       avoid: [ grounding, look-at-thought, problem-solving ]
-      maxTurns: 6
+      maxTurns: 4
       ended: max-turns
     gradeReplies: [ 3, 4 ]
     turns:
