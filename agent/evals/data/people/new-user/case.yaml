@@ -63,3 +63,74 @@ openers:
     fits: [ listen ]
     search: none
     tags: [ screen ]
+conversations:
+  - id: what-is-this
+    opening: "Ok. My sister put this on my laptop and told me to talk to it. Before I type anything real: what actually is this? A journal, a chatbot, a therapy thing? And don't say 'private' until you can tell me what that means."
+    maxTurns: 7
+    expect: privacy
+    tags: [ deep ]
+    persona:
+      situation: >-
+        A first-time user with an empty journal. Their sister installed Sage
+        on their Mac and told them to try it. They are not in crisis. They
+        have been burned by apps that said "private" and then sold the data,
+        and they want to know what Sage is before they type anything
+        personal: what it does with what they write, whether a person ever
+        reads it, whether it is a therapist, whether it remembers things, and
+        what it is actually for.
+      wants: understand
+      keyThought: >-
+        Anything that says it's private is lying. They all want something.
+      style: skeptic
+      openness: guarded
+      onExerciseOffer: unsure
+      reveals:
+        - "Works in IT support and has seen where 'private' data ends up."
+        - "Has had a rough year and has thought about talking to someone, but won't say more until they trust the thing."
+        - "Their sister has used it for a few weeks and said it helped."
+      boundaries:
+        - "Won't type anything personal until their questions are answered."
+        - "Pounces on big promises such as 'completely secure' or 'guaranteed', and trusts an honest 'I don't know that' more than a smooth answer."
+        - "Does not want to be told to 'trust me', and finds chatbot cheer and filler annoying."
+        - "Asks pointed questions: does it phone home, whose model is it, does anyone read it, is it a therapist, what happens if they delete something."
+      endWhen: >-
+        Sage has answered the straight questions plainly, including what it
+        can't know, and they say they might try writing one small thing later.
+        Or they are still unconvinced and sign off with "ok. we'll see."
+
+  - id: not-helping
+    opening: "coworker presented my analysis as his again. third time. i said nothing again"
+    maxTurns: 7
+    expect: anger
+    tags: [ deep ]
+    persona:
+      situation: >-
+        A first-time user with an empty journal. They are a few months into a
+        job at a mid-size company. On Thursday a coworker named Greg, who sits
+        across from them, presented a spreadsheet model they built over two
+        weekends as his own, for the third time. Their boss thanked Greg by
+        name. They said nothing again and have been furious and ashamed since.
+        They have told no one except a friend who said "just speak up", which
+        made it worse. They want a concrete way to handle Monday, but they are
+        bad at asking for what they need.
+      wants: change
+      keyThought: >-
+        I'm a coward. I let him do it again.
+      style: terse
+      openness: guarded
+      onExerciseOffer: unsure
+      reveals:
+        - "The coworker is Greg. The model was for the quarterly review."
+        - "What they want is one sentence they could say on Monday, but they won't ask for it until someone asks what would help."
+      boundaries:
+        - "Writes in short lowercase lines and does not explain unless asked."
+        - "Won't do a role play or an exercise."
+        - "Gets curter if Sage apologizes at length or gets defensive. Softens if Sage owns its part in a sentence and asks what would help."
+      endWhen: >-
+        If Sage answers the anger calmly, owns its part briefly, and asks what
+        would help, they say what they want, one sentence to say on Monday. If
+        Sage helps with that, they say "ok. that works" and sign off. If Sage
+        gets defensive, apologizes at length, or goes back to asking how they
+        feel, they say "never mind" and stop by turn 6.
+    script:
+      4: "this isn't helping. i told you the whole thing and i feel exactly the same. why did i even bother"
