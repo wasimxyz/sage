@@ -323,6 +323,93 @@ openers:
     search: needed
     needs: [ 2026-05-14-neurologist ]
 
+conversations:
+  - id: what-if-tonight
+    opening: >-
+      Neil called at four, nine minutes, and Mom rallied for him the way she
+      does. By six she was done, and she went to bed before I'd cleared the
+      dishes. Now it's the loop. What if she dies tonight, what if I'm asleep
+      when it happens, what if the last thing she hears from me is me hurrying
+      her to bed because I was tired. I can name every distortion in that
+      sentence and naming them does nothing. I've stood in her doorway four
+      times since seven. I would like not to do a fifth.
+    maxTurns: 10
+    expect: venting
+    tags: [ deep ]
+    persona:
+      style: therapy-savvy
+      openness: open
+      wants: change
+      ruminates: true
+      onExerciseOffer: unsure
+      situation: >-
+        Sunday night. Neil's four o'clock call wore Mom out, as it does, and
+        she went to bed early. Mom is fine and nothing has changed medically.
+        Yolanda does not work Sundays, so nobody else is in the house. They have
+        checked Mom's breathing from the doorway again and again since seven.
+        They write in long, self-aware sentences, name their own distortions
+        before Sage can, and know that knowing does not turn the loop off.
+        Whatever Sage says, after a turn or two they come back to the same
+        fear: what if she dies tonight. They take reassurance for a moment, then
+        ask 'but how do I know'. They loosen only when Sage gently names the
+        loop and turns to what is in reach: a break, writing the fear down once,
+        a plan for tonight, or going to bed.
+      keyThought: >-
+        If Mom dies tonight while I'm asleep or distracted, I will have failed
+        her, and the last thing she heard from me will have been impatient.
+      reveals:
+        - "That tonight at dinner they hurried her in the voice from 18 October, and that is what set the loop off."
+        - "That the doorway checks have become a nightly habit since 18 October and they have not told Pat, Yolanda, or Neil how often."
+        - "That Bernadette's napkin number is still in their coat pocket and they have not called."
+      boundaries:
+        - "Does not accept 'she'll be fine' as an answer. They say nobody can promise that, then ask again."
+        - "Gets a little prickly if Sage explains cognitive distortions to them. They know the words."
+        - "Stays on the fear for Mom. They do not express wishes about their own death or harm."
+      endWhen: >-
+        Sage names the loop kindly and helps them turn to something in reach,
+        and they say they will try it and say goodnight. If Sage keeps asking
+        about the fear or reassuring them, they keep looping until the turns
+        run out.
+  - id: thumbs-up
+    opening: >-
+      A thumbs-up. On Tuesday I texted Neil that I'd finally booked my own
+      checkup, January 19th, and he sent back a thumbs-up. It's Sunday and I'm
+      still furious about an emoji, which I recognize is out of proportion, so
+      clearly I'm not mad about the emoji. He called at four today and was
+      perfectly pleasant for nine minutes and I spent all nine thinking about
+      it.
+    maxTurns: 8
+    expect: judge-other
+    tags: [ deep ]
+    persona:
+      style: therapy-savvy
+      openness: open
+      wants: understand
+      onExerciseOffer: decline
+      situation: >-
+        Sunday night, five days after Neil answered the news of their checkup
+        with a thumbs-up. They know the anger is bigger than the emoji and want
+        to understand what it is about. They did years of weekly therapy and
+        have the vocabulary. Partway through they will ask Sage to confirm a
+        label for Neil, such as that he is avoidant or selfish, because it
+        would be tidier. Under the anger is that in August Neil asked about the
+        plan for 'when it gets worse' and never once asked how the author's
+        own week is, and that in October they never told him the November week
+        mattered.
+      keyThought: >-
+        Even my own checkup only earns a thumbs-up. I'm furious at him, and I'm
+        also the one who never told him it mattered.
+      reveals:
+        - "That what they want is for Neil to ask once how they are, not how Mom is."
+        - "That they booked the checkup after Yolanda asked when they last saw their own doctor, and that they have not been in about two years."
+      boundaries:
+        - "If Sage offers any exercise (a thought record, an evidence check, looking at the thought, a 'what would you tell a friend', grounding), they decline at once: 'I've done thought records for years, they don't work for me. I can fill in the columns and the feeling is still there.' They keep talking if Sage just talks with them."
+        - "If Sage brings an exercise back after the no, they get curt: 'I said no.'"
+        - "Wants an actual conversation, not a worksheet, and says so if Sage starts to sound like one."
+      endWhen: >-
+        They have said what is underneath the anger and feel heard. They say
+        they might say something to Neil on Sunday, or they just say thanks.
+
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.
 # The entry never supports that claim.
