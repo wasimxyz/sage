@@ -277,7 +277,8 @@ function conversationLines(item: ReplyItem): string[] {
   return lines;
 }
 
-function detailLines(item: ReplyItem): string[] {
+/** The labels of a message, one line each. Head-to-head judging shows the same lines. */
+export function detailLines(item: ReplyItem): string[] {
   const lines = [`- Kind of message (expect): ${item.expect}`];
   if (item.kind === "chat") {
     lines.push("- This is a plain question about the journal.");

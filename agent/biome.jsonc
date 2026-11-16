@@ -11,6 +11,7 @@
       "!!.output",
       "!!evals/.cache",
       "!!evals/.runs",
+      "!!evals/calibration/sample-*.json",
       "!!evals/reports"
     ]
   },

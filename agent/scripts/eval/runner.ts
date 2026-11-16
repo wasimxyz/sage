@@ -8,7 +8,7 @@
 // build, run, and write the reports. `--dry-run` stops after the estimate.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,8 @@ import {
   readDreamPrompts,
   repoRoot,
 } from "../../evals/lib/cache.ts";
+import { describeCalibration } from "../../evals/lib/calibration.ts";
+import { describeHeadToHead } from "../../evals/lib/head-to-head.ts";
 import { priceCacheFile } from "../../evals/lib/prices.ts";
 import {
   dreamKeyId,
@@ -28,7 +30,14 @@ import {
   type SetupReport,
   type SweepSummary,
   setupId as setupIdOf,
+  sweepSummarySchema,
 } from "../../evals/lib/schema.ts";
+import {
+  calibrationInputs,
+  calibrationReportOf,
+  readCalibration,
+  writeCalibrationReport,
+} from "./calibration-run.ts";
 import { CliError, type CliOptions, parseCli, USAGE } from "./cli.ts";
 import {
   DEFAULT_PRICE,
@@ -59,7 +68,20 @@ import {
   loadTimingHistory,
 } from "./estimate.ts";
 import { EVAL_TODAY, type EveServer, startEveServer } from "./eve.ts";
-import { judgeCheckSize, runJudgeCheck } from "./judge-check.ts";
+import {
+  describePlan as describeHeadToHeadPlan,
+  headToHeadPreflight,
+  headToHeadSummaryOf,
+  mergeHeadToHead,
+  readHeadToHead,
+} from "./head-to-head-run.ts";
+import {
+  type JudgeCheckDeps,
+  type JudgeCheckResult,
+  type JudgeCheckRun,
+  judgeCheckSize,
+  runJudgeCheck,
+} from "./judge-check.ts";
 import { readSwapReading } from "./memory-pressure.ts";
 import {
   checkModels,
@@ -95,6 +117,7 @@ import {
   type RunPlan,
   resolveTests,
   runsConversations,
+  standaloneTest,
 } from "./plan.ts";
 import { captureCommand, killAllTracked, terminateAllTracked } from "./proc.ts";
 import {
@@ -103,7 +126,28 @@ import {
   describeRanking,
   writeReports,
 } from "./report.ts";
+import {
+  createProgress,
+  describeResume,
+  doneCounts,
+  PLAN_FILE,
+  type PlanFile,
+  type Progress,
+  planFileFor,
+  ResumeError,
+  readPlanFile,
+  type Step,
+  sweepHash,
+  writePlanFile,
+} from "./resume.ts";
 import { buildSage, removeBuilds } from "./sage.ts";
+import {
+  estimateCalibration,
+  estimateHeadToHead,
+  estimateJudgeCheck,
+  runStandalone,
+  type StandaloneEstimate,
+} from "./standalone.ts";
 import {
   type LoadedSweep,
   loadSweep,
@@ -118,6 +162,8 @@ const agentDir = fileURLToPath(new URL("../..", import.meta.url)).replace(
   ""
 );
 const root = dirname(agentDir);
+const runsDir = join(agentDir, "evals", ".runs");
+const reportsRoot = join(agentDir, "evals", "reports");
 
 /** How long the children get to stop on the first Ctrl-C before they are ended. */
 const SIGNAL_GRACE_MS = 5000;
@@ -136,12 +182,29 @@ function statusLine(label: string, items: readonly string[]): void {
   }
 }
 
+/**
+ * What to throw for an error caught around a step that has known, readable
+ * problems. A `Stop` and a `ResumeError` end the run with their message. Any
+ * other error is a readable problem only when the step says so (`anyError`),
+ * as the reading of a sample or a finished sweep does. Otherwise it is a bug
+ * and goes on unchanged.
+ */
+function stopFrom(error: unknown, anyError: boolean): unknown {
+  if (error instanceof Stop) {
+    return error;
+  }
+  if (error instanceof ResumeError || (anyError && error instanceof Error)) {
+    return new Stop(error.message, 2, { cause: error });
+  }
+  return error;
+}
+
 /** Ends the run with a message and an exit code. Thrown from any stage. */
 class Stop extends Error {
   readonly exitCode: number;
 
-  constructor(message: string, exitCode = 1) {
-    super(message);
+  constructor(message: string, exitCode = 1, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "Stop";
     this.exitCode = exitCode;
   }
@@ -247,9 +310,11 @@ interface Planned {
   setups: Setup[];
 }
 
-/** Reads the sweep and the people, and works out what would run. */
-async function planSweep(options: CliOptions): Promise<Planned> {
-  const loaded = await loadSweep(options.sweep);
+/** Reads the people and works out what would run. */
+async function planSweep(
+  options: CliOptions,
+  loaded: LoadedSweep
+): Promise<Planned> {
   const { sweep } = loaded;
   statusLine("Model lists replaced from the environment", loaded.overrides);
 
@@ -281,7 +346,6 @@ async function planSweep(options: CliOptions): Promise<Planned> {
     );
   }
   const resolved = resolveTests(sweep.tests, join(agentDir, "evals"));
-  statusLine("Tests the runner does not start yet", resolved.deferred);
   statusLine("Eval files that do not exist yet", resolved.missing);
   const prefixCount = Object.values(resolved.prefixes).reduce(
     (sum, list) => sum + list.length,
@@ -340,6 +404,8 @@ async function prepareRoots(
 }
 
 interface Cleanup {
+  /** Saves how long the run has taken, for a later `--resume`. Set once the run folder exists. */
+  elapsed: (() => void) | null;
   eveStub: EveServer | null;
   pull: PullServer | null;
 }
@@ -627,25 +693,210 @@ function offerUpload(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Resuming
+// ---------------------------------------------------------------------------
+
+/** The run folders that have a plan file, newest last. For the message when `--resume` names none. */
+function knownRuns(): string[] {
+  try {
+    return readdirSync(runsDir)
+      .filter((name) => readPlanFile(join(runsDir, name)) !== null)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The sweep file a run uses. A new run takes `--sweep`. A resumed run takes the
+ * name its plan file recorded, because `make eval` always passes `--sweep`, and
+ * its default is `default`. Naming another sweep for a resume is a mistake.
+ */
+export function sweepNameOf(
+  options: CliOptions,
+  recorded: PlanFile | null
+): string {
+  if (recorded === null) {
+    return options.sweep;
+  }
+  if (options.sweep !== "default" && options.sweep !== recorded.sweepFile) {
+    throw new Stop(
+      `${recorded.sweepId} is a ${recorded.sweepFile} sweep, and --sweep says ${options.sweep}. Leave --sweep out to resume it.`,
+      2
+    );
+  }
+  return recorded.sweepFile;
+}
+
+/**
+ * The judge check, unless an earlier run of this sweep passed it. It writes
+ * its rows into the run folder and appends to them, so a check that was
+ * stopped halfway starts from scratch.
+ */
+export async function judgeCheckOnce(
+  progress: Progress,
+  run: JudgeCheckRun,
+  deps?: JudgeCheckDeps
+): Promise<JudgeCheckResult> {
+  const step: Step = { kind: "judge-check" };
+  const earlier = sweepSummarySchema.shape.judgeCheck.safeParse(
+    progress.readMarker(step)?.data
+  );
+  if (progress.isDone(step) && earlier.success && earlier.data.passed) {
+    return {
+      checked: 0,
+      lines: ["Judge check: passed in an earlier run, so it is not run again."],
+      ok: true,
+      summary: earlier.data,
+    };
+  }
+  progress.reset(step);
+  const result = await runJudgeCheck(run, deps);
+  if (!result.ok) {
+    throw new Stop(result.lines.join("\n"));
+  }
+  progress.markDone(step, result.summary);
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
+
+/**
+ * Reads the plan file of the run to resume, if there is one, and loads the
+ * sweep the run uses. `--compare` is applied to the sweep file.
+ */
+async function loadRun(
+  options: CliOptions
+): Promise<{ loaded: LoadedSweep; recorded: PlanFile | null }> {
+  const recorded =
+    options.resume === undefined
+      ? null
+      : readPlanFile(join(runsDir, options.resume));
+  if (options.resume !== undefined && recorded === null) {
+    throw new Stop(
+      `Nothing to resume: ${join(runsDir, options.resume, PLAN_FILE)} does not exist. A run writes it when it starts, so the id is wrong or the run never began. The runs here: ${knownRuns().join(", ") || "none"}.`,
+      2
+    );
+  }
+  const sweepName = sweepNameOf(options, recorded);
+  heading(
+    `${options.resume === undefined ? "Sweep" : "Resuming"} ${sweepName}${options.dryRun ? " (dry run)" : ""}`
+  );
+  const loaded = await loadSweep(sweepName, process.env, undefined, {
+    compare: options.compare,
+  });
+  return { loaded, recorded };
+}
+
+interface OpenedRun {
+  planFile: PlanFile;
+  progress: Progress;
+  runDir: string;
+  sweepFile: string;
+  sweepId: string;
+}
+
+/**
+ * The run folder, the plan file, and the done markers. A new run gets an id
+ * and a plan. A resumed run keeps its id, and the plan it recorded must match
+ * what is about to run: the hash of the resolved sweep, the setups, and the
+ * people. The resolved sweep is written again, as it was the first time.
+ */
+function openRun(
+  options: CliOptions,
+  planned: Planned,
+  recorded: PlanFile | null
+): OpenedRun {
+  const { loaded } = planned;
+  const sweepId = options.resume ?? makeSweepId(loaded.name);
+  const runDir = join(runsDir, sweepId);
+  let planFile: PlanFile;
+  try {
+    planFile = planFileFor(
+      sweepId,
+      recorded,
+      {
+        people: planned.selected.map((person) => person.id),
+        setupIds: planned.setups.map(setupIdOf),
+        sweepFile: loaded.name,
+        sweepHash: sweepHash(loaded.sweep),
+      },
+      options.resume !== undefined
+    );
+  } catch (error) {
+    throw stopFrom(error, false);
+  }
+  if (options.resume !== undefined) {
+    for (const line of describeResume(planFile, doneCounts(runDir))) {
+      log(line);
+    }
+  }
+  mkdirSync(join(runDir, "logs"), { recursive: true });
+  const sweepFile = join(runDir, "sweep.json");
+  writeFileSync(sweepFile, resolvedSweepJson(loaded.sweep));
+  return {
+    planFile,
+    progress: createProgress(runDir),
+    runDir,
+    sweepFile,
+    sweepId,
+  };
+}
+
+/**
+ * Writes the plan file for this session, and arranges for the time taken to be
+ * saved when the run ends, however it ends. Time counts across sessions, so the
+ * report says how long the whole sweep took. Returns the moment the sweep
+ * started, as if it had never stopped. A dry run writes no plan file, so there
+ * is nothing to resume.
+ */
+function trackElapsed(
+  options: CliOptions,
+  cleanup: Cleanup,
+  runDir: string,
+  planFile: PlanFile
+): number {
+  const sweepStarted = Date.now() - planFile.priorMs;
+  if (!options.dryRun) {
+    const sessions = planFile.sessions + 1;
+    writePlanFile(runDir, { ...planFile, sessions });
+    cleanup.elapsed = () =>
+      writePlanFile(runDir, {
+        ...planFile,
+        priorMs: Date.now() - sweepStarted,
+        sessions,
+      });
+  }
+  return sweepStarted;
+}
 
 async function sweepBody(
   options: CliOptions,
   cleanup: Cleanup,
-  abort: { aborted: boolean },
-  started: number
+  abort: { aborted: boolean }
 ): Promise<number> {
-  heading(`Sweep ${options.sweep}${options.dryRun ? " (dry run)" : ""}`);
-  const planned = await planSweep(options);
-  const { loaded, peopleById, resolved } = planned;
+  const { loaded, recorded } = await loadRun(options);
+  const standalone = standaloneTest(loaded.sweep.tests);
+  if (standalone !== null) {
+    if (options.resume !== undefined) {
+      throw new Stop(
+        `${options.resume} is a ${standalone} sweep, which has no steps to skip. It runs in minutes, so run it again instead of resuming it.`,
+        2
+      );
+    }
+    return await runStandaloneSweep(standalone, options, loaded, cleanup);
+  }
+  const planned = await planSweep(options, loaded);
+  const { peopleById, resolved } = planned;
   const { sweep } = loaded;
-
-  const sweepId = makeSweepId(options.sweep);
-  const runDir = join(agentDir, "evals", ".runs", sweepId);
-  mkdirSync(join(runDir, "logs"), { recursive: true });
-  const sweepFile = join(runDir, "sweep.json");
-  writeFileSync(sweepFile, resolvedSweepJson(sweep));
+  const { planFile, progress, runDir, sweepFile, sweepId } = openRun(
+    options,
+    planned,
+    recorded
+  );
+  const sweepStarted = trackElapsed(options, cleanup, runDir, planFile);
 
   // The simulated user goes first, before any local work. A sweep with
   // conversations cannot hold one without it, and a night of generation should
@@ -708,7 +959,7 @@ async function sweepBody(
   // The check goes before any local work, so a judge that misses a planted
   // failure costs a few cents and not a night.
   heading("Judge check");
-  const judgeCheck = await runJudgeCheck({
+  const judgeCheck = await judgeCheckOnce(progress, {
     agentDir,
     credentials: credentialsFrom(),
     runDir,
@@ -716,9 +967,6 @@ async function sweepBody(
     sweepFile,
     sweepId,
   });
-  if (!judgeCheck.ok) {
-    throw new Stop(judgeCheck.lines.join("\n"));
-  }
   for (const line of judgeCheck.lines) {
     log(line);
   }
@@ -751,6 +999,7 @@ async function sweepBody(
     people: peopleById,
     pool: new JobPool(MAX_GRADE_PROCESSES),
     prefixes: resolved.prefixes,
+    progress,
     reportsDir: join(agentDir, "evals", "reports"),
     root,
     runDir,
@@ -769,7 +1018,7 @@ async function sweepBody(
   const reported = await writeAllReports(ctx, plan, loaded, {
     estimate,
     judgeCheck: judgeCheck.summary,
-    started,
+    started: sweepStarted,
   });
   if (ctx.failures.length > 0) {
     console.error(`\n${ctx.failures.length} problem(s):`);
@@ -783,9 +1032,288 @@ async function sweepBody(
   return ctx.failures.length > 0 || ctx.passesWithFailures > 0 ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Sweeps with no Sage: calibration and head-to-head
+// ---------------------------------------------------------------------------
+
+interface StandaloneRoots {
+  runDir: string;
+  stubUrl: string;
+  sweepFile: string;
+  sweepId: string;
+}
+
+/** Makes the run folder, writes the resolved sweep, and starts the stub grade target. */
+async function startStandalone(
+  loaded: LoadedSweep,
+  cleanup: Cleanup
+): Promise<StandaloneRoots> {
+  const sweepId = makeSweepId(loaded.name);
+  const runDir = join(runsDir, sweepId);
+  mkdirSync(join(runDir, "logs"), { recursive: true });
+  const sweepFile = join(runDir, "sweep.json");
+  writeFileSync(sweepFile, resolvedSweepJson(loaded.sweep));
+  heading("Grade target");
+  const { targetRoot } = await prepareRoots([], false);
+  const eveStub = await startEveServer({
+    agentDir,
+    logFile: join(runDir, "logs", "grade-target.log"),
+    ollamaBaseUrl: ollamaApiBase(OLLAMA_HOST),
+    root: targetRoot,
+    withWorkflowGuard: false,
+  });
+  cleanup.eveStub = eveStub;
+  log(`Grade target is up at ${eveStub.url}`);
+  return { runDir, stubUrl: eveStub.url, sweepFile, sweepId };
+}
+
+/** Prints an estimate, and the cap warning when it passes the sweep's cap. */
+function printStandaloneEstimate(
+  estimate: StandaloneEstimate,
+  extras: { capUsd: number; defaulted: readonly string[]; lines?: string[] }
+): void {
+  for (const line of estimate.lines) {
+    log(line);
+  }
+  for (const line of extras.lines ?? []) {
+    log(`  ${line}`);
+  }
+  if (extras.defaulted.length > 0) {
+    log(
+      `  No gateway price for ${extras.defaulted.join(", ")}; the estimate uses default prices.`
+    );
+  }
+  if (estimate.costUsd > extras.capUsd) {
+    log(
+      `  The estimate is over the $${extras.capUsd} spending cap. Past the cap, the rest is marked "not graded".`
+    );
+  }
+}
+
+interface StandaloneInputs {
+  /** Judge calls the pass will make. */
+  calls: number;
+  /** The sweep a head-to-head compares. */
+  compare?: string;
+  /** The calibration samples in use. */
+  samples: string[];
+  /** The setups a head-to-head compares, best first. */
+  setups: string[];
+}
+
+/**
+ * What the pass will work on, read before anything is built or started, so a
+ * missing sample, an ungraded sample, or a sweep that is not finished stops
+ * the run here.
+ */
+function standaloneInputs(
+  kind: "calibration" | "head-to-head",
+  sweep: LoadedSweep["sweep"]
+): StandaloneInputs {
+  try {
+    if (kind === "calibration") {
+      const inputs = calibrationInputs(sweep.compare);
+      log(
+        `${inputs.graded} of ${inputs.sampled} sampled replies are graded (${inputs.samples.join(", ")}).`
+      );
+      return { calls: inputs.graded, samples: inputs.samples, setups: [] };
+    }
+    const { compare } = sweep;
+    if (compare === undefined) {
+      throw new Stop(
+        "head-to-head needs a finished sweep to compare. Pass --compare <sweep id> (the id is a file name in agent/evals/reports/, before .sweep.json), or set compare in the sweep file.",
+        2
+      );
+    }
+    const preflight = headToHeadPreflight(compare, sweep.compareTop, {
+      reportsDir: reportsRoot,
+      runsDir,
+    });
+    for (const line of describeHeadToHeadPlan(preflight.plan)) {
+      log(line);
+    }
+    return {
+      calls: preflight.calls,
+      compare,
+      samples: [],
+      setups: preflight.plan.setups,
+    };
+  } catch (error) {
+    throw stopFrom(error, true);
+  }
+}
+
+/** Prints the estimate for a standalone sweep, and returns its dollars. */
+async function standaloneEstimate(
+  kind: "calibration" | "head-to-head",
+  loaded: LoadedSweep,
+  roots: StandaloneRoots,
+  calls: number
+): Promise<number> {
+  const { sweep } = loaded;
+  const book = await loadPriceBook(
+    [{ fallback: DEFAULT_PRICE, id: sweep.judge.model }],
+    priceCacheFile(roots.runDir)
+  );
+  const price = book.prices[sweep.judge.model] ?? DEFAULT_PRICE;
+  const estimate =
+    kind === "calibration"
+      ? estimateCalibration(calls, price)
+      : estimateHeadToHead(calls, price);
+  // Head-to-head runs the judge check first, as every sweep that uses the judge does.
+  const checkUsd =
+    kind === "head-to-head"
+      ? estimateJudgeCheck(await judgeCheckSize(), price)
+      : 0;
+  const note =
+    kind === "calibration"
+      ? "There is no judge check, because this sweep measures the judge."
+      : `The judge check that starts the sweep adds about $${checkUsd.toFixed(2)}.`;
+  const total = estimate.costUsd + checkUsd;
+  printStandaloneEstimate(
+    { ...estimate, costUsd: total },
+    { capUsd: sweep.spendingCapUsd, defaulted: book.defaulted, lines: [note] }
+  );
+  return total;
+}
+
+/**
+ * `tests: [calibration]` and `tests: [head-to-head]`. Each is one grade pass
+ * against the stub target. They start no Sage and no Ollama, build nothing,
+ * and pull nothing. Head-to-head runs the judge check first, like any sweep
+ * that uses the judge. Calibration does not: it measures the judge against
+ * your grades, and a judge that fails the check should still show its numbers.
+ */
+async function runStandaloneSweep(
+  kind: "calibration" | "head-to-head",
+  options: CliOptions,
+  loaded: LoadedSweep,
+  cleanup: Cleanup
+): Promise<number> {
+  const { sweep } = loaded;
+  heading(kind === "calibration" ? "Calibration" : "Head to head");
+  const resolved = resolveTests(sweep.tests, join(agentDir, "evals"));
+  if (resolved.missing.length > 0) {
+    throw new Stop(
+      `Eval files that do not exist: ${resolved.missing.join(", ")}.`,
+      2
+    );
+  }
+  const inputs = standaloneInputs(kind, sweep);
+  const roots = await startStandalone(loaded, cleanup);
+  heading("Estimate");
+  const estimatedUsd = await standaloneEstimate(
+    kind,
+    loaded,
+    roots,
+    inputs.calls
+  );
+  const missingKeys = credentialProblems(sweep.judge.model);
+  for (const note of missingKeys) {
+    console.error(note);
+  }
+  if (options.dryRun) {
+    log("\nDry run: no judge call was made.");
+    return 0;
+  }
+  if (missingKeys.length > 0) {
+    throw new Stop("", 2);
+  }
+  await confirmRun(options);
+
+  const credentials = credentialsFrom();
+  if (kind === "head-to-head") {
+    heading("Judge check");
+    const check = await runJudgeCheck({
+      agentDir,
+      credentials,
+      runDir: roots.runDir,
+      stubUrl: roots.stubUrl,
+      sweepFile: roots.sweepFile,
+      sweepId: roots.sweepId,
+    });
+    if (!check.ok) {
+      throw new Stop(check.lines.join("\n"));
+    }
+    for (const line of check.lines) {
+      log(line);
+    }
+  }
+
+  heading(kind === "calibration" ? "Comparing with your grades" : "Comparing");
+  const result = await runStandalone({
+    agentDir,
+    credentials,
+    filters: options.eveFilters,
+    name: kind,
+    prefixes: resolved.prefixes.grade,
+    runDir: roots.runDir,
+    stubUrl: roots.stubUrl,
+    sweepFile: roots.sweepFile,
+    sweepId: roots.sweepId,
+  });
+  heading("Result");
+  const spent = spentUsd(roots.runDir);
+  if (kind === "calibration") {
+    reportCalibration(sweep.judge.model, inputs, result.rows, roots, spent);
+  } else {
+    reportHeadToHead(sweep.judge.model, inputs, result.rows, roots, spent);
+  }
+  log(
+    `Cloud spending $${spent.toFixed(2)} (estimated $${estimatedUsd.toFixed(2)}).`
+  );
+  for (const problem of result.problems) {
+    console.error(problem);
+  }
+  return result.problems.length > 0 ? 1 : 0;
+}
+
+function reportCalibration(
+  judgeModel: string,
+  inputs: StandaloneInputs,
+  rows: Parameters<typeof readCalibration>[0],
+  roots: StandaloneRoots,
+  costUsd: number
+): void {
+  const report = calibrationReportOf({
+    costUsd,
+    humanGraded: inputs.calls,
+    judgeModel,
+    reading: readCalibration(rows),
+    samples: inputs.samples,
+    sweepId: roots.sweepId,
+  });
+  for (const line of describeCalibration(report)) {
+    log(line);
+  }
+  log(`Wrote ${writeCalibrationReport(reportsRoot, report)}`);
+}
+
+function reportHeadToHead(
+  judgeModel: string,
+  inputs: StandaloneInputs,
+  rows: Parameters<typeof readHeadToHead>[0],
+  roots: StandaloneRoots,
+  costUsd: number
+): void {
+  if (inputs.compare === undefined) {
+    return;
+  }
+  const summary = headToHeadSummaryOf({
+    costUsd,
+    judgeModel,
+    reading: readHeadToHead(rows),
+    setups: inputs.setups,
+    sweepId: roots.sweepId,
+  });
+  for (const line of describeHeadToHead(summary)) {
+    log(line);
+  }
+  log(`Added to ${mergeHeadToHead(reportsRoot, inputs.compare, summary).path}`);
+}
+
 async function runSweep(options: CliOptions): Promise<number> {
-  const started = Date.now();
-  const cleanup: Cleanup = { eveStub: null, pull: null };
+  const cleanup: Cleanup = { elapsed: null, eveStub: null, pull: null };
   const abort: { aborted: boolean } = { aborted: false };
   const onSignal = (signal: string): void => {
     if (abort.aborted) {
@@ -809,7 +1337,7 @@ async function runSweep(options: CliOptions): Promise<number> {
   });
 
   try {
-    return await sweepBody(options, cleanup, abort, started);
+    return await sweepBody(options, cleanup, abort);
   } catch (error) {
     if (error instanceof Stop) {
       if (error.message.length > 0) {
@@ -820,6 +1348,7 @@ async function runSweep(options: CliOptions): Promise<number> {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   } finally {
+    cleanup.elapsed?.();
     await cleanup.eveStub?.stop();
     await cleanup.pull?.stop();
     killAllTracked();

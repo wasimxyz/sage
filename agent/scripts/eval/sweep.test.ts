@@ -16,6 +16,8 @@ import {
 } from "./sweep.ts";
 import { tempDir } from "./test-fixtures.ts";
 
+const pattern5 = /only head-to-head and calibration read it/u;
+
 const pattern1 = /Thinking "high" is not supported yet/u;
 const pattern2 = /No sweep file .*Sweeps here: smoke/u;
 const pattern3 = /not a sweep name/u;
@@ -173,4 +175,51 @@ test("the resolved sweep JSON parses back into the same setups", async (t) => {
   const again = JSON.parse(resolvedSweepJson(loaded.sweep));
   assert.deepEqual(again, JSON.parse(JSON.stringify(loaded.sweep)));
   assert.equal(new Set(loaded.setups.map(setupId)).size, 4);
+});
+
+test("the calibration and head-to-head sweeps run alone, with the judge and a cap, and no Chat", async () => {
+  const dir = defaultSweepsDir();
+  const calibration = await loadSweep("calibration", {}, dir);
+  assert.deepEqual(calibration.sweep.tests, ["calibration"]);
+  assert.equal(calibration.sweep.compare, undefined);
+  assert.equal(calibration.sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(calibration.sweep.spendingCapUsd, 10);
+
+  const headToHead = await loadSweep("head-to-head", {}, dir);
+  assert.deepEqual(headToHead.sweep.tests, ["head-to-head"]);
+  assert.equal(headToHead.sweep.compareTop, 3);
+  assert.equal(headToHead.sweep.spendingCapUsd, 30);
+  const names = availableSweeps(dir);
+  assert.ok(names.includes("calibration") && names.includes("head-to-head"));
+});
+
+test("--compare names the sweep to read, and wins over the file", async (t) => {
+  const dir = sweepsIn(t, {
+    fixed: "tests: [ head-to-head ]\ncompare: 2026-11-01T000000Z-old\n",
+    open: "tests: [ head-to-head ]\n",
+    person: "tests: [ person ]\n",
+  });
+  const id = "2026-11-10T031500Z-screen";
+  assert.equal((await loadSweep("open", {}, dir)).sweep.compare, undefined);
+  assert.equal(
+    (await loadSweep("open", {}, dir, { compare: id })).sweep.compare,
+    id
+  );
+  assert.equal(
+    (await loadSweep("fixed", {}, dir)).sweep.compare,
+    "2026-11-01T000000Z-old"
+  );
+  assert.equal(
+    (await loadSweep("fixed", {}, dir, { compare: id })).sweep.compare,
+    id
+  );
+  // A sweep that reads no other sweep refuses a name for one, and says why.
+  await assert.rejects(loadSweep("person", {}, dir, { compare: id }), pattern5);
+});
+
+test("the resolved JSON carries compare, so every pass reads the same sweep", async (t) => {
+  const dir = sweepsIn(t, { open: "tests: [ head-to-head ]\n" });
+  const id = "2026-11-10T031500Z-screen";
+  const loaded = await loadSweep("open", {}, dir, { compare: id });
+  assert.equal(JSON.parse(resolvedSweepJson(loaded.sweep)).compare, id);
 });

@@ -75,6 +75,13 @@ import {
   type PlanGroup,
 } from "./plan.ts";
 import { captureCommand } from "./proc.ts";
+import {
+  createProgress,
+  type Progress,
+  pendingWork,
+  type Step,
+  savedManifestPath,
+} from "./resume.ts";
 import { prepareDataDir, type SageRun, startSage } from "./sage.ts";
 
 export interface RunContext {
@@ -108,6 +115,8 @@ export interface RunContext {
   people: ReadonlyMap<string, LoadedPerson>;
   pool: JobPool;
   prefixes: PassPrefixes;
+  /** Which steps are done, for `--resume`. Defaults to the markers in `runDir`. */
+  progress?: Progress;
   reportsDir: string;
   root: string;
   runDir: string;
@@ -214,6 +223,7 @@ interface Unit {
   manifestPath: string;
   person: LoadedPerson;
   personFiles: PassFiles;
+  progress: Progress;
   setups: Setup[];
 }
 
@@ -345,6 +355,7 @@ async function runUnit(
     manifestPath: join(dataDir, "manifest.json"),
     person,
     personFiles,
+    progress: ctx.progress ?? createProgress(ctx.runDir),
     setups,
   };
   try {
@@ -361,6 +372,29 @@ async function runUnit(
       unit.lists.person.length;
     if (total === 0) {
       log(`${label}: no evals match; skipping`);
+      return;
+    }
+    const pending = pendingWork(unit.progress, {
+      dreamKeyId: group.dreamKeyId,
+      lists: {
+        chat: unit.lists.chat.length,
+        grade: unit.lists.grade.length,
+        person: unit.lists.person.length,
+      },
+      person: person.id,
+      setupIds: setups.filter((setup) => runnable(unit, setup)).map(setupIdOf),
+    });
+    if (!(pending.chat || pending.grade || pending.person)) {
+      log(`${label}: finished in an earlier run; skipping`);
+      return;
+    }
+    // With only grading left, Sage is not needed: the replies are saved, and
+    // so is the manifest the search checks read.
+    if (
+      !(pending.chat || pending.person) &&
+      existsSync(savedManifestPath(ctx.runDir, group.dreamKeyId, person.id))
+    ) {
+      await runGradeOnly(unit);
       return;
     }
     await runWithSage(unit);
@@ -407,8 +441,17 @@ async function runWithSage(unit: Unit): Promise<void> {
   const running: RunningSage = { sage: await startUnitSage(unit, binary) };
   try {
     await seedOrRestore(unit, running, binary, dreamKey, restored);
+    // A later run that has only grading left reads this copy, and starts no Sage.
+    copyIfPresent(
+      unit.manifestPath,
+      savedManifestPath(ctx.runDir, group.dreamKeyId, person.id)
+    );
     await unloadModel(ctx.ollama.host, group.summaryModel);
-    if (unit.lists.person.length > 0 && !ctx.abort.aborted) {
+    if (
+      unit.lists.person.length > 0 &&
+      !ctx.abort.aborted &&
+      !unit.progress.isDone(personStep(unit))
+    ) {
       await runPersonPass(unit);
     }
     if (unit.lists.chat.length > 0) {
@@ -424,6 +467,71 @@ async function runWithSage(unit: Unit): Promise<void> {
     await stopSage(unit, running.sage);
   }
   log(`${label}: done with ${person.id}`);
+}
+
+function personStep(unit: Unit): Step {
+  return {
+    dreamKeyId: unit.group.dreamKeyId,
+    kind: "person",
+    person: unit.person.id,
+  };
+}
+
+function chatStep(unit: Unit, setup: Setup): Step {
+  return { kind: "chat", person: unit.person.id, setupId: setupIdOf(setup) };
+}
+
+function gradeStep(unit: Unit, setup: Setup): Step {
+  return { kind: "grade", person: unit.person.id, setupId: setupIdOf(setup) };
+}
+
+/** False for a think-on setup of a model that cannot think. It never runs. */
+function runnable(unit: Unit, setup: Setup): boolean {
+  return !(
+    setup.thinking === "on" && unit.ctx.cannotThink.has(setup.chatModel)
+  );
+}
+
+/** True when a pass ended with rows to keep: it did not crash, and the run was not stopped. */
+function finishedCleanly(unit: Unit, outcome: PassOutcome): boolean {
+  return outcome.status !== "crashed" && !unit.ctx.abort.aborted;
+}
+
+/** Grades the setups whose replies an earlier run saved. Starts no Sage. */
+async function runGradeOnly(unit: Unit): Promise<void> {
+  const { ctx, group, label, person } = unit;
+  unit.manifestPath = savedManifestPath(
+    ctx.runDir,
+    group.dreamKeyId,
+    person.id
+  );
+  log(`${label}: only grading is left, so Sage does not start`);
+  for (const setup of unit.setups) {
+    if (ctx.abort.aborted) {
+      break;
+    }
+    // biome-ignore lint/performance/noAwaitInLoops: the pool takes one job at a time.
+    await gradeIfPending(unit, setup);
+  }
+}
+
+/** Hands the grade pass of a setup to the pool, unless an earlier run finished it. */
+async function gradeIfPending(unit: Unit, setup: Setup): Promise<void> {
+  if (
+    !runnable(unit, setup) ||
+    unit.lists.grade.length === 0 ||
+    unit.progress.isDone(gradeStep(unit, setup))
+  ) {
+    return;
+  }
+  unit.hold.begin();
+  await unit.ctx.pool.submit(async () => {
+    try {
+      await runGrade(unit, setup);
+    } finally {
+      unit.hold.end();
+    }
+  });
 }
 
 /** The Sage of a unit. Seeding a person with past chats stops it and starts another. */
@@ -545,6 +653,20 @@ async function runPrompt(
   setups: readonly Setup[]
 ): Promise<void> {
   const { ctx } = unit;
+  // Setups whose replies an earlier run saved need no Chat server. They only
+  // need grading, if that did not finish either.
+  const pending: Setup[] = [];
+  for (const setup of setups) {
+    if (unit.progress.isDone(chatStep(unit, setup))) {
+      // biome-ignore lint/performance/noAwaitInLoops: the pool takes one job at a time.
+      await gradeIfPending(unit, setup);
+    } else {
+      pending.push(setup);
+    }
+  }
+  if (pending.every((setup) => !runnable(unit, setup))) {
+    return;
+  }
   const overlay = ctx.overlays.get(promptName);
   if (overlay === undefined) {
     throw new Error(`No overlay for Chat prompt ${promptName}.`);
@@ -559,7 +681,7 @@ async function runPrompt(
   });
   try {
     const token = readServerToken(unit.discoveryFile);
-    for (const setup of setups) {
+    for (const setup of pending) {
       if (ctx.abort.aborted) {
         break;
       }
@@ -583,8 +705,12 @@ async function runSetup(
     return;
   }
   const id = setupIdOf(setup);
+  // From scratch: whatever a killed pass left behind is deleted first. The
+  // transcripts are appended to, so rows from before would be written twice.
+  unit.progress.reset(chatStep(unit, setup));
   const files = setupPassFiles(ctx.runDir, id, person.id, "chat");
   mkdirSync(files.dir, { recursive: true });
+  const state = { finished: false };
   // Memory is watched from the model load to the end of the replies. The
   // grade pass talks to the cloud, so it is not part of what must fit.
   const generated = await measureMemory(
@@ -627,6 +753,7 @@ async function runSetup(
         }
       );
       noteOutcome(ctx, `${label}: chat ${setupLabel(setup)}`, outcome);
+      state.finished = finishedCleanly(unit, outcome);
       return true;
     },
     {
@@ -634,15 +761,9 @@ async function runSetup(
         appendMemoryReading(ctx.runDir, id, person.id, reading),
     }
   );
-  if (generated && unit.lists.grade.length > 0) {
-    unit.hold.begin();
-    await ctx.pool.submit(async () => {
-      try {
-        await runGrade(unit, setup);
-      } finally {
-        unit.hold.end();
-      }
-    });
+  if (generated && state.finished) {
+    unit.progress.markDone(chatStep(unit, setup));
+    await gradeIfPending(unit, setup);
   }
 }
 
@@ -698,6 +819,8 @@ function noteGradeCache(unit: Unit): void {
 async function runPersonPass(unit: Unit): Promise<void> {
   const { ctx, label, person } = unit;
   noteGradeCache(unit);
+  // From scratch, as the chat pass is: its results file is appended to.
+  unit.progress.reset(personStep(unit));
   const outcome = await runEvalPass(
     {
       agentDir: ctx.agentDir,
@@ -717,6 +840,9 @@ async function runPersonPass(unit: Unit): Promise<void> {
     }
   );
   noteOutcome(ctx, `${label}: person checks`, outcome);
+  if (finishedCleanly(unit, outcome)) {
+    unit.progress.markDone(personStep(unit));
+  }
 }
 
 async function runGrade(unit: Unit, setup: Setup): Promise<void> {
@@ -729,6 +855,8 @@ async function runGrade(unit: Unit, setup: Setup): Promise<void> {
     person.id,
     "grade"
   );
+  // Grades start from scratch too. Its results file is appended to.
+  unit.progress.reset(gradeStep(unit, setup));
   const outcome = await runEvalPass(
     {
       agentDir: ctx.agentDir,
@@ -743,4 +871,7 @@ async function runGrade(unit: Unit, setup: Setup): Promise<void> {
     }
   );
   noteOutcome(ctx, `${label}: grade ${setupLabel(setup)}`, outcome);
+  if (finishedCleanly(unit, outcome)) {
+    unit.progress.markDone(gradeStep(unit, setup));
+  }
 }
