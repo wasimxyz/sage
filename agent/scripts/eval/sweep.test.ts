@@ -49,14 +49,20 @@ test("the sweeps that ship parse, and default runs memory off and on", async () 
   const smoke = await loadSweep("smoke", {}, dir);
   assert.equal(smoke.setups.length, 1);
   assert.deepEqual(smoke.sweep.tags, ["example"]);
-  assert.deepEqual(smoke.sweep.tests, ["person", "facts", "openers"]);
+  // One short conversation, so the simulated user runs end to end.
+  assert.deepEqual(smoke.sweep.tests, [
+    "person",
+    "facts",
+    "openers",
+    "conversations",
+  ]);
   assert.ok(names.includes("screen"));
   // The judge check is most of smoke's cost, so the cap leaves room for it.
   // `judge-check.test.ts` runs the whole check under this cap.
   assert.equal(smoke.sweep.spendingCapUsd, 3);
 });
 
-test("only the deep and dream sweeps include long-history, and deep runs every test three times", async () => {
+test("only the deep and dream sweeps include long-history, and the deep sweeps run the person checks and conversations three times", async () => {
   const dir = defaultSweepsDir();
   const names = availableSweeps();
   for (const name of ["default", "smoke", "quick", "screen"]) {
@@ -64,23 +70,27 @@ test("only the deep and dream sweeps include long-history, and deep runs every t
     const { sweep } = await loadSweep(name, {}, dir);
     assert.deepEqual(sweep.excludeTags, ["long"], name);
   }
-  for (const name of ["deep", "dream"]) {
+  for (const name of ["deep", "deep-memory-on", "dream"]) {
     // biome-ignore lint/performance/noAwaitInLoops: each sweep loads on its own
     const { sweep } = await loadSweep(name, {}, dir);
     assert.deepEqual(sweep.excludeTags, [], name);
   }
-  assert.ok(names.includes("deep"));
-  const deep = await loadSweep("deep", {}, dir);
-  assert.deepEqual(deep.sweep.tests, [
-    "person",
-    "facts",
-    "openers",
-    "conversations",
-  ]);
-  assert.equal(deep.sweep.repeats, 3);
-  assert.deepEqual(deep.sweep.memory, ["off", "on"]);
-  assert.equal(deep.sweep.simulatedUser.maxOutputPricePerM, 0.5);
-  assert.equal(deep.sweep.simulatedUser.model, "deepseek/deepseek-v4.1-flash");
+  for (const [name, memory] of [
+    ["deep", ["off"]],
+    ["deep-memory-on", ["on"]],
+  ] as const) {
+    assert.ok(names.includes(name));
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep loads on its own
+    const deep = await loadSweep(name, {}, dir);
+    assert.deepEqual(deep.sweep.tests, ["person", "conversations"], name);
+    assert.equal(deep.sweep.repeats, 3, name);
+    assert.deepEqual(deep.sweep.memory, memory, name);
+    assert.equal(deep.sweep.simulatedUser.maxOutputPricePerM, 0.5);
+    assert.equal(
+      deep.sweep.simulatedUser.model,
+      "deepseek/deepseek-v4.1-flash"
+    );
+  }
 });
 
 test("a sweep file takes the defaults for what it leaves out", async (t) => {

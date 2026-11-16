@@ -28,6 +28,9 @@ import {
 /** The eval id of Dream accuracy, which needs the snapshot's folder for its grades. */
 export const DREAM_ACCURACY_EVAL = "person/dream-accuracy";
 
+/** The eve eval id that plays conversations, which need the simulated user. */
+export const CONVERSATIONS_EVAL = "chat/conversations";
+
 export const PASS_NAMES = ["person", "chat", "grade"] as const;
 export type PassName = (typeof PASS_NAMES)[number];
 
@@ -45,7 +48,7 @@ export const TEST_EVALS: Readonly<
 > = {
   calibration: {},
   conversations: {
-    chat: ["chat/conversations"],
+    chat: [CONVERSATIONS_EVAL],
     grade: ["grade/conversations"],
   },
   "dream-accuracy": { person: [DREAM_ACCURACY_EVAL] },
@@ -156,6 +159,11 @@ export interface RunPlan {
 /** True when the sweep has an eval that talks to the Chat agent. */
 export function needsChat(prefixes: PassPrefixes): boolean {
   return prefixes.chat.length > 0;
+}
+
+/** True when the sweep plays conversations, so the simulated user must work. */
+export function runsConversations(prefixes: PassPrefixes): boolean {
+  return prefixes.chat.includes(CONVERSATIONS_EVAL);
 }
 
 function groupSetups(setups: readonly Setup[]): PlanGroup[] {

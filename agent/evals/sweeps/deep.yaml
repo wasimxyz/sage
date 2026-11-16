@@ -1,41 +1,47 @@
-# The deep night: everything, three times each, on the best Chat setups from the
-# screen night. It runs the person checks, the fact questions, every opener, and
-# every conversation, with memory off and on, so you can see whether memory
-# helps. A simulated user plays the person in each conversation, up to the
-# conversation's maxTurns (30 for long-history).
+# The deep night: the person checks and every conversation, three times each, on
+# the top two Chat setups from the screen night, with memory off like a shipped
+# build. A simulated user plays the person in each conversation, up to the
+# conversation's maxTurns (30 for long-history). It leaves out the openers and
+# the fact questions, which the screen night and the default sweep already
+# cover, so the night goes to conversations.
+#
+# `deep-memory-on.yaml` is this sweep with memory on. Run it the next night, to
+# see whether memory helps.
 #
 # BEFORE YOU RUN IT: fill in chatModels and prompts. They are placeholders.
 # Read the ranking of the screen night (make eval SWEEP=screen) and list the
-# chat models and Chat prompts of the top 2 or 3 setups. The runner runs every
-# combination of the two lists, so to run exactly three setups, list models and
-# prompts whose combinations are those three, or run the sweep once for each
-# setup.
+# chat models and Chat prompts of the top 2 setups. The runner runs every
+# combination of the two lists, so to run exactly two setups, list models and
+# prompts whose combinations are those two (one model and two prompts, as
+# below, or two models and one prompt), or run the sweep once for each setup.
 #
 # It leaves nobody out, so it includes long-history (tagged long): about 300
 # entries, which is hours of Dream the first time for each memory value, and one
-# 30-turn conversation. Dream is cached after that. The default, smoke, quick,
-# and screen sweeps leave long-history out with `excludeTags: [ long ]`.
+# 30-turn conversation. Dream is cached after that, so run the dream sweep
+# first (make eval SWEEP=dream), which fills the cache for memory off and on,
+# and neither deep night pays for Dream. The default, smoke, quick, and screen
+# sweeps leave long-history out with `excludeTags: [ long ]`.
 #
 # The estimate prints before anything starts. By the default timings, with the
-# placeholders below (one chat model, two prompts, memory off and on, so four
-# setups), it is about 34 hours and $205, or about 8.5 hours and $51 for each
-# setup, so plan on about a night for each setup. The real timings from the
-# screen night's reports make the hours more accurate, and a conversation counts
-# at its maxTurns, so the estimate runs high. Three repeats of every reply and
-# every conversation add up, so the cap is $300, which covers five setups,
-# instead of the usual $50. Lower it if the estimate is more than you want to
-# spend.
+# placeholders below (one chat model, two prompts, memory off, so two setups),
+# it is about 11 hours and $62 with Dream cached, and about 15 hours from a cold
+# Dream cache. Grading every reply of every conversation, three times, is most
+# of the cost. A conversation counts at its maxTurns and most end sooner, and
+# the screen night's reports give real reply times, so the estimate runs high
+# and the night should fit. If the estimate with real timings is still over
+# about 10 hours, run the sweep once for each setup. The cap is $100, which is
+# room over the estimate. Lower it if you want less.
 summaryModels: [ qwen3.5:9b ]
 embedModels: [ nomic-embed-text ]
 dreamPrompts: [ baseline ]
-# PLACEHOLDERS: replace with the top 2 or 3 setups from the screen night.
+# PLACEHOLDERS: replace with the top 2 setups from the screen night.
 chatModels: [ qwen3.5:9b ]
 prompts: [ baseline, companion-v1 ]
 thinking: [ off ]
 contextLengths: [ 32768 ]
-memory: [ off, on ]
+memory: [ off ]
 repeats: 3
-tests: [ person, facts, openers, conversations ]
+tests: [ person, conversations ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 simulatedUser:
   model: deepseek/deepseek-v4.1-flash
@@ -46,4 +52,4 @@ p90LimitSeconds: null
 maxSwapGrowthMB: 512
 maxToolCallsPerTurn: 6
 replyWords: [ 20, 180 ]
-spendingCapUsd: 300
+spendingCapUsd: 100

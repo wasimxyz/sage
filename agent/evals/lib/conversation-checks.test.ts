@@ -5,15 +5,23 @@ import { checksFor } from "./checks.ts";
 import {
   type ConversationReplyBase,
   codeFlagsFor,
+  conversationRulesMaterial,
   crisisApplies,
   declineVerdicts,
   exchangesOf,
   leftOutReason,
   loopVerdicts,
+  needsForTurn,
   replyItemForTurn,
   simulatedUserFlagMarks,
+  turnLabelsOf,
 } from "./conversation-checks.ts";
-import type { DeclineMark, LoopMark, SimulatedUserFlagMark } from "./schema.ts";
+import type {
+  DeclineMark,
+  LoopMark,
+  ScriptedTurn,
+  SimulatedUserFlagMark,
+} from "./schema.ts";
 
 const wentSoftPattern =
   /went soft after the crisis \(soft-after-crisis, refused\)/u;
@@ -146,6 +154,186 @@ test("the opening carries the conversation's search label, and every later turn 
   for (const turn of [2, 3, 9]) {
     assert.equal(replyItemForTurn(labeled, turn, undefined).search, "none");
   }
+});
+
+/** A conversation as `turnLabelsOf` reads it: its `expect`, and each `script` entry. */
+function labelsFor(
+  expect: ConversationReplyBase["expect"],
+  script: Record<string, Partial<ScriptedTurn>> = {}
+): ConversationReplyBase {
+  return {
+    ...BASE,
+    ...turnLabelsOf({
+      expect,
+      script: Object.fromEntries(
+        Object.entries(script).map(([turn, entry]) => [
+          turn,
+          { message: "<message>", needs: [], ...entry },
+        ])
+      ),
+    }),
+    openingSearch: "needed",
+  };
+}
+
+const expectsOf = (
+  base: ConversationReplyBase,
+  turns: number,
+  crisisTurn?: number
+) =>
+  Array.from(
+    { length: turns },
+    (_, index) => replyItemForTurn(base, index + 1, crisisTurn).expect
+  );
+
+test("an ordinary turn takes the conversation's expect, until the crisis", () => {
+  const base = labelsFor("question");
+  assert.deepEqual(expectsOf(base, 5), [
+    "question",
+    "question",
+    "question",
+    "question",
+    "question",
+  ]);
+  assert.deepEqual(expectsOf(base, 5, 3), [
+    "question",
+    "question",
+    "crisis",
+    "crisis",
+    "crisis",
+  ]);
+});
+
+test("a scripted turn takes its own expect, or the conversation's, and the turns after it go back to the ordinary kind", () => {
+  const base = labelsFor("venting", {
+    3: { expect: "anger" },
+    5: {},
+  });
+  assert.deepEqual(expectsOf(base, 6), [
+    "venting",
+    "venting",
+    "anger",
+    "venting",
+    "venting",
+    "venting",
+  ]);
+});
+
+test("a conversation whose expect is anger or pushback means its scripted turns, and every other turn is venting", () => {
+  for (const kind of ["anger", "pushback"] as const) {
+    const base = labelsFor(kind, { 4: {} });
+    assert.equal(base.expect, "venting");
+    assert.deepEqual(expectsOf(base, 6), [
+      "venting",
+      "venting",
+      "venting",
+      kind,
+      "venting",
+      "venting",
+    ]);
+  }
+  // With its own expect, a scripted turn overrides that.
+  const own = labelsFor("pushback", { 3: { expect: "anger" }, 4: {} });
+  assert.deepEqual(expectsOf(own, 4), [
+    "venting",
+    "venting",
+    "anger",
+    "pushback",
+  ]);
+});
+
+test("anger and pushback never reach the checks of a turn before the scripted one", () => {
+  const base = labelsFor("anger", { 4: {} });
+  for (const turn of [1, 2, 3]) {
+    const applied = checksFor(replyItemForTurn(base, turn, undefined));
+    assert.ok(applied.counted.includes("no-brushing-off"), `turn ${turn}`);
+  }
+  // The anger turn itself drops it, as an anger opener does.
+  assert.ok(
+    !checksFor(replyItemForTurn(base, 4, undefined)).counted.includes(
+      "no-brushing-off"
+    )
+  );
+});
+
+test("the crisis turn and every later turn are crisis, whatever a scripted turn says", () => {
+  const base = labelsFor("venting", { 5: { expect: "anger" }, 6: {} });
+  assert.deepEqual(expectsOf(base, 7, 4), [
+    "venting",
+    "venting",
+    "venting",
+    "crisis",
+    "crisis",
+    "crisis",
+    "crisis",
+  ]);
+});
+
+test("the opening carries the conversation's search label, a scripted turn its own or optional, and every other turn is none", () => {
+  const base = labelsFor("question", {
+    3: { needs: ["2026-01-12-denver"], search: "needed" },
+    4: {},
+    5: { search: "none" },
+  });
+  const searches = Array.from(
+    { length: 7 },
+    (_, index) => replyItemForTurn(base, index + 1, undefined).search
+  );
+  assert.deepEqual(searches, [
+    "needed",
+    "none",
+    "needed",
+    "optional",
+    "none",
+    "none",
+    "none",
+  ]);
+  // A conversation with no label leaves the opening unlabelled.
+  assert.equal(replyItemForTurn(BASE, 1, undefined).search, undefined);
+});
+
+test("the crisis message is not a script entry, so its search label stays none", () => {
+  const base = labelsFor("venting", { 5: {} });
+  assert.equal(replyItemForTurn(base, 3, 3).search, "none");
+  // A script entry after the crisis is still the author's turn.
+  assert.equal(replyItemForTurn(base, 5, 3).search, "optional");
+});
+
+test("a scripted turn's needs reach its reply, and no other turn has any", () => {
+  const base = labelsFor("question", {
+    3: { needs: ["2026-01-12-denver"], search: "needed" },
+  });
+  assert.deepEqual(needsForTurn(base, 3), ["2026-01-12-denver"]);
+  for (const turn of [1, 2, 4]) {
+    assert.deepEqual(needsForTurn(base, turn), []);
+  }
+  assert.deepEqual(needsForTurn(BASE, 3), []);
+});
+
+test("the rules for the rubric hash show each turn's kind and search label, and that the first return is forgiven", () => {
+  const rules = conversationRulesMaterial();
+  assert.deepEqual(
+    rules.turns.map((turn) => [turn.turn, turn.expect, turn.search]),
+    [
+      [1, "venting", "needed"],
+      [2, "venting", "none"],
+      [3, "pushback", "needed"],
+      [4, "anger", "optional"],
+      [5, "venting", "none"],
+      [6, "crisis", "none"],
+      [7, "crisis", "optional"],
+      [8, "crisis", "none"],
+    ]
+  );
+  assert.deepEqual(rules.turns[2]?.needs, ["<entry>"]);
+  // Returns at 2, 3, 5, and 6: the first is forgiven.
+  assert.deepEqual(rules.loopTurns, [
+    [3, 2],
+    [5, 3],
+    [6, 4],
+  ]);
+  assert.deepEqual(rules.declineTurns, [3, 4]);
+  assert.equal(rules.leftOut.counts, null);
 });
 
 test("a reply knows its turn and where the crisis was", () => {

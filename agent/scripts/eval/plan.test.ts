@@ -12,11 +12,13 @@ import {
 import { loadAllPeople, selectPeople } from "./people.ts";
 import {
   buildPlan,
+  CONVERSATIONS_EVAL,
   DEFERRED_TESTS,
   describePlan,
   distinct,
   needsChat,
   resolveTests,
+  runsConversations,
 } from "./plan.ts";
 import { defaultSweepsDir, loadSweep } from "./sweep.ts";
 import { conversation, makePerson, opener, tempDir } from "./test-fixtures.ts";
@@ -253,6 +255,30 @@ test("a sweep needs Chat only when one of its tests sends a message", () => {
   const prefixes = { chat: [], grade: [], person: ["person/dream-accuracy"] };
   assert.equal(needsChat(prefixes), false);
   assert.equal(needsChat({ ...prefixes, chat: ["chat/facts"] }), true);
+});
+
+test("a sweep needs the simulated user only when it plays conversations", () => {
+  const prefixes = { chat: ["chat/openers"], grade: [], person: [] };
+  assert.equal(runsConversations(prefixes), false);
+  assert.equal(
+    runsConversations({
+      ...prefixes,
+      chat: ["chat/openers", CONVERSATIONS_EVAL],
+    }),
+    true
+  );
+  // The resolved tests of the shipped sweeps say the same.
+  for (const [tests, expected] of [
+    [["openers", "facts"], false],
+    [["person", "conversations"], true],
+    [["person", "dream-accuracy"], false],
+  ] as const) {
+    assert.equal(
+      runsConversations(resolveTests(tests, evalsDir).prefixes),
+      expected,
+      tests.join(", ")
+    );
+  }
 });
 
 test("the dream sweep runs the person pass and Dream accuracy for each memory value, with no Chat", async () => {

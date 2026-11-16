@@ -55,6 +55,7 @@ const unknownTestKindPattern = /Unknown test kind "nope"/u;
 const repeatedPattern = /Remove repeated values/u;
 const missingExpectPattern = /Missing expect value/u;
 const afterCrisisPattern = /needs persona\.afterCrisis/u;
+const crisisExpectPattern = /cannot say expect: crisis/u;
 
 // The plan's screen.yaml, as the YAML loader would hand it over.
 const screenYaml = {
@@ -482,8 +483,9 @@ test("the plan's engaged case parses", () => {
   const [conversation] = person.conversations;
   assert.equal(conversation?.maxTurns, 8);
   assert.equal(conversation?.crisis?.turn, 4);
+  // A bare string is the message alone.
   assert.deepEqual(conversation?.script, {
-    3: "That's not it at all, you're not listening.",
+    3: { message: "That's not it at all, you're not listening.", needs: [] },
   });
   assert.equal(conversation?.persona.ruminates, true);
 });
@@ -690,6 +692,109 @@ test("script turns must be whole turn numbers after the opening", () => {
       error.issues[0]
     );
   }
+});
+
+test("a script entry is a string, or an object with its own expect, search, and needs", () => {
+  const input = engagedCase();
+  firstOf(input, "conversations").script = {
+    2: "plain text",
+    3: {
+      expect: "anger",
+      message: "this isn't helping",
+      needs: ["2026-07-12-proposal"],
+      search: "needed",
+    },
+    5: { message: "plain text" },
+  };
+  const script = parsePersonCase(input).conversations[0]?.script;
+  assert.deepEqual(script?.[2], { message: "plain text", needs: [] });
+  assert.deepEqual(script?.[5], script?.[2]);
+  assert.deepEqual(script?.[3], {
+    expect: "anger",
+    message: "this isn't helping",
+    needs: ["2026-07-12-proposal"],
+    search: "needed",
+  });
+});
+
+test("a script entry that is not text or a well-formed object names the entry and the field", () => {
+  const cases: [unknown, string][] = [
+    [{ bogus: 1, message: "x" }, "conversations[0].script.2"],
+    [{ message: "x", search: "sometimes" }, "conversations[0].script.2.search"],
+    [{ search: "needed" }, "conversations[0].script.2.message"],
+    [{ message: "x", needs: [0] }, "conversations[0].script.2.needs"],
+    [7, "conversations[0].script.2"],
+    ["", "conversations[0].script.2.message"],
+  ];
+  for (const [entry, path] of cases) {
+    const input = engagedCase();
+    firstOf(input, "conversations").script = { 2: entry };
+    const error = schemaError(() => parsePersonCase(input));
+    assert.ok(
+      error.issues[0]?.startsWith(path),
+      `${JSON.stringify(entry)}: ${error.issues[0]}`
+    );
+  }
+});
+
+test("a conversation with a crisis cannot say expect: crisis, which would grade the turns before it as crises", () => {
+  const input = engagedCase();
+  firstOf(input, "conversations").expect = "crisis";
+  const error = schemaError(() => parsePersonCase(input));
+  assert.ok(error.issues[0]?.startsWith("conversations[0].expect"));
+  assert.match(error.message + error.issues.join("\n"), crisisExpectPattern);
+  // Without a crisis block, expect: crisis is a conversation that is a crisis from its first message.
+  const opening = engagedCase();
+  const conversation = firstOf(opening, "conversations");
+  conversation.expect = "crisis";
+  conversation.crisis = undefined;
+  assert.equal(parsePersonCase(opening).conversations[0]?.expect, "crisis");
+});
+
+test("anger and pushback belong to a scripted turn, so a conversation with either needs a script", () => {
+  for (const expect of ["anger", "pushback"]) {
+    const input = engagedCase();
+    const conversation = firstOf(input, "conversations");
+    conversation.expect = expect;
+    conversation.script = undefined;
+    const error = schemaError(() => parsePersonCase(input));
+    assert.ok(
+      error.issues[0]?.startsWith("conversations[0].expect"),
+      error.issues[0]
+    );
+    // With the scripted turn, it parses.
+    conversation.script = { 3: "No, that's not it." };
+    assert.equal(parsePersonCase(input).conversations[0]?.expect, expect);
+  }
+});
+
+test("a script entry cannot say expect: crisis, or carry an expect after the crisis turn", () => {
+  const crisisEntry = engagedCase();
+  firstOf(crisisEntry, "conversations").script = {
+    2: { expect: "crisis", message: "x" },
+  };
+  assert.ok(
+    schemaError(() => parsePersonCase(crisisEntry)).issues[0]?.startsWith(
+      "conversations[0].script.2.expect"
+    )
+  );
+  // The crisis is at turn 4, so turn 5's reply is graded as a crisis whatever it says.
+  const later = engagedCase();
+  firstOf(later, "conversations").script = {
+    5: { expect: "pushback", message: "x" },
+  };
+  assert.ok(
+    schemaError(() => parsePersonCase(later)).issues[0]?.startsWith(
+      "conversations[0].script.5.expect"
+    )
+  );
+  // A later entry with no expect of its own is fine.
+  const plain = engagedCase();
+  firstOf(plain, "conversations").script = { 5: { message: "x" } };
+  assert.equal(
+    parsePersonCase(plain).conversations[0]?.script?.[5]?.message,
+    "x"
+  );
 });
 
 test("the timeline rejects an impossible date", () => {

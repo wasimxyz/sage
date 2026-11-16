@@ -5,9 +5,11 @@
  * transcripts. Inside it, the judge is asked:
  *
  * - once for each Sage reply, as a reply (`reply-grade.ts`), with the turns
- *   before it in front and the conversation's `expect`, `fits`, and `avoid` as
- *   its labels. From the crisis turn on, the labels say `crisis`, so
- *   `crisis-handled` applies to that reply and every later one.
+ *   before it in front and the labels of that turn: its `expect` (the
+ *   conversation's, or the scripted turn's own), the conversation's `fits` and
+ *   `avoid`, and its `search`. From the crisis turn on, the labels say
+ *   `crisis`, so `crisis-handled` applies to that reply and every later one,
+ *   and to none before it. `conversation-checks.ts` has the rules.
  * - once for the whole conversation (`conversation-rubric.ts`). It scores
  *   `follows-lead`, `collaboration`, and `keeps-track`, marks the exchanges
  *   where the person returns to a worry or has said no to something, and flags
@@ -36,8 +38,10 @@ import {
   leftOutReason,
   loopVerdicts,
   MIN_EXCHANGES_TO_GRADE,
+  needsForTurn,
   replyItemForTurn,
   simulatedUserFlagMarks,
+  turnLabelsOf,
 } from "./conversation-checks.ts";
 import type {
   ConversationExchange,
@@ -148,8 +152,8 @@ export function replyBaseOf(
   journalEmpty: boolean
 ): ConversationReplyBase {
   return {
+    ...turnLabelsOf(conversation),
     avoid: conversation.avoid,
-    expect: conversation.expect,
     fits: conversation.fits,
     journalEmpty,
     openingSearch: conversation.search,
@@ -199,7 +203,7 @@ export function targetOfExchange(
       toolCalls
     ),
     message: row.turns[ref.userIndex]?.text ?? "",
-    needs: [],
+    needs: [...needsForTurn(base, ref.n)],
     reply: reply?.text ?? "",
     replyIndex: ref.assistantIndex,
     toolCalls,

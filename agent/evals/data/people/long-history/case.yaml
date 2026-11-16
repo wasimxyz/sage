@@ -390,7 +390,10 @@ conversations:
         have to be a yes. Otherwise the conversation runs to the turn limit.
       ruminates: false
     script:
-      "15": "wait, what did I say about the Denver thing back in January 2025? I can't remember if I wrote that I wanted to go or only that I didn't say no."
+      "15":
+        message: "wait, what did I say about the Denver thing back in January 2025? I can't remember if I wrote that I wanted to go or only that I didn't say no."
+        search: needed
+        needs: [ 2025-01-12-denver ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

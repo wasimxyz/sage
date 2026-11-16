@@ -370,14 +370,14 @@ async function plannedShipped(
   };
 }
 
-test("long-history is left out of default, smoke, quick, and screen, and in deep and dream", async () => {
+test("long-history is left out of default, smoke, quick, and screen, and in the deep sweeps and dream", async () => {
   for (const name of ["default", "smoke", "quick", "screen"]) {
     // biome-ignore lint/performance/noAwaitInLoops: each sweep is planned on its own
     const { people, sweep } = await plannedShipped(name);
     assert.deepEqual(sweep.excludeTags, ["long"], name);
     assert.ok(!people.some((person) => person.id === "long-history"), name);
   }
-  for (const name of ["deep", "dream"]) {
+  for (const name of ["deep", "deep-memory-on", "dream"]) {
     // biome-ignore lint/performance/noAwaitInLoops: each sweep is planned on its own
     const { people, sweep } = await plannedShipped(name);
     assert.deepEqual(sweep.excludeTags, [], name);
@@ -407,10 +407,11 @@ test("the estimate follows the exclusion: leaving long-history out saves its Dre
       sweep,
     });
   };
-  const included = await run({});
-  const excluded = await run({ excludeTags: ["long"] });
+  // Memory on, so Dream takes 60 seconds an entry.
+  const included = await run({ memory: ["on"] });
+  const excluded = await run({ excludeTags: ["long"], memory: ["on"] });
   assert.ok(included.dreamMissCount > excluded.dreamMissCount);
-  // About 300 entries, at 30 seconds with memory off and 60 with it on.
+  // About 300 entries at 60 seconds, and a conversation of 30 turns.
   assert.ok(
     included.hours - excluded.hours > 6,
     `${included.hours.toFixed(1)} h against ${excluded.hours.toFixed(1)} h`
@@ -418,31 +419,38 @@ test("the estimate follows the exclusion: leaving long-history out saves its Dre
   assert.ok(included.costUsd > excluded.costUsd);
 });
 
-test("deep.yaml's estimate, with its placeholders and the judge check, is under its spending cap", async () => {
-  const { estimate, sweep } = await estimateShipped("deep");
-  assert.ok(
-    estimate.costUsd <= sweep.spendingCapUsd,
-    `$${estimate.costUsd.toFixed(2)} against a $${sweep.spendingCapUsd} cap:\n${estimate.lines.join("\n")}`
-  );
-  assert.match(estimate.lines.join("\n"), pattern1);
+test("the deep sweeps' estimates, with their placeholders and the judge check, are under their spending cap", async () => {
+  for (const name of ["deep", "deep-memory-on"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep is estimated on its own
+    const { estimate, sweep } = await estimateShipped(name);
+    assert.ok(
+      estimate.costUsd <= sweep.spendingCapUsd,
+      `${name}: $${estimate.costUsd.toFixed(2)} against a $${sweep.spendingCapUsd} cap:\n${estimate.lines.join("\n")}`
+    );
+    assert.match(estimate.lines.join("\n"), pattern1);
+  }
 });
 
-test("deep.yaml runs everything three times, memory off and on, with the placeholders the user fills in", async () => {
+test("deep.yaml runs the person checks and every conversation three times, memory off, on two placeholder setups", async () => {
   const { setups, sweep } = await loadSweep("deep", {});
-  assert.deepEqual(sweep.tests, [
-    "person",
-    "facts",
-    "openers",
-    "conversations",
-  ]);
+  assert.deepEqual(sweep.tests, ["person", "conversations"]);
   assert.equal(sweep.repeats, 3);
-  assert.deepEqual(sweep.memory, ["off", "on"]);
+  assert.deepEqual(sweep.memory, ["off"]);
   assert.deepEqual(sweep.tags, []);
   assert.deepEqual(sweep.excludeTags, []);
-  assert.equal(
-    setups.length,
-    sweep.chatModels.length * sweep.prompts.length * 2
+  assert.equal(setups.length, 2);
+});
+
+test("deep-memory-on.yaml is deep.yaml with memory on, and nothing else different", async () => {
+  const off = await loadSweep("deep", {});
+  const on = await loadSweep("deep-memory-on", {});
+  assert.deepEqual(on.sweep.memory, ["on"]);
+  assert.deepEqual(
+    { ...on.sweep, memory: off.sweep.memory },
+    off.sweep,
+    "only memory differs"
   );
+  assert.equal(on.setups.length, off.setups.length);
 });
 
 test("repeats multiply the replies", () => {

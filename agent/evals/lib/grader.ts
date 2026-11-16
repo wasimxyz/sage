@@ -61,6 +61,7 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import { conversationRulesMaterial } from "./conversation-checks.ts";
 import {
   CONVERSATION_RUBRIC,
   CONVERSATION_TITLES,
@@ -603,6 +604,9 @@ export interface RubricSettings {
  * - the Dream-source fact sheet and source layout, from stand-in input,
  * - the reply grade's rules for which checks apply to which message, and the
  *   sets of ids it names (its texts are in `rubrics`, its call is in `kinds`),
+ * - the conversation rules that code applies to the judge's marks: which kind
+ *   of message and which search label each turn gets, which returns to a worry
+ *   count, and what leaves a conversation out of the whole-conversation grade,
  * - the temperature and the output cap.
  */
 export function rubricMaterial(settings: RubricSettings = {}) {
@@ -631,6 +635,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
       ])
     ),
     conversation: conversationRubricMaterial(),
+    conversationRules: conversationRulesMaterial(),
     dreamSourceLayout: dreamSourceLayout(),
     journalContext: journalContextLayout(),
     kinds: Object.fromEntries(

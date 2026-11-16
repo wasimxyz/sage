@@ -58,7 +58,7 @@ A conversation is a test where a simulated user plays the person for several tur
 The runner plays one conversation in one Chat session for each repeat. The person’s messages come from four places:
 
 - Turn 1 is the `opening`, word for word.
-- A `script` entry, such as `3: "That's not it at all, you're not listening."`, is sent word for word at its turn. That is how a conversation tests pushback and anger.
+- A `script` entry, such as `3: "That's not it at all, you're not listening."`, is sent word for word at its turn. That is how a conversation tests pushback and anger. An entry can also be an object, `{ message, expect?, search?, needs? }`, which says what kind of message the turn is and whether Sage should search to answer it.
 - `crisis: { turn, message }` is sent word for word at its turn, and the persona’s `afterCrisis` says how the person acts after it.
 - Every other turn is written by the simulated user.
 
@@ -83,7 +83,9 @@ The simulated user is `deepseek/deepseek-v4.1-flash` through the same AI Gateway
 
 It never sees Sage’s tool calls, the rubric, the labels, the fact sheet, or the journal. It returns `{ message, done }` each turn.
 
-The `simulatedUser` key of the sweep file limits it to the providers named in `providers`. Before a conversation, the runner reads each provider’s current output price and drops any that is over `maxOutputPricePerM` ($0.50 by default). A provider with peak-hours pricing counts at its peak price. The calls go in with `providerOptions.gateway.only` and `order`, cheapest first. With no provider left, no conversation can run past its opening, and each ends as `simulator-error`. Its calls reserve in the same spending ledger as the judge’s, and the same cap applies.
+The `simulatedUser` key of the sweep file limits it to the providers named in `providers`. The runner reads each provider’s current output price and drops any that is over `maxOutputPricePerM` ($0.50 by default). A provider with peak-hours pricing counts at its peak price. The calls go in with `providerOptions.gateway.only` and `order`, cheapest first. The spending estimate for a call prices output at the dearest provider the sweep names that the limit allows. With no provider left, no conversation can run past its opening, and each ends as `simulator-error`. Its calls reserve in the same spending ledger as the judge’s, and the same cap applies.
+
+A sweep that runs conversations checks this before any local work. The runner reads the providers and the model’s price, and stops with exit code 2 if there is no provider or no price, and says why. During a run, the first call of a conversation reads them again. A read that fails is tried once more after a second. If that fails too, only that conversation ends as `simulator-error`, and the next conversation tries again.
 
 A failure of the simulated user ends the conversation as `simulator-error` and is not a failure of Sage’s. After a crisis, a refusal looks like an answer with nothing usable in it, so a failure like that is flagged (see [Soft after a crisis](#soft-after-a-crisis)).
 
@@ -91,8 +93,13 @@ A failure of the simulated user ends the conversation as `simulator-error` and i
 
 After the chat pass, `grade/conversations` reads every saved conversation. The judge is asked:
 
-- once for each Sage reply, as a reply. It gets the turns before the reply, the conversation’s `expect`, `fits`, and `avoid`, and the same checks and rubric as [an opener’s reply](#grading-chat-replies). The conversation’s `search` label goes on the opening, and every later turn reacts to what was just said, so it is `none`.
+- once for each Sage reply, as a reply. It gets the turns before the reply, the labels of that turn, the conversation’s `fits` and `avoid`, and the same checks and rubric as [an opener’s reply](#grading-chat-replies).
 - once for the whole conversation. It scores the conversation rubric and marks the worry loops and the nos.
+
+Each turn has its own labels, and code sets them:
+
+- **Kind of message (`expect`).** Before the crisis, a turn takes the conversation’s `expect`, such as `venting` or `question`. A `script` entry takes its own `expect`, or the conversation’s. `anger` and `pushback` answer what Sage just said, so a conversation with either as its `expect` means its scripted turns, and every other turn is `venting`. The kind belongs to that one turn. The turns after it go back to the ordinary kind. From the crisis turn on, every turn is `crisis`, so the crisis check applies there and not before. A conversation with a `crisis` block cannot say `expect: crisis`, and one that says `anger` or `pushback` needs a `script`.
+- **Search (`search`).** The opening takes the conversation’s `search`. A turn the simulated user writes reacts to what was just said, so it is `none`, and so is the crisis message. A `script` entry takes its own `search`, or `optional`, because you wrote that turn and it may ask about the journal. An entry with `search: needed` and `needs` gets the missed-search and found-needed checks.
 
 Which checks apply is decided in code:
 
@@ -260,6 +267,8 @@ make eval
 make eval ARGS='--tag example'
 ```
 
+Only you run evals. `make eval` stops with exit code 2 and “make eval is run by you, not by an agent.” when it runs in an agent’s shell (`CLAUDECODE` is set), `--dry-run` and `--help` included, and no option turns that off.
+
 `SWEEP` picks a file from `agent/evals/sweeps/`, and the default is `default`. `ARGS` carries runner options and filters for `eve eval`:
 
 - `--dry-run`: plans the sweep, builds the Chat prompt overlays, checks the models, starts the grade target, and prints the estimate. It runs no models, pulls nothing, and builds no Sage. It does not run [the judge check](#the-judge-check), which calls the judge. It still downloads the pinned Ollama if you do not have it yet.
@@ -274,16 +283,17 @@ Do not pass `--url`, `--max-concurrency`, `--json`, `--junit`, or `--list`. The 
 
 ## Sweep files
 
-A sweep file lists the values to try, and the runner runs every combination as a setup. Six files ship:
+A sweep file lists the values to try, and the runner runs every combination as a setup. Seven files ship:
 
 - `default.yaml`: today’s models (`qwen3.5:9b` and `nomic-embed-text`), the `person`, `dream-accuracy`, `facts`, and `openers` tests, and memory off and on. It sends no conversations.
-- `smoke.yaml`: a check of the runner. One setup with memory on, only the Sam format template (`tags: [example]`), which sends its two openers, and a $3 spending cap. The judge check that starts every sweep is most of its cost.
+- `smoke.yaml`: a check of the runner. One setup with memory on, only the Sam format template (`tags: [example]`), which sends its openers and one three-turn conversation, so the simulated user runs end to end, and a $3 spending cap. The judge check that starts every sweep is most of its cost, and the conversation adds about $0.20.
 - `dream.yaml`: compares summary models and Dream prompts, as [Comparing Dream prompts](#comparing-dream-prompts) explains. It runs only the person pass, with memory off and on. It includes `long-history`.
 - `screen.yaml`: the first look at Chat. It runs the person checks and sends the openers tagged `screen`, once each, with memory off like a shipped build. It sends no fact questions, which run in `default.yaml`. It runs the nine pulled chat models (`qwen3.5:9b`, `qwen3.5:9b-mlx`, `qwen3:8b`, `qwen3:14b`, `gemma3:12b`, `mistral-nemo:12b`, `phi4:14b`, `lfm2.5:8b`, and `gpt-oss:20b`) against two Chat prompts, `baseline` and `companion-v1`, which makes 18 setups. Dream stays fixed, so the night compares Chat only. Run it with `make eval SWEEP=screen`.
 - `quick.yaml`: a check to run before you merge a prompt or tool change. It uses the default chat model with the shipped prompt and memory off, and sends only the openers tagged `quick`, which cover every kind of check once. It sends no fact questions and runs no person checks. Dream comes from the cache, so a first run after a change to a person’s files also pays for Dream. It has a $5 spending cap. By the estimate with no earlier timings it takes about 18 minutes, for ten openers on two people (`caregiver` and `work`). The judge check, the build, and the last grade pass add about 12 before any reply, so it cannot come in under 10. Each person adds about 75 seconds, for a Sage start, a Chat server start, and a model load, and each opener about 25 seconds. To make it shorter, tag fewer openers `quick`, on fewer people. Run it with `make eval SWEEP=quick`.
-- `deep.yaml`: the deep night. It runs the `person`, `facts`, `openers`, and `conversations` tests three times each, with memory off and on, so you can see whether memory helps. Its `chatModels` and `prompts` are placeholders. Before you run it, fill them in with the chat models and Chat prompts of the top two or three setups from the screen night. The runner runs every combination of the two lists. It covers every person, including `long-history`, and has a $300 spending cap. With the placeholders it comes to about 34 hours and $205 by the default timings, about a night for each setup, so the real timings from the screen night’s reports matter. Run it with `make eval SWEEP=deep`.
+- `deep.yaml`: the deep night. It runs the `person` and `conversations` tests three times each, with memory off like a shipped build. It sends no openers and no fact questions, so the night goes to conversations. Its `chatModels` and `prompts` are placeholders. Before you run it, fill them in with the chat models and Chat prompts of the top two setups from the screen night. The runner runs every combination of the two lists. It covers every person, including `long-history`, and has a $100 spending cap. With the placeholders (two setups) it comes to about 11 hours and $62 by the default timings with Dream cached, and about 15 hours from a cold Dream cache. The default timings run high, because a conversation counts at its `maxTurns` and most end sooner, so the real timings from the screen night’s reports should bring it to one night. If the estimate with them is over about 10 hours, run the sweep once for each setup. Run `make eval SWEEP=dream` first, which fills the Dream cache for memory off and on. Run it with `make eval SWEEP=deep`.
+- `deep-memory-on.yaml`: `deep.yaml` with memory on, for the next night, so you can see whether memory helps. Fill in the same two setups. It comes to about 11 hours and $63 with Dream cached, and about 20 hours from a cold cache, because Dream takes twice as long with memory on. Run it with `make eval SWEEP=deep-memory-on`.
 
-`long-history` is the person with about 300 entries, tagged `long`. Its first Dream run takes hours, so only `deep.yaml` and `dream.yaml` include it. The others list `excludeTags: [ long ]`.
+`long-history` is the person with about 300 entries, tagged `long`. Its first Dream run takes hours, so only the deep sweeps and `dream.yaml` include it. The others list `excludeTags: [ long ]`.
 
 Every key is optional. An unknown key or a value of the wrong type stops the run with a message that names the file and the key.
 
@@ -325,7 +335,7 @@ A setup has a stable 10-character id that does not depend on key order. The runn
 
 The runner works in stages and prints a heading for each one:
 
-1. **Plan.** It reads the sweep file and loads every person. It checks the data: an entry dated after 2026-11-15, a reference that matches no entry, or a `when` phrase that does not cover its entry. It checks each folder that `dreamPrompts` names. It picks the people the sweep’s `tags` cover, maps `tests` to eval files, and prints how many Sage starts, Chat server starts, and model loads the plan needs. A sweep whose tests send no Chat message, such as `dream.yaml`, plans no Chat servers or model loads.
+1. **Plan.** It reads the sweep file and loads every person. It checks the data: an entry dated after 2026-11-15, a reference that matches no entry, or a `when` phrase that does not cover its entry. It checks each folder that `dreamPrompts` names. It picks the people the sweep’s `tags` cover, maps `tests` to eval files, and prints how many Sage starts, Chat server starts, and model loads the plan needs. A sweep whose tests send no Chat message, such as `dream.yaml`, plans no Chat servers or model loads. A sweep that runs conversations then checks [the simulated user](#the-simulated-user), before any local work. `--dry-run` prints the problem and carries on.
 2. **Chat prompts and grade target.** It builds one app root for each Chat prompt and a stub target, checks each with `eve info --json`, and starts the stub target. With no Chat in the sweep, it builds only the stub target.
 3. **Models and estimate.** It fetches the pinned Ollama and starts a temporary Ollama server on `127.0.0.1:11436`. It asks the server about each model and lists the ones that are not pulled yet. It stops on a chat model that cannot call tools, and on a summary or embedding model that cannot complete or embed. It skips think-on setups for models that cannot think. A sweep with no Chat leaves its chat model out of these checks. Then it prints [the estimate](#the-estimate-and-the-spending-cap). `--dry-run` ends here.
 4. **Key and question.** Without a gateway key, the run stops with exit code 2. Then it asks “Continue? [y/N]”, unless you passed `--yes`.
@@ -522,7 +532,7 @@ The [eval viewer](../../eval-viewer/README.md) lists uploaded reports.
 
 1. Run `make eval ARGS='--dry-run'`. It needs no gateway key and runs no models. It shows the plan, the models you still need to pull, and the estimate.
 2. Add `AI_GATEWAY_API_KEY` to `agent/.env.local`.
-3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for under $2. The first run also runs Dream, which takes the longest.
+3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for about $2.50 at most. The first run also runs Dream, which takes the longest.
 4. Read the report in [Eval reports](evals-reports.md). The Sam journal is a format template, so use its report to learn the format, not to judge quality.
 5. Run `make eval`, then add your own people under `agent/evals/data/`, as [Eval fixtures](../../agent/evals/data/README.md) explains.
 

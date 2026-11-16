@@ -1,8 +1,11 @@
-# A check of the runner itself: one setup, and one person. Tiny, but the judge
-# check that starts every sweep grades all its items, and that is most of the
-# cost, now that it also grades a few short conversations. The runner's estimate
-# for the whole run is about $2.15, with no discount for cached input. The $3
-# cap leaves room for that, so the check never stops the sweep for money.
+# A check of the runner itself: one setup, one person, and one three-turn
+# conversation, so the simulated user runs end to end before a deep night.
+# Tiny, but the judge check that starts every sweep grades all its items, and
+# that is most of the cost, now that it also grades a few short conversations.
+# The conversation adds about $0.20 (three reply grades, one whole-conversation
+# grade, and a few cents of simulated user) to an estimate of about $2.15, so
+# the whole run is about $2.35, with no discount for cached input. The $3 cap
+# leaves room for that, so the check never stops the sweep for money.
 #
 # `tags` picks people whose own tags (or whose openers' tags) match, so
 # sam-example, the format template, is the only one. Memory is on so the
@@ -16,7 +19,7 @@ thinking: [ off ]
 contextLengths: [ 32768 ]
 memory: [ on ]
 repeats: 1
-tests: [ person, facts, openers ]
+tests: [ person, facts, openers, conversations ]
 tags: [ example ]
 # long-history takes hours to run Dream the first time, so only deep and dream
 # sweeps include it.

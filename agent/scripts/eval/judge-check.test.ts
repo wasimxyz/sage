@@ -11,6 +11,12 @@ import test from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { ReplyItem } from "../../evals/lib/checks.ts";
+import { replyItemForTurn } from "../../evals/lib/conversation-checks.ts";
+import {
+  gradeConversation,
+  labelsOf,
+  replyBaseOf,
+} from "../../evals/lib/conversation-grade.ts";
 import { loadPerson } from "../../evals/lib/dataset.ts";
 import { createGrader } from "../../evals/lib/grader.ts";
 import {
@@ -701,7 +707,7 @@ async function smokeReplyTasks(
       message: chat.question,
     })),
   ];
-  return items.map(
+  const replyTasks = items.map(
     ({ id, item, message }) =>
       async () =>
         outcomeOf(
@@ -717,6 +723,61 @@ async function smokeReplyTasks(
           })
         )
   );
+  return [...replyTasks, ...smokeConversationTasks(grader, person, context)];
+}
+
+const SMOKE_REPLY =
+  "That sounds like a lot to carry. What feels heaviest right now?";
+
+/**
+ * smoke.yaml's conversation as the grade pass grades it: every Sage reply as a
+ * reply, with the turns before it in front, and then the whole conversation.
+ */
+function smokeConversationTasks(
+  grader: ReturnType<typeof createGrader>,
+  person: Awaited<ReturnType<typeof loadPerson>>,
+  context: string
+): (() => Promise<Outcome>)[] {
+  const { conversations } = person.personCase;
+  assert.equal(conversations.length, 1, "smoke plays one conversation");
+  const [conversation] = conversations;
+  assert.ok(conversation);
+  const users = [conversation.opening, "idk. i keep not going.", "maybe."];
+  assert.equal(users.length, conversation.maxTurns);
+  const exchanges = users.map((user) => ({
+    sage: SMOKE_REPLY,
+    toolCalls: [],
+    user,
+  }));
+  const base = replyBaseOf(conversation, false);
+  const replies = exchanges.map((exchange, index) => async () => {
+    const turn = index + 1;
+    return outcomeOf(
+      `${conversation.id} turn ${turn}`,
+      await gradeReply(grader, {
+        context,
+        earlier: exchanges.slice(0, index).flatMap((earlier) => [
+          { role: "user" as const, text: earlier.user },
+          { role: "assistant" as const, text: earlier.sage },
+        ]),
+        item: replyItemForTurn(base, turn, undefined),
+        label: `reply ${conversation.id} turn ${turn}`,
+        message: exchange.user,
+        reply: exchange.sage,
+        toolCalls: [],
+      })
+    );
+  });
+  const whole = async () => {
+    const graded = await gradeConversation(grader, {
+      context,
+      exchanges,
+      label: `conversation ${conversation.id}`,
+      labels: labelsOf(conversation, { ended: "max-turns" }, false),
+    });
+    return outcomeOf(`${conversation.id} (whole)`, graded);
+  };
+  return [...replies, whole];
 }
 
 async function smokeGrader(t: test.TestContext, replyTokens: number) {

@@ -6,6 +6,11 @@
 
 import { totals } from "../../evals/lib/ledger.ts";
 import { loadPrices, type ModelPrice } from "../../evals/lib/prices.ts";
+import type { SimulatedUserSettings } from "../../evals/lib/schema.ts";
+import {
+  resolveSimulatedUser,
+  type SimulatedUserOptions,
+} from "../../evals/lib/simulated-user.ts";
 
 export type { ModelPrice } from "../../evals/lib/prices.ts";
 
@@ -46,6 +51,26 @@ export async function loadPriceBook(
     }
   }
   return { defaulted, prices };
+}
+
+/**
+ * Why the simulated user cannot run, or undefined when it can. It reads what
+ * the first call of a conversation would read: the providers the gateway
+ * lists for the model, and the model's price. A sweep that runs conversations
+ * asks this before any local work, because a simulated user that is not
+ * available ends every conversation as `simulator-error`, and a night of
+ * generation would be spent on conversations that never held.
+ */
+export async function simulatedUserProblem(
+  settings: SimulatedUserSettings,
+  runDir: string,
+  deps: Pick<SimulatedUserOptions, "allowedProviders" | "loadPrices"> = {}
+): Promise<string | undefined> {
+  const resolved = await resolveSimulatedUser({ ...deps, runDir, settings });
+  if (resolved.ok) {
+    return undefined;
+  }
+  return `The simulated user cannot run, and this sweep runs conversations: ${resolved.reason}\nEvery conversation would end as a simulator error. Fix simulatedUser in the sweep file (providers, maxOutputPricePerM), or take conversations out of its tests.`;
 }
 
 /** The sweep's settled spending so far, in dollars. Zero before the ledger exists. */

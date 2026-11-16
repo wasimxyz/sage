@@ -33,12 +33,20 @@
  * Spending. Calls go through a grader built for this model (`createGrader`),
  * so each one reserves its estimate in the sweep's ledger before it runs and
  * settles with the real cost after, and the same spending cap applies. The
- * estimate prices output at the dearest allowed provider.
+ * estimate prices output at the dearest provider the sweep names that the
+ * limit allows.
+ *
+ * Setup. The first call reads the gateway's providers and the model's price. A
+ * failure is retried once after a short wait, and is never kept: the next call
+ * sets up again, so one network blip ends one conversation and not the rest of
+ * the pass. The runner reads the same two things before any local work when a
+ * sweep runs conversations (`resolveSimulatedUser`).
  *
  * A failure is a result, never a throw. The conversation ends as
  * `simulator-error`, which is not a failure of Sage's.
  */
 import { basename } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { LanguageModel } from "ai";
 
@@ -253,12 +261,25 @@ export function ratingItem(): string {
 export type ProviderLookup = (
   model: string,
   maxOutputPricePerM: number
-) => Promise<{ maxOutputPerM: number; providers: string[] }>;
+) => Promise<{
+  /** The dearest output price among every provider within the limit, whether the sweep lists it or not. */
+  maxOutputPerM: number;
+  /**
+   * Each provider's output price, by the gateway's name for it. A lookup that
+   * leaves it out is priced at `maxOutputPerM`.
+   */
+  outputPerM?: Readonly<Record<string, number>>;
+  providers: string[];
+}>;
 
 export interface ProviderRouting {
   /** Providers the sweep names that are over the price limit now. */
   dropped: string[];
-  /** The dearest output price among the providers the limit allows, for the spending estimate. */
+  /**
+   * The dearest output price among the providers the sweep names that the
+   * limit allows, for the spending estimate. A provider the sweep does not
+   * name cannot be used, so its price is not counted.
+   */
   maxOutputPerM: number;
   /** The providers the calls may go to: the sweep's, within the limit. */
   only: string[];
@@ -294,9 +315,19 @@ export async function resolveRouting(
       `None of the providers the sweep names (${settings.providers.join(", ")}) serves ${settings.model} for $${settings.maxOutputPricePerM} per million output tokens or less. Within the limit now: ${allowed.providers.join(", ")}.`
     );
   }
+  const priceOf = new Map(
+    Object.entries(allowed.outputPerM ?? {}).map(([name, price]) => [
+      name.toLowerCase(),
+      price,
+    ])
+  );
   return {
     dropped,
-    maxOutputPerM: allowed.maxOutputPerM,
+    maxOutputPerM: Math.max(
+      ...only.map(
+        (name) => priceOf.get(name.toLowerCase()) ?? allowed.maxOutputPerM
+      )
+    ),
     only,
     order: [...only].sort((a, b) => rankOf(a) - rankOf(b)),
   };
@@ -335,6 +366,8 @@ export interface SimulatedUserOptions {
   loadPrices?: typeof loadPrices;
   /** A language model to use in place of the gateway. For tests. */
   model?: LanguageModel;
+  /** How long to wait before the one retry of a failed setup, in milliseconds. */
+  retryDelayMs?: number;
   /** The sweep's run directory. It holds the ledger and the price cache. */
   runDir: string;
   settings: SimulatedUserSettings;
@@ -356,6 +389,8 @@ const TURN_OUTPUT_TOKENS = 250;
 /** About how long a rating answer is, in output tokens. */
 const RATING_OUTPUT_TOKENS = 120;
 const NOT_GRADED_PREFIX = /^not graded:\s*/iu;
+/** How long to wait before the one retry of a failed setup. */
+const SETUP_RETRY_DELAY_MS = 1000;
 
 type Ready =
   | { grader: Grader; ok: true; routing: ProviderRouting }
@@ -370,10 +405,27 @@ function failureReason(reason: string): string {
   return reason.replace(NOT_GRADED_PREFIX, "");
 }
 
-async function prepare(options: SimulatedUserOptions): Promise<Ready> {
-  if (options.unavailable !== undefined) {
-    return { ok: false, reason: options.unavailable };
-  }
+/** What the simulated user needs before its first call: where calls may go, and what they cost. */
+export interface SimulatedUserSetup {
+  price: ModelPrice;
+  routing: ProviderRouting;
+}
+
+/**
+ * Resolves the providers the sweep allows and the model's price, the two
+ * network reads the first call needs. Never throws. The runner calls it before
+ * any local work when a sweep runs conversations, so a gateway that cannot be
+ * read, or a sweep with no provider within the limit, stops the run at the
+ * start and not at the first conversation.
+ */
+export async function resolveSimulatedUser(
+  options: Pick<
+    SimulatedUserOptions,
+    "allowedProviders" | "loadPrices" | "runDir" | "settings"
+  >
+): Promise<
+  ({ ok: true } & SimulatedUserSetup) | { ok: false; reason: string }
+> {
   const { settings } = options;
   let routing: ProviderRouting;
   try {
@@ -381,7 +433,6 @@ async function prepare(options: SimulatedUserOptions): Promise<Ready> {
   } catch (error) {
     return { ok: false, reason: messageOf(error) };
   }
-  let price: ModelPrice;
   try {
     const prices = await (options.loadPrices ?? loadPrices)([settings.model], {
       cacheFile: priceCacheFile(options.runDir),
@@ -390,15 +441,31 @@ async function prepare(options: SimulatedUserOptions): Promise<Ready> {
     if (found === undefined) {
       throw new Error(`no price for ${settings.model}`);
     }
-    // Output is priced at the dearest provider the limit allows, which is
-    // never over the limit.
-    price = { ...found, outputPerM: routing.maxOutputPerM };
+    // Output is priced at the dearest provider the sweep names that the limit
+    // allows, which is never over the limit.
+    return {
+      ok: true,
+      price: { ...found, outputPerM: routing.maxOutputPerM },
+      routing,
+    };
   } catch (error) {
     return {
       ok: false,
       reason: `could not price ${settings.model}: ${messageOf(error)}`,
     };
   }
+}
+
+async function prepare(options: SimulatedUserOptions): Promise<Ready> {
+  if (options.unavailable !== undefined) {
+    return { ok: false, reason: options.unavailable };
+  }
+  const { settings } = options;
+  const resolved = await resolveSimulatedUser(options);
+  if (!resolved.ok) {
+    return resolved;
+  }
+  const { price, routing } = resolved;
   return {
     grader: createGrader({
       capUsd: options.capUsd,
@@ -417,14 +484,39 @@ async function prepare(options: SimulatedUserOptions): Promise<Ready> {
   };
 }
 
-/** Builds the simulated user. Nothing is read or called until the first message. */
+/**
+ * Prepares, and tries once more after a short wait when the first try fails.
+ * Setup reads two things from the network, and one blip should not cost a
+ * conversation. A simulated user that is switched off (`unavailable`) says so
+ * at once.
+ */
+async function prepareWithRetry(options: SimulatedUserOptions): Promise<Ready> {
+  const first = await prepare(options);
+  if (first.ok || options.unavailable !== undefined) {
+    return first;
+  }
+  await sleep(options.retryDelayMs ?? SETUP_RETRY_DELAY_MS);
+  return prepare(options);
+}
+
+/**
+ * Builds the simulated user. Nothing is read or called until the first message.
+ * A setup that fails is not kept: the next call sets up again, so a blip that
+ * ends one conversation does not end every conversation after it.
+ */
 export function createSimulatedUser(
   options: SimulatedUserOptions
 ): SimulatedUser {
   let ready: Promise<Ready> | undefined;
-  const getReady = (): Promise<Ready> => {
-    ready ??= prepare(options);
-    return ready;
+  const getReady = async (): Promise<Ready> => {
+    // Callers at the same moment share one attempt.
+    ready ??= prepareWithRetry(options);
+    const attempt = ready;
+    const state = await attempt;
+    if (!state.ok && ready === attempt) {
+      ready = undefined;
+    }
+    return state;
   };
 
   const next: SimulatedUser["next"] = async (input) => {

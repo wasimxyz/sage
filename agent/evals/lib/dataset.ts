@@ -244,10 +244,11 @@ export function resolveNeed(
  *
  * - An entry or a past chat is dated after `today`.
  * - A past chat's turns do not alternate, starting with the person.
- * - A ref in `events`, `summaries`, `retrieval`, `chat`, or `openers` names no
- *   entry. A `needs` ref written `chat:<stem>` names a past chat instead.
- * - An opener that also runs on the empty journal says `search: needed`, which
- *   expects a hit that journal cannot give.
+ * - A ref in `events`, `summaries`, `retrieval`, `chat`, `openers`, or the
+ *   `script` of a conversation names no entry. A `needs` ref written
+ *   `chat:<stem>` names a past chat instead.
+ * - An opener, a conversation, or a scripted turn that also runs on the empty
+ *   journal says `search: needed`, which expects a hit that journal cannot give.
  * - A retrieval item with `when` expects an entry outside the days that phrase
  *   covers on `today`, read the way `search_journal` reads it.
  */
@@ -334,10 +335,33 @@ function needsProblems(person: LoadedPerson): string[] {
     }
   }
   for (const item of personCase.conversations) {
-    if (item.alsoEmpty && item.search === "needed") {
-      problems.push(
-        `conversations (in ${item.id}): alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off.`
+    problems.push(...conversationNeedsProblems(person, item));
+  }
+  return problems;
+}
+
+/** The `needs` of a conversation's script that match nothing, and a search that cannot be met on the empty journal. */
+function conversationNeedsProblems(
+  person: LoadedPerson,
+  item: LoadedPerson["personCase"]["conversations"][number]
+): string[] {
+  const problems: string[] = [];
+  const noHit =
+    "alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off.";
+  if (item.alsoEmpty && item.search === "needed") {
+    problems.push(`conversations (in ${item.id}): ${noHit}`);
+  }
+  for (const [turn, entry] of Object.entries(item.script ?? {})) {
+    for (const ref of entry.needs) {
+      lookUpNeed(
+        person,
+        `conversations (in ${item.id}).script.${turn}.needs`,
+        ref,
+        problems
       );
+    }
+    if (item.alsoEmpty && entry.search === "needed") {
+      problems.push(`conversations (in ${item.id}).script.${turn}: ${noHit}`);
     }
   }
   return problems;

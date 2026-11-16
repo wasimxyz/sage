@@ -649,6 +649,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
   assert.deepEqual(Object.keys(material), [
     "answers",
     "conversation",
+    "conversationRules",
     "dreamSourceLayout",
     "journalContext",
     "kinds",

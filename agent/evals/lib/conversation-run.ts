@@ -6,7 +6,7 @@
  *
  * - turn 1 is the conversation's `opening`, word for word
  * - the crisis turn is `crisis.message`, word for word
- * - a turn named in `script` is that text, word for word
+ * - a turn named in `script` is that entry's `message`, word for word
  * - every other turn is written by the simulated user, who sees only the
  *   visible messages and the person's card (`simulated-user.ts`)
  *
@@ -89,7 +89,7 @@ export function scriptedMessage(
   if (conversation.crisis?.turn === n) {
     return conversation.crisis.message;
   }
-  return conversation.script?.[String(n)];
+  return conversation.script?.[String(n)]?.message;
 }
 
 async function nextMessage(

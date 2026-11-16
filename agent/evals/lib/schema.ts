@@ -257,6 +257,20 @@ export const EXPECTS = [
 ] as const;
 export type Expect = (typeof EXPECTS)[number];
 
+/**
+ * Kinds of message that answer what Sage just said, so a conversation cannot
+ * be about one of them from its first turn. A conversation that names one as
+ * its `expect` says that its scripted turns carry it. Every other turn is
+ * graded as `ORDINARY_EXPECT`.
+ */
+export const SCRIPTED_EXPECTS = [
+  "anger",
+  "pushback",
+] as const satisfies readonly Expect[];
+
+/** What a turn is graded as when it has no kind of its own and the conversation's `expect` is a scripted one. */
+export const ORDINARY_EXPECT = "venting" as const satisfies Expect;
+
 export const WANTS = [
   "vent",
   "understand",
@@ -822,14 +836,37 @@ const crisisSchema = z.strictObject({
 });
 export type ScriptedCrisis = z.infer<typeof crisisSchema>;
 
+/**
+ * A fixed turn of the person. A bare string is the message alone, so
+ * `3: "text"` and `3: { message: "text" }` mean the same.
+ */
+const scriptedTurnSchema = z.preprocess(
+  (value) => (typeof value === "string" ? { message: value } : value),
+  z.strictObject({
+    /**
+     * What kind of message this turn is, for the reply to it. Left out, it
+     * takes the conversation's own `expect`.
+     */
+    expect: expectSchema.optional(),
+    /** Word for word. */
+    message: text,
+    /** Entries and past chats a good answer to this turn depends on. */
+    needs: z.array(needRef).default(() => []),
+    /** Whether Sage should search on this turn. Left out, it is `optional`. */
+    search: searchExpectationSchema.optional(),
+  })
+);
+export type ScriptedTurn = z.output<typeof scriptedTurnSchema>;
+
 const MAX_CONVERSATION_TURNS = 30;
 const DEFAULT_CONVERSATION_TURNS = 8;
 
 interface ConversationShape {
   crisis?: { turn: number };
+  expect: Expect;
   maxTurns: number;
   persona: { afterCrisis?: string };
-  script?: Record<string, string>;
+  script?: Record<string, { expect?: Expect }>;
 }
 
 function addCrisisIssues(
@@ -854,13 +891,32 @@ function addCrisisIssues(
       path: ["persona", "afterCrisis"],
     });
   }
+  if (conversation.expect === "crisis") {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "A conversation with a crisis cannot say expect: crisis, because that grades every reply as a crisis, the ones before the crisis turn too. Say what kind of message the conversation is until then (venting, question, advice, and so on). The reply to the crisis message and every reply after it are graded as a crisis.",
+      path: ["expect"],
+    });
+  }
 }
 
 function addScriptIssues(
   conversation: ConversationShape,
   ctx: z.RefinementCtx
 ): void {
-  for (const key of Object.keys(conversation.script ?? {})) {
+  const scripted = Object.entries(conversation.script ?? {});
+  if (
+    (SCRIPTED_EXPECTS as readonly Expect[]).includes(conversation.expect) &&
+    scripted.length === 0
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: `expect: ${conversation.expect} belongs to a scripted turn, and this conversation has no script. Add the turn to script, or give the conversation another expect.`,
+      path: ["expect"],
+    });
+  }
+  for (const [key, entry] of scripted) {
     const turn = Number(key);
     const path = ["script", key];
     if (!wholeNumberPattern.test(key) || turn < 2) {
@@ -880,6 +936,23 @@ function addScriptIssues(
         code: "custom",
         message: `Turn ${turn} is already the crisis turn.`,
         path,
+      });
+    } else if (entry.expect === "crisis") {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "A scripted turn cannot say expect: crisis. Use the conversation's crisis block, which also tells the simulated user what comes after.",
+        path: [...path, "expect"],
+      });
+    } else if (
+      entry.expect !== undefined &&
+      conversation.crisis !== undefined &&
+      turn > conversation.crisis.turn
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Turn ${turn} is after the crisis turn, so its reply is graded as a crisis. Take expect off this entry.`,
+        path: [...path, "expect"],
       });
     }
   }
@@ -913,11 +986,15 @@ const conversationSchema = z
       .default(DEFAULT_CONVERSATION_TURNS),
     opening: text,
     persona: personaSchema,
-    /** Fixed person turns, such as pushback or anger. Turn number to message. */
-    script: z.record(z.string(), text).optional(),
     /**
-     * Whether Sage should search on the opening message. Every later turn
-     * reacts to what was just said, so it is graded as `none`.
+     * Fixed person turns, such as pushback or anger, by turn number. Each is
+     * the message as text, or `{ message, expect?, search?, needs? }`.
+     */
+    script: z.record(z.string(), scriptedTurnSchema).optional(),
+    /**
+     * Whether Sage should search on the opening message. A turn the simulated
+     * user writes reacts to what was just said, so it is graded as `none`. A
+     * scripted turn says its own `search`, and is `optional` without one.
      */
     search: searchExpectationSchema.optional(),
     tags: z.array(text).default(() => []),

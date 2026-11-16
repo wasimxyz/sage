@@ -577,6 +577,67 @@ test("the opening takes the conversation's search label, and a later turn that s
   );
 });
 
+test("a scripted turn that says search: needed is graded for a missed search, and is not a needless one", async () => {
+  const scripted = personOf("sam", {
+    script: {
+      2: {
+        message: "300. Again.",
+        needs: ["2026-09-03-rent"],
+        search: "needed",
+      },
+    },
+  });
+  const { recorded } = await gradeRows(
+    [rowOf()],
+    {},
+    people(scripted, newUser)
+  );
+  // Sage searched on turn 2 (the reply at index 3), so there is no miss there.
+  const missed = labelled(recorded, "search:missed-search");
+  assert.deepEqual(
+    missed.map((entry) => [entry.metadata?.turnIndex, entry.score]),
+    [
+      [1, 0],
+      [3, 1],
+    ]
+  );
+  // Turn 2 is no longer a turn that needs no search.
+  assert.deepEqual(
+    labelled(recorded, "search:needless-search").map((entry) => [
+      entry.metadata?.turnIndex,
+      entry.score,
+    ]),
+    [
+      [5, 1],
+      [7, 1],
+    ]
+  );
+  // Its needs are read, so the turn is checked for finding them.
+  assert.ok(labelled(recorded, "search:found-needed").length > 0);
+});
+
+test("a scripted turn's needs reach its reply's checks, and no other turn has any", () => {
+  const conversation = conversationOfRow(
+    rowOf(),
+    personOf("sam", {
+      script: { 2: { message: "300. Again.", needs: [1], search: "needed" } },
+    })
+  );
+  const base = replyBaseOf(conversation, false);
+  const row = rowOf();
+  const refs = exchangesOf(row.turns);
+  const targets = refs.map((ref) => targetOfExchange(row, ref, base, 3));
+  assert.deepEqual(
+    targets.map((target) => [target.item.search, target.needs]),
+    [
+      ["needed", []],
+      ["needed", [1]],
+      ["none", []],
+      ["none", []],
+    ]
+  );
+});
+
 test("the checks that need no judge are recorded on every reply, even when the judge fails", async () => {
   const { recorded } = await gradeRows([rowOf()], { conversation: "error" });
   assert.equal(labelled(recorded, "counted:no-runaway-search").length, 4);
