@@ -150,7 +150,7 @@ export const dreamCheckFileSchema = z.strictObject({
   items: z.array(dreamCheckItemSchema).min(1, "List at least one item."),
 });
 
-function pathText(path: readonly PropertyKey[]): string {
+export function pathText(path: readonly PropertyKey[]): string {
   let out = "";
   for (const key of path) {
     out +=
@@ -184,7 +184,7 @@ export function isPlanted(item: DreamCheckItem): boolean {
 }
 
 /** Every item in a folder of YAML files, in file name order. An id used twice is an error. */
-async function loadCheckItems<T extends { id: string }>(
+export async function loadCheckItems<T extends { id: string }>(
   dir: string,
   parse: (input: unknown, label: string) => T[]
 ): Promise<T[]> {
@@ -439,7 +439,7 @@ export const REPLY_CHECK_IDS = [
 
 const rubricLevel = z.number().int().min(1).max(5);
 
-const rubricBoundSchema = z
+export const rubricBoundSchema = z
   .strictObject({
     max: rubricLevel.optional(),
     min: rubricLevel.optional(),
@@ -456,7 +456,7 @@ const rubricBoundSchema = z
     "min must not exceed max."
   );
 
-const checkToolCallSchema = z.strictObject({
+export const checkToolCallSchema = z.strictObject({
   input: z.record(z.string(), z.json()).default(() => ({})),
   name: text,
   output: z.json().optional(),

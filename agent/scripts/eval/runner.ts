@@ -256,9 +256,13 @@ async function planSweep(options: CliOptions): Promise<Planned> {
   if (problems.length > 0) {
     throw new Stop(`The eval data has problems:\n  ${problems.join("\n  ")}`);
   }
-  // Openers marked alsoEmpty run on the empty journal, which is new-user's Sage,
-  // so a sweep that sends openers covers new-user when it needs to.
+  // Openers and conversations marked alsoEmpty run on the empty journal, which
+  // is new-user's Sage, so a sweep that sends them covers new-user when it
+  // needs to. People the sweep excludes by tag (long-history is tagged long)
+  // are left out, and so are their alsoEmpty items.
   const selected = selectPeople(everyone, sweep.tags, {
+    conversations: sweep.tests.includes("conversations"),
+    excludeTags: sweep.excludeTags,
     openers: sweep.tests.includes("openers"),
   });
   if (selected.length === 0) {

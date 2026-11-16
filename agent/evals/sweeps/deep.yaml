@@ -1,0 +1,49 @@
+# The deep night: everything, three times each, on the best Chat setups from the
+# screen night. It runs the person checks, the fact questions, every opener, and
+# every conversation, with memory off and on, so you can see whether memory
+# helps. A simulated user plays the person in each conversation, up to the
+# conversation's maxTurns (30 for long-history).
+#
+# BEFORE YOU RUN IT: fill in chatModels and prompts. They are placeholders.
+# Read the ranking of the screen night (make eval SWEEP=screen) and list the
+# chat models and Chat prompts of the top 2 or 3 setups. The runner runs every
+# combination of the two lists, so to run exactly three setups, list models and
+# prompts whose combinations are those three, or run the sweep once for each
+# setup.
+#
+# It leaves nobody out, so it includes long-history (tagged long): about 300
+# entries, which is hours of Dream the first time for each memory value, and one
+# 30-turn conversation. Dream is cached after that. The default, smoke, quick,
+# and screen sweeps leave long-history out with `excludeTags: [ long ]`.
+#
+# The estimate prints before anything starts. By the default timings, with the
+# placeholders below (one chat model, two prompts, memory off and on, so four
+# setups), it is about 34 hours and $205, or about 8.5 hours and $51 for each
+# setup, so plan on about a night for each setup. The real timings from the
+# screen night's reports make the hours more accurate, and a conversation counts
+# at its maxTurns, so the estimate runs high. Three repeats of every reply and
+# every conversation add up, so the cap is $300, which covers five setups,
+# instead of the usual $50. Lower it if the estimate is more than you want to
+# spend.
+summaryModels: [ qwen3.5:9b ]
+embedModels: [ nomic-embed-text ]
+dreamPrompts: [ baseline ]
+# PLACEHOLDERS: replace with the top 2 or 3 setups from the screen night.
+chatModels: [ qwen3.5:9b ]
+prompts: [ baseline, companion-v1 ]
+thinking: [ off ]
+contextLengths: [ 32768 ]
+memory: [ off, on ]
+repeats: 3
+tests: [ person, facts, openers, conversations ]
+judge: { model: moonshotai/kimi-k3.1-pro }
+simulatedUser:
+  model: deepseek/deepseek-v4.1-flash
+  providers: [ morph, deepinfra, runinfra, relace ]
+  maxOutputPricePerM: 0.5
+speedLimitSeconds: 20
+p90LimitSeconds: null
+maxSwapGrowthMB: 512
+maxToolCallsPerTurn: 6
+replyWords: [ 20, 180 ]
+spendingCapUsd: 300

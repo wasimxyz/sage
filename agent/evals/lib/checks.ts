@@ -95,14 +95,23 @@ export const NOT_APPLICABLE = {
 export interface ReplyItem {
   /** Kinds of help that would miss the moment. */
   avoid: readonly KindOfHelp[];
+  /**
+   * Where the reply sits in a conversation: its 1-based turn, and the turn of
+   * the person's crisis message when there was one. The caller sets `expect`
+   * to `crisis` from that turn on, which is what makes `crisis-handled` apply.
+   */
+  conversation?: { crisisTurn?: number; turn: number };
   /** What kind of message this is. */
   expect: Expect;
   /** Kinds of help that fit. Any one of them, done well, earns full marks. */
   fits: readonly KindOfHelp[];
   /** True when the reply was written against the empty journal. */
   journalEmpty: boolean;
-  /** `opener` is a message to Sage. `chat` is a plain question about the journal. */
-  kind: "chat" | "opener";
+  /**
+   * `opener` is a message to Sage. `chat` is a plain question about the
+   * journal. `conversation` is one turn of a conversation.
+   */
+  kind: "chat" | "conversation" | "opener";
   /** The answer key, for a question about the journal. */
   reference?: string;
   search?: SearchExpectation;

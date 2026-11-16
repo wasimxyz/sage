@@ -53,7 +53,34 @@ test("the sweeps that ship parse, and default runs memory off and on", async () 
   assert.ok(names.includes("screen"));
   // The judge check is most of smoke's cost, so the cap leaves room for it.
   // `judge-check.test.ts` runs the whole check under this cap.
-  assert.equal(smoke.sweep.spendingCapUsd, 2);
+  assert.equal(smoke.sweep.spendingCapUsd, 3);
+});
+
+test("only the deep and dream sweeps include long-history, and deep runs every test three times", async () => {
+  const dir = defaultSweepsDir();
+  const names = availableSweeps();
+  for (const name of ["default", "smoke", "quick", "screen"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep loads on its own
+    const { sweep } = await loadSweep(name, {}, dir);
+    assert.deepEqual(sweep.excludeTags, ["long"], name);
+  }
+  for (const name of ["deep", "dream"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep loads on its own
+    const { sweep } = await loadSweep(name, {}, dir);
+    assert.deepEqual(sweep.excludeTags, [], name);
+  }
+  assert.ok(names.includes("deep"));
+  const deep = await loadSweep("deep", {}, dir);
+  assert.deepEqual(deep.sweep.tests, [
+    "person",
+    "facts",
+    "openers",
+    "conversations",
+  ]);
+  assert.equal(deep.sweep.repeats, 3);
+  assert.deepEqual(deep.sweep.memory, ["off", "on"]);
+  assert.equal(deep.sweep.simulatedUser.maxOutputPricePerM, 0.5);
+  assert.equal(deep.sweep.simulatedUser.model, "deepseek/deepseek-v4.1-flash");
 });
 
 test("a sweep file takes the defaults for what it leaves out", async (t) => {

@@ -5,6 +5,7 @@ import { EVAL_TODAY } from "./eve.ts";
 import {
   countItems,
   dataProblems,
+  emptyJournalConversationCount,
   emptyJournalOpenerCount,
   itemMatchesTags,
   loadAllPeople,
@@ -15,6 +16,10 @@ import { conversation, makePerson, opener } from "./test-fixtures.ts";
 
 const noHostPattern =
   /^grief: opener a is marked alsoEmpty, but there is no new-user person/u;
+const conversationNeedsSearchPattern =
+  /conversations \(in a\): alsoEmpty is set, but search is needed/u;
+const noConversationHostPattern =
+  /^grief: conversation a is marked alsoEmpty, but there is no new-user person/u;
 const hostWithEntriesPattern =
   /^new-user: this person stands for the empty journal/u;
 
@@ -191,6 +196,148 @@ test("on the real people, new-user is covered by the screen sweep and its alsoEm
     countItems(newUser, ["screen"], extra).openers,
     countItems(newUser, ["screen"]).openers + extra
   );
+});
+
+// ---------------------------------------------------------------------------
+// People a sweep leaves out
+// ---------------------------------------------------------------------------
+
+test("a person whose tags hold an excluded tag is never in the sweep, whatever else matches", () => {
+  const sam = makePerson("sam", { openers: [opener("a", ["screen"])] });
+  const long = makePerson("long-history", {
+    conversations: [conversation("why", 30, ["screen"])],
+    openers: [opener("b", ["screen"])],
+    tags: ["long"],
+  });
+  assert.equal(personInSweep(long, [], []), true);
+  assert.equal(personInSweep(long, [], ["long"]), false);
+  assert.equal(personInSweep(long, ["screen"], ["long"]), false);
+  assert.equal(personInSweep(sam, ["screen"], ["long"]), true);
+  assert.deepEqual(
+    selectPeople([sam, long], []).map((person) => person.id),
+    ["sam", "long-history"]
+  );
+  assert.deepEqual(
+    selectPeople([sam, long], [], { excludeTags: ["long"] }).map(
+      (person) => person.id
+    ),
+    ["sam"]
+  );
+  assert.deepEqual(
+    selectPeople([sam, long], ["screen"], { excludeTags: ["long"] }).map(
+      (person) => person.id
+    ),
+    ["sam"]
+  );
+});
+
+test("an excluded person's alsoEmpty items do not bring the empty-journal person in", () => {
+  const long = makePerson("long-history", {
+    conversations: [conversation("why", 30, [], { alsoEmpty: true })],
+    openers: [emptyOpener("o")],
+    tags: ["long"],
+  });
+  const newUser = makePerson("new-user", { entries: 0 });
+  const quiet = makePerson("quiet", { tags: ["quiet"] });
+  const all = [long, newUser, quiet];
+  assert.deepEqual(
+    selectPeople(all, ["quiet"], { conversations: true }).map((p) => p.id),
+    ["quiet"]
+  );
+  // Without the exclusion, long-history is covered by its tag only when asked.
+  assert.deepEqual(
+    selectPeople(all, ["long"], { conversations: true }).map((p) => p.id),
+    ["long-history", "new-user"]
+  );
+  assert.deepEqual(
+    selectPeople(all, ["long"], {
+      conversations: true,
+      excludeTags: ["long"],
+    }).map((p) => p.id),
+    []
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Conversations on the empty journal
+// ---------------------------------------------------------------------------
+
+test("a sweep that sends conversations covers new-user when a covered person has an alsoEmpty one", () => {
+  const grief = makePerson("grief", {
+    conversations: [
+      conversation("hard-night", 6, ["deep"], { alsoEmpty: true }),
+    ],
+    tags: ["grief"],
+  });
+  const newUser = makePerson("new-user", { entries: 0 });
+  const people = [grief, newUser];
+  assert.deepEqual(
+    selectPeople(people, ["grief"]).map((p) => p.id),
+    ["grief"]
+  );
+  assert.deepEqual(
+    selectPeople(people, ["grief"], { conversations: true }).map((p) => p.id),
+    ["grief", "new-user"]
+  );
+  assert.deepEqual(
+    selectPeople(people, ["grief"], { conversations: false }).map((p) => p.id),
+    ["grief"]
+  );
+});
+
+test("the empty-journal person's conversation counts include the alsoEmpty conversations it runs for others", () => {
+  const grief = makePerson("grief", {
+    conversations: [
+      conversation("a", 6, ["deep"], { alsoEmpty: true }),
+      conversation("b", 8, [], { alsoEmpty: true }),
+      conversation("c", 10),
+    ],
+  });
+  const newUser = makePerson("new-user", {
+    conversations: [conversation("own", 5, ["deep"])],
+    entries: 0,
+  });
+  assert.deepEqual(
+    emptyJournalConversationCount(newUser, [grief, newUser], []),
+    { conversations: 2, turns: 14 }
+  );
+  assert.deepEqual(
+    emptyJournalConversationCount(newUser, [grief, newUser], ["deep"]),
+    { conversations: 1, turns: 6 }
+  );
+  assert.deepEqual(emptyJournalConversationCount(grief, [grief, newUser], []), {
+    conversations: 0,
+    turns: 0,
+  });
+  const counts = countItems(newUser, [], 0, { conversations: 2, turns: 14 });
+  assert.equal(counts.conversations, 3);
+  assert.equal(counts.conversationTurns, 19);
+  assert.equal(countItems(newUser, []).conversations, 1);
+});
+
+test("dataProblems flags an alsoEmpty conversation with no empty-journal person", () => {
+  const grief = makePerson("grief", {
+    conversations: [conversation("a", 6, [], { alsoEmpty: true })],
+  });
+  const problems = dataProblems([grief], EVAL_TODAY);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", noConversationHostPattern);
+  assert.deepEqual(
+    dataProblems([grief, makePerson("new-user", { entries: 0 })], EVAL_TODAY),
+    []
+  );
+});
+
+test("dataProblems refuses an alsoEmpty conversation that needs a search", () => {
+  const grief = makePerson("grief", {
+    conversations: [
+      conversation("a", 6, [], { alsoEmpty: true, search: "needed" }),
+    ],
+  });
+  const newUser = makePerson("new-user", { entries: 0 });
+  const problems = dataProblems([grief, newUser], EVAL_TODAY);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", conversationNeedsSearchPattern);
 });
 
 test("dataProblems names the person", () => {

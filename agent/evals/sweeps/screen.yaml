@@ -31,6 +31,9 @@ memory: [ off ]
 repeats: 1
 tests: [ person, openers ]
 tags: [ screen ]
+# long-history takes hours to run Dream the first time, so only deep and dream
+# sweeps include it.
+excludeTags: [ long ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 simulatedUser:
   model: deepseek/deepseek-v4.1-flash

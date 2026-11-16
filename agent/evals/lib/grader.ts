@@ -27,7 +27,13 @@
  *
  * A Chat reply is graded with `replyCall`. Its rubric, its checks, and the
  * layout of its call are in `rubric.ts` and `checks.ts`, and the rubric hash
- * covers them.
+ * covers them. A whole conversation is graded with `conversationCall`, whose
+ * words and layout are in `conversation-rubric.ts`, and the hash covers those
+ * too.
+ *
+ * The simulated user (`simulated-user.ts`) makes its calls through a grader of
+ * its own, built with another model, a routing limit, and a temperature, so its
+ * spending goes through the same ledger and cap as the judge's.
  *
  * To add a kind of grade in a later PR, add its instructions to `RUBRICS`
  * (the rubric hash changes with it) and call `Grader.judge` with the schema
@@ -55,6 +61,14 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import {
+  CONVERSATION_RUBRIC,
+  CONVERSATION_TITLES,
+  type ConversationGradeInput,
+  conversationGradeCall,
+  conversationRubricMaterial,
+  PROBE_CONVERSATION_INPUT,
+} from "./conversation-rubric.ts";
 import {
   type DreamSource,
   dreamSourceLayout,
@@ -100,6 +114,7 @@ const ANSWER_FORMAT = `Answer with three fields, in this order:
 
 /** The system prompt of each kind of grade. Changing one changes the rubric hash. */
 export const RUBRICS = {
+  conversation: CONVERSATION_RUBRIC,
   dreamSource: `You are checking what a journaling app wrote from one source. The source is a journal entry or a chat between a person ("User") and the app's assistant ("Sage").
 
 The app wrote some of these from the source: a summary, a chat summary, a chat title, profile sentences about the author, facts about a subject, and dated events. It saw only this source. It never saw the fact sheet.
@@ -214,7 +229,16 @@ export type JudgeOutcome<T> =
       usage: TokenUsage;
       value: T;
     }
-  | { ok: false; reason: string };
+  | {
+      /**
+       * True when the model answered but no object in the schema's shape could
+       * be read from it. The simulated user's refusal after a crisis looks like
+       * this.
+       */
+      noObject?: true;
+      ok: false;
+      reason: string;
+    };
 
 /** One call to the judge. */
 export interface JudgeCall<S extends z.ZodType> {
@@ -319,10 +343,18 @@ export interface GraderOptions {
   modelId: string;
   /** This model's price, in place of the gateway catalog. For tests. */
   price?: ModelPrice;
+  /**
+   * Limits which providers the gateway may route to, and the order it tries
+   * them in (`providerOptions.gateway.only` and `order`). The simulated user
+   * sets it. The judge leaves it out.
+   */
+  routing?: { only: readonly string[]; order: readonly string[] };
   /** The sweep's run directory. It holds the ledger and the price cache. */
   runDir: string;
   /** Tags the requests, next to `sage-eval`. */
   sweepId: string;
+  /** The sampling temperature. The judge's is always 0. The simulated user sets its own. */
+  temperature?: number;
   timeoutMs?: number;
   /** Set to make every call come back not graded with this reason. */
   unavailable?: string;
@@ -401,6 +433,7 @@ function itemText(sections: [string, string | undefined][]): string {
 
 /** The title of each block in the item section. Changing one changes the rubric hash. */
 export const ITEM_TITLES = {
+  conversation: CONVERSATION_TITLES,
   extraction: {
     current: "Current fact (from the reference)",
     output: "Output: what the app remembers",
@@ -437,6 +470,7 @@ type DreamSourceCall = JudgeCall<typeof dreamSourceGradeSchema>;
  * real calls and the probe calls the rubric hash reads, so they cannot differ.
  */
 const GRADE_CALLS = {
+  conversation: (input: ConversationGradeInput) => conversationGradeCall(input),
   dreamSource: (input: DreamSourceInput): DreamSourceCall => ({
     context: input.context,
     expectedOutputTokens: DREAM_SOURCE_OUTPUT_TOKENS,
@@ -501,6 +535,17 @@ export function replyCall(
 }
 
 /**
+ * The call that asks the judge to grade one whole conversation. The
+ * conversation grade eval passes it to `Grader.judge`, so what it sends is
+ * what the rubric hash read.
+ */
+export function conversationCall(
+  input: ConversationGradeInput
+): JudgeCall<typeof conversationGradeSchema> {
+  return GRADE_CALLS.conversation(input);
+}
+
+/**
  * The call that asks the judge about one Dream source. The Dream accuracy eval
  * passes it to `Grader.judge`, so what it sends is what the rubric hash read.
  */
@@ -514,7 +559,7 @@ export function dreamSourceCall(input: DreamSourceInput): DreamSourceCall {
 
 const RUBRIC_HASH_LENGTH = 10;
 
-/** The schemas the judge answers in. The conversation kind arrives in a later PR. */
+/** The schemas the judge answers in. */
 const ANSWER_SCHEMAS = {
   conversation: conversationGradeSchema,
   dreamSource: dreamSourceGradeSchema,
@@ -562,6 +607,7 @@ export interface RubricSettings {
  */
 export function rubricMaterial(settings: RubricSettings = {}) {
   const probes = {
+    conversation: GRADE_CALLS.conversation(PROBE_CONVERSATION_INPUT),
     dreamSource: dreamSourceProbe(),
     extraction: GRADE_CALLS.extraction({
       ...PROBE,
@@ -584,6 +630,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
         JSON.stringify(z.toJSONSchema(schema)),
       ])
     ),
+    conversation: conversationRubricMaterial(),
     dreamSourceLayout: dreamSourceLayout(),
     journalContext: journalContextLayout(),
     kinds: Object.fromEntries(
@@ -788,11 +835,17 @@ export function createGrader(options: GraderOptions): Grader {
         providerOptions: {
           gateway: {
             caching: "auto",
+            ...(options.routing === undefined
+              ? {}
+              : {
+                  only: [...options.routing.only],
+                  order: [...options.routing.order],
+                }),
             tags: [TAG_SAGE_EVAL, options.sweepId],
           },
         },
         system: call.instructions,
-        temperature: JUDGE_TEMPERATURE,
+        temperature: options.temperature ?? JUDGE_TEMPERATURE,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       });
       const usage = tokenUsageOf(result.usage);
@@ -813,6 +866,9 @@ export function createGrader(options: GraderOptions): Grader {
     } catch (error) {
       settleFailure(reservation.id, error, modelPrice);
       return {
+        ...(NoObjectGeneratedError.isInstance(error)
+          ? { noObject: true as const }
+          : {}),
         ok: false,
         reason: notGradedReason(`not graded: judge error: ${messageOf(error)}`),
       };

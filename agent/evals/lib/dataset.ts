@@ -333,6 +333,13 @@ function needsProblems(person: LoadedPerson): string[] {
       );
     }
   }
+  for (const item of personCase.conversations) {
+    if (item.alsoEmpty && item.search === "needed") {
+      problems.push(
+        `conversations (in ${item.id}): alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off.`
+      );
+    }
+  }
   return problems;
 }
 

@@ -19,6 +19,7 @@ import {
 } from "../../evals/lib/schema.ts";
 import {
   countItems,
+  emptyJournalConversationCount,
   emptyJournalOpenerCount,
   type ItemCounts,
   type LoadedPerson,
@@ -217,7 +218,8 @@ export function buildPlan(
     counts: countItems(
       person,
       sweep.tags,
-      emptyJournalOpenerCount(person, people, sweep.tags)
+      emptyJournalOpenerCount(person, people, sweep.tags),
+      emptyJournalConversationCount(person, people, sweep.tags)
     ),
     empty: person.empty,
     id: person.id,

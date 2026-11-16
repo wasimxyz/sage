@@ -20,6 +20,11 @@ import {
   loadReplyCheckItems,
   resolveReplyCheckItem,
 } from "../../evals/lib/judge-check.ts";
+import {
+  gradeConversationCheckItem,
+  loadConversationCheckItems,
+  resolveConversationCheckItem,
+} from "../../evals/lib/judge-check-conversations.ts";
 import { formatJournalContext } from "../../evals/lib/judge-context.ts";
 import { totals } from "../../evals/lib/ledger.ts";
 import type {
@@ -488,6 +493,8 @@ test("rows from another person in the check's file are not read as its items", a
  */
 const KIMI_PRICE = { inputPerM: 2, outputPerM: 10 };
 const DREAM_ANSWER_TOKENS = 600;
+/** A whole-conversation grade: three scores and a few marks, with room for thinking. */
+const CONVERSATION_ANSWER_TOKENS = 1500;
 
 type Prompt = readonly { content: unknown }[];
 
@@ -515,6 +522,19 @@ function idsAfter(text: string, label: string): string[] {
 
 /** A clean answer for whatever the prompt asks: every check passes, every score is 4. */
 function cleanAnswerFor(text: string): string {
+  if (text.includes("About this conversation:")) {
+    return JSON.stringify({
+      declineMarks: [],
+      loopMarks: [],
+      rubric: ["follows-lead", "collaboration", "keeps-track"].map((id) => ({
+        evidence: "",
+        id,
+        level: 4,
+        reason: "",
+      })),
+      simulatedUserFlags: [],
+    });
+  }
   if (!text.includes("Checks to answer:")) {
     return JSON.stringify({ unsupportedClaims: [] });
   }
@@ -548,9 +568,12 @@ function mockJudge(replyTokens: number): MockLanguageModelV4 {
   return new MockLanguageModelV4({
     doGenerate: async (options) => {
       const text = promptText(options.prompt);
-      const output = text.includes("Checks to answer:")
-        ? replyTokens
-        : DREAM_ANSWER_TOKENS;
+      let output = DREAM_ANSWER_TOKENS;
+      if (text.includes("Checks to answer:")) {
+        output = replyTokens;
+      } else if (text.includes("About this conversation:")) {
+        output = CONVERSATION_ANSWER_TOKENS;
+      }
       await new Promise((resolve) => setTimeout(resolve, 5));
       const input = Math.round(text.length / 4);
       return {
@@ -605,7 +628,7 @@ function outcomeOf(
     : { id, ok: false, reason: result.reason };
 }
 
-/** Every item of the judge check, Dream half then reply half, through one grader. */
+/** Every item of the judge check, Dream, reply, and conversation halves, through one grader. */
 async function judgeCheckTasks(
   grader: ReturnType<typeof createGrader>
 ): Promise<(() => Promise<Outcome>)[]> {
@@ -615,7 +638,25 @@ async function judgeCheckTasks(
       resolveReplyCheckItem(item, { today: "2026-11-15" })
     )
   );
+  const conversations = await Promise.all(
+    (await loadConversationCheckItems()).map((item) =>
+      resolveConversationCheckItem(item, { today: "2026-11-15" })
+    )
+  );
   return [
+    ...conversations.map((resolved) => async () => {
+      const graded = await gradeConversationCheckItem(grader, resolved);
+      const failed = [
+        ...graded.replies.map((entry) => entry.result),
+        graded.whole,
+      ].find((call) => !call.ok);
+      return outcomeOf(
+        resolved.item.id,
+        failed === undefined || failed.ok
+          ? { ok: true }
+          : { ok: false, reason: failed.reason }
+      );
+    }),
     ...dream.map(
       (item) => async () =>
         outcomeOf(item.id, await gradeCheckItem(grader, item))
@@ -742,9 +783,18 @@ test("a reply grade reserves about what it expects to spend, not the output cap"
   assert.ok(spentUsd > 0 && spentUsd < 0.1, `$${spentUsd}`);
 });
 
-test("judgeCheckSize counts the Dream and reply items the check grades", async () => {
+test("judgeCheckSize counts the Dream, reply, and conversation items the check grades", async () => {
   const size = await judgeCheckSize();
+  const conversations = await loadConversationCheckItems();
   assert.equal(size.dreamItems, (await loadDreamCheckItems()).length);
-  assert.equal(size.replyItems, (await loadReplyCheckItems()).length);
-  assert.ok(size.dreamItems > 0 && size.replyItems > 0);
+  assert.equal(size.conversationItems, conversations.length);
+  // A conversation item's graded replies are reply grades too.
+  assert.equal(
+    size.replyItems,
+    (await loadReplyCheckItems()).length +
+      conversations.reduce((sum, item) => sum + item.gradeReplies.length, 0)
+  );
+  assert.ok(
+    size.dreamItems > 0 && size.replyItems > 0 && size.conversationItems > 0
+  );
 });

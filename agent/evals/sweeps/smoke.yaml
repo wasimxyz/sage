@@ -1,8 +1,8 @@
 # A check of the runner itself: one setup, and one person. Tiny, but the judge
 # check that starts every sweep grades all its items, and that is most of the
-# cost. The runner's estimate for the whole run is about $1.50, with no discount
-# for cached input. The $2 cap leaves room for that, so the check never stops
-# the sweep for money.
+# cost, now that it also grades a few short conversations. The runner's estimate
+# for the whole run is about $2.15, with no discount for cached input. The $3
+# cap leaves room for that, so the check never stops the sweep for money.
 #
 # `tags` picks people whose own tags (or whose openers' tags) match, so
 # sam-example, the format template, is the only one. Memory is on so the
@@ -18,6 +18,9 @@ memory: [ on ]
 repeats: 1
 tests: [ person, facts, openers ]
 tags: [ example ]
+# long-history takes hours to run Dream the first time, so only deep and dream
+# sweeps include it.
+excludeTags: [ long ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 speedLimitSeconds: 20
-spendingCapUsd: 2
+spendingCapUsd: 3
