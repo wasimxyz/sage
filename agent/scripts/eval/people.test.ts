@@ -93,9 +93,11 @@ test("the real people load and pass the data checks as of the pinned day", async
   assert.deepEqual(dataProblems(people, EVAL_TODAY), []);
   const sam = people.find((person) => person.id === "sam-example");
   assert.deepEqual(sam?.personCase.tags, ["example"]);
+  // Sam has an opener that also runs on the empty journal, so the person with
+  // that journal is covered too.
   assert.deepEqual(
     selectPeople(people, ["example"]).map((p) => p.id),
-    ["sam-example"]
+    ["new-user", "sam-example"]
   );
 });
 

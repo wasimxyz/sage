@@ -1,0 +1,39 @@
+# A check you can run before merging a prompt or tool change. It uses the
+# default chat model with the shipped prompt (baseline) and memory off, like
+# a shipped build, and sends only the openers tagged `quick`: ten openers on
+# two people, caregiver and work. They cover every check kind once (a crisis,
+# a not-a-crisis, an injection, a search that is needed, one that is not, a
+# past chat, a time, a boundary), plus a few ordinary openers.
+#
+# `tags: [quick]` picks the people who have a `quick` opener, and sends only
+# those openers. None of them is marked alsoEmpty, so new-user does not run.
+# The judge check runs first, as in every sweep.
+#
+# It sends the openers and nothing else: no fact questions, no person checks,
+# and no Dream accuracy. Dream comes from the cache. A person whose files, or
+# Dream's code, changed since the last run runs Dream again, and the estimate
+# adds those hours. The estimate prints before anything starts.
+#
+# By the estimate with no earlier timings it takes about 18 minutes. The judge
+# check, the build, and the last grade pass add about 12 before any reply, so
+# it cannot come in under 10. Each person adds about 75 seconds, for a Sage
+# start, a Chat server start, and a model load, and each opener about 25
+# seconds. Tag fewer openers `quick`, on fewer people, to make it shorter.
+summaryModels: [ qwen3.5:9b ]
+embedModels: [ nomic-embed-text ]
+dreamPrompts: [ baseline ]
+chatModels: [ qwen3.5:9b ]
+prompts: [ baseline ]
+thinking: [ off ]
+contextLengths: [ 32768 ]
+memory: [ off ]
+repeats: 1
+tests: [ openers ]
+tags: [ quick ]
+judge: { model: moonshotai/kimi-k3.1-pro }
+speedLimitSeconds: 20
+p90LimitSeconds: null
+maxSwapGrowthMB: 512
+maxToolCallsPerTurn: 6
+replyWords: [ 20, 180 ]
+spendingCapUsd: 5

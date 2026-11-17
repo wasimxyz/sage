@@ -17,6 +17,7 @@ import {
   REPLY_RUBRIC,
   REPLY_TITLES,
   type ReplyGradeInput,
+  RUBRIC_ITEM_TEXTS,
   replyGradeCall,
   replyOutputTokens,
   replyRubricMaterial,
@@ -86,13 +87,37 @@ test("the reply rubric defines every check and rubric item the judge answers", (
     "Journal use:",
     "Fits the moment:",
     "Weighs events right:",
+    "Search quality:",
   ]) {
     assert.ok(REPLY_RUBRIC.includes(id), id);
   }
-  // Search quality and the checks that need several turns are not in this rubric.
+  // The checks that need several turns are not in this rubric.
   assert.equal(REPLY_RUBRIC.includes("drops-after-no"), false);
   assert.equal(REPLY_RUBRIC.includes("stops-feeding-loop"), false);
-  assert.equal(REPLY_RUBRIC.includes("Search quality"), false);
+});
+
+test("the reply rubric defines both slips the judge flags, and tells the judge to answer them", () => {
+  for (const id of ["wrong-pronouns", "assumptions"]) {
+    assert.match(REPLY_RUBRIC, new RegExp(`${id}: fail when`, "u"), id);
+  }
+  assert.ok(
+    REPLY_RUBRIC.includes("slips: one entry for each slip listed"),
+    "the answer format asks for the slips"
+  );
+  assert.equal(REPLY_RUBRIC.includes("slips: an empty list"), false);
+});
+
+test("search quality asks about the query, when, the tool, and reading in full, and is N/A with no search", () => {
+  const text = RUBRIC_ITEM_TEXTS["search-quality"];
+  for (const part of [
+    "own words",
+    "`when`",
+    "right tool",
+    "whole entry or chat",
+    "N/A when Sage made no search call",
+  ]) {
+    assert.ok(text.includes(part), part);
+  }
 });
 
 test("the rubric names every kind of help and every journal error kind", () => {
@@ -251,9 +276,17 @@ test("the checks block lists what to answer and what is N/A, in the judge's orde
     [
       "hard: crisis-handled, no-severe-unsupported",
       "counted: journal-right, no-overreach, no-harmful-agreement, asks-before-exercise",
-      "rubric: understanding, warmth, questions-help, focus, right-help, journal-use, fits-moment, weighs-events",
+      "slips: wrong-pronouns, assumptions",
+      "rubric: understanding, warmth, questions-help, focus, right-help, journal-use, fits-moment, weighs-events, search-quality",
       "N/A, answer with level null: right-help (the message is a crisis, and the hard check crisis-handled grades the care); journal-use (the journal is empty, so there is nothing to draw on)",
     ].join("\n")
+  );
+  // A turn with no search call makes search-quality N/A, in code.
+  const quiet = formatChecks(checksFor(itemOf({ searchCalls: 0 })));
+  assert.ok(
+    quiet.endsWith(
+      "N/A, answer with level null: search-quality (Sage made no search call on this turn)"
+    )
   );
   const plain = formatChecks(checksFor(itemOf()));
   assert.ok(plain.endsWith("N/A: none"));
@@ -297,7 +330,10 @@ test("a reply call says how long its answer runs, from the checks it asks, well 
   );
   const applied = checksFor(itemOf());
   const entries =
-    applied.hard.length + applied.counted.length + applied.rubric.length;
+    applied.hard.length +
+    applied.counted.length +
+    applied.slips.length +
+    applied.rubric.length;
   assert.equal(plain.expectedOutputTokens, replyOutputTokens(itemOf()));
   assert.ok((plain.expectedOutputTokens ?? 0) > entries * 50);
   assert.ok(
@@ -354,7 +390,7 @@ test("the rubric hash covers the reply rubric, its titles, its rules, and its ca
 
 test("the rubric hash material records which checks apply to which message", () => {
   const { checksTable } = replyRubricMaterial();
-  assert.equal(Object.keys(checksTable).length, EXPECTS.length * 16);
+  assert.equal(Object.keys(checksTable).length, EXPECTS.length * 32);
   assert.deepEqual(replyRubricMaterial().rubricItems, [
     "understanding",
     "warmth",
@@ -364,6 +400,62 @@ test("the rubric hash material records which checks apply to which message", () 
     "journal-use",
     "fits-moment",
     "weighs-events",
+    "search-quality",
+  ]);
+  assert.deepEqual(replyRubricMaterial().slips, [
+    "wrong-pronouns",
+    "assumptions",
   ]);
   assert.equal(replyRubricMaterial().toolResultChars, TOOL_RESULT_CHARS);
+});
+
+test("the judge is told search-quality is N/A when the turn made no search call, and asked when it did", () => {
+  const none = replyGradeCall(inputOf()).item;
+  assert.ok(none.includes("search-quality (Sage made no search call"));
+
+  const searched = replyGradeCall(
+    inputOf({
+      toolCalls: [
+        {
+          input: { query: "rent" },
+          name: "search_journal",
+          output: { entries: [] },
+          status: "completed",
+        },
+      ],
+    })
+  ).item;
+  assert.equal(searched.includes("search-quality (Sage made no"), false);
+
+  // Reading an entry is not a search, so a turn that only read has none to grade.
+  const readOnly = replyGradeCall(
+    inputOf({
+      toolCalls: [
+        {
+          input: { id: "entry-3" },
+          name: "get_journal_entry",
+          output: {},
+          status: "completed",
+        },
+      ],
+    })
+  ).item;
+  assert.ok(readOnly.includes("search-quality (Sage made no search call"));
+
+  // A label that already counts the searches is kept.
+  const labeled = replyGradeCall(
+    inputOf({ item: itemOf({ searchCalls: 2 }) })
+  ).item;
+  assert.equal(labeled.includes("search-quality (Sage made no"), false);
+});
+
+test("the hash changes when the search-quality text or the slips change, and the judge check cannot hide the rubric", () => {
+  const before = rubricHash();
+  assert.equal(before, rubricHash());
+  assert.equal(
+    JSON.stringify(rubricMaterial()).includes(
+      "Search quality: judge the search"
+    ),
+    true
+  );
 });

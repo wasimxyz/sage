@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  chatIdFor,
   countWords,
   evalDataRoot,
   journalIdFor,
@@ -13,10 +14,30 @@ import {
   loadManifest,
   loadPeople,
   loadPerson,
+  parseChatTurns,
   parseFrontmatter,
+  resolveChat,
   resolveEntry,
+  resolveNeed,
   validatePerson,
 } from "./dataset.ts";
+
+const pattern13 =
+  /text before the first "User:" or "Sage:" line: "Hello there\."/u;
+const pattern12 = /turn 2 has no text/u;
+const pattern11 = /text before the first/u;
+const pattern10 =
+  /chats\/2026-09-16-three-questions\.md needs a YYYY-MM-DD date/u;
+const pattern9 = /chats\/2026-09-16-three-questions\.md needs a title/u;
+const pattern8 = /has no User: or Sage: turns/u;
+const pattern7 =
+  /chats\/2026-09-16-three-questions\.md: text before the first/u;
+const pattern6 = /Write a past chat as chat:<stem>/u;
+const pattern5 = /Leave off \.md/u;
+const pattern4 = /no past chat with the stem "nope"/u;
+const pattern3 = /Manifest has no ids for tmp/u;
+const pattern2 = /no chat id for past chat 1/u;
+const pattern1 = /chatIds that are not numbers/u;
 
 const TODAY = "2026-11-15";
 
@@ -55,6 +76,11 @@ function entryText(date: string, title: string, body: string): string {
   return `---\ndate: ${date}\ntitle: ${title}\n---\n\n${body}\n`;
 }
 
+/** A past chat file: frontmatter, then one line for each turn. */
+function chatText(date: string, title: string, turns: string[]): string {
+  return `---\ndate: ${date}\ntitle: ${title}\n---\n${turns.join("\n")}\n`;
+}
+
 /** A data root with a `people/` folder. Each person is a map of file name to text. */
 function makeRoot(people: Record<string, Record<string, string>>): string {
   const root = mkdtempSync(join(tmpdir(), "sage-eval-people-"));
@@ -70,22 +96,28 @@ function makeRoot(people: Record<string, Record<string, string>>): string {
   return root;
 }
 
-async function withRoot<T>(
-  root: string,
-  run: () => Promise<T> | T
-): Promise<T> {
-  const previous = process.env.SAGE_EVAL_DATA;
-  process.env.SAGE_EVAL_DATA = root;
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) {
-      delete process.env.SAGE_EVAL_DATA;
-    } else {
-      process.env.SAGE_EVAL_DATA = previous;
+// The data root is one environment variable for the whole process, so two
+// roots cannot be set at once. A call waits for the ones before it, or the
+// last one to finish would put back the root of another call.
+let rootTurn: Promise<unknown> = Promise.resolve();
+
+function withRoot<T>(root: string, run: () => Promise<T> | T): Promise<T> {
+  const result = rootTurn.then(async () => {
+    const previous = process.env.SAGE_EVAL_DATA;
+    process.env.SAGE_EVAL_DATA = root;
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.SAGE_EVAL_DATA;
+      } else {
+        process.env.SAGE_EVAL_DATA = previous;
+      }
+      rmSync(root, { force: true, recursive: true });
     }
-    rmSync(root, { force: true, recursive: true });
-  }
+  });
+  rootTurn = result.catch(() => undefined);
+  return result;
 }
 
 const tinyCase = (id: string, extra = "") =>
@@ -172,7 +204,10 @@ test("chats and other files beside the entries are not entries", async () => {
     alpha: {
       "2026-04-12-first-run.md": entryText("2026-04-12", "First run", "Ran."),
       "case.yaml": tinyCase("alpha"),
-      "chats/2026-05-01-first-chat.md": "User: hi\n\nSage: hello\n",
+      "chats/2026-05-01-first-chat.md": chatText("2026-05-01", "First chat", [
+        "User: hi",
+        "Sage: hello",
+      ]),
       "notes.txt": "not an entry",
     },
   });
@@ -180,6 +215,10 @@ test("chats and other files beside the entries are not entries", async () => {
   assert.deepEqual(
     person.entries.map((entry) => entry.stem),
     ["2026-04-12-first-run"]
+  );
+  assert.deepEqual(
+    person.chats.map((chat) => chat.stem),
+    ["2026-05-01-first-chat"]
   );
 });
 
@@ -537,4 +576,304 @@ test("new-user is an empty journal", async () => {
   assert.equal(person.empty, true);
   assert.deepEqual(person.entries, []);
   assert.match(person.personCase.about, firstTimePattern);
+});
+
+// ---------------------------------------------------------------------------
+// Past chats
+// ---------------------------------------------------------------------------
+
+const CHAT_STEM = "2026-09-16-three-questions";
+
+/** Three entries, and a past chat of the given file text. */
+function withChat(
+  chat: string,
+  extra = ""
+): Record<string, Record<string, string>> {
+  const files = threeEntries("tmp", extra);
+  files.tmp = { ...files.tmp, [`chats/${CHAT_STEM}.md`]: chat };
+  return files;
+}
+
+const goodChat = chatText("2026-09-16", "Three questions", [
+  "User: Help me with a list.",
+  "Sage: Sure. What is it for?",
+  "User: A meeting.",
+  "Sage: Then start with what you want from it.",
+]);
+
+test("parseChatTurns splits a body into User and Sage turns", () => {
+  assert.deepEqual(
+    parseChatTurns("User: Hi.\nSage: Hello.\n\nUser:   Bye.\n"),
+    [
+      { role: "user", text: "Hi." },
+      { role: "assistant", text: "Hello." },
+      { role: "user", text: "Bye." },
+    ]
+  );
+});
+
+test("a turn can run over several lines, and a marker later in a line is not a marker", () => {
+  const turns = parseChatTurns(
+    "User: First line.\nSecond line.\n\nThird after a gap. Sage: not a marker.\nSage: Reply."
+  );
+  assert.equal(turns.length, 2);
+  assert.equal(
+    turns[0]?.text,
+    "First line.\nSecond line.\n\nThird after a gap. Sage: not a marker."
+  );
+  assert.equal(turns[1]?.text, "Reply.");
+});
+
+test("parseChatTurns rejects text before the first marker and a turn with no text", () => {
+  assert.throws(() => parseChatTurns("Hello there.\nUser: Hi."), pattern13);
+  assert.throws(
+    () => parseChatTurns("User: Hi.\nSage:\nUser: Bye."),
+    pattern12
+  );
+  assert.deepEqual(parseChatTurns("\n\n"), []);
+  // A marker needs the capital letter and the colon at the start of the line.
+  assert.throws(() => parseChatTurns("user: hi"), pattern11);
+  assert.throws(() => parseChatTurns("  User: hi"), pattern11);
+});
+
+test("loadPerson reads past chats in filename order with stems, dates, titles, and turns", async () => {
+  const files = withChat(goodChat);
+  files.tmp = {
+    ...files.tmp,
+    "chats/2026-07-01-earlier.md": chatText("2026-07-01", "Earlier", [
+      "User: One.",
+      "Sage: Two.",
+    ]),
+  };
+  const person = await withRoot(makeRoot(files), () => loadPerson("tmp"));
+  assert.deepEqual(
+    person.chats.map((chat) => [chat.index, chat.stem, chat.date, chat.title]),
+    [
+      [1, "2026-07-01-earlier", "2026-07-01", "Earlier"],
+      [2, CHAT_STEM, "2026-09-16", "Three questions"],
+    ]
+  );
+  assert.equal(person.chats[1]?.turns.length, 4);
+  assert.equal(person.chats[1]?.turns[0]?.role, "user");
+  assert.equal(person.chats[1]?.turns[1]?.role, "assistant");
+  assert.equal(person.chats[1]?.wordCount, 20);
+  assert.deepEqual(validatePerson(person, TODAY), []);
+});
+
+test("a person with no chats folder has no past chats", async () => {
+  const person = await personWith("");
+  assert.deepEqual(person.chats, []);
+});
+
+test("a chat file needs a real date, a title, and a turn, and says which file is wrong", async () => {
+  const bad = async (text: string) =>
+    await withRoot(makeRoot(withChat(text)), () => loadPerson("tmp"));
+  await assert.rejects(
+    bad(chatText("soon", "T", ["User: a", "Sage: b"])),
+    pattern10
+  );
+  await assert.rejects(
+    bad(chatText("2026-09-16", "", ["User: a", "Sage: b"])),
+    pattern9
+  );
+  await assert.rejects(bad(chatText("2026-09-16", "T", [])), pattern8);
+  await assert.rejects(
+    bad(chatText("2026-09-16", "T", ["Hi there", "User: a"])),
+    pattern7
+  );
+});
+
+test("validatePerson flags a chat dated after today", async () => {
+  const person = await withRoot(makeRoot(withChat(goodChat)), () =>
+    loadPerson("tmp")
+  );
+  assert.deepEqual(validatePerson(person, "2026-09-16"), []);
+  assert.deepEqual(validatePerson(person, "2026-09-15"), [
+    `chats/${CHAT_STEM}.md is dated 2026-09-16, after 2026-09-15.`,
+  ]);
+});
+
+test("validatePerson flags turns that do not alternate, starting with the person", async () => {
+  const twoUsers = chatText("2026-09-16", "T", [
+    "User: a",
+    "User: b",
+    "Sage: c",
+  ]);
+  const startsWithSage = chatText("2026-09-16", "T", ["Sage: a", "User: b"]);
+  const cases = [
+    [twoUsers, 2, "Sage:"],
+    [startsWithSage, 1, "User:"],
+  ] as const;
+  await Promise.all(
+    cases.map(async ([text, turn, marker]) => {
+      const person = await withRoot(makeRoot(withChat(text)), () =>
+        loadPerson("tmp")
+      );
+      const problems = validatePerson(person, TODAY);
+      assert.equal(problems.length, 1);
+      assert.equal(
+        problems[0],
+        `chats/${CHAT_STEM}.md: turn ${turn} should start with ${marker}. Turns alternate, starting with User:.`
+      );
+    })
+  );
+});
+
+test("needs can name a past chat as chat:<stem>, and a bad one is named in the problems", async () => {
+  const extra = [
+    "chat:",
+    `  - { question: Q, reference: R, needs: [1, "chat:${CHAT_STEM}"] }`,
+    "openers:",
+    "  - id: last-time",
+    "    message: Last time we talked.",
+    "    expect: question",
+    `    needs: ["chat:${CHAT_STEM}", 2026-04-12-first-run]`,
+    "  - id: wrong",
+    "    message: Hm.",
+    "    expect: question",
+    '    needs: ["chat:nope", "chat:", 2026-04-12-first-run]',
+    "",
+  ].join("\n");
+  const root = makeRoot(withChat(goodChat, extra));
+  // A bare "chat:" is refused by the schema before the loader checks anything.
+  await assert.rejects(
+    withRoot(root, () => loadPerson("tmp")),
+    pattern6
+  );
+  const fixed = extra.replace(', "chat:", ', ", ");
+  const person = await withRoot(makeRoot(withChat(goodChat, fixed)), () =>
+    loadPerson("tmp")
+  );
+  assert.deepEqual(validatePerson(person, TODAY), [
+    'openers (in wrong).needs: tmp has no past chat with the stem "nope". A stem looks like "2026-09-16-three-questions".',
+  ]);
+});
+
+test("an opener that also runs on the empty journal cannot say search: needed", async () => {
+  const person = await personWith(
+    [
+      "openers:",
+      "  - { id: hey, message: hey, expect: question, search: none, alsoEmpty: true }",
+      "  - { id: maybe, message: hm, expect: question, search: optional, alsoEmpty: true }",
+      "  - { id: plain, message: hm, expect: question, alsoEmpty: true }",
+      "  - { id: look, message: hm, expect: question, search: needed }",
+      "  - { id: bad, message: hm, expect: question, search: needed, alsoEmpty: true }",
+      "",
+    ].join("\n")
+  );
+  assert.deepEqual(validatePerson(person, TODAY), [
+    "openers (in bad): alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off.",
+  ]);
+});
+
+test("a person with no chats names no stem for a chat: need", async () => {
+  const person = await personWith(
+    [
+      "openers:",
+      "  - id: a",
+      "    message: m",
+      "    expect: question",
+      '    needs: ["chat:x"]',
+      "",
+    ].join("\n")
+  );
+  assert.deepEqual(validatePerson(person, TODAY), [
+    'openers (in a).needs: tmp has no past chats, so there is no chat "x".',
+  ]);
+});
+
+test("resolveChat takes a stem or a whole chat: ref, and resolveNeed picks the kind", async () => {
+  const person = await withRoot(makeRoot(withChat(goodChat)), () =>
+    loadPerson("tmp")
+  );
+  assert.equal(resolveChat(person, CHAT_STEM).title, "Three questions");
+  assert.equal(resolveChat(person, `chat:${CHAT_STEM}`).stem, CHAT_STEM);
+  assert.throws(() => resolveChat(person, `${CHAT_STEM}.md`), pattern5);
+  const chat = resolveNeed(person, `chat:${CHAT_STEM}`);
+  assert.equal(chat.kind, "chat");
+  const entry = resolveNeed(person, "2026-04-12-first-run");
+  assert.equal(entry.kind, "entry");
+  assert.equal(resolveNeed(person, 2).kind, "entry");
+  assert.throws(() => resolveNeed(person, "chat:nope"), pattern4);
+});
+
+test("chatIdFor maps a chat's index onto the id the seed step saved it under", async () => {
+  const person = await withRoot(makeRoot(withChat(goodChat)), () =>
+    loadPerson("tmp")
+  );
+  const [chat] = person.chats;
+  assert.ok(chat);
+  const manifest = {
+    cases: { tmp: { chatIds: [31], journalIds: [10, 11, 12] } },
+  };
+  assert.equal(chatIdFor(manifest, "tmp", chat), 31);
+  assert.throws(() => chatIdFor({ cases: {} }, "tmp", chat), pattern3);
+  assert.throws(
+    () => chatIdFor({ cases: { tmp: { journalIds: [1] } } }, "tmp", chat),
+    pattern2
+  );
+});
+
+test("loadManifest keeps chatIds, and refuses ones that are not numbers", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sage-eval-manifest-"));
+  try {
+    const path = join(dir, "manifest.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        cases: {
+          a: { chatIds: [3, 4], journalIds: [1] },
+          b: { journalIds: [2] },
+        },
+      })
+    );
+    const manifest = loadManifest(path);
+    assert.deepEqual(manifest.cases.a.chatIds, [3, 4]);
+    assert.equal(manifest.cases.b.chatIds, undefined);
+    writeFileSync(
+      path,
+      JSON.stringify({ cases: { a: { chatIds: ["x"], journalIds: [1] } } })
+    );
+    assert.throws(() => loadManifest(path), pattern1);
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("the shipped past chats load, alternate, and are dated before the pinned day", async () => {
+  const people = await loadPeople();
+  const withChats = people.filter((person) => person.chats.length > 0);
+  assert.ok(withChats.length >= 9);
+  let total = 0;
+  for (const person of withChats) {
+    for (const chat of person.chats) {
+      total += 1;
+      assert.ok(chat.date <= TODAY, `${person.id} ${chat.fileName}`);
+      assert.ok(chat.turns.length >= 4, `${person.id} ${chat.fileName}`);
+      assert.equal(chat.turns[0]?.role, "user");
+    }
+  }
+  assert.equal(total, 27);
+  const newUser = people.find((person) => person.id === "new-user");
+  assert.deepEqual(newUser?.chats, []);
+});
+
+test("every opener that needs a past chat names one the person has", async () => {
+  const people = await loadPeople();
+  let named = 0;
+  for (const person of people) {
+    for (const opener of person.personCase.openers) {
+      for (const ref of opener.needs) {
+        if (typeof ref === "string" && ref.startsWith("chat:")) {
+          named += 1;
+          assert.equal(
+            resolveNeed(person, ref).kind,
+            "chat",
+            `${person.id} ${opener.id}`
+          );
+        }
+      }
+    }
+  }
+  assert.ok(named >= 8, `${named} openers name a past chat`);
 });

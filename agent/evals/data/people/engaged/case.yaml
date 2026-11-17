@@ -38,6 +38,11 @@ cast:
     pronouns: she/her
     alive: true
     note: "Ninety-four and healthy; she walks to the post office. 'Before I go' is her recurring joke about the wedding date. She is not ill."
+  - name: Jess
+    relation: friend from the softball league
+    pronouns: she/her
+    alive: true
+    note: "Appears only in the past chat from 2026-09-22. Her thirtieth-birthday cabin weekend ($380 each plus gas) is the trip the author skipped on 2026-09-20. The journal does not name the friend."
 timeline:
   - date: 2026-05-23
     what: "First softball game of the season. The team lost 14 to 3."
@@ -157,7 +162,7 @@ openers:
     avoid: [ problem-solving, small-step ]
     search: optional
     needs: [ 2026-10-26-lost-mia ]
-    tags: [ screen, quick, tricky ]
+    tags: [ screen, tricky ]
   - id: nell-before-i-go
     message: "Jordan's grandmother did the 'before I go, ha' thing about the wedding again on the call today and I laughed along, but now I can't shake it. What if she knows something we don't? We still haven't picked a date and suddenly I feel like I'm on a clock."
     expect: venting
@@ -189,7 +194,6 @@ openers:
         problem-solving,
       ]
     search: none
-    tags: [ screen ]
   - id: upfront-about-money
     message: "Noor's planning a birthday weekend away in March, and if money's still tight I'll just say so straight. I'm honestly really upfront with my friends about money, it's never been a thing for me. Is it weird to just say 'I can't afford it' and leave it there?"
     expect: differs
@@ -197,6 +201,35 @@ openers:
     search: optional
     needs: [ 2026-09-20-car-transmission ]
     tags: [ screen ]
+  - id: october-big-thing
+    message: "If you had to name the one big thing from October, what would it be? The whole month blurred together."
+    expect: question
+    fits: [ listen ]
+    avoid: [ look-at-thought, grounding ]
+    search: needed
+    needs: [ 2026-10-26-lost-mia ]
+    tags: [ screen ]
+  - id: lately
+    message: "What have I been up to lately? It feels like nothing's happened, which probably isn't true."
+    expect: recap
+    fits: [ listen ]
+    avoid: [ look-at-thought, grounding, values ]
+    search: needed
+    needs: [ 2026-11-07-leaf-blower, 2026-11-12-flu-shot ]
+  - id: walking-me-down
+    message: "Jordan's mom asked who's walking me down the aisle and I said we haven't decided and changed the subject. The truth is I don't know who I'd even ask. Everyone else seems to have this figured out."
+    expect: venting
+    thought: overgeneralization
+    fits: [ listen, values ]
+    avoid: [ problem-solving ]
+    search: optional
+  - id: cabin-cost
+    message: "I keep thinking about the cabin weekend I skipped. How much was it per person again? I'm trying to work out whether I could have swung it."
+    expect: question
+    fits: [ listen, self-compassion ]
+    avoid: [ grounding ]
+    search: needed
+    needs: [ "chat:2026-09-22-the-cabin-weekend" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

@@ -47,6 +47,7 @@ function personOf(
 ): LoadedPerson {
   const empty = options.empty ?? false;
   return {
+    chats: [],
     dir: `/data/people/${id}`,
     empty,
     entries: empty

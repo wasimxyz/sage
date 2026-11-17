@@ -23,6 +23,7 @@ import {
   type SweepFile,
   setupId as setupIdOf,
 } from "../../evals/lib/schema.ts";
+import { type ChatDay, rewriteChatTimes } from "./chat-times.ts";
 import {
   type PassFiles,
   personPassFiles,
@@ -36,12 +37,21 @@ import {
   needsDream,
   restoreSnapshot,
   type SeedOptions,
+  seededChatDays,
   seedPerson,
+  seedsInStages,
   snapshotDream,
 } from "./dream.ts";
+import { withoutSecrets } from "./env.ts";
 import { readServerToken, startEveServer } from "./eve.ts";
 import {
+  appendMemoryReading,
+  type MemoryProbes,
+  measureMemory,
+} from "./memory-pressure.ts";
+import {
   ollamaApiBase,
+  runningModels,
   unloadModel,
   waitForOllamaGone,
   warmUpModel,
@@ -64,6 +74,7 @@ import {
   type PassPrefixes,
   type PlanGroup,
 } from "./plan.ts";
+import { captureCommand } from "./proc.ts";
 import { prepareDataDir, type SageRun, startSage } from "./sage.ts";
 
 export interface RunContext {
@@ -82,6 +93,10 @@ export interface RunContext {
   /** Stand-ins for the two steps that need a real Sage build. Tests set them. */
   hooks?: {
     automateWait?: (cwd: string) => Promise<boolean>;
+    /** What the memory monitor looks at. Defaults to `sysctl vm.swapusage` and Ollama's `/api/ps`. */
+    memoryProbes?: MemoryProbes;
+    /** Moves seeded past chats to their own days. Defaults to `rewriteChatTimes`. */
+    rewriteChatTimes?: (dbPath: string, chats: readonly ChatDay[]) => void;
     seed?: (options: SeedOptions) => Promise<void>;
   };
   /** Evals each pass listed, by person and pass, so the list runs once. */
@@ -110,6 +125,20 @@ function log(message: string): void {
 function fail(ctx: RunContext, message: string): void {
   ctx.failures.push(message);
   console.error(message);
+}
+
+/** The real probes: `sysctl vm.swapusage`, and the models the setup's Ollama has loaded. */
+function realMemoryProbes(ollamaHost: string): MemoryProbes {
+  return {
+    loadedModels: () => runningModels(ollamaHost),
+    swapUsage: async () => {
+      const result = await captureCommand("sysctl", ["vm.swapusage"], {
+        env: withoutSecrets(),
+        timeoutMs: 5000,
+      });
+      return result.code === 0 ? result.stdout : null;
+    },
+  };
 }
 
 function setupLabel(setup: Setup): string {
@@ -375,20 +404,9 @@ async function runWithSage(unit: Unit): Promise<void> {
     });
 
   log(`${label}: starting Sage`);
-  const sage = await startSage({
-    automateWait: ctx.hooks?.automateWait,
-    binary,
-    dataDir: unit.dataDir,
-    dreamPromptsDir:
-      group.dreamPrompt === baselineDreamPrompt
-        ? undefined
-        : dreamPromptsDir(repoRoot(), group.dreamPrompt),
-    embedModel: group.embedModel,
-    ollamaBin: ctx.ollama.bin,
-    summaryModel: group.summaryModel,
-  });
+  const running: RunningSage = { sage: await startUnitSage(unit, binary) };
   try {
-    await seedOrRestore(unit, sage, dreamKey, restored);
+    await seedOrRestore(unit, running, binary, dreamKey, restored);
     await unloadModel(ctx.ollama.host, group.summaryModel);
     if (unit.lists.person.length > 0 && !ctx.abort.aborted) {
       await runPersonPass(unit);
@@ -403,14 +421,78 @@ async function runWithSage(unit: Unit): Promise<void> {
       }
     }
   } finally {
-    await stopSage(unit, sage);
+    await stopSage(unit, running.sage);
   }
   log(`${label}: done with ${person.id}`);
 }
 
-async function seedOrRestore(
+/** The Sage of a unit. Seeding a person with past chats stops it and starts another. */
+interface RunningSage {
+  sage: SageRun;
+}
+
+function startUnitSage(unit: Unit, binary: string): Promise<SageRun> {
+  const { ctx, group } = unit;
+  return startSage({
+    automateWait: ctx.hooks?.automateWait,
+    binary,
+    dataDir: unit.dataDir,
+    dreamPromptsDir:
+      group.dreamPrompt === baselineDreamPrompt
+        ? undefined
+        : dreamPromptsDir(repoRoot(), group.dreamPrompt),
+    embedModel: group.embedModel,
+    ollamaBin: ctx.ollama.bin,
+    summaryModel: group.summaryModel,
+  });
+}
+
+function seedOptionsFor(
   unit: Unit,
   sage: SageRun,
+  stage?: SeedOptions["stage"]
+): SeedOptions {
+  return {
+    automationCwd: sage.automationCwd,
+    dataDir: unit.dataDir,
+    logFile: join(unit.personFiles.dir, "seed.log"),
+    manifestPath: unit.manifestPath,
+    personId: unit.person.id,
+    root: unit.ctx.root,
+    ...(stage === undefined ? {} : { stage }),
+  };
+}
+
+/**
+ * Saves a person's past chats, then moves them to their own days, then runs
+ * Dream. Sage stamps a saved chat with the real clock, and Dream reads a
+ * chat's date from that stamp, so the days are fixed before Dream starts. Only
+ * a stopped Sage's database is written, so Sage stops in between and a new one
+ * takes its place.
+ */
+async function seedWithChats(
+  unit: Unit,
+  running: RunningSage,
+  binary: string
+): Promise<void> {
+  const { ctx, label, person } = unit;
+  const seed = ctx.hooks?.seed ?? seedPerson;
+  await seed(seedOptionsFor(unit, running.sage, "content"));
+  log(`${label}: moving ${person.chats.length} past chats to their own days`);
+  await stopSage(unit, running.sage);
+  const days = seededChatDays(person, unit.manifestPath);
+  (ctx.hooks?.rewriteChatTimes ?? rewriteChatTimes)(
+    join(unit.dataDir, "app.db"),
+    days
+  );
+  running.sage = await startUnitSage(unit, binary);
+  await seed(seedOptionsFor(unit, running.sage, "dream"));
+}
+
+async function seedOrRestore(
+  unit: Unit,
+  running: RunningSage,
+  binary: string,
   dreamKey: DreamKey | null,
   restored: boolean
 ): Promise<void> {
@@ -424,14 +506,11 @@ async function seedOrRestore(
   log(
     `${label}: ${needsDream(person) ? "seeding and running Dream" : "seeding an empty journal"}`
   );
-  await (ctx.hooks?.seed ?? seedPerson)({
-    automationCwd: sage.automationCwd,
-    dataDir: unit.dataDir,
-    logFile: join(unit.personFiles.dir, "seed.log"),
-    manifestPath: unit.manifestPath,
-    personId: person.id,
-    root: ctx.root,
-  });
+  if (seedsInStages(person)) {
+    await seedWithChats(unit, running, binary);
+  } else {
+    await (ctx.hooks?.seed ?? seedPerson)(seedOptionsFor(unit, running.sage));
+  }
   if (dreamKey !== null) {
     snapshotDream({
       dataDir: unit.dataDir,
@@ -506,42 +585,56 @@ async function runSetup(
   const id = setupIdOf(setup);
   const files = setupPassFiles(ctx.runDir, id, person.id, "chat");
   mkdirSync(files.dir, { recursive: true });
-  try {
-    await prepareModel(unit, setup);
-  } catch (error) {
-    // One model that will not load (too big for this Mac, say) must not end
-    // the other setups of the unit. The report shows it as a failed turn.
-    if (!ctx.abort.aborted) {
-      const message = error instanceof Error ? error.message : String(error);
-      recordSetupFailure(files.results, {
-        message,
-        person: person.id,
-        setupId: id,
-      });
-      fail(
-        ctx,
-        `${label}: chat ${setupLabel(setup)} could not start: ${message}`
+  // Memory is watched from the model load to the end of the replies. The
+  // grade pass talks to the cloud, so it is not part of what must fit.
+  const generated = await measureMemory(
+    ctx.hooks?.memoryProbes ?? realMemoryProbes(ctx.ollama.host),
+    async () => {
+      try {
+        await prepareModel(unit, setup);
+      } catch (error) {
+        // One model that will not load (too big for this Mac, say) must not
+        // end the other setups of the unit. The report shows it as a failed
+        // turn.
+        if (!ctx.abort.aborted) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          recordSetupFailure(files.results, {
+            message,
+            person: person.id,
+            setupId: id,
+          });
+          fail(
+            ctx,
+            `${label}: chat ${setupLabel(setup)} could not start: ${message}`
+          );
+        }
+        return false;
+      }
+      const outcome = await runEvalPass(
+        {
+          agentDir: ctx.agentDir,
+          concurrency: PASS_CONCURRENCY.chat,
+          filters: ctx.filters,
+          prefixes: ctx.prefixes.chat,
+          url: serverUrl,
+        },
+        {
+          echoPrefix: `[chat ${person.id} ${id}]`,
+          env: passEnv(unit, { files, setup, token }),
+          logFile: files.log,
+          secrets: [token],
+        }
       );
-    }
-    return;
-  }
-  const outcome = await runEvalPass(
-    {
-      agentDir: ctx.agentDir,
-      concurrency: PASS_CONCURRENCY.chat,
-      filters: ctx.filters,
-      prefixes: ctx.prefixes.chat,
-      url: serverUrl,
+      noteOutcome(ctx, `${label}: chat ${setupLabel(setup)}`, outcome);
+      return true;
     },
     {
-      echoPrefix: `[chat ${person.id} ${id}]`,
-      env: passEnv(unit, { files, setup, token }),
-      logFile: files.log,
-      secrets: [token],
+      onReading: (reading) =>
+        appendMemoryReading(ctx.runDir, id, person.id, reading),
     }
   );
-  noteOutcome(ctx, `${label}: chat ${setupLabel(setup)}`, outcome);
-  if (unit.lists.grade.length > 0) {
+  if (generated && unit.lists.grade.length > 0) {
     unit.hold.begin();
     await ctx.pool.submit(async () => {
       try {

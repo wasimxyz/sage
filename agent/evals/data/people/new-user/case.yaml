@@ -47,3 +47,19 @@ openers:
     avoid: [ grounding ]
     search: none
     tags: [ screen ]
+  - id: first-hello
+    message: "hi. is this where I type? someone told me I could just talk to it"
+    expect: question
+    fits: [ listen ]
+    search: none
+  - id: thinking-trap
+    message: "What's a thinking trap? A friend told me I do it all the time and I nodded like I knew what she meant."
+    expect: question
+    fits: [ listen ]
+    search: none
+  - id: leaves-my-mac
+    message: "Before I write anything real in here, where does it all go? Does any of it leave my Mac?"
+    expect: privacy
+    fits: [ listen ]
+    search: none
+    tags: [ screen ]

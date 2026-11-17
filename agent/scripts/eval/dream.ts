@@ -6,7 +6,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-
+import { ENV_SEED_STAGE, type SeedStage } from "../../evals/lib/bridge.ts";
 import {
   baselineDreamPrompt,
   type CacheKeyParts,
@@ -22,8 +22,13 @@ import {
   restoreDreamCache,
   snapshotDreamRun,
 } from "../../evals/lib/cache.ts";
-import { evalDataRoot } from "../../evals/lib/dataset.ts";
+import {
+  chatIdFor,
+  evalDataRoot,
+  loadManifest,
+} from "../../evals/lib/dataset.ts";
 import type { Memory } from "../../evals/lib/schema.ts";
+import type { ChatDay } from "./chat-times.ts";
 import { withoutSageOnly } from "./env.ts";
 import { ollamaApiBase } from "./ollama.ts";
 import type { LoadedPerson } from "./people.ts";
@@ -191,7 +196,31 @@ export function dreamPromptProblems(
 
 /** True when this person's journal has anything for Dream to read. */
 export function needsDream(person: LoadedPerson): boolean {
-  return person.entries.length > 0;
+  return person.entries.length > 0 || person.chats.length > 0;
+}
+
+/**
+ * True when the seed step has to run in two stages: the person has past chats,
+ * and Sage stamps those with the real clock. The runner stops Sage after the
+ * first stage and rewrites the times to the chats' own days.
+ */
+export function seedsInStages(person: LoadedPerson): boolean {
+  return person.chats.length > 0;
+}
+
+/**
+ * The id Sage gave each seeded past chat, and the day it belongs on, read from
+ * the manifest the first stage of the seed step wrote.
+ */
+export function seededChatDays(
+  person: LoadedPerson,
+  manifestPath: string
+): ChatDay[] {
+  const manifest = loadManifest(manifestPath);
+  return person.chats.map((chat) => ({
+    date: chat.date,
+    id: chatIdFor(manifest, person.id, chat),
+  }));
 }
 
 /** Copies a cached snapshot into the data directory. Run it before Sage starts. */
@@ -212,9 +241,11 @@ export function seedEnv(options: {
   dataDir: string;
   manifestPath: string;
   personId: string;
+  stage?: SeedStage;
 }): Record<string, string> {
   return {
     ...withoutSageOnly(),
+    [ENV_SEED_STAGE]: options.stage ?? "all",
     SAGE_AUTOMATION_CWD: options.automationCwd,
     SAGE_DATA_DIR: options.dataDir,
     SAGE_EVAL_DATA: evalDataRoot(),
@@ -231,24 +262,31 @@ export interface SeedOptions {
   manifestPath: string;
   personId: string;
   root: string;
+  /**
+   * Which part of the seed step to run. `all`, the default, is for a person
+   * with no past chats. A person with chats is seeded as `content`, then
+   * `dream`, with the chat times rewritten between them.
+   */
+  stage?: SeedStage;
 }
 
 /** Seeds the person's journal through the bridge and waits for Dream. */
 export async function seedPerson(options: SeedOptions): Promise<void> {
   const script = join(options.root, "agent", "scripts", "seed-dataset.ts");
+  const stage = options.stage ?? "all";
   const result = await runCommand(
     process.execPath,
     ["--experimental-strip-types", script],
     {
       cwd: join(options.root, "agent"),
-      echoPrefix: `[dream ${options.personId}]`,
+      echoPrefix: `[${stage === "dream" ? "dream" : "seed"} ${options.personId}]`,
       env: seedEnv(options),
       logFile: options.logFile,
     }
   );
   if (!succeeded(result)) {
     throw new Error(
-      `Seeding ${options.personId} failed (exit ${result.code}). Log: ${options.logFile}`
+      `Seeding ${options.personId} (${stage}) failed (exit ${result.code}). Log: ${options.logFile}`
     );
   }
 }

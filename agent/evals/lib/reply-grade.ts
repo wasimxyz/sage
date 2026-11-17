@@ -14,22 +14,32 @@
  *   `no-overreach`, `no-harmful-agreement`, `no-brushing-off`,
  *   `asks-before-exercise`, and `ignores-injected` (items tagged `injection`)
  * - rubric, scored 1 to 5 and stored as 0 to 1: understanding, warmth,
- *   questions-help, focus, right-help, journal-use, fits-moment, and
- *   weighs-events.
+ *   questions-help, focus, right-help, journal-use, fits-moment,
+ *   weighs-events, and search-quality
+ * - slip: `wrong-pronouns` and `assumptions`, from the judge
  *
  * N/A comes only from the labels and the data, which `checks.ts` reads in
- * code: right-help on a crisis or an item with no kind of help that fits, and
- * journal-use on the empty journal. The judge never decides N/A. A check or
- * rubric item that applies, and that the judge answers with null or leaves
- * out, is "not graded", which makes the item and its setup incomplete, like a
- * hard check with no verdict.
+ * code: right-help on a crisis or an item with no kind of help that fits,
+ * journal-use on the empty journal, and search-quality on a turn with no
+ * search call. The judge never decides N/A. A check, slip, or rubric item that
+ * applies, and that the judge answers with null or leaves out, is "not
+ * graded", which makes the item and its setup incomplete, like a hard check
+ * with no verdict.
+ *
+ * Code records the rest, with no judge, so they are there even when the judge
+ * fails:
+ *
+ * - search: `needless-search`, `missed-search`, and `found-needed`, and counted
+ *   `no-runaway-search` (see `search-checks.ts`)
+ * - slip: `shows-internals`, `many-questions`, `not-chat-length`, and
+ *   `formatting` (see `slips.ts`)
  *
  * A fact question's reference answer goes to the judge too. A reply that
  * contradicts it, or leaves out what it must state, fails `journal-right`.
  * That replaces the separate `chat-factuality` score.
  *
- * A call the judge could not make records every check as "not graded". It
- * never records a failure.
+ * A call the judge could not make records every judged check as "not graded".
+ * It never records a failure.
  *
  * Everything that touches the world (the people, the transcripts, the judge)
  * is passed in, so the tests run with made-up people and a mock judge.
@@ -37,7 +47,12 @@
 import { defineEval } from "eve/evals";
 
 import { checksFor, type ReplyItem, type RubricAsk } from "./checks.ts";
-import { type LoadedPerson, loadPerson } from "./dataset.ts";
+import {
+  type LoadedPerson,
+  loadManifest,
+  loadPerson,
+  type Manifest,
+} from "./dataset.ts";
 import { type Grader, replyCall, sharedGrader } from "./grader.ts";
 import { formatJournalContext } from "./judge-context.ts";
 import { EMPTY_JOURNAL_PERSON, openerTags, splitOpenerKey } from "./openers.ts";
@@ -55,10 +70,13 @@ import {
   recordCheck,
   type ScoreHost,
 } from "./record.ts";
-import type { ReplyGradeInput } from "./rubric.ts";
+import { itemWithSearchCalls, type ReplyGradeInput } from "./rubric.ts";
 import {
+  ENV_MANIFEST,
   ENV_TODAY,
+  type Expect,
   type JournalError,
+  type NeedRef,
   type Opener,
   parseItemId,
   type ReplyGrade,
@@ -66,6 +84,13 @@ import {
   type ToolCall,
   type TranscriptRow,
 } from "./schema.ts";
+import {
+  resolveSearchNeeds,
+  type SearchCheckResult,
+  searchChecks,
+} from "./search-checks.ts";
+import { readPassSetup } from "./setup.ts";
+import { checkSlips, type SlipFinding } from "./slips.ts";
 import { loadTranscripts } from "./transcripts.ts";
 
 export const NO_REPLY_REASON = "Generation did not produce a reply to grade.";
@@ -78,6 +103,8 @@ export const NO_REPLY_REASON = "Generation did not produce a reply to grade.";
 export interface ReplyTarget {
   item: ReplyItem;
   message: string;
+  /** The entries and past chats the item says a good answer depends on. */
+  needs: NeedRef[];
   reply: string;
   /** The index in the row's `turns` of the reply. Checks are recorded on it. */
   replyIndex: number;
@@ -153,17 +180,31 @@ export function itemOfRow(row: TranscriptRow, owner: Owner): ReplyItem {
   };
 }
 
+/** The `needs` of a row's item: the opener's, or the fact question's. */
+export function needsOfRow(row: TranscriptRow, owner: Owner): NeedRef[] {
+  const parsed = parseItemId(row.itemId);
+  if (parsed === null) {
+    throw new Error(`${row.itemId} is not an item id.`);
+  }
+  if (row.kind === "opener") {
+    return openerOfRow(row, owner).needs;
+  }
+  return owner.personCase.chat[Number(parsed.key) - 1]?.needs ?? [];
+}
+
 /** The message, the reply, and the labels of a row. */
 export function targetOfRow(row: TranscriptRow, owner: Owner): ReplyTarget {
   const replyIndex = lastAssistantIndex(row);
   const reply = replyIndex === -1 ? undefined : row.turns[replyIndex];
   const message = row.turns.find((turn) => turn.role === "user")?.text ?? "";
+  const toolCalls = reply?.toolCalls ?? [];
   return {
-    item: itemOfRow(row, owner),
+    item: itemWithSearchCalls(itemOfRow(row, owner), toolCalls),
     message,
+    needs: needsOfRow(row, owner),
     reply: reply?.text ?? "",
     replyIndex,
-    toolCalls: reply?.toolCalls ?? [],
+    toolCalls,
   };
 }
 
@@ -282,6 +323,33 @@ function recordCounted(recording: Recording, ids: readonly string[]): void {
   }
 }
 
+/**
+ * A slip the judge answered. `pass: true` is no slip. Both slips apply to every
+ * reply, so a verdict the judge leaves out or answers with `null` is not
+ * graded, as it is for a counted check.
+ */
+function recordSlipVerdicts(
+  recording: Recording,
+  ids: readonly string[]
+): void {
+  for (const checkId of ids) {
+    const verdict = recording.grade?.slips.find(
+      (entry) => entry.id === checkId
+    );
+    if (verdict === undefined || verdict.pass === null) {
+      recording.missing(checkId, "slip");
+    } else {
+      recording.record({
+        checkId,
+        evidence: verdict.evidence,
+        pass: verdict.pass,
+        reason: verdict.reason,
+        tier: "slip",
+      });
+    }
+  }
+}
+
 function rubricRecord(
   ask: RubricAsk,
   grade: ReplyGrade | undefined,
@@ -364,8 +432,139 @@ export function recordReplyGrade(
   };
   recordHard(recording, applied.hard);
   recordCounted(recording, applied.counted);
+  recordSlipVerdicts(recording, applied.slips);
   for (const ask of applied.rubric) {
     record(rubricRecord(ask, recording.grade, unavailable));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Checks that need no judge
+// ---------------------------------------------------------------------------
+
+/** What the checks that need no judge read from the sweep and the setup. */
+export interface ReplySettings {
+  /** The sweep's `maxToolCallsPerTurn`. */
+  maxToolCallsPerTurn: number;
+  /** True when the setup has memory on. */
+  memory: boolean;
+  /** The sweep's `replyWords`: fewest and most. */
+  replyWords: readonly [number, number];
+}
+
+/** The settings of this pass, from the sweep file and setup the runner named. */
+export function settingsFromEnv(env: Env = process.env): ReplySettings {
+  const pass = readPassSetup(env);
+  return {
+    maxToolCallsPerTurn: pass.sweep.maxToolCallsPerTurn,
+    memory: pass.setup.memory === "on",
+    replyWords: pass.sweep.replyWords,
+  };
+}
+
+function recordSearchResult(
+  t: ScoreHost,
+  ref: ItemRef,
+  turnIndex: number,
+  result: SearchCheckResult
+): void {
+  recordCheck(t, ref, {
+    checkId: result.checkId,
+    evidence: result.evidence,
+    extra: result.extra,
+    pass: result.pass,
+    reason: result.reason,
+    tier: result.tier,
+    turnIndex,
+  });
+}
+
+/** The tools' needs of a row, as ids. On the empty journal there are none to find. */
+function needsFor(
+  target: ReplyTarget,
+  owner: LoadedPerson,
+  manifest: Manifest | undefined
+) {
+  if (target.item.journalEmpty) {
+    return { needs: [], problems: [] };
+  }
+  return resolveSearchNeeds(owner, target.needs, manifest);
+}
+
+/**
+ * Records the search checks of a reply: `needless-search`, `missed-search`,
+ * `found-needed`, and `no-runaway-search`, as `search-checks.ts` defines them.
+ * A need that cannot be turned into an id (the manifest has none) makes
+ * `found-needed` "not graded" and never a miss.
+ */
+export function recordSearchChecks(
+  t: ScoreHost,
+  ref: ItemRef,
+  turnIndex: number,
+  target: ReplyTarget,
+  owner: LoadedPerson,
+  settings: ReplySettings,
+  manifest: Manifest | undefined
+): void {
+  const resolved = needsFor(target, owner, manifest);
+  const broken = resolved.problems.length > 0;
+  for (const result of searchChecks({
+    journalEmpty: target.item.journalEmpty,
+    maxToolCallsPerTurn: settings.maxToolCallsPerTurn,
+    memory: settings.memory,
+    needs: broken ? [] : resolved.needs,
+    search: target.item.search,
+    toolCalls: target.toolCalls,
+  })) {
+    recordSearchResult(t, ref, turnIndex, result);
+  }
+  if (broken && target.item.search !== "none") {
+    recordCheck(t, ref, {
+      checkId: "found-needed",
+      notGraded: true,
+      reason: `not graded: ${resolved.problems.join(" ")}`,
+      tier: "search",
+      turnIndex,
+    });
+  }
+}
+
+function recordSlipFinding(
+  t: ScoreHost,
+  ref: ItemRef,
+  turnIndex: number,
+  finding: SlipFinding
+): void {
+  recordCheck(t, ref, {
+    checkId: finding.id,
+    evidence: finding.evidence,
+    notApplicable: finding.applies ? undefined : true,
+    pass: !finding.flagged,
+    reason: finding.reason,
+    tier: "slip",
+    turnIndex,
+  });
+}
+
+/**
+ * Records the slips a pattern can catch: `shows-internals`, `many-questions`,
+ * `not-chat-length`, and `formatting` (see `slips.ts`). A slip that is
+ * flagged scores 0.
+ */
+export function recordPatternSlips(
+  t: ScoreHost,
+  ref: ItemRef,
+  turnIndex: number,
+  reply: string,
+  expect: Expect,
+  settings: ReplySettings
+): void {
+  for (const finding of checkSlips({
+    expect,
+    reply,
+    replyWords: settings.replyWords,
+  })) {
+    recordSlipFinding(t, ref, turnIndex, finding);
   }
 }
 
@@ -382,6 +581,10 @@ export interface ReplyEvalDeps {
   loadPerson?: (id: string) => Promise<LoadedPerson>;
   /** Reads the generated transcripts. Defaults to `SAGE_EVAL_TRANSCRIPTS`. */
   loadTranscripts?: () => TranscriptRow[];
+  /** Reads the seed step's manifest of ids. Defaults to the file `SAGE_EVAL_MANIFEST` names. */
+  manifest?: () => Manifest | undefined;
+  /** What the checks that need no judge read. Defaults to the sweep file and setup of the pass. */
+  settings?: ReplySettings;
 }
 
 /** One row for each item and repeat. If a row repeats, the last one wins. */
@@ -396,6 +599,7 @@ export function uniqueRows(rows: readonly TranscriptRow[]): TranscriptRow[] {
 /** A person with nothing in the journal, for an empty-journal run when the real one cannot be loaded. */
 export function emptyJournalStandIn(): LoadedPerson {
   return {
+    chats: [],
     dir: "",
     empty: true,
     entries: [],
@@ -433,12 +637,20 @@ export async function loadEmptyJournalPerson(
   }
 }
 
+/** What each eval of the pass shares. */
+interface ReplyEvalContext {
+  contextFor: (row: TranscriptRow, owner: LoadedPerson) => Promise<string>;
+  deps: ReplyEvalDeps;
+  manifest: () => Manifest | undefined;
+  settings: ReplySettings;
+}
+
 function replyEval(
   row: TranscriptRow,
   owner: LoadedPerson,
-  contextFor: (row: TranscriptRow, owner: LoadedPerson) => Promise<string>,
-  deps: ReplyEvalDeps
+  shared: ReplyEvalContext
 ): EvalDefinition {
+  const { contextFor, deps, manifest, settings } = shared;
   let target: ReplyTarget;
   try {
     target = targetOfRow(row, owner);
@@ -467,14 +679,37 @@ function replyEval(
     metadata: itemMetadata(ref),
     tags,
     async test(t) {
-      if (
-        row.ended === "error" ||
-        target.replyIndex === -1 ||
-        target.reply.trim() === ""
-      ) {
+      const hasReply =
+        row.ended !== "error" &&
+        target.replyIndex !== -1 &&
+        target.reply.trim() !== "";
+      // A turn that failed after it called tools still shows how it searched,
+      // such as a loop of searches that ran the turn out.
+      const hasTools = target.replyIndex !== -1 && target.toolCalls.length > 0;
+      if (!(hasReply || hasTools)) {
         t.skip(NO_REPLY_REASON);
         return;
       }
+      recordSearchChecks(
+        t,
+        ref,
+        target.replyIndex,
+        target,
+        owner,
+        settings,
+        manifest()
+      );
+      if (!hasReply) {
+        return;
+      }
+      recordPatternSlips(
+        t,
+        ref,
+        target.replyIndex,
+        target.reply,
+        target.item.expect,
+        settings
+      );
       const result = await gradeReply(deps.grader ?? sharedGrader(), {
         context: await contextFor(row, owner),
         item: target.item,
@@ -486,6 +721,33 @@ function replyEval(
       recordReplyGrade(t, ref, target.replyIndex, target.item, result);
     },
   });
+}
+
+/** Reads the manifest once, and only when a check asks. A missing or broken file reads as none. */
+function manifestReader(
+  env: Env,
+  deps: ReplyEvalDeps
+): () => Manifest | undefined {
+  if (deps.manifest !== undefined) {
+    return deps.manifest;
+  }
+  let loaded: { manifest: Manifest | undefined } | undefined;
+  return () => {
+    if (loaded === undefined) {
+      const path = env[ENV_MANIFEST];
+      let manifest: Manifest | undefined;
+      try {
+        manifest =
+          path === undefined || path.length === 0
+            ? undefined
+            : loadManifest(path);
+      } catch {
+        manifest = undefined;
+      }
+      loaded = { manifest };
+    }
+    return loaded.manifest;
+  };
 }
 
 /**
@@ -504,6 +766,7 @@ export function replyEvals(
       const rows = uniqueRows(
         (deps.loadTranscripts ?? loadTranscripts)().filter(isReplyRow)
       );
+      const settings = deps.settings ?? settingsFromEnv(env);
       const load = deps.loadPerson ?? loadPerson;
       const people = new Map<string, LoadedPerson>();
       const ids = new Set(rows.map((row) => row.person));
@@ -529,11 +792,15 @@ export function replyEvals(
         }
         return Promise.resolve(text);
       };
+      const shared: ReplyEvalContext = {
+        contextFor,
+        deps,
+        manifest: manifestReader(env, deps),
+        settings,
+      };
       return rows.flatMap((row) => {
         const owner = people.get(row.person);
-        return owner === undefined
-          ? []
-          : [replyEval(row, owner, contextFor, deps)];
+        return owner === undefined ? [] : [replyEval(row, owner, shared)];
       });
     },
     "No generated Chat transcripts. Run make eval so the chat pass writes them."
