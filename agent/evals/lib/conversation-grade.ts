@@ -547,7 +547,12 @@ function conversationEval(
     return failEval(`${row.itemId} (judge)`, error);
   }
   const ref = makeItem(
-    { itemId: row.itemId, kind: "conversation", person: row.person },
+    {
+      expect: conversation.expect,
+      itemId: row.itemId,
+      kind: "conversation",
+      person: row.person,
+    },
     row.setupId,
     row.repeat
   );

@@ -75,6 +75,14 @@ import {
   dreamSourceLayout,
   formatSourceForJudge,
 } from "./dream-judge-input.ts";
+import {
+  headToHeadCall as buildHeadToHeadCall,
+  HEAD_TO_HEAD_RUBRIC,
+  HEAD_TO_HEAD_TITLES,
+  type HeadToHeadInput,
+  headToHeadRubricMaterial,
+  PROBE_HEAD_TO_HEAD_INPUT,
+} from "./head-to-head-rubric.ts";
 import { journalContextLayout } from "./judge-context.ts";
 import { reserve, settle } from "./ledger.ts";
 import {
@@ -173,6 +181,7 @@ Fail when:
 The fact sheet and journal, when shown, are for checking details. When they seem to disagree with the reference, the reference wins.
 
 ${ANSWER_FORMAT}`,
+  headToHead: HEAD_TO_HEAD_RUBRIC,
   reply: REPLY_RUBRIC,
   summary: `You are grading a summary that a journaling app wrote from one journal entry.
 
@@ -445,6 +454,7 @@ export const ITEM_TITLES = {
     question: "Question the person asked",
     reference: "Reference (the answer key)",
   },
+  headToHead: HEAD_TO_HEAD_TITLES,
   reply: REPLY_TITLES,
   summary: {
     output: "Output to grade",
@@ -509,6 +519,7 @@ const GRADE_CALLS = {
     schemaName: "factuality_grade",
     transcript: input.transcript,
   }),
+  headToHead: (input: HeadToHeadInput) => buildHeadToHeadCall(input),
   reply: (input: ReplyGradeInput) => replyGradeCall(input),
   summary: (input: SummaryInput): GradeCall => ({
     context: input.context,
@@ -544,6 +555,17 @@ export function conversationCall(
   input: ConversationGradeInput
 ): JudgeCall<typeof conversationGradeSchema> {
   return GRADE_CALLS.conversation(input);
+}
+
+/**
+ * The call that asks the judge to compare two replies, or two conversations.
+ * The head-to-head eval passes it to `Grader.judge`, so what it sends is what
+ * the rubric hash read.
+ */
+export function headToHeadCall(
+  input: HeadToHeadInput
+): JudgeCall<typeof headToHeadSchema> {
+  return GRADE_CALLS.headToHead(input);
 }
 
 /**
@@ -623,6 +645,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
       question: "<question>",
       reference: "<reference>",
     }),
+    headToHead: GRADE_CALLS.headToHead(PROBE_HEAD_TO_HEAD_INPUT),
     reply: GRADE_CALLS.reply(PROBE_REPLY_INPUT),
     summary: GRADE_CALLS.summary({ ...PROBE, reference: "<reference>" }),
   };
@@ -637,6 +660,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
     conversation: conversationRubricMaterial(),
     conversationRules: conversationRulesMaterial(),
     dreamSourceLayout: dreamSourceLayout(),
+    headToHead: headToHeadRubricMaterial(),
     journalContext: journalContextLayout(),
     kinds: Object.fromEntries(
       Object.entries(probes).map(([kind, call]) => [kind, kindMaterial(call)])

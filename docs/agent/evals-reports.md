@@ -7,11 +7,12 @@ This page explains what `make eval` writes, how to read it, and how to fix the f
 Each sweep has an id: the UTC start time and the sweep’s name, such as `2026-11-10T031500Z-smoke`. A run writes these files to `agent/evals/reports/`:
 
 - `<sweep id>__<setup id>.report.json`: one report for each setup. The setup id is a 10-character hash of the setup’s eight values, so the same setup gets the same id in every sweep.
-- `<sweep id>.sweep.json`: the sweep file with its defaults filled in, the estimated and real hours and cost, the result of [the judge check](#the-judge-check-result), and the ranking of the setups
+- `<sweep id>.sweep.json`: the sweep file with its defaults filled in, the estimated and real hours and cost, the result of [the judge check](#the-judge-check-result), the ranking of the setups, and, after a head-to-head run, [its result](#the-head-to-head-result)
 - `<sweep id>__<snapshot id>__<person>.sage.log`: what the throwaway Sage printed for one person. The snapshot id is a 10-character hash of the summary model, embedding model, Dream prompt, and memory value, so setups that share a Dream snapshot share it.
 - `<sweep id>__<snapshot id>__<person>.manifest.json`: the journal ids the seed step wrote, so you can trace an item back to database rows
+- `<run id>.calibration.json`: the agreement between the judge and your grades, written by the `calibration` sweep, as [The calibration report](#the-calibration-report) explains. The run id is that run's own, not the sweep it sampled.
 
-The runner also keeps its working files in `agent/evals/.runs/<sweep id>/`: the sweep file the passes read, a log for every process, the rows each pass recorded (`*.results.jsonl`), the rows of the judge check (in `judge-check/`), the saved Chat transcripts, and the spending ledger. Git ignores the folder. Delete it when you no longer need the logs.
+The runner also keeps its working files in `agent/evals/.runs/<sweep id>/`: the sweep file the passes read, a log for every process, the rows each pass recorded (`*.results.jsonl`), the rows of the judge check (in `judge-check/`), the saved Chat transcripts, the spending ledger, and what `--resume` needs: `plan.json` and a marker under `done/` for each step that finished, as [Resuming a sweep](evals.md#resuming-a-sweep) explains. Git ignores the folder. Delete it when you no longer need the logs.
 
 Older runs wrote a JUnit file named `<run id>.xml` instead. The report viewer still opens those.
 
@@ -19,7 +20,7 @@ Older runs wrote a JUnit file named `<run id>.xml` instead. The report viewer st
 
 - The setup, the git commit (with `+dirty` when you have uncommitted changes), the judge settings, and short hashes of the Chat prompt, the Dream prompt, and the judge’s rubric. The Dream hash is `null` for the built-in prompts.
 - A summary: how many items were graded, not graded, and skipped, the hard failures, the counted failures for each check, the rate of each slip and search check (`softByCheck`), the searches, reads, tool calls, and time in tools (`toolUse`), the wait for the first word, the swap baseline and growth and the model size, and the judge cost
-- Every item. An item is one fact, event, summary, retrieval query, Chat question, opener, conversation, or Dream source, and its id reads `<person>/<kind>/<number>`, such as `sam-example/retrieval/1`. An opener reads `<person>/opener/<opener id>`, such as `work/opener/checklist-is-back`. When it ran on the empty journal, the id ends in `.empty` and the item says `journal: empty`. A Dream source reads `<person>/dream/<entry stem or chat-N>`, such as `sam/dream/2026-09-03-lost-mia`. It holds its status, its checks with a reason for each, the Chat turns with their tool calls and timings, and a note.
+- Every item. An item is one fact, event, summary, retrieval query, Chat question, opener, conversation, or Dream source, and its id reads `<person>/<kind>/<number>`, such as `sam-example/retrieval/1`. An opener reads `<person>/opener/<opener id>`, such as `work/opener/checklist-is-back`. When it ran on the empty journal, the id ends in `.empty` and the item says `journal: empty`. A Dream source reads `<person>/dream/<entry stem or chat-N>`, such as `sam/dream/2026-09-03-lost-mia`. It holds its status, its checks with a reason for each, the Chat turns with their tool calls and timings, and a note. An opener, a fact question, or a conversation also holds `expect`, the kind of message it is about. In a conversation each turn holds its own `expect`: a scripted turn can be `pushback`, and from the crisis turn on it is `crisis`.
 - On a Chat reply, the checks, the rubric scores, the journal errors, and the kinds of help the judge saw sit on the reply’s turn, each with its reason and a quote.
 - A conversation reads `<person>/conversation/<conversation id>`, such as `engaged/conversation/wedding-costs`, with `.empty` added for its run on the empty journal. It holds every turn, with the checks and rubric on each Sage reply as for an opener. [Conversations](#conversations) explains what it adds.
 
@@ -152,6 +153,44 @@ The check’s rows are in `agent/evals/.runs/<sweep id>/judge-check/judge-check.
 jq -r '.assertions[] | select(.name == "hard:judge-check") | "\(.metadata.itemId) passed=\(.passed) found=\(.metadata.found) \(.metadata.reason // "")"' agent/evals/.runs/<sweep id>/judge-check/judge-check.results.jsonl
 ```
 
+## The head-to-head result
+
+A head-to-head run adds a `headToHead` field to the compared sweep's `<sweep id>.sweep.json`. [Head-to-head judging](evals.md#head-to-head-judging) explains how it is made. A sweep that was never compared has no such field, and a later run replaces an earlier one.
+
+- `sweepId`: the id of the run that compared them. It has its own folder in `agent/evals/.runs/`.
+- `judge`, `rubric`, `costUsd`, and `generatedAt`: the judge model, the hash of its rubric, what the run spent, and when it ran
+- `setups`: the setups it compared, best-ranked first
+- `pairs`: one entry for each pair. `a` is the better-ranked setup and `b` the other. `aWins`, `bWins`, and `ties` count the items, and `aWinRate`, `bWinRate`, and `tieRate` divide them by `graded`, the items that have a winner or a tie. `splits` counts the items whose two orders disagreed, and they are in `ties`. `notGraded` counts the items that a judge error or the spending cap left out. `items` lists each graded item with its `winner` (`a`, `b`, or `tie`), `split`, and `orders`: for each order, the setup shown `first`, the judge's `winner` named by setup, and its `reason`.
+- `standings`: each setup's `wins`, `losses`, `ties`, and `winRate` across its pairs, most wins first
+
+To list each pair and who won:
+
+```sh
+jq '.headToHead.pairs[] | {a, b, aWins, bWins, ties, splits, notGraded}' agent/evals/reports/<sweep id>.sweep.json
+```
+
+To read why the judge picked one setup over the other:
+
+```sh
+jq -r '.headToHead.pairs[].items[] | select(.winner != "tie") | "\(.itemId) \(.winner)", (.orders[] | "  \(.first) first, \(.winner): \(.reason)")' agent/evals/reports/<sweep id>.sweep.json
+```
+
+## The calibration report
+
+The `calibration` sweep writes `<run id>.calibration.json` to `agent/evals/reports/`. [Calibrating the judge](evals.md#calibrating-the-judge) explains how it is made. It holds:
+
+- `judge`, `rubric` (the hash), `costUsd`, `generatedAt`, and `samples`, the ids of the samples your grades came from
+- `items`: `humanGraded` (the replies you graded), `compared` (those the judge answered), and `notGraded` (those it could not)
+- `rubricAgreement`: for each rubric item that was compared, `n`, `exact`, `within1`, `kappa`, and `meanDiff`. `kappa` is `null` when it is undefined.
+- `checks`: for each check that was compared, `n`, `hits`, `misses`, `falseAlarms`, `passes` (you and the judge both passed it), and `agreement`
+- `disagreements`: each check that went the other way and each score two or more points apart, with the `item` (the id of the sampled reply) and what each of you said
+
+To see where the judge and you differ most:
+
+```sh
+jq '{rubric: [.rubricAgreement[] | {id, n, exact, within1, kappa, meanDiff}], checks: [.checks[] | select(.misses > 0 or .falseAlarms > 0) | {id, hits, misses, falseAlarms}]}' agent/evals/reports/<run id>.calibration.json
+```
+
 ## Reading a failure
 
 Start with the end-of-run list or `<sweep id>.sweep.json`, which names each setup’s id and the hard checks it failed. Open that setup’s report next. `summary.hardFailures` gives a count and a detail line, such as “median wait for the first word was 24.1 s, over the 20 s limit”.
@@ -203,6 +242,13 @@ These are listed in the order you are likely to hit them:
 - **“The sweep’s Dream prompts have problems:”**: each line names a `dreamPrompts` folder in `agent/evals/dream-prompts/` and what is wrong with it. It has no folder, holds none of `summary.md`, `chat-summary.md`, `chat-title.md`, and `extract.md`, holds a file Dream does not read, or holds a prompt file Sage will not use (an empty one, one that is not a regular file, or one of 64 KiB or more). Sage would keep the built-in prompt for each of these, so the runner stops instead. Exit code 2.
 - **“The judge check missed”**: the judge let a planted failure through, or flagged a clean item. Each line gives the kind (`missed` or `false-alarm`), the check, the item, and what the judge did. Fix the rubric or the item’s label in `agent/evals/judge-check/`, then run again. The sweep stopped before it pulled, built, or seeded anything. Exit code 1.
 - **“The judge could not be checked”**: an item of the judge check came back not graded, so the check proves nothing. The line names the item and the reason, such as “not graded: spending cap” or a gateway error. Check the gateway key and your connection, then run again. Exit code 1.
+- **“Nothing to resume: … does not exist.”**: the id is not a folder in `agent/evals/.runs/` with a `plan.json`. The message lists the runs there are. A dry run writes no plan, so it cannot be resumed. Exit code 2.
+- **“The sweep changed since … started”**, **“The setups of … changed”**, or **“The people of … changed”**: a resume refuses a run whose sweep file, model lists, setups, or people are not what it started with. Put them back, or start a new run, as [Resuming a sweep](evals.md#resuming-a-sweep) explains. Exit code 2.
+- **“… is a … sweep, and --sweep says …”**: leave `--sweep` out of a resume.
+- **“head-to-head needs a finished sweep to compare.”**: pass `--compare <sweep id>` in `ARGS`, or set `compare` in the sweep file. Exit code 2.
+- **“No finished sweep …”**: the sweep has no `<sweep id>.sweep.json` in `agent/evals/reports/`, so it did not finish or the id is wrong. Exit code 2.
+- **“Sweep … has 1 setup that passed every hard check, and head-to-head needs at least 2.”**, or **“… share no item with a reply on both sides”**: there is nothing to compare. Exit code 2.
+- **“No calibration sample in …”** or **“You have not graded any reply of …”**: make a sample, and grade it in the viewer, as [Calibrating the judge](evals.md#calibrating-the-judge) explains. Exit code 2.
 - **“Port 11436 is already in use.”**: stop `make dev` or another eval, then run again.
 - **“Ollama did not start on 127.0.0.1:11436.”**: the temporary server that checks and pulls models did not answer. Its log follows the message.
 - **“Could not get the pinned Ollama build.”**: the download or checksum failed. The lines above say which step.
@@ -228,4 +274,13 @@ These are listed in the order you are likely to hit them:
 
 `make eval` asks about uploading at the end of a run, and `make eval-upload` uploads earlier reports later. [Eval suite](evals.md#uploading-reports) covers the tokens and settings.
 
-The Next.js app in `eval-viewer/` lists sweeps and runs, ranks the setups of a sweep, and opens one report per setup. [The eval viewer README](../../eval-viewer/README.md) explains how to run it.
+The Next.js app in `eval-viewer/` reads the same files. It lists sweeps and runs, and it has these pages:
+
+- the ranking of a sweep, which you can sort, with a link to compare any two setups
+- a compare page that puts two setups side by side, item by item, with each side's checks, rubric scores, and the judge's reasons
+- a setup page with its summary and its items
+- a reader for one item, which shows each turn of a conversation with its checks and rubric, and marks the worry loops, the nos, and the simulated user's slips after a crisis
+- a Dream accuracy page, which shows each source next to what Dream wrote from it, with each unsupported claim marked in the text
+- a form for grading a calibration sample by hand, which saves only under `make eval-viewer-dev`
+
+Old JUnit runs still open. [The eval viewer README](../../eval-viewer/README.md) explains how to run it.

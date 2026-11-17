@@ -80,6 +80,8 @@ function plain(value: unknown): unknown {
 interface RowOptions {
   assertions?: RecordedAssertion[];
   error?: string;
+  /** What the item is about, as the grade evals record it. */
+  expect?: string;
   itemId: string;
   /** The item kind. Null leaves it out of the eval's metadata. */
   kind?: string | null;
@@ -100,6 +102,7 @@ function row(options: RowOptions): PassRow {
       error: options.error,
       id: options.itemId,
       metadata: {
+        ...(options.expect === undefined ? {} : { expect: options.expect }),
         itemId: options.itemId,
         ...(options.kind === null ? {} : { kind: options.kind ?? "chat" }),
         person,
@@ -1338,4 +1341,107 @@ test("judge-check rows stay out of every setup report: items, people, cost, and 
   assert.deepEqual(mixed.summary.hardFailures, []);
   assert.deepEqual(plain(mixed.summary), plain(without.summary));
   assert.deepEqual(setupRows([judgeCheckRow, samRow]), [samRow]);
+});
+
+test("an item says what it is about, from the metadata of the row that knew, and each turn says what it answered", () => {
+  const itemId = "sam/conversation/wedding-costs";
+  const graded = row({
+    assertions: [
+      check("counted", "journal-right", {
+        metadata: { expect: "venting", turnIndex: 1 },
+        passed: true,
+      }),
+      check("counted", "journal-right", {
+        metadata: { expect: "pushback", turnIndex: 3 },
+        passed: true,
+      }),
+      check("hard", "crisis-handled", {
+        metadata: { expect: "crisis", turnIndex: 5 },
+        passed: true,
+      }),
+      check("counted", "no-overreach", {
+        metadata: { expect: "not-a-kind", turnIndex: 5 },
+        passed: true,
+      }),
+      check("slip", "shows-internals", { passed: true }),
+    ],
+    expect: "anger",
+    itemId,
+    kind: "conversation",
+    pass: "grade",
+  });
+  const generated = row({
+    assertions: [check("counted", "turn-works", { passed: true })],
+    itemId,
+    kind: "conversation",
+    pass: "chat",
+  });
+  const base = transcript(itemId, { kind: "conversation" });
+  const turns = [
+    ...base.turns,
+    {
+      role: "user" as const,
+      stepModelIds: [],
+      text: "You are not listening.",
+      toolCalls: [],
+    },
+    {
+      role: "assistant" as const,
+      stepModelIds: [],
+      text: "Tell me more.",
+      toolCalls: [],
+    },
+    {
+      role: "user" as const,
+      stepModelIds: [],
+      text: "I want to end it all.",
+      toolCalls: [],
+    },
+    {
+      role: "assistant" as const,
+      stepModelIds: [],
+      text: "I am here.",
+      toolCalls: [],
+    },
+  ];
+  // The chat row comes first and knows nothing of the kind. The grade row does.
+  const [item] = buildItems([generated, graded], [{ ...base, turns }]);
+  assert.equal(item?.expect, "anger");
+  assert.equal(item?.turns[1]?.expect, "venting");
+  assert.equal(item?.turns[3]?.expect, "pushback");
+  assert.equal(
+    item?.turns[5]?.expect,
+    "crisis",
+    "a turn after the crisis answers a crisis"
+  );
+  assert.equal(
+    item?.turns[0]?.expect,
+    undefined,
+    "a person's message answers nothing"
+  );
+  assert.equal(
+    item?.turns[5]?.checks.length,
+    2,
+    "an unknown kind is ignored, and the check is still recorded"
+  );
+  assert.equal(
+    parseSetupReport(plain(assemble([generated, graded], [{ ...base, turns }])))
+      .items[0]?.expect,
+    "anger"
+  );
+});
+
+test("an item with no row that names a kind has none", () => {
+  const [item] = buildItems(
+    [
+      row({
+        assertions: [check("counted", "turn-works", { passed: true })],
+        itemId: "sam/chat/1",
+        pass: "chat",
+      }),
+    ],
+    [transcript("sam/chat/1")]
+  );
+  assert.equal(item?.expect, undefined);
+  assert.equal(item?.turns[1]?.expect, undefined);
 });

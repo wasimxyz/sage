@@ -1,6 +1,6 @@
 // Command line for the runner:
 //
-//   run.ts [--sweep <name>] [--dry-run] [--yes] [eve filters]
+//   run.ts [--sweep <name>] [--resume <sweep id>] [--compare <sweep id>] [--dry-run] [--yes] [eve filters]
 //
 // `make eval` passes `ARGS` straight through, so the eve filters here are the
 // ones people use: `--tag`, `--exclude-tag`, and a few switches. The runner
@@ -20,10 +20,14 @@ export class CliError extends Error {
 }
 
 export interface CliOptions {
+  /** The finished sweep that `head-to-head` and `calibration` read. Set by `--compare`. */
+  compare?: string;
   dryRun: boolean;
   /** Arguments for every `eve eval` process, such as `--tag example`. */
   eveFilters: string[];
   help: boolean;
+  /** The run to go on with. Set by `--resume`. */
+  resume?: string;
   sweep: string;
   yes: boolean;
 }
@@ -44,6 +48,12 @@ export const USAGE = `Usage: make eval [SWEEP=<name>] [ARGS='...']
 
 Options (in ARGS):
   --sweep <name>   Sweep file in agent/evals/sweeps (default: default)
+  --resume <id>    Go on with a sweep that stopped, under the same id. It skips
+                   the steps that finished, and refuses when the sweep file
+                   changed. The id is a folder name in agent/evals/.runs/.
+  --compare <id>   For the head-to-head sweep: the finished sweep whose top
+                   setups the judge compares. For the calibration sweep: the
+                   sweep whose sample is used.
   --dry-run        Plan, build the Chat prompt overlays, check them, start the
                    grade target, and print the estimate. Runs no models.
   --yes            Skip the question after the estimate
@@ -84,12 +94,28 @@ class ArgReader {
   }
 }
 
+const sweepIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+
+/** A sweep id names a folder and files, so it holds no path characters. */
+function sweepIdValue(name: string, value: string): string {
+  if (!sweepIdPattern.test(value)) {
+    throw new CliError(
+      `${name} needs a sweep id such as 2026-11-10T031500Z-screen.`
+    );
+  }
+  return value;
+}
+
 function applyArg(options: CliOptions, arg: string, reader: ArgReader): void {
   const name = optionName(arg);
   const takeValue = (): string =>
     arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : reader.value(name);
   if (name === "--sweep") {
     options.sweep = takeValue();
+  } else if (name === "--resume") {
+    options.resume = sweepIdValue(name, takeValue());
+  } else if (name === "--compare") {
+    options.compare = sweepIdValue(name, takeValue());
   } else if (valueOptions.has(name)) {
     options.eveFilters.push(name, takeValue());
   } else if (switchOptions.has(name)) {
@@ -128,6 +154,11 @@ export function parseCli(argv: readonly string[]): CliOptions {
   const reader = new ArgReader(argv);
   for (let arg = reader.next(); arg !== undefined; arg = reader.next()) {
     applyArg(options, arg, reader);
+  }
+  if (options.resume !== undefined && options.compare !== undefined) {
+    throw new CliError(
+      "--resume goes on with a sweep that stopped, and --compare names a sweep to read. Use one of them."
+    );
   }
   return options;
 }

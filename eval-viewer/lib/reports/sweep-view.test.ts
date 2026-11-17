@@ -191,5 +191,8 @@ test("failedCheckCount counts item checks and turn checks", () => {
   if (report?.kind !== "ok") {
     return;
   }
-  assert.deepEqual(report.value.items.map(failedCheckCount), [0, 1, 0]);
+  assert.deepEqual(
+    report.value.items.map(failedCheckCount),
+    [0, 1, 0, 1, 1, 1, 0]
+  );
 });

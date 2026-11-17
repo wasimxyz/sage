@@ -69,7 +69,7 @@ test("a setup report is read with its dimensions and summary", () => {
 
 test("a setup report keeps each item's checks, rubric, and turns", () => {
   const report = readReport(sampleSetupReport());
-  assert.equal(report.items.length, 3);
+  assert.equal(report.items.length, 7);
 
   const [retrieval, opener, notGraded] = report.items;
   assert.equal(retrieval?.kind, "retrieval");
@@ -108,7 +108,7 @@ test("a setup report ignores fields it does not know", () => {
   assert.equal("extra" in report, false);
 });
 
-test("a setup report with conversations reads, and the fields it does not show yet are ignored", () => {
+test("a setup report with conversations reads its marks and flags", () => {
   const input = sampleSetupReport();
   const summary = {
     ...(input.summary as Record<string, unknown>),
@@ -214,10 +214,161 @@ test("a setup report with conversations reads, and the fields it does not show y
     ]
   );
   assert.equal(read?.turns[1]?.firstVisibleMs, 2100);
-  // The summary's simulated-user rate, the marks, and the flags are for a later page.
-  assert.equal("simulatedUser" in report.summary, false);
-  assert.equal("loopMarks" in (read ?? {}), false);
+  assert.deepEqual(report.summary.simulatedUser, {
+    crisisConversations: 4,
+    flagged: 1,
+    rate: 0.25,
+  });
+  assert.deepEqual(read?.loopMarks, [
+    {
+      evidence: "Again.",
+      feedsLoop: true,
+      reason: "Another question.",
+      returnsToWorry: true,
+      turn: 3,
+    },
+  ]);
+  assert.deepEqual(read?.declineMarks, [
+    {
+      afterNo: true,
+      bringsItBack: true,
+      evidence: "Try the breathing?",
+      reason: "Brought it back.",
+      turn: 2,
+    },
+  ]);
+  assert.deepEqual(read?.simulatedUserFlags, [
+    {
+      evidence: "It's fine.",
+      flag: "soft-after-crisis",
+      reason: "Went breezy.",
+      turn: 4,
+    },
+  ]);
   assert.equal(report.summary.rubricMean, 0.78);
+});
+
+test("a setup report reads the tool calls, timing, and journal errors of a turn", () => {
+  const report = readReport(sampleSetupReport());
+  const conversation = report.items.find(
+    (item) => item.kind === "conversation"
+  );
+  const second = conversation?.turns[1];
+  assert.deepEqual(second?.toolCalls, [
+    {
+      input: { query: "wedding costs deposit" },
+      name: "journal__search",
+      output: { hits: [{ entry: "venue-deposit", score: 0.82 }] },
+      status: "completed",
+    },
+  ]);
+  assert.equal(second?.firstVisibleMs, 6100);
+  assert.equal(second?.toolMs, 900);
+  assert.equal(second?.totalMs, 9800);
+  assert.deepEqual(conversation?.turns[0]?.toolCalls, []);
+  assert.equal(conversation?.turns[0]?.totalMs, null);
+  assert.equal(conversation?.expect, "venting");
+  assert.equal(report.items[0]?.expect, undefined);
+
+  const input = sampleSetupReport();
+  const items = input.items as Record<string, unknown>[];
+  items[1] = {
+    ...items[1],
+    turns: [
+      {
+        journalErrors: [
+          {
+            evidence: "Jordan is your brother.",
+            kind: "wrong-person",
+            reason: "Jordan is the fiancé.",
+            truth: "Jordan is the fiancé.",
+          },
+        ],
+        role: "assistant",
+        text: "Jordan is your brother.",
+        toolCalls: [{ input: "raw", name: "journal__read", status: "failed" }],
+      },
+    ],
+  };
+  const read = readReport(input).items[1]?.turns[0];
+  assert.equal(read?.journalErrors[0]?.kind, "wrong-person");
+  assert.equal(read?.journalErrors[0]?.truth, "Jordan is the fiancé.");
+  assert.equal(read?.toolCalls[0]?.input, "raw");
+  assert.equal(read?.toolCalls[0]?.output, undefined);
+  assert.equal(read?.toolCalls[0]?.status, "failed");
+});
+
+test("a turn that names its own expect keeps it, and a turn without one has none", () => {
+  const report = readReport(sampleSetupReport());
+  const conversation = report.items.find(
+    (item) => item.kind === "conversation"
+  );
+  assert.equal(conversation?.turns[5]?.expect, "pushback");
+  assert.equal(conversation?.turns[3]?.expect, undefined);
+  assert.equal(conversation?.turns[0]?.expect, undefined);
+});
+
+test("a setup report reads the Dream record of a source", () => {
+  const report = readReport(sampleSetupReport());
+  const dream = report.items.find(
+    (item) => item.itemId === "grief/dream/entry-3"
+  )?.dream;
+  assert.equal(dream?.sourceId, "entry-3");
+  assert.equal(dream?.sourceKind, "entry");
+  assert.equal(dream?.written.length, 2);
+  assert.deepEqual(dream?.unsupportedClaims[0], {
+    itemKind: "summary",
+    itemText:
+      "The author mourns the death of their friend Mia and cannot write about it.",
+    quote: "the death of their friend Mia",
+    reason: "The entry never says Mia died. The friendship ended.",
+    severity: "severe",
+  });
+  assert.equal(report.items[0]?.dream, undefined);
+});
+
+test("a setup report reads the soft checks, tool use, and simulated-user stats", () => {
+  const { summary } = readReport(sampleSetupReport());
+  assert.deepEqual(summary.softByCheck[0], {
+    failures: 2,
+    graded: 25,
+    id: "many-questions",
+    rate: 0.08,
+  });
+  assert.deepEqual(summary.toolUse, {
+    reads: 3,
+    searches: 9,
+    toolCalls: 12,
+    toolMs: 8400,
+    turns: 14,
+  });
+  assert.deepEqual(summary.simulatedUser, {
+    crisisConversations: 2,
+    flagged: 1,
+    rate: 0.5,
+  });
+});
+
+test("a setup report with none of the newer fields still reads", () => {
+  const input = sampleSetupReport();
+  const summary = { ...(input.summary as Record<string, unknown>) };
+  summary.softByCheck = undefined;
+  summary.toolUse = undefined;
+  summary.simulatedUser = undefined;
+  const report = readReport({ ...input, summary });
+  assert.deepEqual(report.summary.softByCheck, []);
+  assert.deepEqual(report.summary.toolUse, {
+    reads: 0,
+    searches: 0,
+    toolCalls: 0,
+    toolMs: 0,
+    turns: 0,
+  });
+  assert.deepEqual(report.summary.simulatedUser, {
+    crisisConversations: 0,
+    flagged: 0,
+    rate: 0,
+  });
 });
 
 test("a setup report fills the fields the schema defaults", () => {

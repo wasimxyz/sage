@@ -104,10 +104,16 @@ export interface LoadedSweep {
   sweep: SweepFile;
 }
 
+export interface SweepOverrides {
+  /** From `--compare`. It wins over `compare` in the file. */
+  compare?: string;
+}
+
 export async function loadSweep(
   name: string,
   env: Env = process.env,
-  dir = defaultSweepsDir()
+  dir = defaultSweepsDir(),
+  overrides: SweepOverrides = {}
 ): Promise<LoadedSweep> {
   if (!sweepNamePattern.test(name)) {
     throw new Error(
@@ -128,7 +134,11 @@ export async function loadSweep(
     }
     throw error;
   }
-  const { applied, doc: withOverrides } = applyModelOverrides(doc, env);
+  const { applied, doc: withModels } = applyModelOverrides(doc, env);
+  const withOverrides =
+    overrides.compare === undefined
+      ? withModels
+      : { ...withModels, compare: overrides.compare };
   const sweep = parseSweepFile(withOverrides, `sweep file ${name}.yaml`);
   const problems = thinkingProblems(sweep);
   if (problems.length > 0) {

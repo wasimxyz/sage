@@ -3,6 +3,10 @@ import test from "node:test";
 
 import { CliError, parseCli, URL_MESSAGE } from "./cli.ts";
 
+const pattern7 = /needs a sweep id/u;
+const pattern6 = /needs a sweep id/u;
+const pattern5 = /Use one of them/u;
+
 const pattern1 = /set by the runner/u;
 const pattern2 = /Unknown option/u;
 const pattern3 = /Unexpected argument/u;
@@ -87,4 +91,34 @@ test("options the runner owns, unknown options, and stray words are refused", ()
   assert.throws(() => parseCli(["extraction"]), pattern3);
   assert.throws(() => parseCli(["--tag"]), pattern4);
   assert.throws(() => parseCli(["--tag", "--strict"]), pattern4);
+});
+
+test("--resume names the run to go on with, and --compare the finished sweep to read", () => {
+  const id = "2026-11-10T031500Z-screen";
+  assert.equal(parseCli(["--resume", id]).resume, id);
+  assert.equal(parseCli([`--resume=${id}`]).resume, id);
+  assert.equal(parseCli(["--compare", id]).compare, id);
+  assert.equal(
+    parseCli(["--sweep", "head-to-head", "--compare", id]).compare,
+    id
+  );
+  assert.equal(parseCli([]).resume, undefined);
+  assert.equal(parseCli([]).compare, undefined);
+  assert.equal(parseCli(["--resume", id, "--yes", "--dry-run"]).yes, true);
+});
+
+test("a sweep id is a name, so a path or a missing value is refused", () => {
+  for (const option of ["--resume", "--compare"]) {
+    assert.throws(() => parseCli([option]), pattern4);
+    assert.throws(() => parseCli([option, "--yes"]), pattern4);
+    assert.throws(() => parseCli([option, "../elsewhere"]), pattern7);
+    assert.throws(() => parseCli([option, "a/b"]), pattern6);
+  }
+});
+
+test("one run cannot both resume a sweep and compare another", () => {
+  assert.throws(
+    () => parseCli(["--resume", "run-1", "--compare", "run-2"]),
+    pattern5
+  );
 });

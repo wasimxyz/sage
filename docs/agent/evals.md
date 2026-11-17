@@ -22,6 +22,9 @@ Results are JSON reports under `agent/evals/reports/`, which [Eval reports](eval
 - **Slip**: a small mistake in a reply, such as showing an entry id or asking two questions, as [Small slips](#small-slips) explains. Slips are counted and never fail a setup.
 - **Past chat**: an earlier chat with Sage, saved from a person’s `chats/` folder, as [Past chats](#past-chats) explains.
 - **Judge check**: a small set of items with known answers. The judge must grade them right before a sweep does any local work.
+- **Calibration**: grading a sample of Chat replies yourself, so the suite can show where the judge agrees with you, as [Calibrating the judge](#calibrating-the-judge) explains.
+- **Head-to-head**: the judge compares the best setups of a finished sweep, two replies at a time, as [Head-to-head judging](#head-to-head-judging) explains.
+- **Resume**: going on with a sweep that stopped, under the same id, as [Resuming a sweep](#resuming-a-sweep) explains.
 - **Source**: the entry or chat that Dream read to write a summary, a title, a fact, or an event.
 - **Dream cache**: Dream’s results for one person, saved so the next run skips seeding and Dream.
 
@@ -237,7 +240,7 @@ Every graded check records a rubric hash. The hash covers each rubric text, each
 
 ## The judge check
 
-A judge that misses a planted failure, or flags a clean item, would taint a night of results. So every sweep starts by testing the judge. The runner does this after you confirm the estimate and before it pulls a model, builds Sage, or seeds a journal.
+A judge that misses a planted failure, or flags a clean item, would taint a night of results. So every sweep starts by testing the judge, except the `calibration` sweep, which tests the judge against your grades instead. The runner does this after you confirm the estimate and before it pulls a model, builds Sage, or seeds a journal.
 
 The judge check is a small set of items with known answers, in `agent/evals/judge-check/`. It has two halves, and [the folder’s README](../../agent/evals/judge-check/README.md) explains the format of both.
 
@@ -258,6 +261,99 @@ The runner prints each miss with its check, its kind (`missed` or `false-alarm`)
 
 The check runs with no person and no setup, against the stub grade target. Its rows are kept in `agent/evals/.runs/<sweep id>/judge-check/`, and no setup report includes them. A sweep that reaches its reports has passed, and `<sweep id>.sweep.json` records the result.
 
+## Calibrating the judge
+
+The judge check proves that the judge catches planted failures. Calibration asks a wider question: on replies from a real sweep, does the judge agree with you? Run it when you choose a judge model, change the rubric, or want to know how far to trust a score. It has three steps:
+
+1. **Make a sample** from a finished sweep.
+2. **Grade it** yourself, in the viewer.
+3. **Compare.** The judge grades the same replies, and the report shows where it agrees with you.
+
+```sh
+npm --prefix agent run calibration-sample -- <sweep id>
+make eval-viewer-dev
+make eval SWEEP=calibration
+```
+
+The sweep id is the start of a file name in `agent/evals/reports/`, such as `2026-11-10T031500Z-screen`. The first command reads that sweep's reports, and its saved transcripts in `agent/evals/.runs/<sweep id>/` when they are still there. It writes `agent/evals/calibration/sample-<sweep id>.json`. `--size` sets how many replies, 40 by default, and `--seed` sets the seed, 1 by default. The same sweep, size, and seed always give the same sample. The second command starts [the grading form](../../eval-viewer/README.md#grading-by-hand). [The calibration README](../../agent/evals/calibration/README.md) has the file formats.
+
+### The sample
+
+The sample takes replies from every setup of the sweep: the reply to an opener, the reply to a fact question, or one reply of a conversation, with the turns before it. It is stratified by kind of item and `expect`, so each kind of message is in the sample before any kind is repeated, and the setups take turns inside each kind. It always includes the replies where a hard or counted check that the judge answers failed, hard failures first, as long as there is room. Failures take at most three quarters of the sample. The rest are replies that passed, because a judge that flags a clean reply shows up only there.
+
+Each item lists the checks and rubric items that apply to its reply. The code decides that, as it does for a real reply, and you answer those and no others. An item also carries what you need to read it: the person's message, the turns before it, the tool calls and their results, and the person's fact sheet.
+
+The checks and scores that need a whole conversation (`drops-after-no`, `stops-feeding-loop`, and the conversation rubric) are not in the sample, because the sample is one reply at a time.
+
+### Your grades
+
+`agent/evals/calibration/grades.jsonl` has one line for each reply you graded: `sampleId`, `id`, `grader` (always `human`), `checks`, `rubric`, `note`, and `gradedAt`. A check is `true` when the reply passes it, `false` when it fails it, and `null` for N/A. That is how the judge's `pass` reads. A rubric item is 1 to 5, or `null`. An item you did not answer has no key, and the comparison leaves it out. A later line for the same reply replaces an earlier one. A line that is not valid stops the run and names its line number, so a typo cannot lose a grade.
+
+### The agreement
+
+`calibration.yaml` reads every sample in `agent/evals/calibration/`. To use the sample of one sweep, name it with `--compare <sweep id>` in `ARGS`, or with `compare` in the sweep file. `calibration/agreement.eval.ts` asks the judge about each reply you graded, with the person's fact sheet, journal, and the turns before it, the way `grade/replies` does. The report holds these for each rubric item:
+
+- **exact**: the share of replies where you and the judge gave the same score
+- **within 1**: the share where the two scores are one point apart or less
+- **kappa**: quadratic-weighted kappa. 1 is perfect agreement, 0 is no better than chance, and below 0 is worse than chance. A miss by one point costs little, and a miss by four costs a lot. It is `n/a` only when you and the judge both gave the same single score every time. If only one of you gave one score every time, it reads 0 whatever the other gave, and it also reads 0 when you each gave a different single score.
+- **mean difference**: the judge's mean minus yours. Above 0 means the judge scores higher than you do.
+
+For each check it counts:
+
+- **hits**: you failed it, and so did the judge
+- **misses**: you failed it, and the judge passed it
+- **false alarms**: you passed it, and the judge failed it
+
+It also lists each check that went the other way and each score two or more points apart, with the id of the reply. A reply the judge could not grade is "not graded", and never a disagreement.
+
+To try another judge, change `judge: { model: ... }` in `calibration.yaml` and run it again with the same grades. The sweep runs no Sage and no setups, and it skips the judge check, because a judge that fails the check should still show its numbers. It costs one reply grade for each reply you graded, which the estimate prints. The cap is `spendingCapUsd`, 10 by default. The report goes to `agent/evals/reports/<run id>.calibration.json`, as [Eval reports](evals-reports.md#the-calibration-report) explains.
+
+## Head-to-head judging
+
+Scores rank every setup of a sweep. For the final pick, the judge compares the best ones directly. It sees two replies to the same message, or two whole conversations, and picks one or calls a tie. Name the finished sweep:
+
+```sh
+make eval SWEEP=head-to-head ARGS='--compare <sweep id>'
+```
+
+What it compares:
+
+- **The setups**: the top `compareTop` of the sweep's ranking, 3 by default, and 2 or 3 are allowed. A setup that failed a hard check is out, however its scores read. With fewer than two left, the run stops and says so. Every pair of the setups is compared.
+- **The items**: each opener, fact question, and conversation that both setups answered, with the same repeat number. An item is left out when either side's turn failed, or when the simulated user failed or went soft after a crisis, because the two sides are then not alike.
+- **What the judge sees**: the fact sheet and journal, the person's message, the labels (`expect`, `fits`, `avoid`, and for a conversation what the person wants and when the crisis comes), and the two answers. It decides in this order: safety first (a crisis mishandled, or a claim of death or harm the journal does not support), then truth and limits, then how well the answer helped. It does not reward length. The rubric is `RUBRICS.headToHead` in `agent/evals/lib/grader.ts`, and it is inside the rubric hash.
+
+Every item is judged twice, once with each setup shown first, so the position of a reply cannot decide the result. A setup wins an item only when it wins in both orders. Anything else is a tie, and an item whose two orders disagree is also counted as a split. When either call fails, the item is "not graded". One order is never used alone.
+
+The result goes into the `headToHead` field of the compared sweep's summary, `<sweep id>.sweep.json`. For each pair it holds the wins, ties, win rates, and splits, and each item with the judge's reason for each order. For each setup it holds the record across its pairs. [Eval reports](evals-reports.md#the-head-to-head-result) explains the fields. A later run replaces an earlier one, but only a run that finishes writes anything. A crash or Ctrl-C leaves the earlier result as it was. An item the run never reached counts as "not graded". The run has its own run folder, ledger, and cap (`spendingCapUsd`, 30 by default), runs the judge check first, and starts no Sage.
+
+## Resuming a sweep
+
+A sweep can run for hours, and Ctrl-C, a crash, or a closed lid can stop it. To go on with it:
+
+```sh
+make eval ARGS='--resume <sweep id>'
+```
+
+The sweep id is the name of a folder in `agent/evals/.runs/`. Leave `--sweep` out: the run's plan says which sweep file it uses. The run keeps its id, its folder, and its spending ledger, so the cap and the hours count across runs.
+
+The run folder holds what a resume needs:
+
+- `plan.json`: the sweep file's name, a hash of the resolved sweep, its setups, its people, and how long it has run
+- `done/`: one marker for each step that finished. The steps are the judge check, the person pass of each person, and, for each setup and person, the chat pass (the replies) and the grade pass.
+- `ledger.jsonl`: the spending
+
+A resume skips every step that has a marker. Generation and grading are separate steps. When a setup's replies were saved and grading did not finish, only the grade pass runs again, and no Sage starts, because the unit saved the manifest of its seeded journal. A unit with every step done is skipped whole.
+
+A step with no marker starts from scratch. The runner deletes what it left first: its rows, its log, and for a chat pass its transcripts, its memory readings, and the grades of those replies. A pass appends its rows as it goes, so a pass killed halfway would otherwise leave rows that the next pass writes again. A pass that crashed, or that you stopped with Ctrl-C, is not marked done. A chat model that did not load is not either, so a resume tries it again. Dream comes from the cache when its snapshot was saved. When the run stopped while Dream was running, seeding and Dream start again.
+
+A resume stops with exit code 2 when:
+
+- the run has no `plan.json`. The message lists the runs there are.
+- the sweep changed. The hash covers the sweep file, a model list set in the environment (`SAGE_CHAT_MODELS` and the others), and every default the schema fills in. Put it back as it was, or start a new run.
+- the setups or the people are not the ones the run started with, such as a person added since
+
+`--dry-run` with `--resume` checks all of this, prints what finished, and runs nothing. The estimate covers the whole sweep, and the real hours and dollars at the end count every session. Calibration and head-to-head run in minutes and have no steps to skip, so run them again instead of resuming them.
+
 ## Running the suite
 
 ```sh
@@ -273,6 +369,8 @@ Only you run evals. `make eval` stops with exit code 2 and “make eval is run b
 
 - `--dry-run`: plans the sweep, builds the Chat prompt overlays, checks the models, starts the grade target, and prints the estimate. It runs no models, pulls nothing, and builds no Sage. It does not run [the judge check](#the-judge-check), which calls the judge. It still downloads the pinned Ollama if you do not have it yet.
 - `--yes`: skips the “Continue? [y/N]” question. Without a terminal, the runner stops with exit code 2 unless you pass it.
+- `--resume <sweep id>`: goes on with a sweep that stopped, as [Resuming a sweep](#resuming-a-sweep) explains
+- `--compare <sweep id>`: names the finished sweep that the `head-to-head` sweep compares, or whose sample the `calibration` sweep uses
 - `--tag <tag>`: runs only evals with this tag, and repeats for more tags. An eval carries its person’s tags and its kind: `extraction`, `summaries`, `retrieval`, `dream-accuracy`, or `chat`. An opener’s evals also carry `openers` and the opener’s own tags, such as `screen`, and the grade eval for a reply carries the same tags as the eval that made it. `--tag example` runs only the Sam format template.
 - `--exclude-tag <tag>`: skips evals with this tag
 - `--timeout <ms>`: the time each eval gets. The default is ten minutes.
@@ -283,7 +381,7 @@ Do not pass `--url`, `--max-concurrency`, `--json`, `--junit`, or `--list`. The 
 
 ## Sweep files
 
-A sweep file lists the values to try, and the runner runs every combination as a setup. Seven files ship:
+A sweep file lists the values to try, and the runner runs every combination as a setup. Nine files ship:
 
 - `default.yaml`: today’s models (`qwen3.5:9b` and `nomic-embed-text`), the `person`, `dream-accuracy`, `facts`, and `openers` tests, and memory off and on. It sends no conversations.
 - `smoke.yaml`: a check of the runner. One setup with memory on, only the Sam format template (`tags: [example]`), which sends its openers and one three-turn conversation, so the simulated user runs end to end, and a $3 spending cap. The judge check that starts every sweep is most of its cost, and the conversation adds about $0.20.
@@ -292,6 +390,8 @@ A sweep file lists the values to try, and the runner runs every combination as a
 - `quick.yaml`: a check to run before you merge a prompt or tool change. It uses the default chat model with the shipped prompt and memory off, and sends only the openers tagged `quick`, which cover every kind of check once. It sends no fact questions and runs no person checks. Dream comes from the cache, so a first run after a change to a person’s files also pays for Dream. It has a $5 spending cap. By the estimate with no earlier timings it takes about 18 minutes, for ten openers on two people (`caregiver` and `work`). The judge check, the build, and the last grade pass add about 12 before any reply, so it cannot come in under 10. Each person adds about 75 seconds, for a Sage start, a Chat server start, and a model load, and each opener about 25 seconds. To make it shorter, tag fewer openers `quick`, on fewer people. Run it with `make eval SWEEP=quick`.
 - `deep.yaml`: the deep night. It runs the `person` and `conversations` tests three times each, with memory off like a shipped build. It sends no openers and no fact questions, so the night goes to conversations. Its `chatModels` and `prompts` are placeholders. Before you run it, fill them in with the chat models and Chat prompts of the top two setups from the screen night. The runner runs every combination of the two lists. It covers every person, including `long-history`, and has a $100 spending cap. With the placeholders (two setups) it comes to about 11 hours and $62 by the default timings with Dream cached, and about 15 hours from a cold Dream cache. The default timings run high, because a conversation counts at its `maxTurns` and most end sooner, so the real timings from the screen night’s reports should bring it to one night. If the estimate with them is over about 10 hours, run the sweep once for each setup. Run `make eval SWEEP=dream` first, which fills the Dream cache for memory off and on. Run it with `make eval SWEEP=deep`.
 - `deep-memory-on.yaml`: `deep.yaml` with memory on, for the next night, so you can see whether memory helps. Fill in the same two setups. It comes to about 11 hours and $63 with Dream cached, and about 20 hours from a cold cache, because Dream takes twice as long with memory on. Run it with `make eval SWEEP=deep-memory-on`.
+- `calibration.yaml`: measures the judge against your grades, as [Calibrating the judge](#calibrating-the-judge) explains. It runs no Sage and no setups. Run it with `make eval SWEEP=calibration`.
+- `head-to-head.yaml`: compares the top setups of a finished sweep, as [Head-to-head judging](#head-to-head-judging) explains. It runs no Sage and no setups. Run it with `make eval SWEEP=head-to-head ARGS='--compare <sweep id>'`.
 
 `long-history` is the person with about 300 entries, tagged `long`. Its first Dream run takes hours, so only the deep sweeps and `dream.yaml` include it. The others list `excludeTags: [ long ]`.
 
@@ -308,7 +408,9 @@ Every key is optional. An unknown key or a value of the wrong type stops the run
 | `contextLengths` | `[32768]` | Context lengths in tokens |
 | `memory` | `[off]` | `off` or `on`, the memory build, as [Memory off and on](#memory-off-and-on) explains |
 | `repeats` | `1` | How many times each Chat question runs |
-| `tests` | `[person, facts]` | Which tests run: `person` (extraction, summaries, retrieval), `dream-accuracy`, `facts` (Chat facts), `openers`, and `conversations` |
+| `tests` | `[person, facts]` | Which tests run: `person` (extraction, summaries, retrieval), `dream-accuracy`, `facts` (Chat facts), `openers`, and `conversations`. `calibration` and `head-to-head` run alone: a sweep that lists one of them lists nothing else. |
+| `compare` | none | The id of a finished sweep. `head-to-head` compares its top setups, and `calibration` uses its sample. `--compare` in `ARGS` sets it and wins over the file. Only those two tests may set it. |
+| `compareTop` | `3` | How many of the top setups `head-to-head` compares: 2 or 3 |
 | `tags` | `[]` | The people to cover, and the openers and conversations to send. A person is in when their `tags`, or the tags of one of their openers or conversations, match. An opener or conversation runs when its own tags or its person’s match. With no tags, everyone and every item is in. |
 | `excludeTags` | `[]` | People to leave out: anyone whose `tags` hold one of these. The shipped sweeps use `[long]` to leave out `long-history`, and so do their `alsoEmpty` items on the empty journal. The estimate leaves them out too. |
 | `judge` | `{ model: moonshotai/kimi-k3.1-pro }` | The judge model |
@@ -339,7 +441,7 @@ The runner works in stages and prints a heading for each one:
 2. **Chat prompts and grade target.** It builds one app root for each Chat prompt and a stub target, checks each with `eve info --json`, and starts the stub target. With no Chat in the sweep, it builds only the stub target.
 3. **Models and estimate.** It fetches the pinned Ollama and starts a temporary Ollama server on `127.0.0.1:11436`. It asks the server about each model and lists the ones that are not pulled yet. It stops on a chat model that cannot call tools, and on a summary or embedding model that cannot complete or embed. It skips think-on setups for models that cannot think. A sweep with no Chat leaves its chat model out of these checks. Then it prints [the estimate](#the-estimate-and-the-spending-cap). `--dry-run` ends here.
 4. **Key and question.** Without a gateway key, the run stops with exit code 2. Then it asks “Continue? [y/N]”, unless you passed `--yes`.
-5. **Judge check.** It runs [the judge check](#the-judge-check) against the stub target. A miss, a false alarm, or a judge it could not check stops the sweep here, before anything is pulled, built, or seeded.
+5. **Judge check.** It runs [the judge check](#the-judge-check) against the stub target. A miss, a false alarm, or a judge it could not check stops the sweep here, before anything is pulled, built, or seeded. A resumed sweep skips the check when an earlier run passed it.
 6. **Pull.** It pulls each missing model through the temporary server, then stops the server so Sage can use the port.
 7. **Build.** It builds Sage with automation once for each memory value, under `zig-out/eval-mem0` (memory off) and `zig-out/eval-mem1` (memory on). `zig-out/bin/Sage` stays the `make build` binary, and the runner deletes both builds on exit.
 8. **Run.** It runs one unit for each person, as the next list explains.
@@ -359,7 +461,7 @@ While a setup loads its model and runs the chat pass, the runner watches memory,
 
 Each person gets a new Sage and a new Ollama, so a model loads again for each person. Person and chat evals run one at a time (`--max-concurrency 1`), because local models cannot share the GPU well. Grade evals run four at a time, in at most two processes, so grading one setup overlaps with generating the next. The throwaway data directory stays until the last grade job for the unit is done.
 
-A unit that fails is recorded and does not stop the sweep. The runner lists the problems at the end and exits with code 1. It also exits with 1 when an eval fails. Press Ctrl-C once to stop the processes the runner started, and press it again to quit at once.
+A unit that fails is recorded and does not stop the sweep. The runner lists the problems at the end and exits with code 1. It also exits with 1 when an eval fails. Press Ctrl-C once to stop the processes the runner started, and press it again to quit at once. [Resuming a sweep](#resuming-a-sweep) explains how to go on.
 
 ## The estimate and the spending cap
 
@@ -526,7 +628,7 @@ That command is safe to repeat. Each file is stored as `sage-evals/<filename>`, 
 
 Set `BLOB_READ_WRITE_TOKEN` in the shell, in `agent/.env`, or in `agent/.env.local`. A linked Vercel project can use `BLOB_STORE_ID` and `VERCEL_OIDC_TOKEN` instead, the short-lived token that `vercel env pull` writes. Reports are private unless you set `SAGE_EVAL_BLOB_ACCESS=public`.
 
-The [eval viewer](../../eval-viewer/README.md) lists uploaded reports.
+The [eval viewer](../../eval-viewer/README.md) reads uploaded reports. It ranks the setups of a sweep, puts two setups side by side, reads a conversation with the judge's reasons, shows what Dream wrote next to its source, and has a form for grading a calibration sample by hand. The form saves only under `make eval-viewer-dev`.
 
 ## Your first run
 

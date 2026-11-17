@@ -636,6 +636,12 @@ test("rubricHash changes with the title of any block in the item section", () =>
     ["conversation", "answer"],
     ["conversation", "conversation"],
     ["conversation", "details"],
+    ["headToHead", "conversationA"],
+    ["headToHead", "conversationB"],
+    ["headToHead", "details"],
+    ["headToHead", "message"],
+    ["headToHead", "replyA"],
+    ["headToHead", "replyB"],
   ] as const) {
     withTitle(kind, name, "A different title", () => {
       assert.notEqual(rubricHash(), before, `${kind}.${name}`);
@@ -651,6 +657,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     "conversation",
     "conversationRules",
     "dreamSourceLayout",
+    "headToHead",
     "journalContext",
     "kinds",
     "maxOutputTokens",
@@ -679,12 +686,21 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     "dreamSource",
     "extraction",
     "factuality",
+    "headToHead",
     "reply",
     "summary",
   ]);
   for (const [kind, probe] of Object.entries(material.kinds)) {
     assert.equal(probe.instructions, RUBRICS[kind as RubricKind]);
     if (kind === "dreamSource") {
+      continue;
+    }
+    if (kind === "headToHead") {
+      // The fact sheet, the person's message, then the labels and the two replies.
+      assert.equal(probe.schemaName, "head_to_head");
+      assert.equal(probe.parts[0], "<fact sheet and journal>");
+      assert.equal(probe.parts[2], probe.item);
+      assert.equal(probe.parts.length, 3);
       continue;
     }
     assert.equal(probe.schemaName, `${kind}_grade`);

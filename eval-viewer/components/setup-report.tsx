@@ -36,8 +36,11 @@ import {
   type SetupReport,
 } from "@/lib/reports/sweep-types.ts";
 import {
+  compareHref,
   dimensionLabel,
+  dreamHref,
   failedCheckCount,
+  itemHref,
   setupLabel,
   sweepHref,
 } from "@/lib/reports/sweep-view.ts";
@@ -75,6 +78,26 @@ export function SetupReportView({ report }: { report: SetupReport }) {
           )}
         </div>
       </div>
+
+      <nav
+        aria-label="Pages for this setup"
+        className="flex flex-wrap gap-4 text-sm"
+      >
+        <Link
+          className="underline-offset-4 hover:underline"
+          href={compareHref(report.sweepId, report.setupId, "")}
+        >
+          Compare with another setup →
+        </Link>
+        {report.items.some((item) => item.dream !== undefined) ? (
+          <Link
+            className="underline-offset-4 hover:underline"
+            href={dreamHref(report.sweepId, report.setupId)}
+          >
+            Dream accuracy →
+          </Link>
+        ) : null}
+      </nav>
 
       <Notices report={report} />
 
@@ -143,12 +166,29 @@ export function SetupReportView({ report }: { report: SetupReport }) {
               label="Swap before"
               value={formatMegabytes(summary.swapBaselineMB)}
             />
+            <Stat
+              label="Searches · reads · tool calls"
+              value={`${summary.toolUse.searches} · ${summary.toolUse.reads} · ${summary.toolUse.toolCalls}`}
+            />
+            <Stat
+              label="Time in tools"
+              value={formatMs(summary.toolUse.toolMs)}
+            />
+            <Stat
+              label="Assistant turns counted"
+              value={summary.toolUse.turns}
+            />
+            <Stat
+              label="Simulated user, flagged after a crisis"
+              value={`${summary.simulatedUser.flagged} of ${summary.simulatedUser.crisisConversations} · ${formatRate(summary.simulatedUser.rate)}`}
+            />
           </CardContent>
         </Card>
       </section>
 
       <CountedChecks report={report} />
-      <Items items={report.items} />
+      <SoftChecks report={report} />
+      <Items items={report.items} report={report} />
     </div>
   );
 }
@@ -221,7 +261,53 @@ function CountedChecks({ report }: { report: SetupReport }) {
   );
 }
 
-function Items({ items }: { items: ReportItem[] }) {
+/** Slips and search metrics: counted and shown, never ranked on. */
+function SoftChecks({ report }: { report: SetupReport }) {
+  const rows = report.summary.softByCheck;
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-base font-medium">Slips and search</h2>
+        <p className="text-muted-foreground text-sm">
+          These are shown and never ranked on.
+        </p>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-muted-foreground">Check</TableHead>
+            <TableHead className="text-muted-foreground">Failures</TableHead>
+            <TableHead className="text-muted-foreground">Graded</TableHead>
+            <TableHead className="text-muted-foreground">Rate</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{checkLabel(row.id)}</TableCell>
+              <TableCell className="font-mono">{row.failures}</TableCell>
+              <TableCell className="font-mono">{row.graded}</TableCell>
+              <TableCell className="font-mono">
+                {formatRate(row.rate)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </section>
+  );
+}
+
+function Items({
+  items,
+  report,
+}: {
+  items: ReportItem[];
+  report: SetupReport;
+}) {
   const failing = items.filter((item) => failedCheckCount(item) > 0).length;
   return (
     <section className="flex scroll-mt-8 flex-col gap-4" id="items">
@@ -242,7 +328,11 @@ function Items({ items }: { items: ReportItem[] }) {
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((item) => (
-            <ItemRow item={item} key={`${item.itemId}#${item.repeat}`} />
+            <ItemRow
+              item={item}
+              key={`${item.itemId}#${item.repeat}`}
+              report={report}
+            />
           ))}
         </div>
       )}
@@ -250,7 +340,7 @@ function Items({ items }: { items: ReportItem[] }) {
   );
 }
 
-function ItemRow({ item }: { item: ReportItem }) {
+function ItemRow({ item, report }: { item: ReportItem; report: SetupReport }) {
   const failed = failedCheckCount(item);
   return (
     <details className="bg-card rounded-lg border">
@@ -264,6 +354,12 @@ function ItemRow({ item }: { item: ReportItem }) {
         </span>
       </summary>
       <div className="flex flex-col gap-4 border-t px-4 py-3 text-sm">
+        <Link
+          className="text-muted-foreground w-fit underline-offset-4 hover:underline"
+          href={itemHref(report.sweepId, report.setupId, item)}
+        >
+          Read in full →
+        </Link>
         {item.note === undefined ? null : (
           <p className="text-muted-foreground">{item.note}</p>
         )}
