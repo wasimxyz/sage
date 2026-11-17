@@ -16,7 +16,7 @@ import {
   gatewayCredentials,
   prependPath,
   redact,
-  withoutSecrets,
+  withoutSageOnly,
 } from "./env.ts";
 import { EVAL_TODAY, eveBin } from "./eve.ts";
 import type { PassName } from "./plan.ts";
@@ -53,8 +53,6 @@ export interface PassEnvInput {
   discoveryFile: string;
   /** The key of this person's Dream snapshot. The person pass keys its grades by it. */
   dreamKey?: string;
-  /** The folder of Dream prompts, when the setup uses a variant. */
-  dreamPrompts?: string;
   manifest: string;
   models: { chat: string; embed: string; summary: string };
   person: string;
@@ -73,9 +71,12 @@ export interface PassEnvInput {
 /**
  * The environment of one `eve eval` client. The pass variables come from
  * EVAL_ENV in schema.ts. The gateway credentials are here and nowhere else.
+ *
+ * `SAGE_EVAL_DREAM_PROMPTS` is not here. Only Sage reads it (see `sageEnv`),
+ * and a Dream prompt folder is not something an eval file needs.
  */
 export function buildPassEnv(input: PassEnvInput): Record<string, string> {
-  const base = withoutSecrets(input.base ?? process.env);
+  const base = withoutSageOnly(input.base ?? process.env);
   const env: Record<string, string> = {
     ...base,
     ...input.credentials,
@@ -98,9 +99,6 @@ export function buildPassEnv(input: PassEnvInput): Record<string, string> {
     [EVAL_ENV.today]: EVAL_TODAY,
     [EVAL_ENV.transcripts]: input.transcripts,
   };
-  if (input.dreamPrompts !== undefined) {
-    env[EVAL_ENV.dreamPrompts] = input.dreamPrompts;
-  }
   if (input.dreamKey !== undefined) {
     env[ENV_DREAM_KEY] = input.dreamKey;
   }
@@ -109,6 +107,52 @@ export function buildPassEnv(input: PassEnvInput): Record<string, string> {
     env.EVE_EVAL_AUTH_TOKEN = input.token;
   }
   return env;
+}
+
+export interface JudgeCheckEnvInput {
+  agentDir: string;
+  base?: Env;
+  /** Credentials for the cloud judge. */
+  credentials: Record<string, string>;
+  /** Where the check's rows go. */
+  results: string;
+  runDir: string;
+  sweepFile: string;
+  sweepId: string;
+}
+
+/**
+ * The environment of the judge check. It has no person, no setup, and no
+ * Sage, so it carries none of the variables that name them, even when the
+ * shell that started the runner set some. The judge reads the sweep file for
+ * its model and cap, and counts its spending in the sweep's ledger.
+ */
+export function buildJudgeCheckEnv(
+  input: JudgeCheckEnvInput
+): Record<string, string> {
+  const base = withoutSageOnly(input.base ?? process.env);
+  for (const name of [
+    EVAL_ENV.discoveryFile,
+    EVAL_ENV.manifest,
+    EVAL_ENV.person,
+    EVAL_ENV.setupId,
+    EVAL_ENV.transcripts,
+    ENV_DREAM_KEY,
+    "SAGE_DATA_DIR",
+  ]) {
+    delete base[name];
+  }
+  return {
+    ...base,
+    ...input.credentials,
+    EVE_TELEMETRY_DISABLED: "1",
+    PATH: prependPath(join(input.agentDir, "node_modules", ".bin"), base.PATH),
+    [EVAL_ENV.results]: input.results,
+    [EVAL_ENV.runDir]: input.runDir,
+    [EVAL_ENV.sweepFile]: input.sweepFile,
+    [ENV_SWEEP_ID]: input.sweepId,
+    [EVAL_ENV.today]: EVAL_TODAY,
+  };
 }
 
 export function credentialsFrom(

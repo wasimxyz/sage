@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   dreamKeyId,
@@ -13,9 +14,15 @@ import {
   DEFERRED_TESTS,
   describePlan,
   distinct,
+  needsChat,
   resolveTests,
 } from "./plan.ts";
+import { defaultSweepsDir, loadSweep } from "./sweep.ts";
 import { conversation, makePerson, opener, tempDir } from "./test-fixtures.ts";
+
+const evalsDir = fileURLToPath(new URL("../../evals", import.meta.url));
+const noChatPattern = /^4 Sage starts, no Chat/u;
+const memoryOffPattern = /^memory off, summary .*: 1 setup$/u;
 
 const pattern1 = /memory on, summary qwen3\.5:9b/u;
 const pattern2 = /1 person: sam/u;
@@ -184,4 +191,75 @@ test("a folder counts as an eval prefix", (t) => {
 
 test("calibration and head-to-head wait for later passes", () => {
   assert.deepEqual([...DEFERRED_TESTS].sort(), ["calibration", "head-to-head"]);
+});
+
+test("a plan with no Chat has Sage starts and person passes, and nothing else", () => {
+  const { setups, sweep } = setupsFor({
+    chatModels: ["a", "b"],
+    memory: ["off", "on"],
+    prompts: ["baseline", "companion-v1"],
+  });
+  const people = [makePerson("sam"), makePerson("jo")];
+  const plan = buildPlan(setups, people, sweep, { chat: false });
+  assert.equal(plan.chat, false);
+  assert.deepEqual(plan.stats, {
+    chatPasses: 0,
+    eveDevStarts: 0,
+    gradePasses: 0,
+    modelLoads: 0,
+    personPasses: 4,
+    sageStarts: 4,
+  });
+  // The default is a plan with Chat.
+  assert.equal(buildPlan(setups, people, sweep).chat, true);
+  assert.ok(buildPlan(setups, people, sweep).stats.eveDevStarts > 0);
+});
+
+test("a sweep needs Chat only when one of its tests sends a message", () => {
+  const prefixes = { chat: [], grade: [], person: ["person/dream-accuracy"] };
+  assert.equal(needsChat(prefixes), false);
+  assert.equal(needsChat({ ...prefixes, chat: ["chat/facts"] }), true);
+});
+
+test("the dream sweep runs the person pass and Dream accuracy for each memory value, with no Chat", async () => {
+  const loaded = await loadSweep("dream", {}, defaultSweepsDir());
+  assert.deepEqual(loaded.sweep.tests, ["person", "dream-accuracy"]);
+  const resolved = resolveTests(loaded.sweep.tests, evalsDir);
+  assert.deepEqual(resolved.missing, []);
+  assert.deepEqual(resolved.deferred, []);
+  assert.deepEqual(resolved.prefixes, {
+    chat: [],
+    grade: [],
+    person: [
+      "person/extraction",
+      "person/summaries",
+      "person/retrieval",
+      "person/dream-accuracy",
+    ],
+  });
+  assert.equal(needsChat(resolved.prefixes), false);
+
+  const plan = buildPlan(
+    loaded.setups,
+    [makePerson("sam"), makePerson("jo")],
+    loaded.sweep,
+    { chat: needsChat(resolved.prefixes) }
+  );
+  assert.deepEqual(plan.memoryValues, ["off", "on"]);
+  assert.equal(plan.groups.length, 2);
+  assert.equal(plan.stats.sageStarts, 4);
+  assert.equal(plan.stats.eveDevStarts, 0);
+  assert.equal(plan.stats.modelLoads, 0);
+  const lines = describePlan(plan);
+  assert.match(lines[0] ?? "", memoryOffPattern);
+  assert.match(lines.at(-1) ?? "", noChatPattern);
+});
+
+test("the default sweep adds Dream accuracy to the person pass and keeps Chat's fact questions", async () => {
+  const loaded = await loadSweep("default", {}, defaultSweepsDir());
+  const resolved = resolveTests(loaded.sweep.tests, evalsDir);
+  assert.deepEqual(resolved.missing, []);
+  assert.ok(resolved.prefixes.person.includes("person/dream-accuracy"));
+  assert.deepEqual(resolved.prefixes.chat, ["chat/facts"]);
+  assert.equal(needsChat(resolved.prefixes), true);
 });

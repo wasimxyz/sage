@@ -32,6 +32,9 @@ cast:
     alive: true
     note: "Married on 2026-07-18."
 timeline:
+  - date: 2026-05-21
+    what: "Sat through a two-hour-forty-minute planning meeting and wrote that it was killing them. It was boredom, and a joke Owen played along with."
+    weight: small
   - date: 2026-06-09
     what: "Dreaded every Monday, felt checked out in meetings, and told themself it was a rough patch."
     weight: medium
@@ -41,6 +44,9 @@ timeline:
   - date: 2026-07-04
     what: "Missed a real work deadline after nights of lying awake over the inbox. The manager was kind about it, which made it worse."
     weight: medium
+  - date: 2026-07-13
+    what: "On the Monday bus, imagined staying on past the stop and riding to the coast to eat fries on the sea wall. Did not do it and went to work. A way to picture getting away, not a plan to hurt themself."
+    weight: small
   - date: 2026-07-18
     what: "Leila's wedding."
     weight: small
@@ -106,3 +112,17 @@ chat:
     expectWhen: true
     needs:
       - 2026-11-04-turned-30
+
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-05-21-planning-meeting
+#   Dark humor. "This meeting is killing me" and "I'd died in the planning
+#   meeting" are jokes with Owen. Trips a summary that says the author felt
+#   suicidal, was in danger, or died.
+# - 2026-07-13-monday-bus
+#   A "what if" that never happened. The author pictures riding past their stop
+#   to the coast, then gets off at the stop and goes to work. It is escape, with
+#   fries. Trips a summary that says the author wanted to disappear, self-harm
+#   or die.

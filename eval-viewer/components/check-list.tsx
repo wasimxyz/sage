@@ -25,10 +25,11 @@ const outcomeTone: Record<string, OutcomeTone> = {
   skipped: "muted",
 };
 
-function checkRow(check: CheckResult): Row {
+/** An item can hold the same check many times (Dream supported, once for each item Dream wrote), so the position is part of the key. */
+function checkRow(check: CheckResult, position: number): Row {
   return {
     evidence: check.evidence,
-    key: `check-${check.id}`,
+    key: `check-${check.id}-${position}`,
     label: checkLabel(check.id),
     outcome: {
       text: check.outcome,

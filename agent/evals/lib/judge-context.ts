@@ -26,7 +26,8 @@ export interface JournalContextSource {
   };
 }
 
-function castLine(member: CastMember): string {
+/** One person in the fact sheet: `- Name: relation, pronouns, alive. Note: ...` */
+export function castLine(member: CastMember): string {
   const facts = [member.relation];
   if (member.pronouns !== undefined) {
     facts.push(member.pronouns);
@@ -38,7 +39,8 @@ function castLine(member: CastMember): string {
   return `- ${member.name}: ${facts.join(", ")}.${note}`;
 }
 
-function timelineLine(event: TimelineEvent): string {
+/** One dated event in the fact sheet. */
+export function timelineLine(event: TimelineEvent): string {
   return `- ${event.date} (${event.weight}): ${event.what}`;
 }
 

@@ -16,7 +16,9 @@ import {
   prependPath,
   readEnvFile,
   redact,
+  SAGE_ONLY_ENV,
   uploadEnv,
+  withoutSageOnly,
   withoutSecrets,
 } from "./env.ts";
 
@@ -164,6 +166,20 @@ test("uploadEnv gives the upload the Blob variables and no gateway key", () => {
     VERCEL_OIDC_TOKEN: "oidc",
   });
   assert.equal(uploadEnv(store).VERCEL_OIDC_TOKEN, undefined);
+});
+
+test("the variables only Sage reads are kept out of every other process", () => {
+  assert.deepEqual([...SAGE_ONLY_ENV], ["SAGE_EVAL_DREAM_PROMPTS"]);
+  const base = {
+    AI_GATEWAY_API_KEY: "secret",
+    HOME: "/home/x",
+    SAGE_EVAL_DREAM_PROMPTS: "/repo/agent/evals/dream-prompts/careful",
+    SAGE_EVAL_PERSON: "sam",
+  };
+  assert.deepEqual(withoutSageOnly(base), {
+    HOME: "/home/x",
+    SAGE_EVAL_PERSON: "sam",
+  });
 });
 
 test("redact hides long secrets and leaves short ones", () => {

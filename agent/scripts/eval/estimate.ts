@@ -23,6 +23,9 @@ import type { PlanGroup, RunPlan } from "./plan.ts";
 /** What the estimate assumes when it has nothing better. Seconds unless noted. */
 export const ESTIMATE_DEFAULTS = {
   buildMinutes: 3,
+  // One judge call per source. A cached grade costs nothing, so a run that
+  // reuses its grades takes less.
+  dreamAccuracySecondsPerSource: 20,
   dreamSecondsPerEntry: { off: 30, on: 60 },
   eveStartSeconds: 25,
   gradeTailMinutes: 3,
@@ -180,6 +183,8 @@ function addPersonPass(
     sums.judgeUsd +=
       person.counts.entries *
       costUsd(prices.judge, ESTIMATE_TOKENS.dreamSourceJudge);
+    sums.personSecs +=
+      person.counts.entries * ESTIMATE_DEFAULTS.dreamAccuracySecondsPerSource;
   }
 }
 

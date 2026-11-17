@@ -48,6 +48,16 @@ test("eve filters pass through in order", () => {
   ]);
 });
 
+test("the judge check cannot be skipped", () => {
+  assert.throws(
+    () => parseCli(["--skip-judge-check"]),
+    (error: unknown) =>
+      error instanceof CliError &&
+      error.exitCode === 2 &&
+      pattern2.test(error.message)
+  );
+});
+
 test("--url is refused with the old message and exit code 2", () => {
   for (const argv of [["--url", "x"], ["--url=x"], ["--yes", "--url", "x"]]) {
     assert.throws(

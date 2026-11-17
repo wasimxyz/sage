@@ -123,6 +123,23 @@ export function withoutSecrets(env: Env = process.env): Record<string, string> {
   return clean;
 }
 
+/**
+ * Variables that only Sage reads. Every other process the runner starts goes
+ * without them, even when the shell that started the runner set one.
+ */
+export const SAGE_ONLY_ENV = ["SAGE_EVAL_DREAM_PROMPTS"] as const;
+
+/** `withoutSecrets`, and without the variables only Sage reads. */
+export function withoutSageOnly(
+  env: Env = process.env
+): Record<string, string> {
+  const clean = withoutSecrets(env);
+  for (const name of SAGE_ONLY_ENV) {
+    delete clean[name];
+  }
+  return clean;
+}
+
 /** Only the gateway credentials that are set in `env`. */
 export function gatewayCredentials(
   env: Env = process.env

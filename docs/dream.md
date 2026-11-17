@@ -42,6 +42,25 @@ Sage lists at most 4,096 sources at a time, because the store refuses a longer l
 
 The summary model is `qwen3.5:9b` unless `SAGE_SUMMARY_MODEL` names another one. Each call has its own time limit: 10 seconds for the status check, 2 minutes for an embedding or a title, and 5 minutes for a summary or an extraction.
 
+## Swapping the prompts in eval builds
+
+Dream’s prompts are four constants in `src/ollama.zig`: the entry summary, the chat summary, the chat title, and the memory extraction. A build compiled with `-Dautomation=true`, like the one `make eval` runs, can replace them. Packaged builds and `make dev` cannot.
+
+`SAGE_EVAL_DREAM_PROMPTS` names a folder. It may hold any of these files:
+
+- `summary.md`: the entry summary prompt
+- `chat-summary.md`: the chat summary prompt
+- `chat-title.md`: the chat title prompt
+- `extract.md`: the memory extraction prompt
+
+Each file replaces the matching prompt, and a missing file keeps the built-in one. Sage reads the folder once, at startup, so the prompts hold for the whole run. Sage cuts any spaces and newlines off the end of a file and adds one blank line, as the built-in prompts end. A file with or without a final newline gives the same prompt.
+
+If Sage cannot open the folder, or cannot read a file, it logs one line and keeps the built-in prompt. An empty file or one of 64 KiB or more does the same.
+
+Other builds compile this code out, so they never look at the variable. `src/main.zig` gates `zero://inline` with the same build flag.
+
+The eval suite sets the variable for you. A sweep lists folders from `agent/evals/dream-prompts/` in `dreamPrompts`, and the runner points the Sage it starts at each one. [Eval suite](agent/evals.md#comparing-dream-prompts) explains how to compare prompts.
+
 ## The sidebar dot
 
 While Dream is idle, a blue dot sits at the right edge of the Dream item when there is work to do. `dream.status` counts that work with the same query `dream.start` uses, so the dot matches what a run would do. Edits to entries and chats do not reach the Dream provider, so it asks again every 15 seconds. The dot can take that long to appear after an edit. A hidden window skips the check and runs it once when it comes back.
