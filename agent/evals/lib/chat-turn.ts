@@ -1,14 +1,20 @@
 /**
- * One Chat question, sent and checked.
+ * One Chat message, sent and checked.
  *
  * `chat/facts.eval.ts` runs this for each `chat` question in a person's
- * `case.yaml`. It sends the question with the setup's headers, records the
- * checks, and returns the transcript row for the grade pass to read.
+ * `case.yaml`, and `chat/openers.eval.ts` runs it for each opener. It sends the
+ * message with the setup's headers, records the checks, and returns the
+ * transcript row for the grade pass to read.
  */
 import type { EveEvalToolCall } from "eve/evals";
 
 import { type ItemRef, recordCheck, type ScoreHost } from "./record.ts";
-import type { Setup, TranscriptRow } from "./schema.ts";
+import type {
+  Journal,
+  Setup,
+  TranscriptKind,
+  TranscriptRow,
+} from "./schema.ts";
 import { memoryOn, setupHeaders } from "./setup.ts";
 import {
   checkTurnWorks,
@@ -25,6 +31,14 @@ export interface ChatQuestion {
   expectWhen: boolean;
   question: string;
 }
+
+/** What the transcript row says about the message. A fact question is `chat` on the person's own journal. */
+export interface RowKind {
+  journal: Journal;
+  kind: TranscriptKind;
+}
+
+const CHAT_ROW: RowKind = { journal: "own", kind: "chat" };
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -112,14 +126,15 @@ function transcriptRow(
   item: ItemRef,
   chat: ChatQuestion,
   sent: TimedTurn | undefined,
-  failure: string | undefined
+  failure: string | undefined,
+  row: RowKind
 ): TranscriptRow {
   const failed = sent === undefined || sent.turn.status === "failed";
   return {
     ended: failed ? "error" : "done",
     itemId: item.itemId,
-    journal: "own",
-    kind: "chat",
+    journal: row.journal,
+    kind: row.kind,
     person: item.person,
     repeat: item.repeat,
     setupId: item.setupId,
@@ -139,8 +154,8 @@ function transcriptRow(
 }
 
 /**
- * Sends one question and records `counted:turn-works`, plus the soft search
- * checks the question asks for. A turn that throws (a closed stream, a
+ * Sends one message and records `counted:turn-works`, plus the soft search
+ * checks the message asks for. A turn that throws (a closed stream, a
  * timeout) is a failed "turn works" check and a transcript row with
  * `ended: "error"`, not a crash. A setup the headers cannot express, such as
  * an unsupported thinking level, still throws, because no turn could work.
@@ -149,7 +164,8 @@ export async function runChatQuestion(
   t: ScoreHost & TurnSender,
   item: ItemRef,
   chat: ChatQuestion,
-  setup: Setup
+  setup: Setup,
+  row: RowKind = CHAT_ROW
 ): Promise<TranscriptRow> {
   setupHeaders(setup);
   let sent: TimedTurn | undefined;
@@ -163,5 +179,28 @@ export async function runChatQuestion(
   if (sent !== undefined) {
     recordSearchChecks(t, item, chat, setup, sent.turn);
   }
-  return transcriptRow(item, chat, sent, failure);
+  return transcriptRow(item, chat, sent, failure, row);
+}
+
+/**
+ * Sends an opener: one message from the person, one reply from Sage. It records
+ * `counted:turn-works` and writes a transcript row of kind `opener`. `journal`
+ * is `empty` when the opener runs against the empty journal. The opener's
+ * search expectation is graded by a later change, so no search check is
+ * recorded here.
+ */
+export function runOpener(
+  t: ScoreHost & TurnSender,
+  item: ItemRef,
+  opener: { message: string },
+  setup: Setup,
+  journal: Journal = "own"
+): Promise<TranscriptRow> {
+  return runChatQuestion(
+    t,
+    item,
+    { expectTool: false, expectWhen: false, question: opener.message },
+    setup,
+    { journal, kind: "opener" }
+  );
 }

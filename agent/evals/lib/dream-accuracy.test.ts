@@ -260,12 +260,13 @@ function fakeGrader(
 ): FakeGrader {
   const calls: JudgeCall<never>[] = [];
   const grader = {
+    dreamRubric: "0123456789",
     judge: (call: JudgeCall<never>) => {
       calls.push(call);
       return Promise.resolve(answer(call));
     },
     modelId: "acme/judge-1",
-    rubric: "0123456789",
+    rubric: "abcdef0123",
   } as unknown as Grader;
   return { calls, grader };
 }
@@ -792,6 +793,41 @@ test("a miss calls the judge once, and the next read answers from the cache with
   assert.equal(second.cached, true);
   assert.deepEqual(second.claims, [claim()]);
   assert.equal(second.model, "acme/judge-1");
+});
+
+test("the cache is keyed by the Dream hash, and the result reports the whole rubric hash", async () => {
+  const cacheDir = mkdtempSync(join(tmpdir(), "sage-dream-cache-"));
+  mkdirSync(join(cacheDir, "snap"));
+  const location = {
+    cacheDir,
+    enabled: true,
+    key: "snap",
+    model: "acme/judge-1",
+  };
+  const { calls, grader } = fakeGrader(() => judged([]));
+  const input = { context: "sheet", grader, itemId: ref.itemId, source: mia };
+  const first = await gradeDreamSource({
+    ...input,
+    cache: createGradeCache({ ...location, rubric: grader.dreamRubric }),
+  });
+  assert.equal(first.rubric, grader.rubric);
+  assert.notEqual(grader.rubric, grader.dreamRubric);
+
+  // A cache named for the whole rubric hash is a different file and a miss.
+  await gradeDreamSource({
+    ...input,
+    cache: createGradeCache({ ...location, rubric: grader.rubric }),
+  });
+  assert.equal(calls.length, 2);
+
+  // The Dream hash finds the first grade.
+  const again = await gradeDreamSource({
+    ...input,
+    cache: createGradeCache({ ...location, rubric: grader.dreamRubric }),
+  });
+  assert.equal(calls.length, 2);
+  assert.ok(again.ok && again.cached);
+  assert.equal(again.rubric, grader.rubric);
 });
 
 test("a changed fact sheet or a changed source is graded again", async () => {

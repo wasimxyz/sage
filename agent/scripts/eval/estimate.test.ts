@@ -3,6 +3,7 @@ import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+import { loadPeople } from "../../evals/lib/dataset.ts";
 import { costUsd } from "../../evals/lib/prices.ts";
 import {
   expandSetups,
@@ -22,11 +23,15 @@ import {
   loadTimingHistory,
   secondsPerReply,
 } from "./estimate.ts";
+import { judgeCheckSize } from "./judge-check.ts";
+import { selectPeople } from "./people.ts";
 import { buildPlan } from "./plan.ts";
 import { assembleSetupReport } from "./report.ts";
+import { loadSweep } from "./sweep.ts";
 import { makePerson, tempDir } from "./test-fixtures.ts";
 
 const pattern1 = /simulated user/u;
+const judgeCheckLinePattern = /^Judge check: \d+ items?, about \d+ min and \$/u;
 
 const prices = {
   judge: { inputPerM: 2, outputPerM: 10 },
@@ -185,6 +190,74 @@ test("Dream accuracy is one judge call and some time for each entry, and Chat ad
   const saved =
     ESTIMATE_DEFAULTS.eveStartSeconds + ESTIMATE_DEFAULTS.modelLoadSeconds;
   assert.ok(Math.abs(chat.hours - noChat.hours - saved / 3600) < 1e-9);
+});
+
+test("the judge check adds its items' cost and time, and a plan with no check adds nothing", () => {
+  const input = inputFor({ tests: ["person"] }, [makePerson("sam")]);
+  const without = estimateRun(input);
+  assert.ok(!without.lines.some((line) => line.startsWith("Judge check")));
+  const check = { dreamItems: 12, replyItems: 22 };
+  const withCheck = estimateRun({ ...input, judgeCheck: check });
+  const added =
+    12 * costUsd(prices.judge, ESTIMATE_TOKENS.dreamSourceJudge) +
+    22 * costUsd(prices.judge, ESTIMATE_TOKENS.replyJudge);
+  assert.ok(Math.abs(withCheck.costUsd - without.costUsd - added) < 1e-9);
+  assert.ok(
+    Math.abs(
+      withCheck.hours -
+        without.hours -
+        (34 * ESTIMATE_DEFAULTS.judgeCheckSecondsPerItem) / 3600
+    ) < 1e-9
+  );
+  assert.match(withCheck.lines[0] ?? "", judgeCheckLinePattern);
+});
+
+// The plan's night is eight hours with a $50 cap. The estimate runs on default
+// timings until a real report gives it better ones, so the hours here are a
+// guard against growth and not a forecast.
+const SCREEN_HOURS_BUDGET = 9;
+
+async function estimateShipped(name: string) {
+  const { sweep, setups } = await loadSweep(name, {});
+  const people = selectPeople(await loadPeople(), sweep.tags, {
+    openers: sweep.tests.includes("openers"),
+  });
+  const plan = buildPlan(setups, people, sweep, { chat: true });
+  const estimate = estimateRun({
+    dreamMisses: new Set(),
+    history: new Map(),
+    judgeCheck: await judgeCheckSize(),
+    plan,
+    prices: {
+      judge: { inputPerM: 2, outputPerM: 10 },
+      simulatedUser: { inputPerM: 0.2, outputPerM: 0.5 },
+    },
+    sweep,
+  });
+  return { estimate, setups, sweep };
+}
+
+test("smoke.yaml's estimate, judge check included, fits its spending cap with room to spare", async () => {
+  const { estimate, sweep } = await estimateShipped("smoke");
+  assert.match(estimate.lines[0] ?? "", judgeCheckLinePattern);
+  assert.ok(
+    estimate.costUsd < sweep.spendingCapUsd * 0.9,
+    `$${estimate.costUsd.toFixed(2)} against a $${sweep.spendingCapUsd} cap`
+  );
+});
+
+test("screen.yaml sends no fact questions, and its estimate, judge check included, is under its cap and its hours budget", async () => {
+  const { estimate, setups, sweep } = await estimateShipped("screen");
+  assert.equal(setups.length, 18);
+  assert.deepEqual(sweep.tests, ["person", "openers"]);
+  assert.ok(
+    estimate.costUsd <= sweep.spendingCapUsd,
+    `$${estimate.costUsd.toFixed(2)} against a $${sweep.spendingCapUsd} cap:\n${estimate.lines.join("\n")}`
+  );
+  assert.ok(
+    estimate.hours <= SCREEN_HOURS_BUDGET,
+    `${estimate.hours.toFixed(1)} h:\n${estimate.lines.join("\n")}`
+  );
 });
 
 test("repeats multiply the replies", () => {

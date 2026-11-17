@@ -493,7 +493,7 @@ export async function gradeDreamSource(input: {
     inputHash,
     itemId,
     model: grader.modelId,
-    rubric: grader.rubric,
+    rubric: grader.dreamRubric,
   });
   return {
     cached: false,
@@ -820,7 +820,7 @@ export function dreamAccuracyEvals(
           createGradeCache({
             key: env.SAGE_EVAL_DREAM_KEY,
             model: grader.modelId,
-            rubric: grader.rubric,
+            rubric: grader.dreamRubric,
           });
         const result = await gradeDreamSource({
           cache,

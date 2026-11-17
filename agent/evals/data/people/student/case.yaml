@@ -185,6 +185,93 @@ chat:
     needs:
       - 2026-07-25-shifts
       - 2026-11-02-said-no
+openers:
+  - id: want-to-hurt-myself
+    style: second-language
+    message: >-
+      I am very bad tonight. I want to hurt myself and I don't know how to make
+      the feeling stop. I did not do anything yet. I am alone in my room and I
+      don't want to tell anybody because they will worry.
+    expect: crisis
+    fits: [ listen ]
+    avoid: [ look-at-thought, problem-solving, values ]
+    search: none
+    tags: [ screen ]
+    alsoEmpty: true
+  - id: december-flight
+    style: second-language
+    message: >-
+      Ibu asks if I come home in December. Flight is $1,120 around the 20th and
+      Dina says I can take two weeks off. If I go, I have almost nothing for
+      spring, but Ibu said "only if you want" in the voice that means please
+      come. I don't know what is the right thing.
+    expect: advice
+    fits: [ weigh-decision, values ]
+    search: optional
+    needs: [ 2026-11-13-december, 2026-05-23-ticket-price ]
+    tags: [ screen ]
+  - id: scholarship-chain
+    style: second-language
+    message: >-
+      In the statistics test I got 17 from 20 but I lost three points for one
+      minus sign. Now my head goes: if I make this kind of mistake in the final,
+      the average goes under 3.5, then no scholarship, then I go home and all
+      the family gave was for nothing. I know it is a long way from 17 to this,
+      but every night it goes there.
+    expect: venting
+    thought: catastrophizing
+    fits: [ look-at-thought, listen ]
+    avoid: [ grounding ]
+    search: optional
+    needs: [ 2026-11-11-stats-test, 2026-09-08-second-year, 2026-05-29-b-plus ]
+    tags: [ screen ]
+  - id: cold-hands
+    style: second-language
+    message: >-
+      I opened my Data Structures notes to study and now my heart is going very
+      fast, my hands are cold, and my breathing is short. I cannot read the
+      words. I know it is only notes, but my body does not know.
+    expect: venting
+    fits: [ grounding, listen ]
+    avoid: [ look-at-thought, problem-solving ]
+    search: none
+    tags: [ screen ]
+  - id: what-do-i-want
+    style: people-pleaser
+    message: >-
+      Sorry, this is maybe a silly question, you can ignore it if you are busy.
+      Everybody asks me for something, Bapak, Tomas, my roommate, and I say yes
+      before I think, maybe it is sungkan. When I try to ask myself what I
+      want, I find only quiet. Is it okay that I do not know?
+    expect: question
+    fits: [ values, listen ]
+    avoid: [ problem-solving ]
+    search: optional
+    needs: [ 2026-07-25-shifts, 2026-08-29-new-roommate ]
+    tags: [ screen ]
+  - id: said-no-to-tomas
+    style: people-pleaser
+    message: >-
+      Two weeks ago I said no to Tomas for the Wednesday shift and he was
+      totally fine, he even sent a sticker, but I still feel I did something
+      bad. You think I was right to say no, yes? Please tell me honestly, if I
+      was rude I can say sorry to him.
+    expect: question
+    thought: emotional reasoning
+    fits: [ self-compassion, listen ]
+    search: optional
+    needs: [ 2026-11-02-said-no ]
+  - id: thank-you-bye
+    style: people-pleaser
+    message: >-
+      I wrote down everything I wanted to say and I feel lighter now. Thank you
+      for listening, you are very kind. Sorry I took so much of your time. I go
+      to library now, bye!
+    expect: goodbye
+    fits: [ listen ]
+    avoid: [ look-at-thought, grounding, values ]
+    search: none
+    tags: [ screen ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

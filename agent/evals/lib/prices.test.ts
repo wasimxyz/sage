@@ -313,11 +313,11 @@ test("costUsd never bills more cached tokens than input tokens", () => {
   assert.ok(Math.abs(cost - 0.2) < 1e-9);
 });
 
-test("estimateUsd is prompt chars over four at the input price plus the output cap", () => {
+test("estimateUsd is prompt chars over four at the input price plus the expected output", () => {
   const estimate = estimateUsd(price, {
-    maxOutputTokens: 8192,
+    outputTokens: 1500,
     promptChars: 40_000,
   });
-  // 10k tokens at $2/M + 8192 tokens at $10/M.
-  assert.ok(Math.abs(estimate - (0.02 + 0.081_92)) < 1e-9);
+  // 10k tokens at $2/M + 1500 tokens at $10/M.
+  assert.ok(Math.abs(estimate - (0.02 + 0.015)) < 1e-9);
 });

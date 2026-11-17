@@ -7,11 +7,14 @@ import test, { mock } from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
 
+import { gradesFileName } from "./dream-grade-cache.ts";
 import { formatFactSheet, formatSourceForJudge } from "./dream-judge-input.ts";
 import {
   createGrader,
   DEFAULT_MAX_OUTPUT_TOKENS,
   dreamSourceCall,
+  dreamSourceMaterial,
+  dreamSourceRubricHash,
   type FactualityGrade,
   factualityGradeSchema,
   type Grader,
@@ -24,6 +27,7 @@ import {
   type RubricKind,
   rubricHash,
   rubricMaterial,
+  YES_NO_OUTPUT_TOKENS,
 } from "./grader.ts";
 import { journalContextLayout } from "./judge-context.ts";
 import { LEDGER_FILE, reserve, totals } from "./ledger.ts";
@@ -186,15 +190,20 @@ test("a call reserves its estimate, then settles with the real cost", async () =
   assert.equal(after.byModel[MODEL_ID].calls, 1);
 });
 
-test("the estimate is prompt characters over four at the input price plus the output cap", async () => {
-  const { grader, runDir } = graderWith(mockReplying(verdict()));
-  await grader.factuality({ ...factInput, context: "x".repeat(4000) });
+function reservedLine(runDir: string): { estimateUsd: number; label: string } {
   const lines = readFileSync(join(runDir, LEDGER_FILE), "utf8")
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
   const reserved = lines.find((line) => line.type === "reserve");
   assert.ok(reserved);
+  return reserved;
+}
+
+test("the estimate is prompt characters over four at the input price plus the expected answer, not the output cap", async () => {
+  const { grader, runDir } = graderWith(mockReplying(verdict()));
+  await grader.factuality({ ...factInput, context: "x".repeat(4000) });
+  const reserved = reservedLine(runDir);
   const promptChars =
     RUBRICS.factuality.length +
     4000 +
@@ -203,9 +212,59 @@ test("the estimate is prompt characters over four at the input price plus the ou
       "Output to grade:\nJordan is your fiancé.",
     ].join("\n\n").length;
   const expected =
-    ((promptChars / 4) * 2 + DEFAULT_MAX_OUTPUT_TOKENS * 10) / 1_000_000;
+    ((promptChars / 4) * 2 + YES_NO_OUTPUT_TOKENS * 10) / 1_000_000;
   close(reserved.estimateUsd, expected);
   assert.equal(reserved.label, factInput.label);
+  assert.ok(
+    YES_NO_OUTPUT_TOKENS < DEFAULT_MAX_OUTPUT_TOKENS,
+    "the reservation is well under the cap"
+  );
+});
+
+test("the request keeps the full output cap while the reservation counts the expected answer", async () => {
+  const model = mockReplying(verdict());
+  const { grader } = graderWith(model);
+  await grader.factuality(factInput);
+  assert.equal(
+    model.doGenerateCalls[0].maxOutputTokens,
+    DEFAULT_MAX_OUTPUT_TOKENS
+  );
+});
+
+test("a call that does not say how long its answer runs reserves the whole output cap", async () => {
+  const { grader, runDir } = graderWith(
+    mockReplying(JSON.stringify({ ok: true }))
+  );
+  await grader.judge({
+    instructions: "x".repeat(400),
+    item: "y".repeat(400),
+    label: "unknown kind",
+    schema: z.strictObject({ ok: z.boolean() }),
+    schemaName: "unknown_grade",
+  });
+  close(
+    reservedLine(runDir).estimateUsd,
+    ((800 / 4) * 2 + DEFAULT_MAX_OUTPUT_TOKENS * 10) / 1_000_000
+  );
+});
+
+test("an expected answer longer than the output cap reserves only the cap", async () => {
+  const { grader, runDir } = graderWith(
+    mockReplying(JSON.stringify({ ok: true })),
+    { maxOutputTokens: 100 }
+  );
+  await grader.judge({
+    expectedOutputTokens: 5000,
+    instructions: "x".repeat(400),
+    item: "y".repeat(400),
+    label: "long answer",
+    schema: z.strictObject({ ok: z.boolean() }),
+    schemaName: "long_grade",
+  });
+  close(
+    reservedLine(runDir).estimateUsd,
+    ((800 / 4) * 2 + 100 * 10) / 1_000_000
+  );
 });
 
 test("the request is cold, capped, tagged, and ordered for caching", async () => {
@@ -296,7 +355,7 @@ test("the spending cap stops the call before the model is asked", async () => {
 test("money spent earlier counts against the cap", async () => {
   const runDir = tempRunDir();
   assert.ok(
-    reserve(runDir, 1, { estimateUsd: 0.95, label: "earlier", model: "m" }).ok
+    reserve(runDir, 1, { estimateUsd: 0.999, label: "earlier", model: "m" }).ok
   );
   const model = mockReplying(verdict());
   const { grader } = graderWith(model, { capUsd: 1, runDir });
@@ -476,6 +535,86 @@ test("a grader's rubric follows the output cap it was built with", () => {
   assert.notEqual(short.rubric, standard.rubric);
 });
 
+test("a change that only touches the reply grade keeps the Dream hash, and so the cached Dream grades", () => {
+  const titles = ITEM_TITLES.reply as { reply: string };
+  const original = titles.reply;
+  const beforeFile = gradesFileName(MODEL_ID, dreamSourceRubricHash());
+  const beforeRubric = rubricHash();
+  try {
+    titles.reply = "Sage's reply to grade, reworded";
+    assert.notEqual(rubricHash(), beforeRubric, "the whole hash still moves");
+    assert.equal(
+      gradesFileName(MODEL_ID, dreamSourceRubricHash()),
+      beforeFile,
+      "Dream accuracy reads its cached grades from a file named by the Dream hash"
+    );
+  } finally {
+    titles.reply = original;
+  }
+});
+
+test("the reply rubric and the other kinds' rubrics are not in the Dream hash", () => {
+  const before = dreamSourceRubricHash();
+  const rubrics = RUBRICS as Record<RubricKind, string>;
+  for (const kind of [
+    "reply",
+    "summary",
+    "factuality",
+    "extraction",
+  ] as const) {
+    const original = rubrics[kind];
+    try {
+      rubrics[kind] = `${original}\nA reworded line.`;
+      assert.equal(dreamSourceRubricHash(), before, kind);
+      assert.notEqual(rubricHash(), before, kind);
+    } finally {
+      rubrics[kind] = original;
+    }
+  }
+});
+
+test("the Dream hash changes with everything that shapes a Dream-source grade", () => {
+  const before = dreamSourceRubricHash();
+  assert.equal(
+    dreamSourceRubricHash({ maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS }),
+    before
+  );
+  assert.notEqual(dreamSourceRubricHash({ maxOutputTokens: 4096 }), before);
+  assert.notEqual(dreamSourceRubricHash({ temperature: 0.7 }), before);
+  const rubrics = RUBRICS as Record<RubricKind, string>;
+  const original = rubrics.dreamSource;
+  try {
+    rubrics.dreamSource = `${original}\nA reworded line.`;
+    assert.notEqual(dreamSourceRubricHash(), before, "the Dream rubric text");
+  } finally {
+    rubrics.dreamSource = original;
+  }
+  assert.deepEqual(Object.keys(dreamSourceMaterial()), [
+    "kind",
+    "layout",
+    "maxOutputTokens",
+    "temperature",
+  ]);
+  assert.equal(
+    dreamSourceMaterial().layout,
+    rubricMaterial().dreamSourceLayout
+  );
+});
+
+test("a grader carries the Dream hash for its output cap", () => {
+  const { grader: standard } = graderWith(mockReplying(verdict()));
+  const { grader: short } = graderWith(mockReplying(verdict()), {
+    maxOutputTokens: 512,
+  });
+  assert.equal(standard.dreamRubric, dreamSourceRubricHash());
+  assert.equal(
+    short.dreamRubric,
+    dreamSourceRubricHash({ maxOutputTokens: 512 })
+  );
+  assert.notEqual(short.dreamRubric, standard.dreamRubric);
+  assert.notEqual(standard.dreamRubric, standard.rubric);
+});
+
 test("rubricHash changes with the title of any block in the item section", () => {
   const before = rubricHash();
   for (const [kind, name] of [
@@ -487,6 +626,12 @@ test("rubricHash changes with the title of any block in the item section", () =>
     ["factuality", "output"],
     ["summary", "reference"],
     ["summary", "output"],
+    ["reply", "checks"],
+    ["reply", "details"],
+    ["reply", "message"],
+    ["reply", "reference"],
+    ["reply", "reply"],
+    ["reply", "toolCalls"],
   ] as const) {
     withTitle(kind, name, "A different title", () => {
       assert.notEqual(rubricHash(), before, `${kind}.${name}`);
@@ -503,6 +648,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     "journalContext",
     "kinds",
     "maxOutputTokens",
+    "reply",
     "rubrics",
     "temperature",
   ]);
@@ -526,6 +672,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     "dreamSource",
     "extraction",
     "factuality",
+    "reply",
     "summary",
   ]);
   for (const [kind, probe] of Object.entries(material.kinds)) {
@@ -534,11 +681,11 @@ test("the rubric hash material covers every part that shapes a grade", () => {
       continue;
     }
     assert.equal(probe.schemaName, `${kind}_grade`);
-    // The user message goes out as the fact sheet, the transcript, then the item.
-    assert.deepEqual(probe.parts.slice(0, 2), [
-      "<fact sheet and journal>",
-      "<transcript>",
-    ]);
+    assert.equal(probe.parts[0], "<fact sheet and journal>");
+    if (kind !== "reply") {
+      // The user message goes out as the fact sheet, the transcript, then the item.
+      assert.equal(probe.parts[1], "<transcript>");
+    }
     assert.equal(probe.parts[2], probe.item);
     assert.equal(probe.parts.length, 3);
   }
