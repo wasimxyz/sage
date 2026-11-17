@@ -1,7 +1,5 @@
 import { readSageJson, sageFetch } from "../../agent/lib/sage.ts";
 
-import { embeddingFor } from "./query-embeddings.ts";
-
 export interface JournalHit {
   date: string;
   id: number;
@@ -172,10 +170,8 @@ async function postJson(
   pathname: string,
   body: { from?: string; limit: number; query: string; to?: string }
 ): Promise<unknown> {
-  const embedding = embeddingFor(body.query);
-  const payload = embedding === undefined ? body : { ...body, embedding };
   const response = await sageFetch(pathname, {
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
     method: "POST",
   });

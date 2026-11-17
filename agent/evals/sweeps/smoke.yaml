@@ -1,0 +1,19 @@
+# A check of the runner itself: one setup, and one person. Tiny, and under $1.
+#
+# `tags` picks people whose own tags (or whose openers' tags) match, so
+# sam-example, the format template, is the only one. Memory is on so the
+# memory checks run once, as the first `make eval` did.
+summaryModels: [ qwen3.5:9b ]
+embedModels: [ nomic-embed-text ]
+dreamPrompts: [ baseline ]
+chatModels: [ qwen3.5:9b ]
+prompts: [ baseline ]
+thinking: [ off ]
+contextLengths: [ 32768 ]
+memory: [ on ]
+repeats: 1
+tests: [ person, facts ]
+tags: [ example ]
+judge: { model: moonshotai/kimi-k3.1-pro }
+speedLimitSeconds: 20
+spendingCapUsd: 1

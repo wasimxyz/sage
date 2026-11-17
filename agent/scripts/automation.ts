@@ -19,12 +19,20 @@ import {
   resultNumber,
   utf8Chunks,
 } from "../evals/lib/bridge.ts";
-import type { JournalEntryFixture } from "../evals/lib/dataset.ts";
+import type { LoadedEntry } from "../evals/lib/dataset.ts";
 
 const chunkBytes = 4000;
-const dreamTimeoutMs = 30 * 60 * 1000;
+const minDreamTimeoutMs = 30 * 60 * 1000;
+// Dream takes about a minute per entry with memory on. Allow far more, so a
+// slow model or a long journal still finishes, and a stuck run still ends.
+const dreamTimeoutPerEntryMs = 150_000;
 const dreamPollMs = 2000;
 const bridgeTimeoutMs = 60_000;
+
+/** How long to wait for Dream, by the number of entries (and chats) it reads. */
+export function dreamTimeoutMs(items: number): number {
+  return Math.max(minDreamTimeoutMs, items * dreamTimeoutPerEntryMs);
+}
 
 /** Where a running automation build of Sage keeps its command files. */
 export interface Automation {
@@ -74,7 +82,7 @@ export function callBridge(
 export function saveJournalEntry(
   automation: Automation,
   label: string,
-  entry: JournalEntryFixture
+  entry: LoadedEntry
 ): number {
   const chunks = utf8Chunks(entry.body, chunkBytes);
   let savedId: number | null = null;
@@ -111,10 +119,13 @@ export function saveJournalEntry(
   return savedId;
 }
 
-export function waitForDream(automation: Automation): void {
+export function waitForDream(
+  automation: Automation,
+  timeoutMs = minDreamTimeoutMs
+): void {
   const started = Date.now();
   let sawRunning = false;
-  while (Date.now() - started < dreamTimeoutMs) {
+  while (Date.now() - started < timeoutMs) {
     const status = callBridge(
       automation,
       "dream.status",

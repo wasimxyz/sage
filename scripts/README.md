@@ -1,8 +1,8 @@
 # Scripts
 
-These shell scripts package the Mac app, run the eval suite, and reset and seed the dev app. Each section names the `make` command that runs them.
+These shell scripts package the Mac app, upload eval reports, and reset and seed the dev app. Each section names the `make` command that runs them.
 
-The seeding and grading steps live in `agent/scripts/`. The canirun catalog refresh lives in `frontend/scripts/`, as [Models](../docs/models.md#how-recommendations-work) explains.
+The eval runner is TypeScript, and it lives in `agent/scripts/eval/`. The seeding steps live in `agent/scripts/`. The canirun catalog refresh lives in `frontend/scripts/`, as [Models](../docs/models.md#how-recommendations-work) explains.
 
 ## Packaging
 
@@ -21,7 +21,7 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 
 `zig build package` runs `update-archive-packaged-app.sh` itself when `app.json` has an `updates` block.
 
-`fetch-ollama.sh` with no argument fills the same cache and prints the path of the binary. `make dev`, `make seed-dev`, and `make eval` pass that path to Sage as `SAGE_OLLAMA_PATH`. A Sage outside an app bundle runs that copy on port 11436, and `make eval` also uses it for its pulls.
+`fetch-ollama.sh` with no argument fills the same cache and prints the path of the binary. `make dev` and `make seed-dev` pass that path to Sage as `SAGE_OLLAMA_PATH`, and the eval runner runs the script itself and does the same. A Sage outside an app bundle runs that copy on port 11436, and the runner also uses it for its pulls.
 
 ## Releasing
 
@@ -31,13 +31,11 @@ The seeding and grading steps live in `agent/scripts/`. The canirun catalog refr
 
 ## Eval
 
-`make eval` runs `eval-run.sh`. It gets the pinned Ollama from `fetch-ollama.sh`, and it stops if port 11436 is in use, which `make dev` also uses. The runner loads settings, grades Dream and Chat, writes reports under `agent/evals/reports/`, and then asks whether to upload them. The full sequence is in [Eval suite internals](../agent/evals/README.md).
+`make eval` is not a shell script. It runs the TypeScript runner, `agent/scripts/eval/run.ts`, with a sweep file. The runner gets the pinned Ollama from `fetch-ollama.sh`, and it stops if port 11436 is in use, which `make dev` also uses. It grades Dream and Chat with a cloud judge, writes reports under `agent/evals/reports/`, and then runs `eval-upload.sh` to ask whether to upload them. [Eval suite](../docs/agent/evals.md) has the options, and [Eval suite internals](../agent/evals/README.md) has the sequence.
 
-`eval-run.sh` and `eval-upload.sh` both load settings through `eval-env.sh`, which reads `agent/.env`, then `agent/.env.local`. A variable already set in the shell keeps its value.
+`make eval-upload` runs `eval-upload.sh` on its own, to upload reports from an earlier run. On a terminal it asks first, and the default is no. When input is not a terminal, it skips the upload. The upload script reads `agent/.env`, then `agent/.env.local`, for the Blob token. A variable already set in the shell keeps its value.
 
-`make eval-upload` runs `eval-upload.sh` on its own, to upload reports from an earlier run. On a terminal it asks first, and the default is no. When input is not a terminal, it skips the upload.
-
-`make test` runs `eval-env.test.sh`. That check confirms the load order above.
+`make test` runs the runner’s unit tests (`agent/scripts/eval/*.test.ts`), which cover that load order, and the eval security tests in `security-tests/`.
 
 ## Resetting the dev app
 
@@ -65,7 +63,7 @@ When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change t
 
 `make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` opens Home with entries. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand.
 
-The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format.
+The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format. A person folder under `agent/evals/data/people/` works too: only its top-level `.md` files count, and the script refuses a person with no entries.
 
 ### Seed dates
 

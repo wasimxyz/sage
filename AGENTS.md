@@ -56,6 +56,7 @@ Do not run `make eval` unless asked.
 ## Constraints
 
 - Journal entries, chats, and memories stay on this machine. Do not add a cloud model fallback.
+- The eval suite may send the made-up cases in `agent/evals/data/` to the cloud judge and simulated user. Never send real journal entries, chats, or memories to a cloud model.
 - Only the window event-loop thread touches SQLite.
 - New bridge commands go in both `app.json` and `src/main.zig`.
 - Files under `src/schema/` are append-only.

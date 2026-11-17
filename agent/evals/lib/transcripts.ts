@@ -1,39 +1,56 @@
+/**
+ * The transcript file that joins generation to grading.
+ *
+ * A generation pass (`eve eval chat`) appends one `TranscriptRow` per item and
+ * repeat to the file named by `SAGE_EVAL_TRANSCRIPTS`, one JSON object per
+ * line. A grade pass (`eve eval grade`) reads those rows back and judges them.
+ * Both passes use the same row shape, `TranscriptRow` in `schema.ts`.
+ */
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import {
+  ENV_TRANSCRIPTS,
+  parseTranscriptRow,
+  type TranscriptRow,
+} from "./schema.ts";
+
 const lineBreakPattern = /\r?\n/u;
 
-export interface ChatTranscript {
-  caseId: string;
-  expectTool: boolean;
-  index: number;
-  model: string;
-  question: string;
-  reference: string;
-  reply: string;
-  tags: string[];
+/** The transcript file for this pass, or `undefined` when none is set. */
+export function transcriptPath(
+  env: Readonly<Record<string, string | undefined>> = process.env
+): string | undefined {
+  const path = env[ENV_TRANSCRIPTS];
+  return path === undefined || path.length === 0 ? undefined : path;
 }
 
-export function transcriptPath(): string | undefined {
-  const path = process.env.SAGE_EVAL_TRANSCRIPTS;
-  if (path === undefined || path.length === 0) {
-    return undefined;
-  }
-  return path;
-}
-
-export function appendChatTranscript(row: ChatTranscript): void {
-  const path = transcriptPath();
+/**
+ * Appends one row. The row is checked against the schema first, so a bad row
+ * fails in the generation pass that made it and not in the grade pass later.
+ * Without a transcript path this does nothing, so a bare `eve eval` still runs.
+ */
+export function appendTranscript(
+  row: TranscriptRow,
+  path: string | undefined = transcriptPath()
+): void {
   if (path === undefined) {
     return;
   }
+  const checked = parseTranscriptRow(row, `transcript row ${row.itemId}`);
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(row)}\n`, "utf8");
+  appendFileSync(path, `${JSON.stringify(checked)}\n`, "utf8");
 }
 
-export function loadChatTranscripts(): ChatTranscript[] {
-  const path = process.env.SAGE_EVAL_TRANSCRIPTS;
-  if (path === undefined || path.length === 0) {
+/**
+ * Reads every row, in file order. A missing file or no path gives an empty
+ * list. A line that is not JSON or not a valid row throws an error that names
+ * the file and line.
+ */
+export function loadTranscripts(
+  path: string | undefined = transcriptPath()
+): TranscriptRow[] {
+  if (path === undefined) {
     return [];
   }
   let raw: string;
@@ -45,94 +62,24 @@ export function loadChatTranscripts(): ChatTranscript[] {
     }
     throw error;
   }
-  const rows: ChatTranscript[] = [];
-  const lines = raw.split(lineBreakPattern);
-  for (const [offset, line] of lines.entries()) {
+  const rows: TranscriptRow[] = [];
+  for (const [offset, line] of raw.split(lineBreakPattern).entries()) {
     const trimmed = line.trim();
-    if (trimmed.length === 0) {
-      continue;
+    if (trimmed.length > 0) {
+      rows.push(parseLine(trimmed, `${path}:${offset + 1}`));
     }
-    rows.push(parseRow(trimmed, path, offset + 1));
   }
   return rows;
 }
 
-function parseRow(
-  line: string,
-  path: string,
-  lineNumber: number
-): ChatTranscript {
+function parseLine(line: string, where: string): TranscriptRow {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch (error) {
-    throw new Error(`${path}:${lineNumber} is not valid JSON.`, {
-      cause: error,
-    });
+    throw new Error(`${where} is not valid JSON.`, { cause: error });
   }
-  if (parsed === null || typeof parsed !== "object") {
-    throw new Error(`${path}:${lineNumber} must be a JSON object.`);
-  }
-  const row = parsed as Record<string, unknown>;
-  const label = `${path}:${lineNumber}`;
-  return {
-    caseId: requiredString(row, "caseId", label),
-    expectTool: row.expectTool === true,
-    index: requiredInt(row, "index", label),
-    model: requiredString(row, "model", label),
-    question: requiredString(row, "question", label),
-    reference: requiredString(row, "reference", label),
-    reply: requiredStringField(row, "reply", label),
-    tags: stringList(row.tags, label),
-  };
-}
-
-function requiredString(
-  row: Record<string, unknown>,
-  key: string,
-  label: string
-): string {
-  const value = row[key];
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${label} is missing ${key}.`);
-  }
-  return value;
-}
-
-function requiredStringField(
-  row: Record<string, unknown>,
-  key: string,
-  label: string
-): string {
-  const value = row[key];
-  if (typeof value !== "string") {
-    throw new Error(`${label} is missing ${key}.`);
-  }
-  return value;
-}
-
-function requiredInt(
-  row: Record<string, unknown>,
-  key: string,
-  label: string
-): number {
-  const value = row[key];
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new Error(`${label} is missing integer ${key}.`);
-  }
-  return value;
-}
-
-function stringList(value: unknown, label: string): string[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (
-    !(Array.isArray(value) && value.every((item) => typeof item === "string"))
-  ) {
-    throw new Error(`${label} tags must be a list of strings.`);
-  }
-  return value;
+  return parseTranscriptRow(parsed, `transcript row at ${where}`);
 }
 
 function isMissing(error: unknown): boolean {
