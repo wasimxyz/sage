@@ -120,3 +120,31 @@ openers:
     avoid: [ grounding ]
     search: optional
     needs: [ 2026-09-13-barbecue ]
+conversations:
+  # Three turns, so the smoke sweep runs the simulated user end to end for a
+  # few cents. The opening is written in advance, and the simulated user writes
+  # the other two.
+  - id: track-after-work
+    opening: "Walked past the track after work and almost ran a lap. Didn't. Feels like I'm waiting for someone to say it's okay."
+    maxTurns: 3
+    expect: venting
+    fits: [ listen, small-step ]
+    avoid: [ look-at-thought ]
+    persona:
+      situation: >-
+        A doctor told them in May to stop running for four weeks because of
+        shin splints. It is months later and they have not gone out once. They
+        want to start again and are afraid the pain will come back. Sam knows
+        and says "whenever you want", which does not help. They walk past the
+        track on the way to the bus and keep not stepping onto it.
+      wants: unsure
+      keyThought: >-
+        If I try and it hurts again, I will have proved I can't do this.
+      style: terse
+      openness: open
+      onExerciseOffer: unsure
+      reveals:
+        - "Nobody told them to wait this long. The four weeks ended in June."
+        - "The half marathon in April was the first thing they ever finished on purpose."
+      endWhen: >-
+        They do not end it early. The conversation runs to the turn limit.

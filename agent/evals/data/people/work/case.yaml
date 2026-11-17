@@ -202,6 +202,89 @@ openers:
     avoid: [ grounding ]
     search: optional
     needs: [ 2026-04-04-ridge-hike ]
+conversations:
+  - id: back-at-work-vent
+    opening: "Three weeks back at work and I'm already tired of everyone being so careful with me. The welcome-back card on my monitor has fourteen signatures. Fourteen."
+    maxTurns: 7
+    expect: venting
+    fits: [ listen ]
+    avoid:
+      [ look-at-thought, step-back, problem-solving, small-step, grounding ]
+    tags: [ deep ]
+    persona:
+      situation: >-
+        Back at work since 2026-10-26 after a six-week leave for burnout,
+        which they arranged with their manager on 2026-08-23. Everyone is
+        being careful with them: a card signed by fourteen people, three
+        people who asked "how are you, really?" in the first week, a manager
+        who holds a weekly ramp-up check-in, and the coworker who covered
+        their projects and now asks "are you sure you can take that on?" They
+        are sleeping better and walking by the lake, so they are not in
+        crisis. They are tired of being handled as fragile, and guilty for
+        being annoyed when everyone means well. They read a lot about burnout
+        during the leave and know the vocabulary (boundaries, reframing,
+        sitting with it). They expect Sage to reach for it.
+      wants: vent
+      keyThought: >-
+        I'd rather they were mean to me than careful with me. Being treated
+        as fragile is worse than being treated as late.
+      style: therapy-savvy
+      openness: open
+      onExerciseOffer: decline
+      reveals:
+        - "The card is still on the monitor because throwing it out would be rude."
+        - "What still stings is the manager's relief when they asked for leave. It had been visible for a while, just not to them."
+        - "Owen and Tess are the only two people who treat them normally, and they didn't have to ask them to."
+      boundaries:
+        - "Does not want a technique, an exercise, a reframe, or a 'have you thought about'. If Sage offers one they say no thanks, they just need to say it out loud."
+        - "Does not want advice about talking to their manager."
+        - "If Sage asks several questions in a row they get shorter."
+      endWhen: >-
+        They have said what they needed and feel lighter. They close with a
+        dry line, something like "ok, that helped, I'm going to go glare at
+        the card." If Sage only listens, they wrap up by turn 7.
+
+  - id: denver-offer-decision
+    opening: "ok so I got an offer. Denver. Same kind of work, about twenty-five percent more, a team of six, hybrid, and they want an answer by Friday. I did two video interviews my first two weeks back and told nobody, not Tess, not Owen, not even the journal, because I figured nothing would come of it. And now it's real money and a fresh start somewhere nobody knows me as the person who went on leave, but Tess and Owen are here, and my manager was so decent about all of it, and I've been back for all of three weeks, and what if this is just the sea wall again with a bigger salary, and also I've been to Denver once and mostly remember sky. I don't know what I'm even asking."
+    maxTurns: 9
+    expect: advice
+    fits: [ weigh-decision, values ]
+    avoid: [ grounding ]
+    tags: [ deep ]
+    persona:
+      situation: >-
+        Turned thirty on 2026-11-04. Back at work since 2026-10-26 after a
+        six-week leave for burnout. In their first two weeks back they did two
+        video interviews with a company in Denver, set up by a former
+        coworker, and told no one. On 2026-11-12 the company sent a written
+        offer for the same kind of work: about twenty-five percent more pay,
+        a team of six, hybrid, with an answer due Friday 2026-11-20. Friends
+        Tess and Owen live here, and so does everything they know. Their
+        manager here was kind about the leave. They have been to Denver once
+        and remember mostly sky.
+      wants: decide
+      keyThought: >-
+        If I go, I'm running away again. If I stay, I'm choosing the thing
+        that wore me down because it's familiar. Either way I'll have gotten
+        it wrong.
+      style: rambler
+      openness: open
+      onExerciseOffer: accept
+      reveals:
+        - "Has not told Tess or Owen. Afraid Tess will say 'go' to be nice and Owen will go quiet."
+        - "Part of the pull is getting away from the parking garage where they broke down in August. They say so if Sage brings up that entry or asks what the pull is."
+        - "Wonders whether the burnout was the job or themself, and fears it will follow them to Denver."
+        - "Will ask Sage once, 'what would you do?' They want a straight answer with reasons, not 'it's up to you'."
+      boundaries:
+        - "Will not decide tonight."
+        - "Does not want to be told what to do without reasons, and does not want a generic pros-and-cons list. They will gladly build one with Sage if it uses their own words."
+        - "Keeps circling back to Tess and Owen whenever the talk turns to the offer's good side."
+      endWhen: >-
+        They name what would tip it (what they would regret not doing, or
+        what they would miss) or what they need to find out before Friday (ask
+        about on-call, ask to push the answer back, talk to Tess and Owen), and
+        say they will sleep on it. Otherwise they end at maxTurns still
+        undecided.
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.

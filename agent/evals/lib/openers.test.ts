@@ -280,6 +280,32 @@ test("the empty-journal person runs the others' alsoEmpty openers, as journal em
   ]);
 });
 
+test("the empty-journal person sends none of an excluded person's alsoEmpty openers", async () => {
+  const long = personOf("long-history", [opener("o", { alsoEmpty: true })], {
+    tags: ["long"],
+  });
+  const pass = passFor([]);
+  const everyone = await openerEvals(contextOf(newUser, pass), {
+    loadPeople: () => Promise.resolve([grief, long, newUser]),
+  });
+  assert.ok(
+    everyone.some(
+      (definition) => definition.metadata?.person === "long-history"
+    )
+  );
+  const left = await openerEvals(
+    contextOf(newUser, {
+      ...pass,
+      sweep: { ...pass.sweep, excludeTags: ["long"] },
+    }),
+    { loadPeople: () => Promise.resolve([grief, long, newUser]) }
+  );
+  assert.ok(
+    left.every((definition) => definition.metadata?.person !== "long-history")
+  );
+  assert.ok(left.some((definition) => definition.metadata?.person === "grief"));
+});
+
 test("a person with entries does not load the other people", async () => {
   await openerEvals(contextOf(grief, passFor([])), {
     loadPeople: () => {

@@ -30,6 +30,9 @@ memory: [ off ]
 repeats: 1
 tests: [ openers ]
 tags: [ quick ]
+# long-history takes hours to run Dream the first time, so only deep and dream
+# sweeps include it.
+excludeTags: [ long ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 speedLimitSeconds: 20
 p90LimitSeconds: null

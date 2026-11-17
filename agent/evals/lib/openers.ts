@@ -48,6 +48,26 @@ export function itemMatchesTags(
   return shares(personTags) || shares(itemTags);
 }
 
+/**
+ * True when a sweep leaves the person out: their `tags` hold one of the sweep's
+ * `excludeTags`. A person left out sends nothing, and the empty-journal person
+ * does not send their `alsoEmpty` items either.
+ */
+export function personExcluded(
+  person: Pick<LoadedPerson, "personCase">,
+  excludeTags: readonly string[]
+): boolean {
+  return person.personCase.tags.some((tag) => excludeTags.includes(tag));
+}
+
+/** The people the sweep leaves in. */
+export function withoutExcluded<T extends Pick<LoadedPerson, "personCase">>(
+  people: readonly T[],
+  excludeTags: readonly string[]
+): T[] {
+  return people.filter((person) => !personExcluded(person, excludeTags));
+}
+
 /** The id key of an opener's run: the opener's id, with `.empty` on the empty journal. */
 export function openerKey(openerId: string, journal: Journal): string {
   return journal === "empty" ? `${openerId}${EMPTY_KEY_SUFFIX}` : openerId;
@@ -161,7 +181,10 @@ export async function openerEvals(
 ): Promise<EvalDefinition[]> {
   const others =
     person.id === EMPTY_JOURNAL_PERSON && person.empty
-      ? await (deps.loadPeople ?? loadPeople)()
+      ? withoutExcluded(
+          await (deps.loadPeople ?? loadPeople)(),
+          pass.sweep.excludeTags
+        )
       : [];
   const runs = openerRuns(person, others, pass.sweep.tags);
   return runs.flatMap((run) =>

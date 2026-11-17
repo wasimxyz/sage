@@ -250,6 +250,7 @@ test("allowedProviders keeps providers at or under the limit, counting peak hour
   // pareto is $0.30 but doubles at peak hours, so $0.60 is over the limit.
   assert.deepEqual(result, {
     maxOutputPerM: 0.5,
+    outputPerM: { deepinfra: 0.42, morph: 0.4, relace: 0.5, runinfra: 0.464 },
     providers: ["morph", "deepinfra", "runinfra", "relace"],
   });
   assert.deepEqual(urlsOf(fetchMock), [
@@ -262,6 +263,8 @@ test("allowedProviders reports the dearest allowed price", async () => {
   const result = await allowedProviders("deepseek/deepseek-v4.1-flash", 0.45);
   assert.deepEqual(result.providers, ["morph", "deepinfra"]);
   assert.equal(result.maxOutputPerM, 0.42);
+  // Each provider's own price is there, so a caller can price a subset.
+  assert.deepEqual(result.outputPerM, { deepinfra: 0.42, morph: 0.4 });
 });
 
 test("allowedProviders throws when nothing is cheap enough", async () => {

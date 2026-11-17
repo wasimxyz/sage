@@ -90,7 +90,8 @@ export function opener(
 export function conversation(
   id: string,
   maxTurns = 6,
-  tags: string[] = []
+  tags: string[] = [],
+  extra: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
     expect: "venting",
@@ -104,6 +105,7 @@ export function conversation(
       wants: "vent",
     },
     tags,
+    ...extra,
   };
 }
 

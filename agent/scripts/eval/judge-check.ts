@@ -21,6 +21,7 @@ import {
   loadDreamCheckItems,
   loadReplyCheckItems,
 } from "../../evals/lib/judge-check.ts";
+import { loadConversationCheckItems } from "../../evals/lib/judge-check-conversations.ts";
 import {
   loadRecordedResults,
   type RecordedEvalResult,
@@ -55,16 +56,28 @@ export function judgeCheckFiles(runDir: string): JudgeCheckFiles {
   };
 }
 
-/** How many items the check has, for the estimate. Throws a readable error when an item file is broken. */
+/**
+ * How many items the check has, for the estimate. A conversation item is one
+ * whole-conversation grade, and each reply it asks to grade counts as a reply
+ * item. Throws a readable error when an item file is broken.
+ */
 export async function judgeCheckSize(): Promise<{
+  conversationItems: number;
   dreamItems: number;
   replyItems: number;
 }> {
-  const [dream, replies] = await Promise.all([
+  const [dream, replies, conversations] = await Promise.all([
     loadDreamCheckItems(),
     loadReplyCheckItems(),
+    loadConversationCheckItems(),
   ]);
-  return { dreamItems: dream.length, replyItems: replies.length };
+  return {
+    conversationItems: conversations.length,
+    dreamItems: dream.length,
+    replyItems:
+      replies.length +
+      conversations.reduce((sum, item) => sum + item.gradeReplies.length, 0),
+  };
 }
 
 /** True for a row the judge check recorded. Setup reports leave these out. */

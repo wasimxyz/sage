@@ -64,6 +64,8 @@ const badRetrievalPattern =
   /^retrieval\[0\] \(query "q"\) expectEntry: .*stem "also-missing"/u;
 const badChatPattern = /^chat\[0\]\.needs: .*no entry number 4/u;
 const badOpenerPattern = /^openers \(in hello\)\.needs: .*stem "nope"/u;
+const badScriptNeedPattern =
+  /^conversations \(in asks\)\.script\.4\.needs: .*stem "nope"/u;
 const lastMonthPattern =
   /retrieval\[4\].*when "last month" covers 2026-10-01 to 2026-10-31/u;
 const unreadableWhenPattern = /when "whenever" does not read as a time/u;
@@ -764,6 +766,38 @@ test("an opener that also runs on the empty journal cannot say search: needed", 
   assert.deepEqual(validatePerson(person, TODAY), [
     "openers (in bad): alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off.",
   ]);
+});
+
+test("a conversation's script entries are checked like an opener's needs, and cannot ask for a hit on the empty journal", async () => {
+  const person = await personWith(
+    [
+      "conversations:",
+      "  - id: asks",
+      "    opening: hi",
+      "    expect: question",
+      "    persona: { situation: s, wants: vent, style: terse, openness: open }",
+      "    script:",
+      "      2: { message: what did I say, search: needed, needs: [2026-04-12-first-run] }",
+      '      3: "and then?"',
+      "      4: { message: and the other time, needs: [nope] }",
+      "  - id: also",
+      "    opening: hi",
+      "    expect: question",
+      "    alsoEmpty: true",
+      "    persona: { situation: s, wants: vent, style: terse, openness: open }",
+      "    script:",
+      "      2: { message: what did I say, search: optional }",
+      "      3: { message: and then, search: needed }",
+      "",
+    ].join("\n")
+  );
+  const problems = validatePerson(person, TODAY);
+  assert.equal(problems.length, 2, problems.join("\n"));
+  assert.match(problems[0] ?? "", badScriptNeedPattern);
+  assert.equal(
+    problems[1],
+    "conversations (in also).script.3: alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off."
+  );
 });
 
 test("a person with no chats names no stem for a chat: need", async () => {

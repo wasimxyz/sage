@@ -14,6 +14,7 @@ import type {
   Setup,
   TranscriptKind,
   TranscriptRow,
+  Turn,
 } from "./schema.ts";
 import { memoryOn, setupHeaders } from "./setup.ts";
 import {
@@ -69,12 +70,18 @@ function passedWhen(calls: readonly EveEvalToolCall[]): boolean {
   );
 }
 
-function recordTurnWorks(
+/**
+ * Records `counted:turn-works` for one turn. In a conversation, `turnIndex` is
+ * the index of Sage's turn in the transcript row, which puts the check on that
+ * turn in the report.
+ */
+export function recordTurnWorks(
   t: ScoreHost,
   item: ItemRef,
   setup: Setup,
   sent: TimedTurn | undefined,
-  failure: string | undefined
+  failure: string | undefined,
+  turnIndex?: number
 ): void {
   const works = checkTurnWorks({
     chatModel: setup.chatModel,
@@ -96,6 +103,7 @@ function recordTurnWorks(
     pass: problems.length === 0,
     reason: problems.length === 0 ? undefined : problems.join("; "),
     tier: "counted",
+    turnIndex,
   });
 }
 
@@ -122,6 +130,26 @@ function recordSearchChecks(
   }
 }
 
+/** The person's turn of a transcript row. */
+export function userTurnOf(text: string): Turn {
+  return { role: "user", stepModelIds: [], text, toolCalls: [] };
+}
+
+/** Sage's turn of a transcript row: its text, tool calls, and timing, or the error that stopped it. */
+export function assistantTurnOf(
+  sent: TimedTurn | undefined,
+  failure: string | undefined
+): Turn {
+  return {
+    ...(failure === undefined ? {} : { error: failure }),
+    role: "assistant",
+    stepModelIds: sent?.stepModelIds ?? [],
+    text: sent?.turn.message ?? "",
+    ...(sent === undefined ? {} : { timing: sent.timing }),
+    toolCalls: toTranscriptToolCalls(sent?.turn.toolCalls ?? []),
+  };
+}
+
 function transcriptRow(
   item: ItemRef,
   chat: ChatQuestion,
@@ -139,17 +167,7 @@ function transcriptRow(
     repeat: item.repeat,
     setupId: item.setupId,
     simulatedUserFlags: [],
-    turns: [
-      { role: "user", stepModelIds: [], text: chat.question, toolCalls: [] },
-      {
-        ...(failure === undefined ? {} : { error: failure }),
-        role: "assistant",
-        stepModelIds: sent?.stepModelIds ?? [],
-        text: sent?.turn.message ?? "",
-        ...(sent === undefined ? {} : { timing: sent.timing }),
-        toolCalls: toTranscriptToolCalls(sent?.turn.toolCalls ?? []),
-      },
-    ],
+    turns: [userTurnOf(chat.question), assistantTurnOf(sent, failure)],
   };
 }
 

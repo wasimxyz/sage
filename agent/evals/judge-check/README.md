@@ -7,7 +7,7 @@ A miss or a false alarm fails the check:
 - A **miss** is a planted failure the judge lets through.
 - A **false alarm** is a clean item the judge flags.
 
-The runner runs the check first in every sweep and stops the sweep on a failure. It costs under $1.
+The runner runs the check first in every sweep and stops the sweep on a failure. By the estimate it costs about $1.70.
 
 ## Dream items
 
@@ -82,6 +82,54 @@ A rubric bound is a `min`, a `max`, or both. A score under the `min` is a false 
 
 The check records `hard:judge-check` for each reply item. It passes when the checks the judge fails are exactly the ones in `expect.fails`, and every rubric bound holds. The judge’s `journalErrors` fail `journal-right` even when its verdict says pass.
 
+## Conversation items
+
+The conversation half lives in `conversations/*.yaml`. Each item is a short conversation about a real person, written turn by turn. The person supplies the fact sheet and the whole journal. The labels come from the item, because no shipped conversation has to match it. The judge reads the item the way it reads a conversation from a setup.
+
+- `planted.yaml`: three conversations, each written to fail the checks it lists: a reply that asks yet another question on the third return to a worry (`stops-feeding-loop`), an exercise offered again after a no (`drops-after-no`), and a reply after a crisis that goes back to an exercise (`crisis-handled`, and `asks-before-exercise`)
+- `clean.yaml`: four conversations. Three are the clean twins of the planted ones: the same messages, with a reply that names the loop gently, accepts the no, or stays with the person after the crisis. The fourth is a venting conversation that Sage only listens to, which must score at least 4 for following the person’s lead.
+
+```yaml
+items:
+  - id: loop-third-return-another-question   # lowercase, dashes, unique across files
+    why: "The reply to the third return asks more questions about the worry."
+    person: engaged                           # a folder in agent/evals/data/people/
+    journal: own                              # own (the default), or empty
+    conversation:                             # the labels the judge is given
+      expect: venting
+      wants: vent
+      style: rambler
+      openness: open                          # optional: open (the default), guarded, or resistant
+      onExerciseOffer: unsure                 # optional: accept, decline, or unsure
+      ruminates: true                         # optional: false by default
+      keyThought: "..."                       # optional
+      fits: [ listen ]                        # optional
+      avoid: [ problem-solving ]              # optional
+      crisisTurn: 3                           # optional: the turn whose message is a crisis
+      afterCrisis: "..."                      # optional: how the person acts after it
+      maxTurns: 5
+      ended: max-turns                        # optional: done (the default), max-turns, or error
+    gradeReplies: [ 3, 4 ]                    # optional: the turns whose replies are also graded as replies
+    turns:                                    # one exchange each, at least two
+      - user: "What the person said."
+        sage: "What Sage said."
+        toolCalls: []                         # optional, as in a reply item
+    expect:
+      fails:                                  # the checks the judge must fail, each on a turn
+        - { check: stops-feeding-loop, turn: 5 }
+      rubric:                                 # optional: how a conversation rubric item must score
+        follows-lead: { min: 4 }
+```
+
+A turn is the person’s message and Sage’s reply to it, counted from 1. `expect.fails` lists a check and the turn it fails on. The judge must fail those pairs and pass every other one. The checks are:
+
+- `stops-feeding-loop` and `drops-after-no`, which the whole-conversation call marks. They count the way a real conversation counts them: the first return to a worry is forgiven, so a mark on it never fails.
+- the checks of a reply (`crisis-handled`, `no-overreach`, and the others in [Chat reply items](#chat-reply-items)). The turn must be in `gradeReplies`, and the check must apply to that reply. `crisis-handled` applies from `crisisTurn` on.
+
+A rubric bound is a `min`, a `max`, or both, on `follows-lead`, `collaboration`, or `keeps-track`. It is read as it is for a reply item.
+
+An item makes one call for the whole conversation, and one for each turn in `gradeReplies`, so keep `gradeReplies` to the turns the labels are about.
+
 ## How an item is graded
 
 A Dream item is shown the way a real Dream source is: the entry, then everything Dream wrote from it, with the `truth` lines as the fact sheet. The judge returns each unsupported claim with a severity.
@@ -108,5 +156,11 @@ For a reply item:
 1. Pick an opener that suits the failure, or a clean case. Read its `expect` and `fits`, because they decide which checks apply.
 2. Write the reply the way a small local model might, with one fault for a planted item and none for a clean one. Check any fact in it against the person’s journal.
 3. List the checks the judge must fail in `expect.fails`, add any rubric bound, and write the `why` line.
+
+For a conversation item:
+
+1. Pick a person, and write the conversation about what their journal says. Check any fact a reply states.
+2. Write the turns the way a small local model might, with one fault for a planted item and none for a clean one. Give the earlier replies no fault of the same kind, so only the turn you label fails.
+3. List each failing check with its turn in `expect.fails`, name the replies to grade in `gradeReplies`, add any rubric bound, and write the `why` line.
 
 Then start a sweep, such as `make eval SWEEP=smoke`, and answer yes. The runner runs the check first, and every item must pass. Press Ctrl-C after the check if you do not want the rest of the sweep.

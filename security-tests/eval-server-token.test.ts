@@ -77,11 +77,16 @@ test("ARGS cannot replace the target URL", () => {
 
 test("the runner exits with 2 and the same message when ARGS carries --url", () => {
   const entry = join(agentDir, "scripts", "eval", "run.ts");
+  // The runner refuses an agent's shell before it reads the command line
+  // (eval-refuses-agents.test.ts). This test is about the command line.
+  const env = { ...process.env };
+  // biome-ignore lint/performance/noDelete: an unset variable and an empty one differ here
+  delete env.CLAUDECODE;
   for (const flag of [["--url", "https://example.invalid"], ["--url=https://example.invalid"]]) {
     const result = spawnSync(
       process.execPath,
       ["--experimental-strip-types", entry, ...flag],
-      { cwd: repoRoot, encoding: "utf8" }
+      { cwd: repoRoot, encoding: "utf8", env }
     );
     assert.equal(result.status, 2, `exit status for ${flag.join(" ")}`);
     assert.ok(

@@ -11,6 +11,12 @@ import test from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { ReplyItem } from "../../evals/lib/checks.ts";
+import { replyItemForTurn } from "../../evals/lib/conversation-checks.ts";
+import {
+  gradeConversation,
+  labelsOf,
+  replyBaseOf,
+} from "../../evals/lib/conversation-grade.ts";
 import { loadPerson } from "../../evals/lib/dataset.ts";
 import { createGrader } from "../../evals/lib/grader.ts";
 import {
@@ -20,6 +26,11 @@ import {
   loadReplyCheckItems,
   resolveReplyCheckItem,
 } from "../../evals/lib/judge-check.ts";
+import {
+  gradeConversationCheckItem,
+  loadConversationCheckItems,
+  resolveConversationCheckItem,
+} from "../../evals/lib/judge-check-conversations.ts";
 import { formatJournalContext } from "../../evals/lib/judge-context.ts";
 import { totals } from "../../evals/lib/ledger.ts";
 import type {
@@ -488,6 +499,8 @@ test("rows from another person in the check's file are not read as its items", a
  */
 const KIMI_PRICE = { inputPerM: 2, outputPerM: 10 };
 const DREAM_ANSWER_TOKENS = 600;
+/** A whole-conversation grade: three scores and a few marks, with room for thinking. */
+const CONVERSATION_ANSWER_TOKENS = 1500;
 
 type Prompt = readonly { content: unknown }[];
 
@@ -515,6 +528,19 @@ function idsAfter(text: string, label: string): string[] {
 
 /** A clean answer for whatever the prompt asks: every check passes, every score is 4. */
 function cleanAnswerFor(text: string): string {
+  if (text.includes("About this conversation:")) {
+    return JSON.stringify({
+      declineMarks: [],
+      loopMarks: [],
+      rubric: ["follows-lead", "collaboration", "keeps-track"].map((id) => ({
+        evidence: "",
+        id,
+        level: 4,
+        reason: "",
+      })),
+      simulatedUserFlags: [],
+    });
+  }
   if (!text.includes("Checks to answer:")) {
     return JSON.stringify({ unsupportedClaims: [] });
   }
@@ -548,9 +574,12 @@ function mockJudge(replyTokens: number): MockLanguageModelV4 {
   return new MockLanguageModelV4({
     doGenerate: async (options) => {
       const text = promptText(options.prompt);
-      const output = text.includes("Checks to answer:")
-        ? replyTokens
-        : DREAM_ANSWER_TOKENS;
+      let output = DREAM_ANSWER_TOKENS;
+      if (text.includes("Checks to answer:")) {
+        output = replyTokens;
+      } else if (text.includes("About this conversation:")) {
+        output = CONVERSATION_ANSWER_TOKENS;
+      }
       await new Promise((resolve) => setTimeout(resolve, 5));
       const input = Math.round(text.length / 4);
       return {
@@ -605,7 +634,7 @@ function outcomeOf(
     : { id, ok: false, reason: result.reason };
 }
 
-/** Every item of the judge check, Dream half then reply half, through one grader. */
+/** Every item of the judge check, Dream, reply, and conversation halves, through one grader. */
 async function judgeCheckTasks(
   grader: ReturnType<typeof createGrader>
 ): Promise<(() => Promise<Outcome>)[]> {
@@ -615,7 +644,25 @@ async function judgeCheckTasks(
       resolveReplyCheckItem(item, { today: "2026-11-15" })
     )
   );
+  const conversations = await Promise.all(
+    (await loadConversationCheckItems()).map((item) =>
+      resolveConversationCheckItem(item, { today: "2026-11-15" })
+    )
+  );
   return [
+    ...conversations.map((resolved) => async () => {
+      const graded = await gradeConversationCheckItem(grader, resolved);
+      const failed = [
+        ...graded.replies.map((entry) => entry.result),
+        graded.whole,
+      ].find((call) => !call.ok);
+      return outcomeOf(
+        resolved.item.id,
+        failed === undefined || failed.ok
+          ? { ok: true }
+          : { ok: false, reason: failed.reason }
+      );
+    }),
     ...dream.map(
       (item) => async () =>
         outcomeOf(item.id, await gradeCheckItem(grader, item))
@@ -660,7 +707,7 @@ async function smokeReplyTasks(
       message: chat.question,
     })),
   ];
-  return items.map(
+  const replyTasks = items.map(
     ({ id, item, message }) =>
       async () =>
         outcomeOf(
@@ -676,6 +723,61 @@ async function smokeReplyTasks(
           })
         )
   );
+  return [...replyTasks, ...smokeConversationTasks(grader, person, context)];
+}
+
+const SMOKE_REPLY =
+  "That sounds like a lot to carry. What feels heaviest right now?";
+
+/**
+ * smoke.yaml's conversation as the grade pass grades it: every Sage reply as a
+ * reply, with the turns before it in front, and then the whole conversation.
+ */
+function smokeConversationTasks(
+  grader: ReturnType<typeof createGrader>,
+  person: Awaited<ReturnType<typeof loadPerson>>,
+  context: string
+): (() => Promise<Outcome>)[] {
+  const { conversations } = person.personCase;
+  assert.equal(conversations.length, 1, "smoke plays one conversation");
+  const [conversation] = conversations;
+  assert.ok(conversation);
+  const users = [conversation.opening, "idk. i keep not going.", "maybe."];
+  assert.equal(users.length, conversation.maxTurns);
+  const exchanges = users.map((user) => ({
+    sage: SMOKE_REPLY,
+    toolCalls: [],
+    user,
+  }));
+  const base = replyBaseOf(conversation, false);
+  const replies = exchanges.map((exchange, index) => async () => {
+    const turn = index + 1;
+    return outcomeOf(
+      `${conversation.id} turn ${turn}`,
+      await gradeReply(grader, {
+        context,
+        earlier: exchanges.slice(0, index).flatMap((earlier) => [
+          { role: "user" as const, text: earlier.user },
+          { role: "assistant" as const, text: earlier.sage },
+        ]),
+        item: replyItemForTurn(base, turn, undefined),
+        label: `reply ${conversation.id} turn ${turn}`,
+        message: exchange.user,
+        reply: exchange.sage,
+        toolCalls: [],
+      })
+    );
+  });
+  const whole = async () => {
+    const graded = await gradeConversation(grader, {
+      context,
+      exchanges,
+      label: `conversation ${conversation.id}`,
+      labels: labelsOf(conversation, { ended: "max-turns" }, false),
+    });
+    return outcomeOf(`${conversation.id} (whole)`, graded);
+  };
+  return [...replies, whole];
 }
 
 async function smokeGrader(t: test.TestContext, replyTokens: number) {
@@ -742,9 +844,18 @@ test("a reply grade reserves about what it expects to spend, not the output cap"
   assert.ok(spentUsd > 0 && spentUsd < 0.1, `$${spentUsd}`);
 });
 
-test("judgeCheckSize counts the Dream and reply items the check grades", async () => {
+test("judgeCheckSize counts the Dream, reply, and conversation items the check grades", async () => {
   const size = await judgeCheckSize();
+  const conversations = await loadConversationCheckItems();
   assert.equal(size.dreamItems, (await loadDreamCheckItems()).length);
-  assert.equal(size.replyItems, (await loadReplyCheckItems()).length);
-  assert.ok(size.dreamItems > 0 && size.replyItems > 0);
+  assert.equal(size.conversationItems, conversations.length);
+  // A conversation item's graded replies are reply grades too.
+  assert.equal(
+    size.replyItems,
+    (await loadReplyCheckItems()).length +
+      conversations.reduce((sum, item) => sum + item.gradeReplies.length, 0)
+  );
+  assert.ok(
+    size.dreamItems > 0 && size.replyItems > 0 && size.conversationItems > 0
+  );
 });

@@ -5,6 +5,10 @@
 # agent/evals/dream-prompts/ to dreamPrompts to compare a prompt. Each
 # combination runs Dream again for every person, so it takes hours the first
 # time. Grades for a Dream snapshot are cached, so a second run is cheaper.
+#
+# It leaves nobody out, so it includes long-history (tagged long): about 300
+# entries, which is hours of Dream for each combination. The default, smoke,
+# quick, and screen sweeps leave it out with `excludeTags: [ long ]`.
 summaryModels: [ qwen3.5:9b ]
 embedModels: [ nomic-embed-text ]
 dreamPrompts: [ baseline ]

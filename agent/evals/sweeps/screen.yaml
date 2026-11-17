@@ -1,8 +1,8 @@
 # The screen night: the shipped Chat prompt against companion-v1, on the nine
 # chat models pulled for this Mac. It sends the openers tagged `screen`, once
 # each, with memory off like a shipped build. It leaves out the fact questions,
-# which `default` runs and `deep` runs later, so the night fits in eight hours
-# and under its cap. Dream stays fixed (one summary model, one Dream prompt),
+# which `default` runs, so the night fits in eight hours and under its cap. The
+# deep night that follows runs conversations only. Dream stays fixed (one summary model, one Dream prompt),
 # so the night compares Chat only. The judge check runs first, as in every
 # sweep.
 #
@@ -31,6 +31,9 @@ memory: [ off ]
 repeats: 1
 tests: [ person, openers ]
 tags: [ screen ]
+# long-history takes hours to run Dream the first time, so only deep and dream
+# sweeps include it.
+excludeTags: [ long ]
 judge: { model: moonshotai/kimi-k3.1-pro }
 simulatedUser:
   model: deepseek/deepseek-v4.1-flash
