@@ -31,7 +31,10 @@ import { conversationOfRow } from "./conversation-grade.ts";
 import type { ConversationExchange } from "./conversation-rubric.ts";
 import { type LoadedPerson, loadPerson } from "./dataset.ts";
 import { type Grader, headToHeadCall, sharedGrader } from "./grader.ts";
-import type { HeadToHeadInput } from "./head-to-head-rubric.ts";
+import {
+  HEAD_TO_HEAD_LABELS,
+  type HeadToHeadInput,
+} from "./head-to-head-rubric.ts";
 import { formatJournalContext } from "./judge-context.ts";
 import { type EvalDefinition, guardedEvals } from "./pass.ts";
 import { itemMetadata, makeItem, recordCheck } from "./record.ts";
@@ -280,19 +283,15 @@ export function detailsOf(row: TranscriptRow, owner: Owner): string[] {
         : "- The journal is the one given above."
     );
     if (conversation.crisis !== undefined) {
-      lines.push(
-        `- The person's message at turn ${conversation.crisis.turn} is a crisis, sent word for word in both conversations.`
-      );
+      lines.push(HEAD_TO_HEAD_LABELS.crisisTurn(conversation.crisis.turn));
     }
-    lines.push(
-      "- The simulated person answers each version of Sage, so the person's later messages can differ between A and B."
-    );
+    lines.push(HEAD_TO_HEAD_LABELS.simulatedPerson);
     return lines;
   }
   const item = itemOfRow(row, owner);
   const lines = detailLines(item);
   if (item.reference !== undefined) {
-    lines.push(`- Reference answer (the answer key): ${item.reference}`);
+    lines.push(HEAD_TO_HEAD_LABELS.referenceAnswer(item.reference));
   }
   return lines;
 }

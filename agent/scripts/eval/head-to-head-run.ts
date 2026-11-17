@@ -20,6 +20,7 @@ import {
 } from "../../evals/lib/head-to-head.ts";
 import type { RecordedEvalResult } from "../../evals/lib/recorder.ts";
 import {
+  type HeadToHeadItem,
   type HeadToHeadSummary,
   headToHeadItemSchema,
   parseSweepSummary,
@@ -74,11 +75,45 @@ function textOf(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** Reads the rows of the head-to-head eval. A row with no result counts as not graded for its pair. */
+/** One item of one pair, the way the plan and the eval's rows both name it. */
+function itemKey(pair: string, itemId: string, repeat: number): string {
+  return `${pair}\u0000${itemId}\u0000${repeat}`;
+}
+
+/** The pair and item a row is for, when it says. */
+function keyOfRow(
+  row: RecordedEvalResult,
+  pair: { a?: string; b?: string; result?: HeadToHeadItem }
+): string | undefined {
+  const { a, b, result } = pair;
+  const pairName =
+    a !== undefined && b !== undefined
+      ? `${a}-${b}`
+      : textOf(row.metadata.pair);
+  const itemId = result?.itemId ?? textOf(row.metadata.itemId);
+  if (pairName === undefined || itemId === undefined) {
+    return undefined;
+  }
+  const { repeat } = row.metadata;
+  return itemKey(
+    pairName,
+    itemId,
+    result?.repeat ?? (typeof repeat === "number" ? repeat : 1)
+  );
+}
+
+/**
+ * Reads the rows of the head-to-head eval. A row with no result counts as not
+ * graded for its pair. With the plan, so does an item the plan has and no row
+ * has, such as one a stopped or crashed pass never reached. The tally then
+ * says how many items never ran instead of reading as complete.
+ */
 export function readHeadToHead(
-  rows: readonly RecordedEvalResult[]
+  rows: readonly RecordedEvalResult[],
+  plan?: HeadToHeadPlan
 ): HeadToHeadReading {
   const reading: HeadToHeadReading = { notGraded: [], results: [] };
+  const seen = new Set<string | undefined>();
   for (const row of rows) {
     const assertion = row.assertions.find(
       (candidate) => candidate.name === HEAD_TO_HEAD_LABEL
@@ -88,6 +123,9 @@ export function readHeadToHead(
     const b = textOf(metadata.b);
     reading.rubric ??= textOf(metadata.rubric);
     const parsed = headToHeadItemSchema.safeParse(metadata.result);
+    seen.add(
+      keyOfRow(row, { a, b, result: parsed.success ? parsed.data : undefined })
+    );
     if (a === undefined || b === undefined) {
       reading.notGraded.push({
         id: row.id,
@@ -113,7 +151,27 @@ export function readHeadToHead(
         "The eval recorded no result.",
     });
   }
+  addUnreached(reading, seen, plan);
   return reading;
+}
+
+/** Counts each planned item that no row named as not graded for its pair. */
+function addUnreached(
+  reading: HeadToHeadReading,
+  seen: ReadonlySet<string | undefined>,
+  plan: HeadToHeadPlan | undefined
+): void {
+  for (const pair of plan?.pairs ?? []) {
+    for (const item of pair.items) {
+      if (!seen.has(itemKey(`${pair.a}-${pair.b}`, item.itemId, item.repeat))) {
+        reading.results.push({ a: pair.a, b: pair.b, item: null });
+        reading.notGraded.push({
+          id: item.itemId,
+          reason: "The pass recorded no row for this item.",
+        });
+      }
+    }
+  }
 }
 
 export interface HeadToHeadSummaryInput {
@@ -142,8 +200,9 @@ export function headToHeadSummaryOf(
 
 /**
  * Adds the result to the compared sweep's summary and writes it back. A later
- * run replaces an earlier one. Throws when the summary is missing or no longer
- * parses. Returns the new summary.
+ * run replaces an earlier one, so the runner calls this only for a pass that
+ * finished. Throws when the summary is missing or no longer parses. Returns
+ * the new summary.
  */
 export function mergeHeadToHead(
   reportsDir: string,

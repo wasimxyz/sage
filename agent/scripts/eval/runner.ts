@@ -21,7 +21,10 @@ import {
   repoRoot,
 } from "../../evals/lib/cache.ts";
 import { describeCalibration } from "../../evals/lib/calibration.ts";
-import { describeHeadToHead } from "../../evals/lib/head-to-head.ts";
+import {
+  describeHeadToHead,
+  type HeadToHeadPlan,
+} from "../../evals/lib/head-to-head.ts";
 import { priceCacheFile } from "../../evals/lib/prices.ts";
 import {
   dreamKeyId,
@@ -147,6 +150,7 @@ import {
   estimateJudgeCheck,
   runStandalone,
   type StandaloneEstimate,
+  unwrittenReason,
 } from "./standalone.ts";
 import {
   type LoadedSweep,
@@ -886,7 +890,13 @@ async function sweepBody(
         2
       );
     }
-    return await runStandaloneSweep(standalone, options, loaded, cleanup);
+    return await runStandaloneSweep(
+      standalone,
+      options,
+      loaded,
+      cleanup,
+      abort
+    );
   }
   const planned = await planSweep(options, loaded);
   const { peopleById, resolved } = planned;
@@ -1095,6 +1105,8 @@ interface StandaloneInputs {
   calls: number;
   /** The sweep a head-to-head compares. */
   compare?: string;
+  /** What a head-to-head will compare. An item the pass records no row for counts as not graded. */
+  plan?: HeadToHeadPlan;
   /** The calibration samples in use. */
   samples: string[];
   /** The setups a head-to-head compares, best first. */
@@ -1135,6 +1147,7 @@ function standaloneInputs(
     return {
       calls: preflight.calls,
       compare,
+      plan: preflight.plan,
       samples: [],
       setups: preflight.plan.setups,
     };
@@ -1188,7 +1201,8 @@ async function runStandaloneSweep(
   kind: "calibration" | "head-to-head",
   options: CliOptions,
   loaded: LoadedSweep,
-  cleanup: Cleanup
+  cleanup: Cleanup,
+  abort: { aborted: boolean }
 ): Promise<number> {
   const { sweep } = loaded;
   heading(kind === "calibration" ? "Calibration" : "Head to head");
@@ -1254,7 +1268,10 @@ async function runStandaloneSweep(
   });
   heading("Result");
   const spent = spentUsd(roots.runDir);
-  if (kind === "calibration") {
+  const unwritten = unwrittenReason(kind, result, abort.aborted);
+  if (unwritten !== null) {
+    log(unwritten);
+  } else if (kind === "calibration") {
     reportCalibration(sweep.judge.model, inputs, result.rows, roots, spent);
   } else {
     reportHeadToHead(sweep.judge.model, inputs, result.rows, roots, spent);
@@ -1265,7 +1282,7 @@ async function runStandaloneSweep(
   for (const problem of result.problems) {
     console.error(problem);
   }
-  return result.problems.length > 0 ? 1 : 0;
+  return unwritten === null ? 0 : 1;
 }
 
 function reportCalibration(
@@ -1302,7 +1319,7 @@ function reportHeadToHead(
   const summary = headToHeadSummaryOf({
     costUsd,
     judgeModel,
-    reading: readHeadToHead(rows),
+    reading: readHeadToHead(rows, inputs.plan),
     setups: inputs.setups,
     sweepId: roots.sweepId,
   });

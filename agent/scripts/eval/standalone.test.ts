@@ -52,6 +52,7 @@ import {
   STANDALONE_ESTIMATE,
   type StandaloneRun,
   standaloneFiles,
+  unwrittenReason,
 } from "./standalone.ts";
 import { tempDir } from "./test-fixtures.ts";
 
@@ -63,6 +64,8 @@ const pattern1 = /No finished sweep/u;
 const noSamplePattern = /No calibration sample in/u;
 const notGradedYetPattern = /You have not graded any reply of sweep-1/u;
 const crashedPattern = /The calibration pass crashed \(exit 3\)/u;
+const stoppedPattern = /was stopped.*Nothing was written/u;
+const unfinishedPattern = /did not finish cleanly.*Nothing was written/u;
 
 const PRICE = { inputPerM: 2, outputPerM: 10 };
 
@@ -347,7 +350,7 @@ test("the report is written as <sweep id>.calibration.json and reads back", (t) 
   const report = calibrationReportOf(
     {
       costUsd: 0.3,
-      humanGraded: 3,
+      humanGraded: 2,
       judgeModel: "acme/judge-1",
       reading: readCalibration([
         comparisonRow("a", true, true),
@@ -513,5 +516,106 @@ test("the preflight reads the finished sweep, counts the judge calls, and says w
   assert.throws(
     () => headToHeadPreflight("2026-01-01T000000Z-nope", 3, { reportsDir }),
     pattern1
+  );
+});
+
+/** The row the head-to-head eval records for one item of the A and B pair. */
+function winnerRow(itemId: string, winner: "a" | "b") {
+  return row(
+    itemId,
+    [
+      assertion("soft:head-to-head", {
+        a: SETUP_A,
+        b: SETUP_B,
+        pair: `${SETUP_A}-${SETUP_B}`,
+        result: { ...itemOf(winner), itemId },
+        rubric: "abcdef0123",
+      }),
+    ],
+    { metadata: { itemId, kind: "opener", repeat: 1, setupId: SETUP_A } }
+  );
+}
+
+test("a head-to-head pass that stopped after one of four items counts the other three as not graded", (t) => {
+  const reportsDir = tempDir(t);
+  const ids = ["rent-panic", "dark-night", "good-day", "rent-panic-2"].map(
+    (id) => `sam/opener/${id}`
+  );
+  const items = ids.map((itemId) => reportItemOf({ itemId }));
+  writeSweepFiles(
+    reportsDir,
+    sweepSummaryOf([rankingOf(SETUP_A), rankingOf(SETUP_B)]),
+    [
+      setupReportOf({ items, setupId: SETUP_A }),
+      setupReportOf({ items, setupId: SETUP_B }),
+    ]
+  );
+  const { plan } = headToHeadPreflight(FIXTURE_SWEEP_ID, 2, { reportsDir });
+  assert.equal(plan.pairs[0]?.items.length, 4);
+
+  const stopped = readHeadToHead([winnerRow(ids[0] as string, "b")], plan);
+  const { pairs } = headToHeadSummaryOf({
+    costUsd: 0.1,
+    judgeModel: "acme/judge-1",
+    reading: stopped,
+    setups: plan.setups,
+    sweepId: "run-2",
+  });
+  assert.deepEqual(
+    { graded: pairs[0]?.graded, notGraded: pairs[0]?.notGraded },
+    { graded: 1, notGraded: 3 }
+  );
+  assert.deepEqual(
+    stopped.notGraded.map((entry) => entry.id),
+    ids.slice(1)
+  );
+
+  // A pass that ran to its end reads the same with or without the plan.
+  const all = ids.map((id) => winnerRow(id, "a"));
+  assert.deepEqual(readHeadToHead(all, plan), readHeadToHead(all));
+  // A row the eval recorded as an error counts once, not again as missing.
+  const failed = row(ids[1] as string, [], {
+    error: "boom",
+    metadata: { itemId: ids[1], pair: `${SETUP_A}-${SETUP_B}`, repeat: 1 },
+    verdict: "failed",
+  });
+  const withError = readHeadToHead(
+    [winnerRow(ids[0] as string, "a"), failed],
+    plan
+  );
+  assert.deepEqual(
+    withError.notGraded.map((entry) => entry.id),
+    [ids[1], ids[2], ids[3]]
+  );
+});
+
+test("a calibration pass counts a reply you graded that got no row as not graded", () => {
+  const report = calibrationReportOf({
+    costUsd: 0.1,
+    humanGraded: 4,
+    judgeModel: "acme/judge-1",
+    reading: readCalibration([comparisonRow("a", true, true)]),
+    samples: ["sweep-1"],
+    sweepId: "2026-11-15T100000Z-calibration",
+  });
+  assert.deepEqual(
+    { compared: report.items.compared, notGraded: report.items.notGraded },
+    { compared: 1, notGraded: 3 }
+  );
+});
+
+test("a pass that crashed or was stopped writes no result, and one that finished does", () => {
+  assert.equal(unwrittenReason("head-to-head", { problems: [] }, false), null);
+  assert.match(
+    unwrittenReason("head-to-head", { problems: [] }, true) ?? "",
+    stoppedPattern
+  );
+  assert.match(
+    unwrittenReason(
+      "calibration",
+      { problems: ["The calibration pass crashed (exit 3)."] },
+      false
+    ) ?? "",
+    unfinishedPattern
   );
 });

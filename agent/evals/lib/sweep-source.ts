@@ -11,8 +11,9 @@
  *   the rows the chat pass wrote. They stay on the machine that ran the sweep.
  *
  * The reports are enough on their own, so a sweep uploaded from another Mac
- * works. When a transcript row exists for an item, it wins, because it is the
- * row the grader read.
+ * works. When a transcript row exists for an item, its turns win, because
+ * they are the turns the grader read. The judge's own flags for the simulated
+ * user exist only in the report, so they are added to the row's.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -238,14 +239,26 @@ export function loadSweepSource(
   return { reports, summary, transcripts };
 }
 
-/** The row of a report's item: the transcript when there is one, else the report's own turns. */
+/**
+ * The row of a report's item: the transcript when there is one, else the
+ * report's own turns. Either way, the simulated-user flags are the code's and
+ * the judge's together. The chat pass wrote the transcript row before any
+ * grading, so it holds only the flags the code set while the conversation ran.
+ */
 export function sourceRow(
   source: Pick<SweepSource, "transcripts">,
   setupId: string,
   item: ReportItem
 ): TranscriptRow | null {
-  return (
-    source.transcripts.get(rowKey(setupId, item.itemId, item.repeat)) ??
-    rowOfReportItem(item, setupId)
-  );
+  const row = source.transcripts.get(rowKey(setupId, item.itemId, item.repeat));
+  if (row === undefined) {
+    return rowOfReportItem(item, setupId);
+  }
+  const flags = new Set([
+    ...row.simulatedUserFlags,
+    ...item.simulatedUserFlags.map((mark) => mark.flag),
+  ]);
+  return flags.size === row.simulatedUserFlags.length
+    ? row
+    : { ...row, simulatedUserFlags: [...flags] };
 }

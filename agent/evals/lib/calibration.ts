@@ -509,7 +509,10 @@ export const RUBRIC_LEVELS = 5;
  * the squared distance over the largest squared distance.
  *
  * Null when there are no pairs, or when the chance disagreement is zero
- * because both raters gave one score throughout, which leaves kappa undefined.
+ * because both raters gave the same single score throughout, which leaves
+ * kappa undefined. When only one rater gave one score throughout, or the two
+ * gave different single scores, the chance disagreement equals the observed
+ * one, so kappa is 0.
  */
 export function quadraticWeightedKappa(
   pairs: readonly (readonly [number, number])[]

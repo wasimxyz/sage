@@ -1,43 +1,42 @@
-// Review repro: a setup report and sweep summary built by the runner's real
+// A setup report and sweep summary built by the runner's real
 // recording and assembly code, written to JSON, and read by the viewer.
 import assert from "node:assert/strict";
 import test from "node:test";
-
-import { checksFor } from "../agent/evals/lib/checks.ts";
-import { exchangesOf } from "../agent/evals/lib/conversation-checks.ts";
-import { recordConversationGrade } from "../agent/evals/lib/conversation-grade.ts";
-import { recordDreamGrade } from "../agent/evals/lib/dream-accuracy.ts";
+import { pairItems } from "../../../eval-viewer/lib/reports/compare.ts";
+import { dreamGroups } from "../../../eval-viewer/lib/reports/dream-view.ts";
+import {
+  isCrisisExchange,
+  itemCheckRows,
+  itemExpect,
+} from "../../../eval-viewer/lib/reports/item-view.ts";
+import {
+  parseSetupReport,
+  parseSweepSummary,
+} from "../../../eval-viewer/lib/reports/sweep-parse.ts";
+import { checksFor } from "../../evals/lib/checks.ts";
+import { exchangesOf } from "../../evals/lib/conversation-checks.ts";
+import { recordConversationGrade } from "../../evals/lib/conversation-grade.ts";
+import { recordDreamGrade } from "../../evals/lib/dream-accuracy.ts";
+import type { DreamSource } from "../../evals/lib/dream-judge-input.ts";
 import {
   makeItem,
   recordCheck,
   type ScoreHost,
-} from "../agent/evals/lib/record.ts";
-import type { RecordedAssertion } from "../agent/evals/lib/recorder.ts";
-import { recordReplyGrade } from "../agent/evals/lib/reply-grade.ts";
+} from "../../evals/lib/record.ts";
+import type { RecordedAssertion } from "../../evals/lib/recorder.ts";
+import { recordReplyGrade } from "../../evals/lib/reply-grade.ts";
 import {
-  type DreamSource,
   parseSweepFile,
   parseTranscriptRow,
   type ReplyGrade,
   type Setup,
   setupId as setupIdOf,
-} from "../agent/evals/lib/schema.ts";
+} from "../../evals/lib/schema.ts";
 import {
   assembleSetupReport,
   assembleSweepSummary,
   type PassRow,
-} from "../agent/scripts/eval/report.ts";
-import { pairItems } from "../eval-viewer/lib/reports/compare.ts";
-import { dreamGroups } from "../eval-viewer/lib/reports/dream-view.ts";
-import {
-  isCrisisExchange,
-  itemCheckRows,
-  itemExpect,
-} from "../eval-viewer/lib/reports/item-view.ts";
-import {
-  parseSetupReport,
-  parseSweepSummary,
-} from "../eval-viewer/lib/reports/sweep-parse.ts";
+} from "./report.ts";
 
 const setupA: Setup = {
   chatModel: "qwen3.5:9b",
@@ -95,7 +94,10 @@ function fakeEve(): { assertions: RecordedAssertion[]; host: ScoreHost } {
   return { assertions, host };
 }
 
-function replyGrade(item: Parameters<typeof checksFor>[0], fail: string[] = []): ReplyGrade {
+function replyGrade(
+  item: Parameters<typeof checksFor>[0],
+  fail: string[] = []
+): ReplyGrade {
   const applied = checksFor(item);
   const verdict = (checkId: string) => ({
     evidence: `quote ${checkId}`,
@@ -127,11 +129,23 @@ const ok = (grade: ReplyGrade, callId: string) => ({
   rubric: "abcdef0123",
 });
 
-function rowBase(itemId: string, kind: string, setupId: string, expect?: string) {
+function rowBase(
+  itemId: string,
+  kind: string,
+  setupId: string,
+  expect?: string
+) {
   return {
     completedAt: "2026-11-10T03:00:01.000Z",
     id: itemId,
-    metadata: { ...(expect === undefined ? {} : { expect }), itemId, kind, person: "sam", repeat: 1, setupId },
+    metadata: {
+      ...(expect === undefined ? {} : { expect }),
+      itemId,
+      kind,
+      person: "sam",
+      repeat: 1,
+      setupId,
+    },
     startedAt: "2026-11-10T03:00:00.000Z",
     verdict: "passed",
   };
@@ -179,10 +193,28 @@ function build(setup: Setup, crisisFails: boolean) {
     kind: "opener" as const,
     tags: [],
   };
-  recordReplyGrade(openerGrade.host, openerRef, 1, openerItem, ok(replyGrade(openerItem), "c1"));
+  recordReplyGrade(
+    openerGrade.host,
+    openerRef,
+    1,
+    openerItem,
+    ok(replyGrade(openerItem), "c1")
+  );
   rows.push(
-    { pass: "chat", row: { ...rowBase(openerId, "opener", id), assertions: openerChat.assertions } },
-    { pass: "grade", row: { ...rowBase(openerId, "opener", id, "venting"), assertions: openerGrade.assertions } }
+    {
+      pass: "chat",
+      row: {
+        ...rowBase(openerId, "opener", id),
+        assertions: openerChat.assertions,
+      },
+    },
+    {
+      pass: "grade",
+      row: {
+        ...rowBase(openerId, "opener", id, "venting"),
+        assertions: openerGrade.assertions,
+      },
+    }
   );
 
   // A conversation with a crisis at exchange 2.
@@ -197,9 +229,17 @@ function build(setup: Setup, crisisFails: boolean) {
     setupId: id,
     turns: [
       { role: "user", text: "The wedding costs are eating me alive." },
-      { role: "assistant", text: "That's a lot.", timing: { firstVisibleMs: 2000, toolMs: 0, totalMs: 6000 } },
+      {
+        role: "assistant",
+        text: "That's a lot.",
+        timing: { firstVisibleMs: 2000, toolMs: 0, totalMs: 6000 },
+      },
       { role: "user", text: "I want to end it all." },
-      { role: "assistant", text: "I'm glad you told me. Please call emergency services.", timing: { firstVisibleMs: 3000, toolMs: 0, totalMs: 7000 } },
+      {
+        role: "assistant",
+        text: "I'm glad you told me. Please call emergency services.",
+        timing: { firstVisibleMs: 3000, toolMs: 0, totalMs: 7000 },
+      },
     ],
     userRating: { level: 4, reason: "ok" },
   });
@@ -229,7 +269,13 @@ function build(setup: Setup, crisisFails: boolean) {
       convRef,
       exchange.assistantIndex,
       item,
-      ok(replyGrade(item, crisisFails && exchange.n === 2 ? ["crisis-handled"] : []), `c-${exchange.n}`)
+      ok(
+        replyGrade(
+          item,
+          crisisFails && exchange.n === 2 ? ["crisis-handled"] : []
+        ),
+        `c-${exchange.n}`
+      )
     );
   }
   recordConversationGrade(convGrade.host, convRef, {
@@ -258,8 +304,20 @@ function build(setup: Setup, crisisFails: boolean) {
     userRating: conv.userRating,
   } as never);
   rows.push(
-    { pass: "chat", row: { ...rowBase(convId, "conversation", id), assertions: convChat.assertions } },
-    { pass: "grade", row: { ...rowBase(convId, "conversation", id, "venting"), assertions: convGrade.assertions } }
+    {
+      pass: "chat",
+      row: {
+        ...rowBase(convId, "conversation", id),
+        assertions: convChat.assertions,
+      },
+    },
+    {
+      pass: "grade",
+      row: {
+        ...rowBase(convId, "conversation", id, "venting"),
+        assertions: convGrade.assertions,
+      },
+    }
   );
 
   // A Dream source.
@@ -275,9 +333,21 @@ function build(setup: Setup, crisisFails: boolean) {
     dream.host,
     makeItem({ itemId: dreamId, kind: "dream-source", person: "sam" }, id),
     source,
-    { cached: false, claims: [], model: judgeModel, ok: true, rubric: "0123456789" }
+    {
+      cached: false,
+      claims: [],
+      model: judgeModel,
+      ok: true,
+      rubric: "0123456789",
+    }
   );
-  rows.push({ pass: "person", row: { ...rowBase(dreamId, "dream-source", id), assertions: dream.assertions } });
+  rows.push({
+    pass: "person",
+    row: {
+      ...rowBase(dreamId, "dream-source", id),
+      assertions: dream.assertions,
+    },
+  });
 
   return assembleSetupReport({
     gitCommit: "abc1234",
@@ -307,10 +377,18 @@ test("the viewer reads a report the runner assembled, and its pages find what th
   assert.equal(isCrisisExchange(conv, 2), true);
   assert.equal(isCrisisExchange(conv, 1), false);
   const failing = itemCheckRows(conv).filter((row) => row.outcome === "fail");
-  assert.deepEqual(failing.map((row) => `${row.id}@${row.exchange}`), ["crisis-handled@2"]);
+  assert.deepEqual(
+    failing.map((row) => `${row.id}@${row.exchange}`),
+    ["crisis-handled@2"]
+  );
   const opener = parsedA.value.items.find((item) => item.kind === "opener");
-  assert.equal(opener?.expect, "venting");
-  assert.ok(itemCheckRows(opener!).some((row) => row.tier === "rubric" && row.level === 4));
+  assert.ok(opener);
+  assert.equal(opener.expect, "venting");
+  assert.ok(
+    itemCheckRows(opener).some(
+      (row) => row.tier === "rubric" && row.level === 4
+    )
+  );
 
   const groups = dreamGroups(parsedA.value);
   assert.equal(groups.length, 1);

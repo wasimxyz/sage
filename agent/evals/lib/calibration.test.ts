@@ -141,6 +141,100 @@ test("kappa is undefined with no pairs, or when both raters give one score throu
   );
 });
 
+test("kappa is 0 when one rater gave one score throughout, or each gave a different single score", () => {
+  // You always gave 4, and the judge varied.
+  assert.equal(
+    quadraticWeightedKappa([
+      [4, 3],
+      [4, 4],
+      [4, 5],
+    ]),
+    0
+  );
+  assert.equal(
+    quadraticWeightedKappa([
+      [3, 4],
+      [2, 4],
+      [5, 4],
+    ]),
+    0
+  );
+  // Both constant, and apart.
+  assert.equal(
+    quadraticWeightedKappa([
+      [4, 2],
+      [4, 2],
+    ]),
+    0
+  );
+});
+
+/** Textbook quadratic-weighted kappa from a confusion matrix, written independently. */
+function referenceKappa(pairs: [number, number][]): number | null {
+  const levels = 5;
+  const observed = Array.from({ length: levels }, () =>
+    new Array<number>(levels).fill(0)
+  );
+  for (const [a, b] of pairs) {
+    (observed[a - 1] as number[])[b - 1] += 1;
+  }
+  const rows = observed.map((row) =>
+    row.reduce((sum, value) => sum + value, 0)
+  );
+  const columns = (observed[0] as number[]).map((_, j) =>
+    observed.reduce((sum, row) => sum + (row[j] ?? 0), 0)
+  );
+  let numerator = 0;
+  let denominator = 0;
+  for (let i = 0; i < levels; i += 1) {
+    for (let j = 0; j < levels; j += 1) {
+      const weight = (i - j) ** 2 / (levels - 1) ** 2;
+      numerator += weight * (observed[i]?.[j] ?? 0);
+      denominator +=
+        (weight * (rows[i] ?? 0) * (columns[j] ?? 0)) / pairs.length;
+    }
+  }
+  return denominator === 0 ? null : 1 - numerator / denominator;
+}
+
+test("kappa matches a textbook implementation on varied pairs", () => {
+  const cases: [number, number][][] = [
+    [
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+      [5, 5],
+    ],
+    [
+      [1, 5],
+      [5, 1],
+    ],
+    [
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+      [5, 4],
+    ],
+    [
+      [3, 4],
+      [4, 4],
+      [2, 3],
+      [5, 5],
+      [1, 2],
+      [4, 3],
+      [3, 3],
+    ],
+  ];
+  for (const pairs of cases) {
+    const got = quadraticWeightedKappa(pairs);
+    const want = referenceKappa(pairs);
+    assert.ok(got !== null && want !== null);
+    assert.ok(Math.abs(got - want) < 1e-12, `${got} vs ${want}`);
+  }
+});
+
 function comparison(
   id: string,
   rubric: Record<string, [number | null, number | null]>,

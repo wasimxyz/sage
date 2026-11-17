@@ -27,7 +27,7 @@ The app reads the JSON on its own and does not import code from `agent/`. It rea
 - **Dream accuracy** (`/sweeps/<sweep id>/setups/<setup id>/dream`): for each person and source, the entry or chat next to everything Dream wrote from it. Each unsupported claim is marked in the text, with its severity and the judge's reason. Filter by person, or show only the sources with claims.
 - **Grade by hand** (`/calibration`): the grading form. It is in the header only under `make eval-viewer-dev`.
 
-Reports do not record each item's `expect` yet. The Expect filter on the compare page stays empty until they do. A report can carry `expect` on an item or on a turn, and the viewer reads both.
+Reports record each item's `expect`, and a conversation turn can have its own. The viewer reads both, so the Expect filter on the compare page works. Dream and person-pass items have no `expect`.
 
 ## Grading by hand
 
@@ -42,7 +42,7 @@ An item counts as graded when every check and rubric item has an answer, N/A inc
 Grades go to `agent/evals/calibration/grades.jsonl`, one line for each item. Pass is `true`, Fail is `false`, and N/A is `null`:
 
 ```json
-{"sampleId":"sample-2026-11-16","id":"c01","grader":"human","checks":{"crisis-handled":true,"no-overreach":false},"rubric":{"warmth":4,"right-help":null},"note":"","gradedAt":"2026-11-16T10:00:00.000Z"}
+{"sampleId":"2026-11-12T010000Z-screen","id":"a1b2c3d4e5:sam/opener/rent-panic:r1:t1","grader":"human","checks":{"crisis-handled":true,"no-overreach":false},"rubric":{"warmth":4,"right-help":null},"note":"","gradedAt":"2026-11-16T10:00:00.000Z"}
 ```
 
 A check or rubric item with no answer has no key. Saving a grade again replaces its line. Every other line stays as it was.

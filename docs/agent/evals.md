@@ -295,7 +295,7 @@ The checks and scores that need a whole conversation (`drops-after-no`, `stops-f
 
 - **exact**: the share of replies where you and the judge gave the same score
 - **within 1**: the share where the two scores are one point apart or less
-- **kappa**: quadratic-weighted kappa. 1 is perfect agreement, 0 is no better than chance, and below 0 is worse than chance. A miss by one point costs little, and a miss by four costs a lot. It is `n/a` when either of you gave one score every time.
+- **kappa**: quadratic-weighted kappa. 1 is perfect agreement, 0 is no better than chance, and below 0 is worse than chance. A miss by one point costs little, and a miss by four costs a lot. It is `n/a` only when you and the judge both gave the same single score every time. If only one of you gave one score every time, it reads 0 whatever the other gave, and it also reads 0 when you each gave a different single score.
 - **mean difference**: the judge's mean minus yours. Above 0 means the judge scores higher than you do.
 
 For each check it counts:
@@ -324,7 +324,7 @@ What it compares:
 
 Every item is judged twice, once with each setup shown first, so the position of a reply cannot decide the result. A setup wins an item only when it wins in both orders. Anything else is a tie, and an item whose two orders disagree is also counted as a split. When either call fails, the item is "not graded". One order is never used alone.
 
-The result goes into the `headToHead` field of the compared sweep's summary, `<sweep id>.sweep.json`. For each pair it holds the wins, ties, win rates, and splits, and each item with the judge's reason for each order. For each setup it holds the record across its pairs. [Eval reports](evals-reports.md#the-head-to-head-result) explains the fields. A later run replaces an earlier one. The run has its own run folder, ledger, and cap (`spendingCapUsd`, 30 by default), runs the judge check first, and starts no Sage.
+The result goes into the `headToHead` field of the compared sweep's summary, `<sweep id>.sweep.json`. For each pair it holds the wins, ties, win rates, and splits, and each item with the judge's reason for each order. For each setup it holds the record across its pairs. [Eval reports](evals-reports.md#the-head-to-head-result) explains the fields. A later run replaces an earlier one, but only a run that finishes writes anything. A crash or Ctrl-C leaves the earlier result as it was. An item the run never reached counts as "not graded". The run has its own run folder, ledger, and cap (`spendingCapUsd`, 30 by default), runs the judge check first, and starts no Sage.
 
 ## Resuming a sweep
 

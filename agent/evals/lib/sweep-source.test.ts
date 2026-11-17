@@ -173,6 +173,40 @@ test("a transcript in the run folder wins over the report's own turns", (t) => {
   );
 });
 
+test("a transcript row gets the judge's flags from the report, beside its own", () => {
+  const item = reportItemOf({ flags: ["soft-after-crisis"] });
+  const rows = new Map([
+    [
+      rowKey(SETUP_A, "sam/opener/rent-panic", 1),
+      {
+        ...transcriptRow("From the transcript."),
+        simulatedUserFlags: ["refused" as const],
+      },
+    ],
+  ]);
+  const row = sourceRow({ transcripts: rows }, SETUP_A, item);
+  assert.deepEqual(row?.simulatedUserFlags, ["refused", "soft-after-crisis"]);
+  assert.equal(row?.turns[1]?.text, "From the transcript.");
+  // The row the pass wrote is not changed.
+  assert.deepEqual(
+    rows.get(rowKey(SETUP_A, "sam/opener/rent-panic", 1))?.simulatedUserFlags,
+    ["refused"]
+  );
+  // A flag both have counts once, and a report with no flags leaves the row as it is.
+  assert.deepEqual(
+    sourceRow(
+      { transcripts: rows },
+      SETUP_A,
+      reportItemOf({ flags: ["refused"] })
+    )?.simulatedUserFlags,
+    ["refused"]
+  );
+  assert.equal(
+    sourceRow({ transcripts: rows }, SETUP_A, reportItemOf()),
+    rows.get(rowKey(SETUP_A, "sam/opener/rent-panic", 1))
+  );
+});
+
 test("a run folder that is gone, or holds a bad file, leaves the reports to answer", (t) => {
   const dir = tempDir(t);
   assert.equal(loadTranscriptIndex(join(dir, "missing")).size, 0);

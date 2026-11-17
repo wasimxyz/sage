@@ -120,17 +120,26 @@ export interface CalibrationReportInput {
   sweepId: string;
 }
 
+/**
+ * The report for a pass that ran to its end. A reply you graded that has no
+ * comparison and no not-graded row, because the pass never recorded one, counts
+ * as not graded by the judge.
+ */
 export function calibrationReportOf(
   input: CalibrationReportInput,
   now = new Date()
 ): CalibrationReport {
+  const { comparisons, notGraded } = input.reading;
   return buildCalibrationReport({
-    comparisons: input.reading.comparisons,
+    comparisons,
     costUsd: input.costUsd,
     generatedAt: now.toISOString(),
     humanGraded: input.humanGraded,
     judge: { model: input.judgeModel },
-    notGraded: input.reading.notGraded.length,
+    notGraded: Math.max(
+      notGraded.length,
+      input.humanGraded - comparisons.length
+    ),
     rubricHash: input.reading.rubric,
     samples: input.samples,
     sweepId: input.sweepId,

@@ -222,6 +222,17 @@ test("head-to-head runs the judge check after the estimate is accepted, and cali
   assert.ok(body.includes("if (!check.ok)"));
 });
 
+test("a standalone sweep writes its result only after a pass that finished, and Ctrl-C reaches it", () => {
+  const whole = readFileSync(new URL("./runner.ts", import.meta.url), "utf8");
+  const start = whole.indexOf("async function runStandaloneSweep(");
+  const body = whole.slice(start, whole.indexOf("function reportCalibration("));
+  const gate = body.indexOf("unwrittenReason(kind, result, abort.aborted)");
+  assert.ok(gate > body.indexOf("await runStandalone("));
+  assert.ok(body.indexOf("reportCalibration(") > gate);
+  assert.ok(body.indexOf("reportHeadToHead(") > gate);
+  assert.ok(body.includes("abort: { aborted: boolean }"));
+});
+
 test("with nothing to pull, the digests read earlier are kept", async () => {
   const setups = expandSetups(parseSweepFile({}));
   const digests = () => Promise.resolve({ "some:model": "sha256:a" });

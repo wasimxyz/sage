@@ -1,22 +1,21 @@
-// Review repro: a sample the agent writes is read by the viewer's grading
+// A sample the agent writes is read by the viewer's grading
 // form, and the line the form writes is read back by the agreement eval.
 import assert from "node:assert/strict";
 import test from "node:test";
-
 import {
+  parseGradeLine,
+  serializeGrade,
+  validateGradeInput,
+  parseCalibrationSample as viewerParseSample,
+} from "../../../eval-viewer/lib/reports/calibration.ts";
+import {
+  parseCalibrationSample as agentParseSample,
   CALIBRATED_CHECK_IDS,
   CALIBRATED_RUBRIC_IDS,
   gradedItems,
   gradeKey,
-  parseCalibrationSample as agentParseSample,
   parseHumanGrade,
-} from "../agent/evals/lib/calibration.ts";
-import {
-  parseCalibrationSample as viewerParseSample,
-  parseGradeLine,
-  serializeGrade,
-  validateGradeInput,
-} from "../eval-viewer/lib/reports/calibration.ts";
+} from "../../evals/lib/calibration.ts";
 
 test("agent sample -> viewer form -> grades.jsonl line -> agent agreement input", () => {
   const sample = agentParseSample({
@@ -25,8 +24,18 @@ test("agent sample -> viewer form -> grades.jsonl line -> agent agreement input"
         checks: [CALIBRATED_CHECK_IDS[0], CALIBRATED_CHECK_IDS[1]],
         context: {
           factSheet: "Cast: Jordan (fiancé)",
-          priorTurns: [{ role: "user", text: "hi" }, { role: "assistant", text: "hey" }],
-          toolCalls: [{ input: { query: "rent" }, name: "search_journal", output: { results: [] }, status: "completed" }],
+          priorTurns: [
+            { role: "user", text: "hi" },
+            { role: "assistant", text: "hey" },
+          ],
+          toolCalls: [
+            {
+              input: { query: "rent" },
+              name: "search_journal",
+              output: { results: [] },
+              status: "completed",
+            },
+          ],
         },
         expect: "venting",
         id: "a1a1a1a1a1:sam/opener/rent-panic:r1:t1",
@@ -51,20 +60,30 @@ test("agent sample -> viewer form -> grades.jsonl line -> agent agreement input"
   if (viewer.kind !== "ok") {
     return;
   }
-  const item = viewer.value.items[0]!;
+  const [item] = viewer.value.items;
+  assert.ok(item);
+  const [firstCheck, secondCheck] = item.checks;
+  const [rubricId] = item.rubric;
+  assert.ok(firstCheck && secondCheck && rubricId);
   const checked = validateGradeInput(viewer.value, {
-    checks: { [item.checks[0]!]: false, [item.checks[1]!]: null },
+    checks: { [firstCheck]: false, [secondCheck]: null },
     id: item.id,
     note: "",
-    rubric: { [item.rubric[0]!]: 4 },
+    rubric: { [rubricId]: 4 },
   });
   assert.ok(checked.ok);
   if (!checked.ok) {
     return;
   }
-  const line = serializeGrade({ ...checked.grade, gradedAt: "2026-11-16T10:00:00.000Z" });
+  const line = serializeGrade({
+    ...checked.grade,
+    gradedAt: "2026-11-16T10:00:00.000Z",
+  });
   assert.ok(parseGradeLine(line));
   const grade = parseHumanGrade(JSON.parse(line));
-  const graded = gradedItems([sample], new Map([[gradeKey(grade.sampleId, grade.id), grade]]));
+  const graded = gradedItems(
+    [sample],
+    new Map([[gradeKey(grade.sampleId, grade.id), grade]])
+  );
   assert.equal(graded.length, 1);
 });

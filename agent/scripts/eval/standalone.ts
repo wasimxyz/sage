@@ -120,6 +120,26 @@ export async function runStandalone(
   return { files, problems, rows };
 }
 
+/**
+ * Why the rows of a pass must not become a result, or null when they may. A
+ * result replaces an earlier one for the same sweep, so only a pass that ran
+ * to its end writes one. A crash, an unreadable results file, or Ctrl-C leaves
+ * the earlier result as it was.
+ */
+export function unwrittenReason(
+  name: StandaloneName,
+  result: Pick<StandaloneResult, "problems">,
+  aborted: boolean
+): string | null {
+  if (aborted) {
+    return `The ${name} pass was stopped, so its rows are partial. Nothing was written. Run it again.`;
+  }
+  if (result.problems.length > 0) {
+    return `The ${name} pass did not finish cleanly, so its rows may be partial. Nothing was written. Run it again.`;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // The estimate
 // ---------------------------------------------------------------------------

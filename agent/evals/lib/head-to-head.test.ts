@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import type { LoadedPerson } from "./dataset.ts";
+import { rubricMaterial } from "./grader.ts";
 import {
   buildHeadToHeadSummary,
   callCount,
@@ -49,7 +50,7 @@ import {
   sweepSummaryOf,
   writeSweepFiles,
 } from "./sweep-fixtures.ts";
-import { loadSweepSource } from "./sweep-source.ts";
+import { loadSweepSource, rowOfReportItem } from "./sweep-source.ts";
 
 const pattern2 = /report of setup .* is not in/u;
 const pattern1 = /No finished sweep/u;
@@ -211,6 +212,41 @@ test("a pair compares the items both setups answered, and leaves out a conversat
     ["sam/opener/rent-panic"],
     "C's conversation was flagged, so it is not compared"
   );
+});
+
+test("a conversation the judge flagged is left out, with the run folder or without it", (t) => {
+  const root = tempDir(t);
+  const reportsDir = join(root, "reports");
+  const runsDir = join(root, ".runs");
+  const flagged = conversationItem("Talk from A.", {
+    flags: ["soft-after-crisis"],
+  });
+  const clean = conversationItem("Talk from B.");
+  writeSweepFiles(
+    reportsDir,
+    sweepSummaryOf([rankingOf(SETUP_A), rankingOf(SETUP_B)]),
+    [
+      setupReportOf({ items: [flagged], setupId: SETUP_A }),
+      setupReportOf({ items: [clean], setupId: SETUP_B }),
+    ]
+  );
+  const compared = (dirs: { reportsDir: string; runsDir?: string }) =>
+    sharedItems(loadSweepSource(FIXTURE_SWEEP_ID, dirs), SETUP_A, SETUP_B)
+      .length;
+  assert.equal(compared({ reportsDir }), 0);
+
+  // The chat pass wrote the transcript rows before any grading, so they hold
+  // only the flags the code set while the conversations ran.
+  for (const [setupId, item] of [
+    [SETUP_A, flagged],
+    [SETUP_B, clean],
+  ] as const) {
+    const dir = join(runsDir, FIXTURE_SWEEP_ID, "setups", setupId, "sam");
+    mkdirSync(dir, { recursive: true });
+    const row = { ...rowOfReportItem(item, setupId), simulatedUserFlags: [] };
+    writeFileSync(join(dir, "transcripts.jsonl"), `${JSON.stringify(row)}\n`);
+  }
+  assert.equal(compared({ reportsDir, runsDir }), 0);
 });
 
 test("a row with an error or no reply cannot be compared", () => {
@@ -457,6 +493,36 @@ test("the labels of an opener and a fact question, and the journal the judge rea
   assert.ok(
     contextOf(emptyRow, sam, empty, undefined).includes("The journal is empty.")
   );
+});
+
+test("every label line the judge sees in a head-to-head is in the rubric hash material", () => {
+  const row = (itemId: string, kind: "chat" | "conversation") =>
+    ({
+      ended: "done",
+      itemId,
+      journal: "own",
+      kind,
+      person: "sam",
+      repeat: 1,
+      setupId: SETUP_A,
+      simulatedUserFlags: [],
+      turns: [],
+    }) as never;
+  // The turn number is the only part of a line that changes from item to item.
+  const masked = (text: string) => text.replaceAll(/\d+/gu, "N");
+  const material = masked(JSON.stringify(rubricMaterial()));
+  const conversation = detailsOf(row(CONVERSATION_ID, "conversation"), sam);
+  assert.ok(conversation.some((line) => line.includes("is a crisis")));
+  // The wording before the value after the colon, which is the item's own.
+  const missing = conversation
+    .map((line) => masked(line.split(":")[0] ?? line))
+    .filter((fixed) => !material.includes(fixed));
+  assert.deepEqual(missing, []);
+  // The reference line of a fact question is the only line a comparison adds.
+  const question = detailsOf(row("sam/chat/1", "chat"), sam);
+  const reference = question.at(-1) ?? "";
+  assert.ok(reference.includes("Reference answer"));
+  assert.ok(material.includes(masked(reference.split(":")[0] ?? "")));
 });
 
 // ---------------------------------------------------------------------------

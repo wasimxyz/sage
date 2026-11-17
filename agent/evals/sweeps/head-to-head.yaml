@@ -1,8 +1,8 @@
 # Picks between the best setups of a finished sweep. It runs no Sage and no
 # setups. The judge sees two replies (or two whole conversations) to the same
 # message, in both orders, and a setup wins an item only when it wins both. The
-# win rates go into the finished sweep's summary, and the viewer shows them
-# next to its ranking.
+# win rates go into the finished sweep's summary (`headToHead` in its
+# .sweep.json). The viewer does not show them yet.
 #
 # Name the sweep to compare, which is a file name in agent/evals/reports/
 # before .sweep.json:
