@@ -7,17 +7,20 @@ This page explains which Ollama models Sage uses, how Settings > Models recommen
 Sage uses three kinds of model, all served by Ollama on this Mac:
 
 - **Chat model**: the model you pick in Chat. A new chat starts with your last choice, then `qwen3.5:9b` if it is pulled, then the first listed chat model.
-- **Summary model**: the model Dream uses for summaries, titles, and memories. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
+- **Summary model**: the model Dream uses for summaries, titles, and memories, and the one Tidy uses to clean up dictated text. The default is `qwen3.5:9b`, and `SAGE_SUMMARY_MODEL` changes it.
 - **Embedding model**: any pulled tag of `nomic-embed-text`. `SAGE_EMBED_MODEL` changes the name Sage looks for.
 
 Sage skips any model Ollama marks as cloud-hosted, and the Chat agent refuses one even if a request names it. The Chat picker also leaves out the embedding model.
 
 Sage also skips the `llamacpp:` entries that Ollama’s llama.cpp runner lists beside a model. You did not pull them. If Ollama lists a name twice, Sage shows it once.
 
+Dictation needs one more model, which is not an Ollama model. macOS provides the speech model, as [Dictation](dictation.md#the-engine) explains.
+
 ## Settings > Models
 
-Settings > Models has two tables:
+Settings > Models has three parts:
 
+- **Speech**: the speech model for dictation. Its row reads Checking, Installed, Not downloaded, Downloading, or Download failed, and it has a Download or Try again button when macOS has no copy. Checking lasts a moment after Sage starts, until macOS says what is installed. macOS downloads and keeps the model, so Delete does not apply. A Mac that cannot dictate shows the reason in place of the row. The row comes from `dictation.status`, and **Download** calls `dictation.downloadModel`.
 - **Installed**: the chat models Ollama has pulled, each with a Delete button
 - **Recommended**: text models that should run well on this Mac, each with a Download button
 

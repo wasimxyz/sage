@@ -40,6 +40,10 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { AssistantPending } from "@/components/chat/assistant-pending";
 import {
+  ChatDictateButton,
+  ChatDictationTail,
+} from "@/components/chat/chat-dictation";
+import {
   useChatDraft,
   useChatDraftActions,
 } from "@/components/chat/chat-draft";
@@ -63,6 +67,7 @@ import {
   isChatComposerLocked,
   useChat,
 } from "@/components/chat-provider";
+import { useDictationActions } from "@/components/dictation-provider";
 import { useDream } from "@/components/dream-provider";
 import { Hint } from "@/components/hint";
 import {
@@ -497,6 +502,7 @@ function ChatTurnSession({
   const {
     state: { running: dreaming },
   } = useDream();
+  const { leave: leaveDictation } = useDictationActions();
   // Capture once. Later saves replace eventsRef with the new session, and
   // clientContext lasts only for the current turn, so later sends in this
   // remount still need the old transcript.
@@ -661,6 +667,8 @@ function ChatTurnSession({
       clearError();
       lastSubmittedRef.current = next;
       pendingActionRef.current = "send";
+      // Sending ends dictation. Grey words that have not settled are not sent.
+      leaveDictation("chat");
       setText("");
       const send = async () => {
         if (idRef.current === null) {
@@ -681,6 +689,7 @@ function ChatTurnSession({
       handleAgentError,
       idRef,
       lastSubmittedRef,
+      leaveDictation,
       lockContextLength,
       models,
       pendingActionRef,
@@ -743,6 +752,7 @@ function ChatTurnSession({
       )}
       <ChatComposerBar>
         <ChatPromptForm
+          dictation
           onStop={stopTurn}
           onSubmit={handleSubmit}
           submitBlocked={agentToken === null || resuming}
@@ -977,11 +987,14 @@ function ChatComposerBar({ children }: { children: ReactNode }) {
 }
 
 function ChatPromptForm({
+  dictation = false,
   onStop,
   onSubmit,
   submitBlocked,
   submitStatus,
 }: {
+  /** Show the mic. Only a live conversation can take dictated words. */
+  dictation?: boolean;
   onStop?: () => void;
   onSubmit: (message: PromptInputMessage) => void;
   /** Sending is not possible yet, whatever the box holds. */
@@ -999,10 +1012,12 @@ function ChatPromptForm({
     <PromptInput className="w-full" onSubmit={onSubmit}>
       <PromptInputBody className="relative w-full">
         <ChatPromptTextarea dreaming={dreaming} locked={locked} />
+        {dictation ? <ChatDictationTail /> : null}
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
           <ModelPicker />
+          {dictation ? <ChatDictateButton locked={locked} /> : null}
         </PromptInputTools>
         <ChatPromptSubmit
           blocked={locked || submitBlocked}

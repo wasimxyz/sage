@@ -6,6 +6,7 @@ Sage is a private journal for macOS with a built-in AI agent. Your entries, chat
 
 - **Journal**: write entries in a Markdown editor. Import Markdown files from apps such as Notion, and export entries as Markdown.
 - **Chat**: ask an agent about your journal and your earlier chats. It runs local models through Ollama, and you pick the model, context length, and Thinking for each conversation.
+- **Dictation**: speak into an entry or a Chat message. Words show as you talk, and an optional Tidy cleans them up. It runs on this Mac and needs macOS 26 or later. [Dictation](docs/dictation.md) explains it.
 - **Search**: local embeddings let Chat find entries by meaning, not only by matching words.
 - **Dream**: a job you start from the sidebar. It summarizes entries and chats, titles chats, and indexes chat messages, and in a memory build it also extracts memories.
 - **Memories**: an opt-in build feature that keeps facts about you and dated events. It is off by default.
@@ -15,7 +16,7 @@ Sage is a native desktop app built with the Vercel Native SDK and eve.
 
 ## Requirements
 
-- macOS
+- macOS, with the macOS 26 SDK (Xcode 26) to build the dictation library. Without that SDK, run `native build -Dspeech=false` to skip the library. Sage then has no mic.
 - Node.js 24, for `make setup` and `make dev`
 - Native SDK CLI: `npm install -g @native-sdk/cli@0.11.0`
 - Chat and Dream models: `qwen3.5:9b` and `nomic-embed-text` by default. Setup and Settings > Models download them. You don’t install Ollama, because Sage ships a pinned copy and runs it itself.

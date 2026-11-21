@@ -14,11 +14,22 @@ concurrency:
 jobs:
   release:
     name: Package and publish
-    runs-on: macos-latest
+    # Packaging builds the speech library for macOS 26, which needs the macOS 26
+    # SDK. `macos-26` is arm64 with Xcode 26. `macos-latest` points at it today,
+    # but a pinned label keeps the SDK from moving under a release.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Check the macOS 26 SDK
+        run: |
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk"
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            echo "Dictation's speech library needs the macOS 26 SDK, found $sdk." >&2
+            exit 1
+          fi
       - name: Check the tag
         id: version
         run: |

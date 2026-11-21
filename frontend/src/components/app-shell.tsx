@@ -42,6 +42,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useDictationShortcut } from "@/hooks/use-dictation-shortcut";
 import { useNewShortcut } from "@/hooks/use-new-shortcut";
 import { useRouteSync } from "@/hooks/use-route-sync";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
@@ -51,6 +52,7 @@ import { cn } from "@/lib/utils";
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
   useNewShortcut();
+  useDictationShortcut();
   return (
     <SearchProvider>
       <div
