@@ -132,9 +132,37 @@ test("a status with a reason or model state it does not know is refused", async 
   await assert.rejects(getDictationStatus());
 });
 
-test("the core's checking error is a dictation error code", () => {
-  const error = new Error("SpeechModelChecking: x", {
-    cause: Object.assign(new Error("x"), { code: "SpeechModelChecking" }),
+// The Native SDK rejects a failed command with the code `handler_failed` and
+// the core's error name as the message. `invoke` wraps that error.
+function bridgeFailure(message: string): Error {
+  const sdkError = Object.assign(new Error(message), {
+    code: "handler_failed",
   });
-  assert.equal(dictationErrorCode(error), "SpeechModelChecking");
+  return new Error(`handler_failed: ${message}`, { cause: sdkError });
+}
+
+test("the core's error names come through as dictation error codes", () => {
+  assert.equal(
+    dictationErrorCode(bridgeFailure("MicrophoneDenied")),
+    "MicrophoneDenied"
+  );
+  assert.equal(
+    dictationErrorCode(bridgeFailure("SpeechModelChecking")),
+    "SpeechModelChecking"
+  );
+  assert.equal(dictationErrorCode(bridgeFailure("Locked")), "Locked");
+});
+
+test("the SDK's own error, without the wrapper, still has its name read", () => {
+  const sdkError = Object.assign(new Error("DictationBusy"), {
+    code: "handler_failed",
+  });
+  assert.equal(dictationErrorCode(sdkError), "DictationBusy");
+});
+
+test("a failure that is not a dictation error has no code", () => {
+  assert.equal(dictationErrorCode(bridgeFailure("OutOfMemory")), null);
+  assert.equal(dictationErrorCode(new Error("handler_failed")), null);
+  assert.equal(dictationErrorCode("MicrophoneDenied"), null);
+  assert.equal(dictationErrorCode(null), null);
 });

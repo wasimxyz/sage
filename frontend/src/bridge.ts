@@ -3,6 +3,7 @@ import {
   dictationStopReasons,
 } from "./lib/dictation-session.ts";
 import type { ExportCounts } from "./lib/export-data-flow";
+import { handlerErrorMessage } from "./lib/handler-errors.ts";
 import { memoryEnabledFrom } from "./lib/memory-feature.ts";
 import type { NativeSdkInvokeError, NativeSdkJson } from "./zero";
 
@@ -1557,18 +1558,20 @@ function oneOfRequired<T extends string>(
 
 /**
  * The name the core gave a failed dictation command, such as
- * `MicrophoneDenied`. `invoke` wraps the bridge's error, so this looks through
- * the wrapper too. Null for any other failure.
+ * `MicrophoneDenied`. The Native SDK rejects with the code `handler_failed`
+ * and the name as the message, and `invoke` wraps that error as
+ * `handler_failed: MicrophoneDenied`, so this reads the message of the wrapper
+ * and of what it wraps. Null for any other failure.
  */
 export function dictationErrorCode(error: unknown): DictationErrorCode | null {
   let current: unknown = error;
-  for (let depth = 0; depth < 4 && current !== null; depth += 1) {
-    const code = errorCode(current);
-    const found = dictationErrorCodes.find((name) => name === code);
+  for (let depth = 0; depth < 4 && current instanceof Error; depth += 1) {
+    const name = handlerErrorMessage(current);
+    const found = dictationErrorCodes.find((code) => code === name);
     if (found !== undefined) {
       return found;
     }
-    current = current instanceof Error ? (current.cause ?? null) : null;
+    current = current.cause;
   }
   return null;
 }
