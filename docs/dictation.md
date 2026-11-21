@@ -76,7 +76,9 @@ The engine runs on this Mac. `security-tests/dictation-no-audio.test.ts` checks 
 
 ## The microphone permission
 
-The first time you dictate, macOS asks whether Sage may use the microphone. The prompt reads “Sage listens only while you dictate. Audio stays on this Mac and is never saved.” The text comes from `microphone_usage_text` in `build.zig` for `make dev`. For a packaged app, `scripts/copy-agent-into-app.sh` writes it into `Info.plist` with PlistBuddy, before it signs the app. Sage does not need the Speech Recognition permission, only the microphone.
+The first time you dictate, macOS asks whether Sage may use the microphone. The prompt reads “Sage listens only while you dictate. Audio stays on this Mac and is never saved.” For a packaged app, `scripts/copy-agent-into-app.sh` writes the text into `Info.plist` with PlistBuddy, before it signs the app. Sage does not need the Speech Recognition permission, only the microphone.
+
+`make dev` runs Sage as a plain program, not as an app, so macOS asks on behalf of the app that started it, such as Terminal, and Sage gets whatever mic access that app has. If that app's access is off, dictation says so. Turn it on in Privacy & Security > Microphone, or run `make dev` from a terminal app that has it. `build.zig` still puts the text in the dev program (`microphone_usage_text`), because macOS stops a program that asks for the mic without one.
 
 Sage builds are signed ad hoc, so macOS treats each update as a new app and asks for the microphone again. That is accepted for now.
 
