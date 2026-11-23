@@ -152,6 +152,94 @@ fn originListed(origins: []const []const u8, origin: []const u8) bool {
     return false;
 }
 
+/// Commands only automation builds act on, sent with
+/// `native automate native-command <name>`. `make screenshots` uses them to
+/// open a screen and to pick light or dark without a click.
+const AutomationCommand = union(enum) {
+    /// A hash route with dots for slashes, such as `chat.3` for `/chat/3`.
+    /// The automation server refuses a command name with a slash in it.
+    route: []const u8,
+    appearance: window_chrome.Appearance,
+};
+
+const route_command_prefix = "app.route:";
+const appearance_command_prefix = "app.appearance:";
+const max_automation_route_len = 63;
+
+fn parseAutomationCommand(name: []const u8) ?AutomationCommand {
+    if (std.mem.startsWith(u8, name, route_command_prefix)) {
+        const route = name[route_command_prefix.len..];
+        if (!isAutomationRoute(route)) return null;
+        return .{ .route = route };
+    }
+    if (std.mem.startsWith(u8, name, appearance_command_prefix)) {
+        const value = name[appearance_command_prefix.len..];
+        if (std.mem.eql(u8, value, "light")) return .{ .appearance = .light };
+        if (std.mem.eql(u8, value, "dark")) return .{ .appearance = .dark };
+    }
+    return null;
+}
+
+/// Lowercase letters, digits, and dashes in parts joined by single dots, so
+/// the path goes into the event's JSON as is.
+fn isAutomationRoute(route: []const u8) bool {
+    if (route.len == 0 or route.len > max_automation_route_len) return false;
+    if (route[0] == '.' or route[route.len - 1] == '.') return false;
+    if (std.mem.indexOf(u8, route, "..") != null) return false;
+    for (route) |char| switch (char) {
+        'a'...'z', '0'...'9', '.', '-' => {},
+        else => return false,
+    };
+    return true;
+}
+
+/// `chat.3` becomes `/chat/3`.
+fn automationRoutePath(route: []const u8, buffer: []u8) ![]const u8 {
+    if (route.len + 1 > buffer.len) return error.NoSpaceLeft;
+    buffer[0] = '/';
+    for (route, buffer[1 .. route.len + 1]) |char, *slot| {
+        slot.* = if (char == '.') '/' else char;
+    }
+    return buffer[0 .. route.len + 1];
+}
+
+fn emitAutomationRoute(runtime: *native_sdk.Runtime, route: []const u8) !void {
+    var path_buffer: [max_automation_route_len + 1]u8 = undefined;
+    const path = try automationRoutePath(route, &path_buffer);
+    var buffer: [max_automation_route_len + 16]u8 = undefined;
+    const detail = try std.fmt.bufPrint(&buffer, "{{\"path\":\"{s}\"}}", .{path});
+    try runtime.emitWindowEvent(1, "automation:route", detail);
+}
+
+test "automation commands parse routes and appearances" {
+    try std.testing.expectEqualStrings("chat.3", parseAutomationCommand("app.route:chat.3").?.route);
+    try std.testing.expectEqualStrings("settings.models", parseAutomationCommand("app.route:settings.models").?.route);
+    try std.testing.expectEqualStrings("home", parseAutomationCommand("app.route:home").?.route);
+    try std.testing.expectEqual(window_chrome.Appearance.dark, parseAutomationCommand("app.appearance:dark").?.appearance);
+    try std.testing.expectEqual(window_chrome.Appearance.light, parseAutomationCommand("app.appearance:light").?.appearance);
+}
+
+test "automation routes turn dots into slashes" {
+    var buffer: [max_automation_route_len + 1]u8 = undefined;
+    try std.testing.expectEqualStrings("/chat/3", try automationRoutePath("chat.3", &buffer));
+    try std.testing.expectEqualStrings("/settings/models", try automationRoutePath("settings.models", &buffer));
+    try std.testing.expectEqualStrings("/home", try automationRoutePath("home", &buffer));
+}
+
+test "automation commands refuse anything else" {
+    try std.testing.expect(parseAutomationCommand("app.lock") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:/chat/3") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:.chat") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:chat.") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:chat..3") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:chat.\"x") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:Chat") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:" ++ "a" ** (max_automation_route_len + 1)) == null);
+    try std.testing.expect(parseAutomationCommand("app.appearance:auto") == null);
+    try std.testing.expect(parseAutomationCommand("app.appearance:") == null);
+}
+
 test "packaged policy does not trust the vite origin" {
     try std.testing.expect(originListed(navigationOrigins(false), app_origin));
     try std.testing.expect(!originListed(navigationOrigins(false), vite_origin));
@@ -453,6 +541,11 @@ const App = struct {
                     try runtime.emitWindowEvent(1, "journal:import", "{}");
                 } else if (std.mem.eql(u8, command.name, "app.export")) {
                     try runtime.emitWindowEvent(1, "journal:export", "{}");
+                } else if (build_options.automation) {
+                    if (parseAutomationCommand(command.name)) |automation_command| switch (automation_command) {
+                        .route => |path| try emitAutomationRoute(runtime, path),
+                        .appearance => |appearance| window_chrome.setAppearance(appearance),
+                    };
                 }
             },
             .lifecycle => |phase| {

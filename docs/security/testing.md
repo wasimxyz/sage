@@ -67,6 +67,7 @@ The Zig tests cover:
 - **Packaging**: the copy targets `Sage.app`, and the bundle ships no dev modules (`copy-agent-target.test.ts`, `agent-dev-modules.sh`).
 - **Dictation**: the web view never uses `getUserMedia`, `MediaRecorder`, or `AudioContext`. The dictation Zig and Swift files write no files, log no text, and open no connection. The audio ring is zeroed, and the speech library zeroes the copies it makes. The microphone text is set before the app is signed. The Sage executable loads the speech library at run time and does not link the Speech framework, which `otool -L` confirms when a build exists. It loads IOKit at run time too (`dictation-no-audio.test.ts`).
 - **Seeding**: `make seed-dev` builds its automation binary under `zig-out/seed`, names only the dev app, and reads the seed files and builds before it resets (`seed-dev-dev-only.sh`).
+- **Screenshots**: `make screenshots` keeps its journal in a fresh scratch folder, gives its app a bundle id of its own, builds only under `zig-out/screenshots-build`, and never turns Touch ID or the lock off, which would delete the Keychain item your own Sage uses (`screenshots-isolated.sh`).
 - **Evals**: `make eval` sends the token to a URL target, leaves no automation binary in `zig-out/bin/`, and opens only the throwaway `app.db` (`eval-server-token.sh`, `eval-leftover-automation.sh`, `eval-ignores-data-dir.sh`).
 
 To run the TypeScript ones alone, use `node --test --experimental-strip-types security-tests/*.test.ts`.
@@ -81,7 +82,9 @@ native build -Dautomation=true
 ./zig-out/bin/Sage
 ```
 
-That replaces `zig-out/bin/Sage` with an automation build, so run `make build` afterward for a normal binary. `make eval` and `make seed-dev` avoid this. Each installs its own automation build, under `zig-out/eval` and `zig-out/seed`, as [Eval suite](../agent/evals.md#what-a-run-does) and [Scripts](../../scripts/README.md#seeding-the-dev-app) explain.
+That replaces `zig-out/bin/Sage` with an automation build, so run `make build` afterward for a normal binary. `make eval`, `make seed-dev`, and `make screenshots` avoid this. Each installs its own automation build, under `zig-out/eval`, `zig-out/seed`, and `zig-out/screenshots-build`, as [Eval suite](../agent/evals.md#what-a-run-does) and [Scripts](../../scripts/README.md#seeding-the-dev-app) explain.
+
+When `SAGE_DATA_DIR` is set, Sage keeps the window's saved size and place in that folder too, so these runs never move the window of the Sage you use.
 
 The automation server watches `.zig-cache/native-sdk-automation/` under the app’s working directory for command files. Call the CLI from that same directory, which is the project directory for a local smoke test:
 
@@ -99,6 +102,8 @@ native automate bridge '{"id":"locked","command":"lock.status","payload":{}}'
 ```
 
 The status response should include `"unlocked":false`.
+
+Automation builds also take `app.route:<route>`, which opens a screen such as `app.route:settings.models`, and `app.appearance:light` or `app.appearance:dark`. `make screenshots` uses them, as [Scripts](../../scripts/README.md#opening-a-screen) explains. Other builds ignore both.
 
 ## The automation origin
 

@@ -1,0 +1,152 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+import { defaultMessageReducer, type EveAgentReducerEvent } from "eve/client";
+
+import {
+  chatAnswer,
+  chatQuestion,
+  chatSourceFiles,
+  screenshotChatEvents,
+} from "./screenshot-chat.ts";
+import {
+  allowedBridgeCommands,
+  appShots,
+  checkBridgeCall,
+  isWindowPngSize,
+  journalShotFile,
+  lockShotName,
+  repeatSafeCommands,
+  routeCommand,
+  routePattern,
+  securityShot,
+  setupShots,
+} from "./screenshots.ts";
+
+const seedDir = join(import.meta.dirname, "..", "..", "scripts", "seed");
+const ids = { chat: 4, journalEntry: 25 };
+
+test("every shot has its own name", () => {
+  const names = [
+    ...setupShots.map((shot) => shot.name),
+    ...appShots(ids).map((shot) => shot.name),
+    securityShot.name,
+    lockShotName,
+  ];
+  assert.equal(new Set(names).size, names.length);
+  assert.equal(names.length, 13);
+});
+
+test("every route is one app.route accepts", () => {
+  for (const shot of [...appShots(ids), securityShot]) {
+    assert.match(shot.route, routePattern, shot.name);
+  }
+  for (const bad of ["", "/", "chat", "/Chat", "/chat//3", '/chat/"x']) {
+    assert.doesNotMatch(bad, routePattern, bad);
+  }
+});
+
+test("a route goes to Sage with dots for slashes", () => {
+  assert.equal(routeCommand("/chat/3"), "app.route:chat.3");
+  assert.equal(routeCommand("/settings/models"), "app.route:settings.models");
+  assert.equal(routeCommand("/home"), "app.route:home");
+  assert.throws(() => routeCommand(`/${"a".repeat(64)}`));
+  assert.throws(() => routeCommand("chat"));
+});
+
+test("the files the shots name are in the seed", () => {
+  for (const fileName of [journalShotFile, ...chatSourceFiles]) {
+    assert.ok(existsSync(join(seedDir, fileName)), fileName);
+  }
+});
+
+test("the script sends only its own bridge commands", () => {
+  for (const command of allowedBridgeCommands) {
+    const payload = command === "lock.setTouchId" ? { enabled: true } : {};
+    assert.doesNotThrow(() => checkBridgeCall(command, payload), command);
+  }
+  for (const command of [
+    "lock.disable",
+    "lock.removePassword",
+    "encryption.enable",
+    "encryption.disable",
+    "data.deleteAll",
+    "dream.start",
+  ]) {
+    assert.throws(() => checkBridgeCall(command, {}), command);
+  }
+});
+
+test("only commands that change nothing when repeated are sent again", () => {
+  for (const command of repeatSafeCommands) {
+    assert.ok(
+      (allowedBridgeCommands as readonly string[]).includes(command),
+      command
+    );
+  }
+  for (const command of ["journal.save", "chat.save", "lock.setPassword"]) {
+    assert.equal(repeatSafeCommands.has(command), false, command);
+  }
+});
+
+test("Touch ID only ever turns on", () => {
+  assert.throws(() => checkBridgeCall("lock.setTouchId", { enabled: false }));
+  assert.throws(() => checkBridgeCall("lock.setTouchId", {}));
+});
+
+test("a capture must be the window at 1x or 2x", () => {
+  assert.equal(isWindowPngSize(2560, 1600), true);
+  assert.equal(isWindowPngSize(1280, 800), true);
+  assert.equal(isWindowPngSize(3024, 1964), false);
+  assert.equal(isWindowPngSize(2560, 1700), false);
+});
+
+test("the stored chat replays as a question, a search card, and an answer", () => {
+  const sources = [
+    { date: "2026-10-11", id: 13, title: "Sunday" },
+    { date: "2026-10-25", id: 17, title: "First Sunday call" },
+    { date: "2026-11-08", id: 25, title: "Sunday, again" },
+  ];
+  const events = screenshotChatEvents(
+    sources,
+    new Date("2026-11-22T12:00:00Z")
+  ) as EveAgentReducerEvent[];
+  const reducer = defaultMessageReducer();
+  let data = reducer.initial();
+  for (const event of events) {
+    data = reducer.reduce(data, event);
+  }
+
+  const [user, assistant] = data.messages;
+  assert.equal(data.messages.length, 2);
+  assert.equal(user?.role, "user");
+  assert.deepEqual(
+    user?.parts.filter((part) => part.type === "text").map((part) => part.text),
+    [chatQuestion]
+  );
+
+  assert.equal(assistant?.role, "assistant");
+  const tool = assistant?.parts.find((part) => part.type === "dynamic-tool");
+  assert.equal(tool?.type, "dynamic-tool");
+  if (tool?.type === "dynamic-tool") {
+    assert.equal(tool.toolName, "search_journal");
+    assert.equal(tool.state, "output-available");
+    assert.deepEqual(tool.output, [
+      { date: "2026-10-11", id: "entry-13", title: "Sunday" },
+      { date: "2026-10-25", id: "entry-17", title: "First Sunday call" },
+      { date: "2026-11-08", id: "entry-25", title: "Sunday, again" },
+    ]);
+  }
+  const text = assistant?.parts.find((part) => part.type === "text");
+  assert.equal(text?.type === "text" ? text.text : null, chatAnswer);
+});
+
+test("every stored event has its own id", () => {
+  const events = screenshotChatEvents([], new Date()) as {
+    meta: { id: string };
+  }[];
+  const eventIds = events.map((event) => event.meta.id);
+  assert.equal(new Set(eventIds).size, eventIds.length);
+});

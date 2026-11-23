@@ -1,6 +1,6 @@
 # Scripts
 
-These shell scripts package the Mac app, run the eval suite, and reset and seed the dev app. Each section names the `make` command that runs them.
+These shell scripts package the Mac app, run the eval suite, reset and seed the dev app, and capture screenshots. Each section names the `make` command that runs them.
 
 The seeding and grading steps live in `agent/scripts/`. The canirun catalog refresh lives in `frontend/scripts/`, as [Models](../docs/models.md#how-recommendations-work) explains.
 
@@ -105,6 +105,50 @@ The new journal has no lock and no encryption. It has entries, so the next `make
 When `make dev` loads the entries, Sage embeds them, as [The journal](../docs/journal.md#writing-and-saving) explains. Start Dream from the sidebar to write summaries and memories.
 
 `make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files parse and that `--check` names a bad file, and `agent/scripts/seed-dates.test.ts`, which checks the date move.
+
+## Screenshots
+
+`make screenshots` runs `screenshots.sh`. It captures the packaged app's screens in light and dark, for the website and the docs. It saves one PNG per screen and appearance in `zig-out/screenshots/`, such as `chat-dark.png`. `make screenshots OUT=/path/to/folder` saves them somewhere else. It never opens your own journal.
+
+The shots are the five setup steps, Home, an open entry, Chat, the four Settings tabs, and the lock screen. The window is 1280 by 800 points, so the files are 2560 by 1600 on a Retina display. They have no shadow, and the corners outside the window are clear.
+
+### What it needs
+
+- **Screen Recording access**: the terminal you run it in needs it. Without it, `screencapture` saves only the desktop. The script checks first. If access is off, macOS asks for it, and you run the script again after you restart the terminal.
+- **No other Sage running**: the copy it builds is a packaged app, so it uses ports 11435 and 2001, as your installed Sage does. The script stops if either port is in use.
+- **Hands off**: a Sage window opens, comes to the front, and changes screens by itself for about a minute. Keep the pointer off it, since a hover changes what the shot shows. If another app comes to the front, the script asks you to click the Sage window and waits.
+
+Settings > Models and setup's Local AI step show the models in `~/.ollama` and this Mac's chip and memory.
+
+### Steps
+
+1. It checks for Screen Recording access and reads the seed files, before the long build.
+2. It builds a packaged app the way `make package` does, with automation on and memory off, under `zig-out/screenshots-build`. `zig-out/bin` and `zig-out/package` stay as they are. Before the copy script signs the app, it changes the bundle id to `com.wasimxyz.sage.screenshots`. That keeps the copy's web storage apart from your app's.
+3. It starts the app from a scratch folder, with `SAGE_DATA_DIR` set to a journal in that folder. The window's saved size and place live there too, so the script writes a 1280 by 800 frame there first. `native automate resize` resizes a canvas, not the window.
+4. `agent/scripts/screenshots.ts` drives the app through the automation server:
+   1. It captures each setup step on the empty journal, saving the step with `onboarding.save` and reloading the page.
+   2. It finishes setup, turns the reminders off, and saves the entries in `scripts/seed/` with the same date move as `make seed-dev`.
+   3. It saves the chat in `agent/scripts/screenshot-chat.ts`, a question and answer about three Sunday entries with one journal search. The chat is written by hand, so it needs no model and is the same on every run.
+   4. It waits for Sage to embed the new entries, then captures Home, the entry, Chat, and Settings.
+   5. It sets a random password, turns Touch ID on, and captures Settings > Security. Then it locks the app and captures the lock screen.
+5. It stops Sage and deletes the scratch folder, the build, and the copy's web storage and caches under `~/Library`. Packaging leaves out the agent's dev modules, so the script installs them again.
+
+Encryption stays off, so no data key goes in the Keychain. The script never turns Touch ID or the lock off. A packaged app names its Keychain item after `com.wasimxyz.sage`, and turning either off deletes the item your own app uses.
+
+### Opening a screen
+
+The automation server can't click in the web view, so automation builds take two more commands:
+
+- `native automate native-command app.route:<route>` opens a screen. The route is the hash route with dots for slashes, such as `app.route:chat.3` for `#/chat/3` or `app.route:settings.models`, because the automation server refuses a command name with a slash in it. The page sets its hash route and clears focus, so no caret shows. Sending the same route again only clears focus.
+- `native automate native-command app.appearance:light` or `app.appearance:dark` holds the app in that appearance, whatever the system uses.
+
+`src/main.zig` handles them only when the build has automation on, so a packaged app ignores them. The automation server reports a command it refuses only as an `error event` line in its snapshot, so the script checks for one after each command. [Testing the lock and encryption](../docs/security/testing.md#driving-a-running-app) has more on the automation server.
+
+The automation server keeps only the last bridge answer, in `bridge-response.txt`. Once the page has entries to load, it makes its own bridge calls, which can write over an answer before the script reads it. So the script saves the entries and the chat while the page is still on setup. Later, it sends a command again only when repeating it changes nothing, such as `embeddings.pending`. A first password can't be set twice, so when that answer is lost, the script asks `lock.status` instead.
+
+To change the shots, edit the lists at the top of `agent/scripts/screenshots.ts`. To change the chat, edit `agent/scripts/screenshot-chat.ts`.
+
+`make test` runs `security-tests/screenshots-isolated.sh`. It checks that the script keeps the journal in a scratch folder, changes the bundle id before signing, builds only under `zig-out/screenshots-build`, and never turns Touch ID or the lock off. `make test` also runs `agent/scripts/screenshots.test.ts`, which replays the chat through eve's reducer and checks the shot list.
 
 ## Dictation voice test
 

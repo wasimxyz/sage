@@ -23,10 +23,12 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAutomationRoute } from "@/hooks/use-automation-route";
 import { useTextSizeShortcuts } from "@/hooks/use-text-size-shortcuts";
 
 export default function App() {
   useTextSizeShortcuts();
+  useAutomationRoute();
   // Keep color-scheme off the root so WebKit does not fill the page after reload.
   return (
     <ThemeProvider
