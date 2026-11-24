@@ -1,69 +1,71 @@
 # The Chat frontend
 
-This page explains the React side of Chat: how the screen streams a turn, when it saves, how it reopens a saved conversation, and what it shows when the agent or Ollama is down. The code is `frontend/src/components/chat-screen.tsx` and the chat functions in `frontend/src/bridge.ts`.
+This page explains the React side of Chat: the Chat tab, how the screen streams a turn, when it saves, how it reopens a saved conversation, and what it shows when the agent or Ollama is down. The code is `frontend/src/components/chat-screen.tsx` and the chat functions in `frontend/src/bridge.ts`.
 
 ## The pieces of the screen
 
 These paths are under `frontend/src/components/`:
 
-- **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the agent health check, and the Chat token from `chat.agentToken`. It reads the model list from OllamaProvider. Whether the panel is open, and whether it is full screen, sit in their own context (`useChatPanel`), so opening the panel does not render every screen that reads the chat.
+- **ChatProvider** (`chat-provider.tsx`): owns the conversation list, the current selection, the agent health check, and the Chat token from `chat.agentToken`. It reads the model list from OllamaProvider.
 - **OllamaProvider** (`ollama-provider.tsx`): checks whether Ollama is running and lists its chat models. Dream and Settings > Models read the same check, so Sage asks Ollama once every 4 seconds, not once per screen.
-- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Home or Journal and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it. Only the message box and the Send button read the text. Code that only sets it, such as `ChatTurn`, calls `useChatDraftActions()`, so a keystroke does not redraw the conversation.
-- **ChatLayout** (`chat-layout.tsx`): the chat list on the left and the panel on the right. It uses the same list-and-panel layout as Journal (`split-view.tsx`, `list-row.tsx`).
-- **ChatRoute** (`chat-route.tsx`): opens Chat. It loads `ChatLayout` the first time you open Chat, and the layout then stays mounted. If Chat cannot load or draw, ChatRoute shows “Could not open Chat” with a Reload button, and the rest of Sage keeps working.
-- **Chat loader** (`chat-layout-loader.ts`): holds the load of `chat-layout.tsx`. Hovering or focusing the Chat row starts it, and so does `showChat`.
-- **ScreenActive** (`screen-active.tsx`): tells Chat’s parts whether Chat is on screen. Chat stays mounted while other screens show, so a menu or dialog in Chat uses it to close when Chat hides.
-- **The chat list** (`chat/chat-list.tsx`): one row per saved chat, with a New chat button above it
-- **The chat panel**: the header in `chat-layout.tsx` and the conversation in `chat-screen.tsx`
-- **Rename dialog** (`chat/rename-chat-dialog.tsx`): one dialog, shared by the rows and the panel’s ⋯ menu
+- **ChatDraftProvider** (`chat/chat-draft.tsx`): holds the text in the message box. A half-typed message stays when you visit Journal, Memories, or Settings and come back. New chat and opening a saved chat start with an empty box, and locking Sage clears it. Only the message box and the Send button read the text. Code that only sets it, such as `ChatTurn`, calls `useChatDraftActions()`, so a keystroke does not redraw the conversation.
+- **AppSidebar** (`app-sidebar.tsx`): the sidebar, with the Chat / Journal switch, each tab’s rows and list, and Dream and Settings at the bottom
+- **The chat list** (`chat/chat-list.tsx`): one row per saved chat, in the sidebar’s Chat tab
+- **ChatLayout** (`chat-layout.tsx`): the Chat tab’s main pane: the header, then `ChatScreen` with the open chat or a new one
+- **ChatRoute** (`chat-route.tsx`): opens Chat. AppShell (`app-shell.tsx`) mounts it the first time Chat shows, and it then stays mounted, hidden, while other screens show. If Chat cannot load or draw, ChatRoute shows “Could not open Chat” with a Reload button, and the rest of Sage keeps working.
+- **Chat loader** (`chat-layout-loader.ts`): holds the load of `chat-layout.tsx`. `frontend/src/main.tsx` starts it at launch. Hovering or focusing the Chat tab starts it too, and so does `showChat`.
+- **ScreenActive** (`screen-active.tsx`): tells Chat’s parts whether Chat is on screen, so a menu or dialog in Chat closes when Chat hides. The sidebar uses it the same way for the list of the tab that is not showing.
+- **Rename dialog** (`chat/rename-chat-dialog.tsx`): one dialog, held by `RenameChatProvider` in AppShell, so the sidebar rows and the open chat’s ⋯ menu share it
 - **ChatTurn** (`chat-screen.tsx`): one conversation, connected to the agent through eve’s `useEveAgent` hook
 - **ChatDictateButton** and **ChatDictationTail** (`chat/chat-dictation.tsx`): the mic in the message box and the grey words under it, as [Dictating a message](#dictating-a-message) explains
 
 ## How Chat loads
 
-Chat’s Markdown, code, math, and diagram rendering is about 1.6 MB, nearly half the startup file. It loads the first time you open Chat instead. `showChat` starts the load while the editor saves, and hovering or focusing the Chat row starts it sooner. `showChat` waits for the load before it switches screens, so Chat opens without a spinner.
+Chat’s Markdown, code, math, and diagram rendering is about 1.6 MB, nearly half the startup file, so it sits in a file of its own. Sage opens on Chat, so `frontend/src/main.tsx` starts that load at launch, beside the lock and setup checks. Hovering or focusing the Chat tab starts it too. `showChat` waits for the load before it switches screens, so Chat opens without a spinner.
 
 A module that fails to load stays failed until the page reloads, so a retry in place cannot work. ChatRoute shows the Reload button for that case.
 
-## The chat list
+## The Chat tab
 
-The sidebar stays on the main menu while Chat is open. Search is in that menu, as on every screen.
+The Chat tab’s rows are New chat, Search, and, in a memory build, Memories. Search always shows ⌘K, and New chat shows ⌘N when you hover over it or focus it. Under the rows, a gray Chats label heads the chat list. Dream and Settings sit at the bottom, as on the Journal tab. [The journal](../journal.md) covers the sidebar as a whole.
 
-Each row shows the chat’s title and the day it last changed, such as Today, Yesterday, or Friday, Oct 2. Older days show the weekday and recent days do not. The day labels turn over at midnight. The open chat’s header shows the same day in full, such as Friday, October 2, 2026, in lighter text next to the title. A new chat has no day yet, so its header shows only the title. Click a row to open that chat in the panel. The open chat’s row is highlighted. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.” If the list cannot load, it says “Could not load chats” with a Try again button, so a failed read never looks like an empty list.
+Each row shows the chat’s title and the day it last changed, such as Today, 3 days ago, or Nov 8, as [How dates read](../journal.md#how-dates-read) explains. Click a row to open that chat in the main pane. The open chat’s row is highlighted while Chat is on screen. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.” If the list cannot load, it says “Could not load chats.” with a Try again button, so a failed read never looks like an empty list.
 
-New chat opens an empty conversation, and so does ⌘N while Chat is open.
+New chat opens an empty conversation, and so does ⌘N in the Chat tab.
 
 Right-click a saved chat for Rename and Delete. With a chat focused, Return renames it and ⌘⌫ deletes it:
 
 - **Rename** opens a dialog and calls `chat.rename`. The row stays where it is, and later Dream runs keep that title.
 - **Delete** hides the chat and shows a toast with its title and Undo for 5 seconds. When the toast closes, Sage calls `chat.delete`. If Sage locks or quits first, it saves the delete and runs it after the next unlock. That removes the SQLite rows, the memories Dream took from the chat, and the chat’s eve session files.
 
-Deleting the open chat returns the panel to New chat at once. Undo brings the chat back and reopens it. Deleting a chat while the panel is closed leaves the panel closed. Deleting chats from Settings clears the open chat the same way, and leaves the panel as it was.
+Deleting the open chat shows a new chat at once. Undo brings the chat back and reopens it. Deleting chats from Settings clears the open chat the same way.
 
-## The chat panel
+The Chat tab also holds [Memories](memories.md#the-memories-screen). While Memories is open, the Chat tab stays current and the Memories row is highlighted. The Chat tab keeps what was last open in it, so it goes back to Memories if Memories was the last screen open there.
 
-The first time you open Chat, the panel is open on an empty new chat, beside the list. After that, Chat shows what you left: the same chat open, or the list alone if you closed the panel.
+## The open chat
 
-The panel header has these controls:
+Sage opens on a new chat. Its header is empty. Today’s date, such as Monday, November 23, and a greeting sit above the message box, in the middle of the pane. The greeting follows the hour:
 
-- **Close** (⌥⌘B) closes the panel and keeps the chat selected. The list then fills the page. ⌥⌘B opens it again. It works only while Chat is on screen, and it waits while a dialog or menu is open.
-- **Full screen** hides the list. Back, in the same place, brings the list back at the size you last chose. Full screen ends whenever the panel closes, including when you go to `#/chat`. It stays when you visit other screens, until you quit Sage.
-- **The title** is “New chat” until the first message saves.
-- **The ⋯ menu** has Rename and Delete. A new chat has no ⋯ menu, because there is nothing to rename or delete yet.
+- “Good morning.” from 5 AM to noon
+- “Good afternoon.” from noon to 5 PM
+- “Good evening.” the rest of the day
 
-Drag the divider to resize the panel, and double-click it to reset the split. In a narrow window, the list sits above the panel.
+The greeting turns over at 5 AM, noon, and 5 PM, and the date at midnight. Coming back to the window after the Mac has slept reads the clock again. `frontend/src/lib/greeting.ts` holds the hours, and `frontend/src/hooks/use-greeting-now.ts` holds the timer.
 
-The transcript, a shadcn `MessageScroller`, opens at the chat’s latest message. A message you send moves near the top of the panel, under the end of the previous reply. Its reply comes in below it, and once the reply fills the panel, the transcript follows it. Scrolling up stops the transcript there, and the arrow at the bottom returns to the latest message.
+Faint dot clouds sit still near the edges of a new chat. They are the lock screen’s clouds (`clouds.tsx`) with `tone="faint"`, and `frontend/src/index.css` sets their colors for light and dark. The first message moves the box to the bottom of the pane. The Ollama and agent warnings show above the box, as they do on a saved chat.
 
-Closing the panel does not stop the chat, and neither does visiting another screen. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you open the panel again or come back to Chat, the transcript and its scroll position are as you left them. Opening the chat that is already open, from its row, from Home, or from a search hit, shows the panel and leaves the conversation as it is. A menu, a dialog, or a full-screen table or diagram that was open in Chat closes when you leave.
+A saved chat’s header shows its title, the day it last changed in lighter text, such as Friday, October 2, 2026, and a ⋯ menu with Rename and Delete.
 
-The address bar follows the panel:
+The transcript, a shadcn `MessageScroller`, opens at the chat’s latest message. A message you send moves near the top of the pane, under the end of the previous reply. Its reply comes in below it, and once the reply fills the pane, the transcript follows it. Scrolling up stops the transcript there, and the arrow at the bottom returns to the latest message.
 
-- `#/chat`: the list alone
-- `#/chat/new`: the panel open on a new chat
-- `#/chat/<id>`: the panel open on that saved chat
+Visiting another screen does not stop the chat. The conversation stays in place, out of sight, so a reply that is still coming in keeps streaming and saving. When you come back to Chat, the transcript and its scroll position are as you left them. Opening the chat that is already open, from its row or from a search hit, leaves the conversation as it is. A menu, a dialog, or a full-screen table or diagram that was open in Chat closes when you leave.
 
-When a new chat saves, `#/chat/new` becomes `#/chat/<id>` without adding a history entry. Back and Forward move between the chats you opened, and reloading the page reopens the same view.
+The address bar follows Chat:
+
+- `#/chat/new`: a new chat
+- `#/chat/<id>`: that saved chat
+
+`#/chat`, `#/home`, an empty hash, and any hash Sage does not know open `#/chat/new`. When a new chat saves, `#/chat/new` becomes `#/chat/<id>` without adding a history entry. Back and Forward move between the chats you opened, and reloading the page reopens the same view. After an unlock, the hash brings back the screen from before the lock. The rules live in `frontend/src/lib/route.ts` and `frontend/src/hooks/use-route-sync.ts`.
 
 ## Dictating a message
 
@@ -75,7 +77,9 @@ Dictation ends when you press Send, open another chat, or leave Chat for another
 
 ## Search
 
-⌘K opens the search dialog, and so does Search in the sidebar. Each tab calls its own command:
+⌘K opens the search dialog, and so does the Search row in the sidebar. The dialog opens on the tab for the screen behind it: Conversations on Chat, Journal on Journal, Memories on Memories, and All in Settings. All stays one click away. `searchTabFor` in `frontend/src/lib/search-hits.ts` picks the tab.
+
+Each tab calls its own command:
 
 - **Journal**: `journal.search`
 - **Conversations**: `chat.search`
@@ -86,9 +90,9 @@ Switching tabs without changing the query reuses the lists already loaded.
 
 Choosing a hit opens it:
 
-- A journal hit opens that entry.
-- A conversation hit opens that conversation in the panel. If the hit has a `seq`, Chat scrolls to the matching message, and a title-only hit opens it without scrolling. A hit in the chat that is already open scrolls to its message without reading the chat again.
-- A memory hit opens that memory. Profile and topic hits open the subject pane, and an event hit opens its edit dialog.
+- A journal hit opens the Journal tab with that entry.
+- A conversation hit opens the Chat tab with that conversation. If the hit has a `seq`, Chat scrolls to the matching message, and a title-only hit opens it without scrolling. A hit in the chat that is already open scrolls to its message without reading the chat again.
+- A memory hit opens that memory on the Memories screen, in the Chat tab. Profile and topic hits open the subject pane, and an event hit opens its edit dialog.
 
 ## Streaming a turn
 
@@ -109,7 +113,7 @@ When the model searches the journal or past chats, or reads an entry or a chat, 
 
 A search row opens to a card. The first line says what the model searched for: the words in quotes, the days when it searched by time, or both. Each entry it found follows, with its title and a short date such as “Sun, Sep 27”. A search with no matches says “No matching entries”. The note the model reads about its results stays out of the card.
 
-Reads that come one after the other share one row, such as “Read 3 entries”. Thinking or text between two reads starts a new row. An entry the model reads twice shows once. Click an entry to open it in the expanded editor.
+Reads that come one after the other share one row, such as “Read 3 entries”. Thinking or text between two reads starts a new row. An entry the model reads twice shows once. Click an entry to open it in the Journal tab.
 
 A search of past chats works the same way. Its row says “Searched past chats”, and each chat it found shows its title and the date of its best match. Reads of chats share a row such as “Read 2 past chats”, apart from reads of entries. Click a chat to open it, scrolled to the message the model found. A search with no matches says “No matching chats”.
 
@@ -126,7 +130,7 @@ Saving happens in the lifecycle callbacks, never in the middle of a stream:
 3. The first save of a new conversation also sets the title from the first message, cut to 60 characters.
 4. After a save that adds events, the screen calls `embeddings.generate` with the chat’s id until Sage has indexed every new message for `search_chats`. It does not wait, so the next save is not held up. [Chat storage](storage.md#the-message-index) covers what happens when that fails.
 
-Later saves leave the title alone. [Dream](../dream.md) may replace it with a generated title unless you renamed the chat. The Chat list and Home reload when Dream finishes.
+Later saves leave the title alone. [Dream](../dream.md) may replace it with a generated title unless you renamed the chat. The chat list reloads when Dream finishes.
 
 The same callbacks run when a reopened conversation resumes. The screen skips the write when the title, session, stream index, and events match what is stored, so opening a row does not move it to the top of the list. Saves run one after another through a promise chain, so a save never overtakes the one before it.
 

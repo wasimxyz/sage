@@ -73,16 +73,14 @@ export function isStopKey(event: EscapeLike, inEditor = false): boolean {
 
 /**
  * What ⌘D dictates into on each screen: the message box on Chat, and the open
- * entry on Journal. Home, Memories, and Settings have no place for words.
+ * entry on Journal, which always holds an entry or a new one. Memories and
+ * Settings have no place for words.
  */
-export function dictationTarget(
-  section: Section,
-  entryOpen: boolean
-): DictationOwner | null {
+export function dictationTarget(section: Section): DictationOwner | null {
   if (section === "chat") {
     return "chat";
   }
-  if (section === "journal" && entryOpen) {
+  if (section === "journal") {
     return "entry";
   }
   return null;

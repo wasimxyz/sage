@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useChat, useChatPanel } from "@/components/chat-provider";
+import { useChat } from "@/components/chat-provider";
 import {
   type JournalActions,
   type JournalViewState,
@@ -13,6 +13,7 @@ import { useSettings } from "@/components/settings-context";
 import {
   hashMatches,
   isNewChatSaved,
+  isNewEntrySaved,
   navigationOverridesPendingMemoryRoute,
   planChatRoute,
   pushRoute,
@@ -29,16 +30,17 @@ interface JournalApi {
   state: JournalViewState;
 }
 type ChatApi = ReturnType<typeof useChat>;
-type ChatPanelApi = ReturnType<typeof useChatPanel>;
 type MemoriesApi = ReturnType<typeof useMemories>;
 type SettingsApi = ReturnType<typeof useSettings>;
 
 /**
  * Keeps the URL hash in sync with the current section, open journal entry,
- * open chat, Memories tab, and settings tab so Cmd+R and back/forward restore
- * the same place.
+ * open chat, Memories tab, and settings tab so Cmd+R, back/forward, and an
+ * unlock restore the same place. Answers true once the hash Sage opened with
+ * has been applied, so the screen on show is the real one.
  */
-export function useRouteSync() {
+export function useRouteSync(): boolean {
+  const [applied, setApplied] = useState(false);
   const journalActions = useJournalActions();
   const journalView = useJournalView();
   const journal = useMemo<JournalApi>(
@@ -46,7 +48,6 @@ export function useRouteSync() {
     [journalActions, journalView]
   );
   const chat = useChat();
-  const chatPanel = useChatPanel();
   const memories = useMemories();
   const settings = useSettings();
   const { memoryEnabled, ready: memoryFeatureReady } = useMemoryFeature();
@@ -55,8 +56,6 @@ export function useRouteSync() {
   journalRef.current = journal;
   const chatRef = useRef(chat);
   chatRef.current = chat;
-  const chatPanelRef = useRef(chatPanel);
-  chatPanelRef.current = chatPanel;
   const memoriesRef = useRef(memories);
   memoriesRef.current = memories;
   const settingsRef = useRef(settings);
@@ -84,7 +83,6 @@ export function useRouteSync() {
         await applyHashRoute(
           journalRef.current,
           chatRef.current,
-          chatPanelRef.current,
           memoriesRef.current,
           settingsRef.current,
           () => gen !== applyGenRef.current,
@@ -94,6 +92,7 @@ export function useRouteSync() {
         if (gen === applyGenRef.current) {
           flagsRef.current.applying = false;
           flagsRef.current.ready = true;
+          setApplied(true);
         }
       }
     },
@@ -121,19 +120,16 @@ export function useRouteSync() {
     };
   }, [applyFromHash]);
 
-  const { detailOpen, section, selection } = journal.state;
+  const { section, selection } = journal.state;
   const { paneKey, selection: chatSelection } = chat.state;
-  const { panelOpen: chatPanelOpen } = chatPanel.state;
   const { tab: memoriesTab } = memories.state;
   const { tab: settingsTab } = settings.state;
-  const entryId = selection?.kind === "id" ? selection.id : null;
+  const entryId = selection.kind === "id" ? selection.id : null;
   const chatId = chatSelection.kind === "saved" ? chatSelection.id : null;
 
   useEffect(() => {
     const route = routeFromState({
       chatId,
-      chatPanelOpen,
-      detailOpen,
       entryId,
       memoriesTab,
       section,
@@ -165,6 +161,7 @@ export function useRouteSync() {
         prevRouteRef.current = route;
         paneKeyRef.current = paneKey;
         replaceRoute(route);
+        setApplied(true);
       }
       return;
     }
@@ -184,8 +181,6 @@ export function useRouteSync() {
     pushRoute(route);
   }, [
     chatId,
-    chatPanelOpen,
-    detailOpen,
     entryId,
     memoryFeatureReady,
     memoriesTab,
@@ -193,24 +188,21 @@ export function useRouteSync() {
     section,
     settingsTab,
   ]);
+
+  return applied;
 }
 
 function routeFromProviders(
   journal: JournalApi,
   chat: ChatApi,
-  chatPanel: ChatPanelApi,
   memories: MemoriesApi,
   settings: SettingsApi
 ): Route {
   return routeFromState({
     chatId:
       chat.state.selection.kind === "saved" ? chat.state.selection.id : null,
-    chatPanelOpen: chatPanel.state.panelOpen,
-    detailOpen: journal.state.detailOpen,
     entryId:
-      journal.state.selection?.kind === "id"
-        ? journal.state.selection.id
-        : null,
+      journal.state.selection.kind === "id" ? journal.state.selection.id : null,
     memoriesTab: memories.state.tab,
     section: journal.state.section,
     settingsTab: settings.state.tab,
@@ -220,7 +212,6 @@ function routeFromProviders(
 async function applyHashRoute(
   journal: JournalApi,
   chat: ChatApi,
-  chatPanel: ChatPanelApi,
   memories: MemoriesApi,
   settings: SettingsApi,
   isStale: () => boolean,
@@ -228,25 +219,18 @@ async function applyHashRoute(
 ): Promise<void> {
   const requestedRoute = readRoute();
   const route = routeForMemoryFeature(requestedRoute, memoryEnabled);
-  if (!routesEqual(route, requestedRoute)) {
+  // An empty hash, the old `#/home`, a disabled Memories route, or another
+  // hash that is not a route lands somewhere else. Write where, so the
+  // address and the history show the screen.
+  if (!hashMatches(route)) {
     replaceRoute(route);
   }
-  const current = routeFromProviders(
-    journal,
-    chat,
-    chatPanel,
-    memories,
-    settings
-  );
+  const current = routeFromProviders(journal, chat, memories, settings);
   if (routesEqual(route, current)) {
     return;
   }
-  if (route.section === "home") {
-    await journal.actions.showHome();
-    return;
-  }
   if (route.section === "journal") {
-    await applyJournalHash(route, current, journal, isStale);
+    await applyJournalHash(route, journal);
     return;
   }
   if (route.section === "memories") {
@@ -257,35 +241,20 @@ async function applyHashRoute(
     await applySettingsHash(route, journal, settings, isStale);
     return;
   }
-  await applyChatHash(route, current, journal, chat, chatPanel, isStale);
+  await applyChatHash(route, current, journal, chat, isStale);
 }
 
 async function applyJournalHash(
   route: Extract<Route, { section: "journal" }>,
-  current: Route,
-  journal: JournalApi,
-  isStale: () => boolean
+  journal: JournalApi
 ): Promise<void> {
-  const selectedEntryId =
-    journal.state.selection?.kind === "id" ? journal.state.selection.id : null;
+  // `/journal` is a new entry. Back to it from a saved entry starts one.
   if (route.entryId === null) {
-    if (current.section !== "journal") {
+    if (journal.state.selection.kind === "draft") {
       await journal.actions.showJournal();
-      if (isStale()) {
-        return;
-      }
+      return;
     }
-    journal.actions.setDetailOpen(false);
-    return;
-  }
-  if (selectedEntryId === route.entryId) {
-    if (journal.state.section !== "journal") {
-      await journal.actions.showJournal();
-      if (isStale()) {
-        return;
-      }
-    }
-    journal.actions.setDetailOpen(true);
+    await journal.actions.startDraft();
     return;
   }
   await journal.actions.select(route.entryId);
@@ -326,7 +295,6 @@ async function applyChatHash(
   current: Route,
   journal: JournalApi,
   chat: ChatApi,
-  chatPanel: ChatPanelApi,
   isStale: () => boolean
 ): Promise<void> {
   const { selection } = chat.state;
@@ -343,15 +311,7 @@ async function applyChatHash(
       return;
     }
   }
-  // The panel is not touched until Chat shows, so a navigation that is
-  // replaced or fails leaves it as it was. The close then lands in the same
-  // render as the screen change, so the panel does not flash open first.
-  if (plan.afterShow === "close-panel") {
-    chatPanel.actions.setPanelOpen(false);
-    return;
-  }
-  if (plan.afterShow === "open-panel") {
-    chatPanel.actions.setPanelOpen(true);
+  if (plan.afterShow === "keep") {
     return;
   }
   if (plan.afterShow === "new-chat") {
@@ -367,6 +327,9 @@ function shouldReplaceHash(
   paneKeyChanged: boolean
 ): boolean {
   if (window.location.hash.length === 0) {
+    return true;
+  }
+  if (isNewEntrySaved(prev, route)) {
     return true;
   }
   return !paneKeyChanged && isNewChatSaved(prev, route);

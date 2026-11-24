@@ -94,20 +94,14 @@ test("Esc with a modifier, or another key, does not", () => {
 });
 
 test("Chat dictates into the message box", () => {
-  assert.equal(dictationTarget("chat", false), "chat");
-  assert.equal(dictationTarget("chat", true), "chat");
+  assert.equal(dictationTarget("chat"), "chat");
 });
 
 test("Journal dictates into the open entry", () => {
-  assert.equal(dictationTarget("journal", true), "entry");
+  assert.equal(dictationTarget("journal"), "entry");
 });
 
-test("Journal with no entry open has nowhere to dictate", () => {
-  assert.equal(dictationTarget("journal", false), null);
-});
-
-test("Home, Memories, and Settings have nowhere to dictate", () => {
-  assert.equal(dictationTarget("home", true), null);
-  assert.equal(dictationTarget("memories", true), null);
-  assert.equal(dictationTarget("settings", true), null);
+test("Memories and Settings have nowhere to dictate", () => {
+  assert.equal(dictationTarget("memories"), null);
+  assert.equal(dictationTarget("settings"), null);
 });

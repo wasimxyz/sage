@@ -11,14 +11,14 @@ export function isSettingsTab(value: unknown): value is SettingsTab {
   return settingsTabs.some((tab) => tab === value);
 }
 
-/**
- * What Chat shows: the list alone, the panel on a new chat, or the panel on a
- * saved chat.
- */
-export type ChatView = "list" | "new" | number;
+/** What Chat shows: a new chat, or a saved one. */
+export type ChatView = "new" | number;
 
+/**
+ * Where Sage is. A journal route with no id is a new entry that has not
+ * saved yet.
+ */
 export type Route =
-  | { section: "home" }
   | { entryId: number | null; section: "journal" }
   | { chat: ChatView; section: "chat" }
   | { section: "memories"; tab: MemoriesTab }
@@ -26,8 +26,9 @@ export type Route =
 
 const idPattern = /^[1-9]\d*$/u;
 
-// Sage opens on Home. Bad hashes and a disabled Memories route fall back here too.
-const defaultRoute: Route = { section: "home" };
+// Sage opens on a new chat. Bad hashes, the old Home route, and a disabled
+// Memories route land here too.
+const defaultRoute: Route = { chat: "new", section: "chat" };
 
 export function routeForMemoryFeature(
   route: Route,
@@ -54,10 +55,9 @@ export function parseHash(hash: string): Route {
   if (parts.length > 2) {
     return defaultRoute;
   }
+  // `#/home`, the old first screen, is not a route any more, so it falls to
+  // the default with any other unknown hash.
   const [head, idPart] = parts;
-  if (head === "home" && idPart === undefined) {
-    return { section: "home" };
-  }
   if (head === "journal") {
     return parseJournalRoute(idPart);
   }
@@ -74,9 +74,6 @@ export function parseHash(hash: string): Route {
 }
 
 export function toHash(route: Route): string {
-  if (route.section === "home") {
-    return "/home";
-  }
   if (route.section === "journal") {
     return route.entryId === null ? "/journal" : `/journal/${route.entryId}`;
   }
@@ -85,9 +82,6 @@ export function toHash(route: Route): string {
   }
   if (route.section === "settings") {
     return route.tab === "agent" ? "/settings" : `/settings/${route.tab}`;
-  }
-  if (route.chat === "list") {
-    return "/chat";
   }
   return `/chat/${route.chat}`;
 }
@@ -106,10 +100,27 @@ export function isNewChatSaved(prev: Route | null, route: Route): boolean {
   );
 }
 
+/**
+ * True when a new entry has just saved, so `/journal` becomes `/journal/:id`.
+ * Like a new chat, that replaces the entry in the history, so Back does not
+ * open a blank entry in its place.
+ */
+export function isNewEntrySaved(prev: Route | null, route: Route): boolean {
+  return (
+    prev?.section === "journal" &&
+    prev.entryId === null &&
+    route.section === "journal" &&
+    route.entryId !== null
+  );
+}
+
 /** What Chat does to land on a chat route, given what it shows now. */
 export interface ChatRoutePlan {
-  /** What to do once Chat shows. */
-  afterShow: "close-panel" | "new-chat" | "open-panel" | { open: number };
+  /**
+   * What to do once Chat shows: start a new chat, open a saved one, or
+   * nothing, when that chat is already the one in Chat.
+   */
+  afterShow: "keep" | "new-chat" | { open: number };
   /** Chat is not on screen yet. */
   showChat: boolean;
 }
@@ -122,19 +133,16 @@ export function planChatRoute(
   }
 ): ChatRoutePlan {
   const showChat = !current.onChat;
-  if (view === "list") {
-    return { afterShow: "close-panel", showChat };
-  }
   if (view === "new") {
     return {
-      afterShow: current.selection.kind === "new" ? "open-panel" : "new-chat",
+      afterShow: current.selection.kind === "new" ? "keep" : "new-chat",
       showChat,
     };
   }
   const alreadyOpen =
     current.selection.kind === "saved" && current.selection.id === view;
   return {
-    afterShow: alreadyOpen ? "open-panel" : { open: view },
+    afterShow: alreadyOpen ? "keep" : { open: view },
     showChat,
   };
 }
@@ -159,32 +167,25 @@ export function routesEqual(left: Route, right: Route): boolean {
   return toHash(left) === toHash(right);
 }
 
+/**
+ * The route for what is on screen. Journal shows its open entry, or a new one
+ * when `entryId` is null. Chat shows its open chat, or a new one.
+ */
 export function routeFromState(input: {
   chatId: number | null;
-  chatPanelOpen: boolean;
-  detailOpen: boolean;
   entryId: number | null;
   memoriesTab: MemoriesTab;
-  section: "chat" | "home" | "journal" | "memories" | "settings";
+  section: "chat" | "journal" | "memories" | "settings";
   settingsTab: SettingsTab;
 }): Route {
-  if (input.section === "home") {
-    return { section: "home" };
-  }
   if (input.section === "settings") {
     return { section: "settings", tab: input.settingsTab };
   }
   if (input.section === "journal") {
-    return {
-      entryId: input.detailOpen ? input.entryId : null,
-      section: "journal",
-    };
+    return { entryId: input.entryId, section: "journal" };
   }
   if (input.section === "memories") {
     return { section: "memories", tab: input.memoriesTab };
-  }
-  if (!input.chatPanelOpen) {
-    return { chat: "list", section: "chat" };
   }
   return { chat: input.chatId ?? "new", section: "chat" };
 }
@@ -198,10 +199,8 @@ function parseJournalRoute(idPart: string | undefined): Route {
 }
 
 function parseChatRoute(idPart: string | undefined): Route {
-  if (idPart === undefined) {
-    return { chat: "list", section: "chat" };
-  }
-  if (idPart === "new") {
+  // `#/chat` once showed the list alone. The list is in the sidebar now.
+  if (idPart === undefined || idPart === "new") {
     return { chat: "new", section: "chat" };
   }
   const chat = parseId(idPart);

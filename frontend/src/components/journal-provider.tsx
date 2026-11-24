@@ -51,12 +51,15 @@ import {
   onCommitted,
   restore,
 } from "@/lib/pending-deletes";
+import { type ChatTabSection, chatTabSection } from "@/lib/sidebar-tab";
 import { deleteWithUndo, toastTitle } from "@/lib/undoable-delete";
 
 const autosaveMs = 1000;
 const embedDelayMs = 30_000;
 const staleEmbeddingRetryMs = 15_000;
 const emptyMeta = {};
+/** A new entry that has not saved yet. */
+const draftSelection: EditorSelection = { kind: "draft" };
 
 /** The real delete for one entry. The pending-delete store also runs it after a relaunch. */
 async function commitEntryDelete(id: number): Promise<CommitResult> {
@@ -119,13 +122,14 @@ async function saveImportedEntries(
 
 export function JournalProvider({ children }: { children: ReactNode }) {
   const { memoryEnabled } = useMemoryFeature();
-  const [section, setSection] = useState<Section>("home");
+  // Sage opens on Chat, with a new chat.
+  const [section, setSection] = useState<Section>("chat");
   const [sidebarMenu, setSidebarMenu] = useState<SidebarMenu>("nav");
   const [entries, setEntries] = useState<JournalEntryMeta[]>([]);
   const [loadingList, setLoadingList] = useState(true);
-  const [selection, setSelection] = useState<EditorSelection | null>(null);
-  const [detailOpen, setDetailOpenState] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  // Journal always holds an entry. The first visit finds a new one, which
+  // saves only once the owner types in it.
+  const [selection, setSelection] = useState<EditorSelection>(draftSelection);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(todayDate());
   const [updatedAt, setUpdatedAt] = useState("");
@@ -136,7 +140,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
   const selectionRef = useRef(selection);
   const entriesRef = useRef(entries);
   const loadingListRef = useRef(loadingList);
-  const returnSectionRef = useRef<Exclude<Section, "settings">>("home");
+  const returnSectionRef = useRef<Exclude<Section, "settings">>("chat");
+  // The screen the Chat tab goes back to: Chat, or Memories.
+  const chatTabSectionRef = useRef<ChatTabSection>("chat");
   const titleRef = useRef(title);
   const dateRef = useRef(date);
   const idRef = useRef<number | null>(null);
@@ -199,10 +205,14 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  // Back in Settings returns to the section the owner opened it from.
+  // Back in Settings returns to the section the owner opened it from, and the
+  // Chat tab returns to the screen last open in it.
   useEffect(() => {
     if (section !== "settings") {
       returnSectionRef.current = section;
+    }
+    if (section === "chat" || section === "memories") {
+      chatTabSectionRef.current = section;
     }
   }, [section]);
 
@@ -504,7 +514,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const adapter = adapterRef.current;
-    if (!(selection && editorReady && adapter?.isReady())) {
+    if (!(editorReady && adapter?.isReady())) {
       return;
     }
 
@@ -668,7 +678,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     // new row. Forget any that remain.
     discardAll();
     await loadEntries();
-    if (selectionRef.current?.kind !== "id") {
+    if (selectionRef.current.kind !== "id") {
       return;
     }
     loadGenRef.current += 1;
@@ -682,21 +692,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     idRef.current = null;
     adapterRef.current?.resetDraft();
     editorEntryIdRef.current = null;
-    setSelection(null);
-    setDetailOpenState(false);
-    setExpanded(false);
+    setSelection(draftSelection);
     setEntryLoading(false);
     setTitle("");
     setDate(todayDate());
     setUpdatedAt("");
   }, [clearEmbedTimer, loadEntries]);
-
-  const showHome = useCallback(async () => {
-    leaveEntry();
-    await flush();
-    setSection("home");
-    setSidebarMenu("nav");
-  }, [flush, leaveEntry]);
 
   const showChat = useCallback(async () => {
     leaveEntry();
@@ -727,6 +728,17 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setSidebarMenu("nav");
   }, [flush, leaveEntry, memoryEnabled]);
 
+  // The Chat tab goes back to the screen last open in it.
+  const showChatTab = useCallback(async () => {
+    if (
+      chatTabSection(chatTabSectionRef.current, memoryEnabled) === "memories"
+    ) {
+      await showMemories();
+      return;
+    }
+    await showChat();
+  }, [memoryEnabled, showChat, showMemories]);
+
   const showSettings = useCallback(async () => {
     leaveEntry();
     await flush();
@@ -736,16 +748,14 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const closeSettings = useCallback(async () => {
     const target = returnSectionRef.current;
-    if (target === "home") {
-      await showHome();
-    } else if (target === "chat") {
+    if (target === "chat") {
       await showChat();
     } else if (target === "memories") {
       await showMemories();
     } else {
       await showJournal();
     }
-  }, [showChat, showHome, showJournal, showMemories]);
+  }, [showChat, showJournal, showMemories]);
 
   const showNavMenu = useCallback(() => {
     setSidebarMenu("nav");
@@ -761,10 +771,9 @@ export function JournalProvider({ children }: { children: ReactNode }) {
         return;
       }
       const { current } = selectionRef;
-      if (current?.kind === "id" && current.id === id) {
+      if (current.kind === "id" && current.id === id) {
         setSection("journal");
         setSidebarMenu("nav");
-        setDetailOpenState(true);
         return;
       }
       leaveEntry();
@@ -772,7 +781,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       setSection("journal");
       setSidebarMenu("nav");
       setSelection({ id, kind: "id" });
-      setDetailOpenState(true);
       setEntryLoading(true);
     },
     [flush, leaveEntry]
@@ -784,17 +792,16 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     setSection("journal");
     setSidebarMenu("nav");
     setSelection({ kind: "draft" });
-    setDetailOpenState(true);
     setEntryLoading(false);
   }, [flush, leaveEntry]);
 
   // The open entry is gone from the editor, and nothing of it saves again.
+  // Journal shows a new entry in its place.
   const closeOpenEntry = useCallback(() => {
     leaveEntry();
     dirtyRef.current = false;
     clearEmbedTimer();
-    setSelection(null);
-    setExpanded(false);
+    setSelection(draftSelection);
   }, [clearEmbedTimer, leaveEntry]);
 
   // Hide the entry now and delete it when the undo toast closes.
@@ -802,7 +809,7 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     (id: number) => {
       const selected = selectionRef.current;
       const wasOpen =
-        idRef.current === id || (selected?.kind === "id" && selected.id === id);
+        idRef.current === id || (selected.kind === "id" && selected.id === id);
       const rowTitle = wasOpen
         ? titleRef.current
         : (entriesRef.current.find((entry) => entry.id === id)?.title ?? "");
@@ -930,21 +937,6 @@ export function JournalProvider({ children }: { children: ReactNode }) {
     [embedImportedEntries, flush, loadEntries]
   );
 
-  const setDetailOpen = useCallback(
-    (open: boolean) => {
-      setDetailOpenState(open);
-      if (!open) {
-        setExpanded(false);
-        // A closed panel leaves the entry, and it unmounts soon after, so what
-        // the entry gained on the way out is saved now.
-        if (leaveEntry()) {
-          flush().catch(() => undefined);
-        }
-      }
-    },
-    [flush, leaveEntry]
-  );
-
   const journalActions = useMemo<JournalActions>(
     () => ({
       beginDataWipe,
@@ -955,10 +947,8 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       refreshAfterDataWipe,
       runStaleEmbeddingPass: embedStaleEntries,
       select,
-      setDetailOpen,
-      setExpanded,
       showChat,
-      showHome,
+      showChatTab,
       showJournal,
       showMemories,
       showNavMenu,
@@ -974,9 +964,8 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       importEntries,
       refreshAfterDataWipe,
       select,
-      setDetailOpen,
       showChat,
-      showHome,
+      showChatTab,
       showJournal,
       showMemories,
       showNavMenu,
@@ -1006,14 +995,12 @@ export function JournalProvider({ children }: { children: ReactNode }) {
 
   const view = useMemo<JournalViewState>(
     () => ({
-      detailOpen,
-      expanded,
       section,
-      selectedId: selection?.kind === "id" ? selection.id : null,
+      selectedId: selection.kind === "id" ? selection.id : null,
       selection,
       sidebarMenu,
     }),
-    [detailOpen, expanded, section, selection, sidebarMenu]
+    [section, selection, sidebarMenu]
   );
 
   const entriesState = useMemo<JournalEntriesState>(

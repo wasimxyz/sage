@@ -3,7 +3,8 @@ import { createContext, type ReactNode, use } from "react";
 import type { JournalEntry, JournalEntryMeta } from "@/bridge";
 import type { ParsedImport } from "@/lib/parse-markdown";
 
-export type Section = "chat" | "home" | "journal" | "memories" | "settings";
+/** The screen in the main pane. Chat and Memories are in the Chat tab. */
+export type Section = "chat" | "journal" | "memories" | "settings";
 
 export type SidebarMenu = "nav" | "settings";
 
@@ -18,16 +19,15 @@ export interface EditorAdapter {
 }
 
 /**
- * Where the owner is: which screen, which entry, and how it is laid out. It
- * changes when they move around, not on each autosave. A new entry's first
- * save is the one exception: it gives the draft an id.
+ * Where the owner is: which screen, and which entry Journal holds. It changes
+ * when they move around, not on each autosave. A new entry's first save is
+ * the one exception: it gives the draft an id. Journal always holds an entry,
+ * or a new one, so the selection is never empty.
  */
 export interface JournalViewState {
-  detailOpen: boolean;
-  expanded: boolean;
   section: Section;
   selectedId: number | null;
-  selection: EditorSelection | null;
+  selection: EditorSelection;
   sidebarMenu: SidebarMenu;
 }
 
@@ -53,10 +53,9 @@ export interface JournalActions {
   refreshAfterDataWipe: () => Promise<void>;
   runStaleEmbeddingPass: () => Promise<boolean>;
   select: (id: number) => Promise<void>;
-  setDetailOpen: (open: boolean) => void;
-  setExpanded: (expanded: boolean) => void;
   showChat: () => Promise<void>;
-  showHome: () => Promise<void>;
+  /** The Chat tab: back to Chat, or to Memories when that was open last. */
+  showChatTab: () => Promise<void>;
   showJournal: () => Promise<void>;
   showMemories: () => Promise<void>;
   showNavMenu: () => void;

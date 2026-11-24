@@ -6,7 +6,7 @@ Dictation is a way to type, not a kind of entry. The words go into the entry lik
 
 ## Starting and stopping
 
-A mic button sits in the entry header, before the ⋯ menu. In Chat, it sits in the message box beside the model picker, and only a live conversation has one. ⌘D does the same as the button. It works while an entry is open or Chat is on screen, and it does nothing on Home, Memories, and Settings. It waits while a dialog, popover, or menu is open, and holding the key does not turn the mic on and off again.
+A mic button sits in the entry header, before the ⋯ menu. In Chat, it sits in the message box beside the model picker, and only a live conversation has one. ⌘D does the same as the button. It works on Chat and on Journal, which always holds an entry or a new one, and it does nothing on Memories and Settings. It waits while a dialog, popover, or menu is open, and holding the key does not turn the mic on and off again.
 
 The button reads **Starting…** until the mic is on, **Listening** while you speak, and **Finishing…** while the engine settles the last words. Only one dictation runs at a time, so the other mic is off while one is on. The entry mic is also off while an entry loads.
 
@@ -40,7 +40,7 @@ In an entry, grey words are drawn at the cursor and are never part of the entry,
 These end a session. Each one has a reason, which the core sends in `dictation:stopped`:
 
 - **You stop it** (`user`): the core stops listening at once, lets the engine finish what it already heard, and sends those words. The grey words become normal text. This takes about 0.1s. If the engine has not settled after 8s, the session ends as `engine_failed` instead, so you are told that words may be missing.
-- **You leave** (`discarded`): you open another entry, start a new one, close or delete the entry, or go to Home, Chat, Memories, or Settings. In Chat, it is sending a message, opening another chat, or leaving Chat. The session ends at once.
+- **You leave** (`discarded`): you open another entry, start a new one, delete the entry, or go to Chat, Memories, or Settings. In Chat, it is sending a message, opening another chat, or leaving Chat. The session ends at once.
 - **Sage locks** (`locked`): this covers the lock, the idle lock, **Sage > Lock**, the Mac or display going to sleep, and the screen saver starting. These stop dictation even when the lock is off. [The app lock](security/lock.md#dictation-and-the-lock) has the rest.
 - **Sage quits** (`quit`).
 - **The mic cannot be used**: `denied` when you refuse access, `no_input` when there is no working mic, and `input_lost` when a started mic sends no sound for 2s. That can happen when you connect AirPods or the Mac wakes. The Native SDK does not report these changes, so Sage watches for them.

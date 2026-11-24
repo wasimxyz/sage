@@ -24,7 +24,10 @@ import {
   searchMemories,
 } from "@/bridge";
 import { useChat } from "@/components/chat-provider";
-import { useJournalActions } from "@/components/journal-context";
+import {
+  useJournalActions,
+  useJournalView,
+} from "@/components/journal-context";
 import { useMemories } from "@/components/memories-provider";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { MenuShortcut } from "@/components/menu-shortcut";
@@ -43,6 +46,7 @@ import { formatRelativeAge } from "@/lib/format-relative-age";
 import { onCommitted } from "@/lib/pending-deletes";
 import {
   type SearchTab,
+  searchTabFor,
   settledSearchQuery,
   visibleHits,
 } from "@/lib/search-hits";
@@ -188,16 +192,21 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   return <SearchContext value={value}>{children}</SearchContext>;
 }
 
-export function SearchNavItem() {
+/** The Search row in the sidebar. It opens on the current tab's results. */
+export function SearchNavItem({ className }: { className?: string }) {
   const {
     actions: { toggle },
   } = useSearch();
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton aria-keyshortcuts="Meta+K Control+K" onClick={toggle}>
+      <SidebarMenuButton
+        aria-keyshortcuts="Meta+K Control+K"
+        className={className}
+        onClick={toggle}
+      >
         <SearchIcon />
         <span className="truncate">Search</span>
-        <MenuShortcut>{shortcuts.search}</MenuShortcut>
+        <MenuShortcut always>{shortcuts.search}</MenuShortcut>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -254,6 +263,7 @@ export function SearchDialog() {
 
 function SearchForm() {
   const { select, showChat, showMemories } = useJournalActions();
+  const { section } = useJournalView();
   const {
     actions: { openConversation },
   } = useChat();
@@ -266,7 +276,11 @@ function SearchForm() {
   const { memoryEnabled } = useMemoryFeature();
   const listId = useId();
   const [query, setQuery] = useState("");
-  const [tab, setTabState] = useState<SearchTab>("all");
+  // The form mounts each time the dialog opens, so it opens on the results
+  // for the screen behind it. All stays one click away.
+  const [tab, setTabState] = useState<SearchTab>(() =>
+    searchTabFor(section, memoryEnabled)
+  );
   const [journalHits, setJournalHits] = useState(emptyJournalHits);
   const [conversationHits, setConversationHits] = useState(
     emptyConversationHits

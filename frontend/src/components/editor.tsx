@@ -20,7 +20,7 @@ import {
   useEntryActions,
   useEntryLoading,
 } from "@/components/journal-context";
-import { SplitView, useSplitView } from "@/components/split-view";
+import { PaneHeader } from "@/components/pane-header";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -127,23 +127,19 @@ function EditorFrame({ children }: { children: ReactNode }) {
 
   return (
     <Tiptap editor={editor}>
-      <div className="flex h-full min-h-0 flex-col">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </Tiptap>
   );
 }
 
 function EditorHeader() {
   return (
-    <SplitView.DetailHeader>
-      <SplitView.PanelControls
-        backLabel="Back to journal"
-        closeLabel="Close entry"
-      />
+    <PaneHeader>
       <div className="ml-auto flex items-center gap-1">
         <EditorDictation />
         <EntryMenu />
       </div>
-    </SplitView.DetailHeader>
+    </PaneHeader>
   );
 }
 
@@ -345,16 +341,14 @@ function useSaveShortcut() {
   }, [flush]);
 }
 
+/** The Journal tab's pane: the open entry, or a new one. */
 export default function EditorPane() {
-  const {
-    state: { expanded },
-  } = useSplitView();
   useSaveShortcut();
   return (
     <Editor.Frame>
       <Editor.Header />
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn("flex min-h-full flex-col", expanded && "py-8.5")}>
+        <div className="flex min-h-full flex-col">
           <Editor.Title />
           <Editor.Body />
         </div>

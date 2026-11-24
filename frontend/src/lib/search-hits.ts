@@ -1,4 +1,27 @@
+import type { Section } from "@/components/journal-context";
+
 export type SearchTab = "all" | "conversations" | "journal" | "memories";
+
+/**
+ * The tab the dialog opens on: the results for the screen you are on. Chat
+ * opens on Conversations, Journal on Journal, Memories on Memories, and
+ * Settings on All.
+ */
+export function searchTabFor(
+  section: Section,
+  memoryEnabled: boolean
+): SearchTab {
+  if (section === "journal") {
+    return "journal";
+  }
+  if (section === "chat") {
+    return "conversations";
+  }
+  if (section === "memories") {
+    return memoryEnabled ? "memories" : "conversations";
+  }
+  return "all";
+}
 
 /**
  * The query the stored hits for this tab answer, or "" when the sources the

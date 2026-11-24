@@ -3,7 +3,6 @@
 export const shortcuts = {
   bold: "⌘B",
   bulletList: "⇧⌘8",
-  closePanel: "⌥⌘B",
   dictate: "⌘D",
   heading1: "⌥⌘1",
   heading2: "⌥⌘2",

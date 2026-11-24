@@ -1,9 +1,4 @@
-import {
-  AlertCircleIcon,
-  MessageCircleIcon,
-  PencilIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { PencilIcon, Trash2Icon } from "lucide-react";
 import {
   type KeyboardEvent,
   memo,
@@ -14,37 +9,36 @@ import {
 
 import type { ChatConversationMeta } from "@/bridge";
 import { useRenameChat } from "@/components/chat/rename-chat-dialog";
-import { useChat, useChatPanel } from "@/components/chat-provider";
-import { ListRow, ListRows, ListRowsSkeleton } from "@/components/list-row";
+import { useChat } from "@/components/chat-provider";
+import { useJournalActions } from "@/components/journal-context";
+import {
+  ListEmpty,
+  ListRow,
+  ListRows,
+  ListRowsSkeleton,
+} from "@/components/list-row";
 import { useCloseOnScreenHide } from "@/components/screen-active";
 import { Button } from "@/components/ui/button";
 import { ContextMenuItem } from "@/components/ui/context-menu";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { localDateKey } from "@/lib/format-date";
 import { focusNeighborRow, isDeleteKey, isReturnKey } from "@/lib/row-keys";
 
-export function ChatList() {
+/**
+ * The chats in the sidebar's Chat tab. `onScreen` is false while Memories
+ * fills the pane, so no row reads as the open one then.
+ */
+export function ChatList({ onScreen }: { onScreen: boolean }) {
   const {
     actions: { deleteConversation, openConversation, refreshList },
     state: { conversations, listFailed, listLoaded, selection },
   } = useChat();
   const {
-    state: { panelOpen },
-  } = useChatPanel();
-  const {
     actions: { startRename },
   } = useRenameChat();
+  const { showChat } = useJournalActions();
   // The row is current only while its chat is on screen.
-  const activeId =
-    panelOpen && selection.kind === "saved" ? selection.id : null;
+  const activeId = onScreen && selection.kind === "saved" ? selection.id : null;
   const ids = useMemo(
     () => conversations.map((row) => row.id),
     [conversations]
@@ -55,11 +49,14 @@ export function ChatList() {
     refreshList().catch(() => undefined);
   }, [refreshList]);
 
+  // From Memories, which shares the tab, a row brings Chat back first.
   const handleSelect = useCallback(
     (id: number) => {
-      openConversation(id);
+      showChat()
+        .then(() => openConversation(id))
+        .catch(() => undefined);
     },
-    [openConversation]
+    [openConversation, showChat]
   );
 
   const handleRetry = useCallback(() => {
@@ -92,39 +89,19 @@ export function ChatList() {
           />
         ))}
       </ListRows>
-      {conversations.length === 0 ? (
-        <Empty className="min-h-64">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <MessageCircleIcon />
-            </EmptyMedia>
-            <EmptyTitle>No chats yet</EmptyTitle>
-            <EmptyDescription>
-              Start a new chat to talk through your thoughts.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : null}
+      {conversations.length === 0 ? <ListEmpty>No chats yet.</ListEmpty> : null}
     </>
   );
 }
 
 function ChatListFailed({ onRetry }: { onRetry: () => void }) {
   return (
-    <Empty className="min-h-64">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <AlertCircleIcon />
-        </EmptyMedia>
-        <EmptyTitle>Could not load chats</EmptyTitle>
-        <EmptyDescription>Sage could not read your chats.</EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={onRetry} size="sm" variant="outline">
-          Try again
-        </Button>
-      </EmptyContent>
-    </Empty>
+    <div className="flex flex-col items-start gap-1.5 px-2.5 py-1.5">
+      <p className="text-muted-foreground text-sm">Could not load chats.</p>
+      <Button onClick={onRetry} size="xs" variant="outline">
+        Try again
+      </Button>
+    </div>
   );
 }
 
