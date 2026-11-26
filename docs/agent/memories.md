@@ -49,14 +49,14 @@ A memory build reads memories in three ways, and leaves out hidden rows:
 
 ## The Memories screen
 
-The Memories screen appears under Chat in a memory build. It has two tabs, Facts and Events, and both read the same rows Chat searches. Its addresses are `#/memories`, `#/memories/facts`, and `#/memories/profile` for Facts, and `#/memories/events` for Events.
+In a memory build, the Memories row in the sidebar’s Chat tab, under New chat and Search, opens the Memories screen. While it is open, the Chat tab stays current and the Memories row is highlighted. The screen has two tabs of its own, Facts and Events, and both read the same rows Chat searches. Its addresses are `#/memories`, `#/memories/facts`, and `#/memories/profile` for Facts, and `#/memories/events` for Events.
 
 The Facts tab has two sections:
 
 - **Profile**: the sentences about you, grouped under You
 - **Topics**: the facts, grouped by subject
 
-Each section shows one row per subject, with its newest sentence and when that subject last changed. Opening a subject shows every sentence in a panel beside the list, the way Journal opens an entry. Edit lets you add, change, or remove that subject’s sentences, and Delete removes all of them.
+Each section shows one row per subject, with its newest sentence and when that subject last changed. Opening a subject shows every sentence in a panel beside the list. Edit lets you add, change, or remove that subject’s sentences, and Delete removes all of them.
 
 The Events tab groups events by how long ago they happened, newest first:
 

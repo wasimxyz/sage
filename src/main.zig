@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const build_options = @import("build_options");
 const runner = @import("runner");
 const native_sdk = @import("native_sdk");
-const calendar_mod = @import("calendar.zig");
 const journal = @import("journal.zig");
 const import_mod = @import("import.zig");
 const export_mod = @import("export.zig");
@@ -109,7 +108,6 @@ const command_names = [_][]const u8{
     "ollama.pullCancel",
     "ollama.delete",
     "system.hardware",
-    "system.calendar",
     "onboarding.status",
     "onboarding.save",
     "onboarding.reminderShown",
@@ -225,6 +223,36 @@ test "app.json lists the packaged origin only" {
         try std.testing.expect(origins == .array);
         try std.testing.expectEqual(@as(usize, 1), origins.array.items.len);
         try std.testing.expectEqualStrings(app_origin, origins.array.items[0].string);
+    }
+}
+
+// Home was the old first screen. Sage now opens on a new chat, and the
+// commands only Home sent are gone from both lists.
+test "Home's bridge commands are gone" {
+    const raw = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        "app.json",
+        std.testing.allocator,
+        .limited(64 * 1024),
+    );
+    defer std.testing.allocator.free(raw);
+    const parsed = try std.json.parseFromSlice(
+        std.json.Value,
+        std.testing.allocator,
+        raw,
+        .{ .allocate = .alloc_always },
+    );
+    defer parsed.deinit();
+
+    const removed = [_][]const u8{ "home.feed", "system.calendar" };
+    const commands = parsed.value.object.get("bridge").?.object.get("commands").?;
+    try std.testing.expect(commands == .array);
+    for (commands.array.items) |command| {
+        const name = command.object.get("name").?.string;
+        for (removed) |gone| try std.testing.expect(!std.mem.eql(u8, gone, name));
+    }
+    for (command_names) |name| {
+        for (removed) |gone| try std.testing.expect(!std.mem.eql(u8, gone, name));
     }
 }
 
@@ -512,7 +540,6 @@ const App = struct {
             .{ .name = "agent.instructions.get", .context = self, .invoke_fn = handleAgentInstructionsGet },
             .{ .name = "agent.instructions.save", .context = self, .invoke_fn = handleAgentInstructionsSave },
             .{ .name = "system.hardware", .context = self, .invoke_fn = handleSystemHardware },
-            .{ .name = "system.calendar", .context = self, .invoke_fn = handleSystemCalendar },
             .{ .name = "ollama.pull", .context = self, .invoke_fn = handleOllamaPull },
             .{ .name = "ollama.pulls", .context = self, .invoke_fn = handleOllamaPulls },
             .{ .name = "ollama.pullCancel", .context = self, .invoke_fn = handleOllamaPullCancel },
@@ -1003,13 +1030,6 @@ fn handleSystemHardware(context: *anyopaque, invocation: native_sdk.bridge.Invoc
     try journal.writeJsonStringStreaming(&writer, info.chip_name);
     try writer.print(",\"ramGb\":{d},\"cpuCores\":{d}}}", .{ info.ram_gb, info.cpu_cores });
     return writer.buffered();
-}
-
-fn handleSystemCalendar(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
-    _ = invocation;
-    const self: *App = @ptrCast(@alignCast(context));
-    try requireUnlocked(self);
-    return std.fmt.bufPrint(output, "{{\"firstWeekday\":{d}}}", .{calendar_mod.firstWeekday()});
 }
 
 // --- first-launch setup ---
@@ -3396,7 +3416,6 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
-    _ = calendar_mod;
     _ = journal;
     _ = keychain;
     _ = lock_mod;
@@ -4237,28 +4256,6 @@ test "journal commands refuse while locked and answer after unlock" {
     _ = try rig.app.lock.unlockPassword("{\"password\":\"correct horse\"}", &output);
     const json = try handleList(@ptrCast(&rig.app), invocation, &output);
     try std.testing.expect(std.mem.indexOf(u8, json, "Morning walk") != null);
-}
-
-test "system.calendar refuses while locked and answers after unlock" {
-    var rig: EmbedTestRig = undefined;
-    try rig.init();
-    defer rig.deinit();
-
-    var output: [8192]u8 = undefined;
-    _ = try rig.app.lock.setPassword("{\"next\":\"correct horse\"}", null, &output);
-    rig.app.lock.unlocked = false;
-
-    const invocation = native_sdk.bridge.Invocation{
-        .request = .{ .id = "t-calendar-locked", .command = "system.calendar", .payload = "{}" },
-        .source = .{},
-    };
-    try std.testing.expectError(error.Locked, handleSystemCalendar(@ptrCast(&rig.app), invocation, &output));
-
-    _ = try rig.app.lock.unlockPassword("{\"password\":\"correct horse\"}", &output);
-    const json = try handleSystemCalendar(@ptrCast(&rig.app), invocation, &output);
-    try std.testing.expect(std.mem.startsWith(u8, json, "{\"firstWeekday\":"));
-    const digit = json["{\"firstWeekday\":".len];
-    try std.testing.expect(digit >= '1' and digit <= '7');
 }
 
 test "data.deleteAll refuses while locked and wipes content after unlock" {

@@ -81,7 +81,6 @@
             { "name": "ollama.pullCancel", "origins": ["zero://app"] },
             { "name": "ollama.delete", "origins": ["zero://app"] },
             { "name": "system.hardware", "origins": ["zero://app"] },
-            { "name": "system.calendar", "origins": ["zero://app"] },
             { "name": "onboarding.status", "origins": ["zero://app"] },
             { "name": "onboarding.save", "origins": ["zero://app"] },
             { "name": "onboarding.reminderShown", "origins": ["zero://app"] },

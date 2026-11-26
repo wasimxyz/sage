@@ -35,7 +35,7 @@ export function SetupProtect() {
 
 /**
  * The Protect screens on their own, from the reminder's Set up now. There is no
- * step count and no Skip setup, and finishing returns to Home.
+ * step count and no Skip setup, and finishing returns to the app.
  */
 export function ReminderProtect() {
   const {

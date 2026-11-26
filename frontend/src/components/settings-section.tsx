@@ -1,14 +1,10 @@
 import type { ReactNode } from "react";
 
-import { onTitlebarPointerDown } from "@/components/app-titlebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { pageColumnClass } from "@/lib/page-column";
-import { cn } from "@/lib/utils";
 
 /**
- * One settings pane. The title row is as tall as a sidebar menu button and
- * starts at the same offset, so the title sits level with Back. It scrolls
- * with the page. The strip above it stays put, so the window still drags there.
+ * One section of the Settings dialog: its title and description over its
+ * rows. It scrolls on its own, so the list of sections stays put.
  */
 export function SettingsSection({
   children,
@@ -20,27 +16,16 @@ export function SettingsSection({
   title: string;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div
-        className="h-(--titlebar-height) shrink-0"
-        data-slot="window-drag"
-        onPointerDown={onTitlebarPointerDown}
-      />
-      <ScrollArea className="min-h-0 flex-1">
-        <div className={cn(pageColumnClass, "pb-8")}>
-          <div
-            className="flex h-8 items-center"
-            data-slot="window-drag"
-            onPointerDown={onTitlebarPointerDown}
-          >
-            <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
-          </div>
-          {description ? (
-            <p className="text-muted-foreground text-sm">{description}</p>
-          ) : null}
-          {children}
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="px-6 pt-4 pb-8">
+        <div className="flex h-8 items-center">
+          <h3 className="min-w-0 truncate text-base font-medium">{title}</h3>
         </div>
-      </ScrollArea>
-    </div>
+        {description ? (
+          <p className="text-muted-foreground text-sm">{description}</p>
+        ) : null}
+        {children}
+      </div>
+    </ScrollArea>
   );
 }

@@ -1,0 +1,381 @@
+import {
+  ImportIcon,
+  MessageCircleIcon,
+  NotebookTextIcon,
+  PlusIcon,
+  RotateCcwClockIcon,
+  SettingsIcon,
+} from "lucide-react";
+import { type ReactNode, useCallback } from "react";
+
+import { onTitlebarPointerDown } from "@/components/app-titlebar";
+import { ChatList } from "@/components/chat/chat-list";
+import { preloadChatLayout } from "@/components/chat-layout-loader";
+import { useChat } from "@/components/chat-provider";
+import { DreamNavItem } from "@/components/dream-nav";
+import { EntriesList } from "@/components/entries-list";
+import { useFileMenu } from "@/components/file-menu-provider";
+import { Hint } from "@/components/hint";
+import {
+  useJournalActions,
+  useJournalEntries,
+  useJournalView,
+} from "@/components/journal-context";
+import { useMemoryFeature } from "@/components/memory-feature-provider";
+import { MenuShortcut } from "@/components/menu-shortcut";
+import { ScreenActiveProvider } from "@/components/screen-active";
+import { SearchNavItem } from "@/components/search-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarSeparator,
+} from "@/components/ui/sidebar";
+import { shortcuts } from "@/lib/shortcuts";
+import {
+  type SidebarAction,
+  type SidebarTab,
+  sidebarActions,
+  tabForSection,
+} from "@/lib/sidebar-tab";
+import { cn } from "@/lib/utils";
+
+// Sidebar rows are a little taller than the menu's default, like the lists.
+const rowClassName = "h-9";
+
+/**
+ * The sidebar: a Chat / Journal switch in the title bar row, the tab's
+ * actions, its chats or entries, and Dream and Settings at the bottom.
+ * Settings opens as a dialog, so the sidebar stays as it is.
+ */
+export function AppSidebar() {
+  const { section } = useJournalView();
+  const tab = tabForSection(section);
+  return (
+    <Sidebar
+      className="md:[&_[data-slot=sidebar-inner]]:pt-[calc(var(--titlebar-height)-0.5rem)]"
+      collapsible="offcanvas"
+    >
+      <SidebarTopRow>
+        <SidebarTabs tab={tab} />
+      </SidebarTopRow>
+      <TabSidebar tab={tab} />
+    </Sidebar>
+  );
+}
+
+/**
+ * The title bar row across the sidebar. Its empty space drags the window,
+ * and the switch sits at its right end, beside the traffic lights and the
+ * sidebar button.
+ */
+function SidebarTopRow({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="absolute inset-x-0 top-0 flex h-(--titlebar-height) items-center justify-end pr-2"
+      data-slot="window-drag"
+      onPointerDown={onTitlebarPointerDown}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Two icon buttons in a nav, not a toggle group: each is its own stop for
+ * Tab, and the open tab is marked as the current page.
+ */
+function SidebarTabs({ tab }: { tab: SidebarTab }) {
+  const { showChatTab, showJournal } = useJournalActions();
+  const openChat = useCallback(() => {
+    showChatTab().catch(() => undefined);
+  }, [showChatTab]);
+  const openJournal = useCallback(() => {
+    showJournal().catch(() => undefined);
+  }, [showJournal]);
+  return (
+    <nav
+      aria-label="Chat or Journal"
+      className="bg-sidebar-accent flex items-center gap-0.5 rounded-lg p-0.5"
+    >
+      <SidebarTabButton
+        active={tab === "chat"}
+        label="Chat"
+        onClick={openChat}
+        onPreload={preloadChatLayout}
+      >
+        <MessageCircleIcon className="size-3.5" />
+      </SidebarTabButton>
+      <SidebarTabButton
+        active={tab === "journal"}
+        label="Journal"
+        onClick={openJournal}
+      >
+        <NotebookTextIcon className="size-3.5" />
+      </SidebarTabButton>
+    </nav>
+  );
+}
+
+function SidebarTabButton({
+  active,
+  children,
+  label,
+  onClick,
+  onPreload,
+}: {
+  active: boolean;
+  children: ReactNode;
+  label: string;
+  onClick: () => void;
+  onPreload?: () => void;
+}) {
+  return (
+    <Hint label={label}>
+      <Button
+        aria-current={active ? "page" : undefined}
+        aria-label={label}
+        className={cn(
+          "text-sidebar-foreground/80 h-6 w-7.5 rounded-md",
+          active
+            ? "bg-background text-sidebar-foreground hover:bg-background dark:bg-sidebar-foreground/15 dark:hover:bg-sidebar-foreground/15 shadow-xs"
+            : "hover:bg-background/50 dark:hover:bg-sidebar-foreground/10"
+        )}
+        onClick={onClick}
+        onFocus={onPreload}
+        onPointerEnter={onPreload}
+        size="icon-sm"
+        variant="ghost"
+      >
+        {children}
+      </Button>
+    </Hint>
+  );
+}
+
+/** A tab's actions, its list, and the rows at the bottom. */
+function TabSidebar({ tab }: { tab: SidebarTab }) {
+  return (
+    <>
+      {/* Both tabs stay mounted, so each keeps its scroll and its rows. The
+          hidden one closes its menus. */}
+      <TabPage active={tab === "chat"} tab="chat">
+        <SidebarChats />
+      </TabPage>
+      <TabPage active={tab === "journal"} tab="journal">
+        <SidebarEntries />
+      </TabPage>
+      <SidebarFooter className="gap-1 pt-1">
+        <SidebarSeparator className="mx-2 mb-1" />
+        <SidebarMenu className="gap-px">
+          <DreamNavItem className={rowClassName} />
+          <SettingsItem />
+        </SidebarMenu>
+      </SidebarFooter>
+    </>
+  );
+}
+
+/**
+ * One tab's rows, label, and list. They scroll together, under the switch
+ * and above Dream and Settings, which stay put.
+ */
+function TabPage({
+  active,
+  children,
+  tab,
+}: {
+  active: boolean;
+  children: ReactNode;
+  tab: SidebarTab;
+}) {
+  return (
+    <ScreenActiveProvider active={active}>
+      <SidebarContent
+        className={cn("hide-scrollbar", !active && "hidden")}
+        inert={!active}
+      >
+        <SidebarGroup className="pt-3 pb-0">
+          <SidebarGroupContent>
+            <TabActions tab={tab} />
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup className="pb-0">
+          <SidebarGroupLabel>
+            {tab === "chat" ? "Conversations" : "Entries"}
+          </SidebarGroupLabel>
+          {children}
+        </SidebarGroup>
+      </SidebarContent>
+    </ScreenActiveProvider>
+  );
+}
+
+function TabActions({ tab }: { tab: SidebarTab }) {
+  const { memoryEnabled } = useMemoryFeature();
+  return (
+    <SidebarMenu className="gap-px">
+      {sidebarActions(tab, memoryEnabled).map((action) => (
+        <TabAction action={action} key={action} />
+      ))}
+    </SidebarMenu>
+  );
+}
+
+function TabAction({ action }: { action: SidebarAction }) {
+  if (action === "search") {
+    return <SearchNavItem className={rowClassName} />;
+  }
+  if (action === "new-chat") {
+    return <NewChatItem />;
+  }
+  if (action === "new-entry") {
+    return <NewEntryItem />;
+  }
+  if (action === "import") {
+    return <ImportItem />;
+  }
+  return <MemoriesItem />;
+}
+
+function NewChatItem() {
+  const { showChat } = useJournalActions();
+  const {
+    actions: { newChat },
+  } = useChat();
+  const start = useCallback(() => {
+    showChat()
+      .then(newChat)
+      .catch(() => undefined);
+  }, [newChat, showChat]);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-keyshortcuts="Meta+N"
+        className={rowClassName}
+        onClick={start}
+      >
+        <PlusIcon />
+        <span className="truncate">New chat</span>
+        <MenuShortcut>{shortcuts.newItem}</MenuShortcut>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function NewEntryItem() {
+  const { startDraft } = useJournalActions();
+  const start = useCallback(() => {
+    startDraft().catch(() => undefined);
+  }, [startDraft]);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-keyshortcuts="Meta+N"
+        className={rowClassName}
+        onClick={start}
+      >
+        <PlusIcon />
+        <span className="truncate">New entry</span>
+        <MenuShortcut>{shortcuts.newItem}</MenuShortcut>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+/** The same picker and preview as File > Import. */
+function ImportItem() {
+  const {
+    actions: { openImport },
+  } = useFileMenu();
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-keyshortcuts="Meta+O"
+        className={rowClassName}
+        onClick={openImport}
+      >
+        <ImportIcon />
+        <span className="truncate">Import</span>
+        <MenuShortcut>{shortcuts.import}</MenuShortcut>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function MemoriesItem() {
+  const { showMemories } = useJournalActions();
+  const { section } = useJournalView();
+  const open = useCallback(() => {
+    showMemories().catch(() => undefined);
+  }, [showMemories]);
+  const onMemories = section === "memories";
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-current={onMemories ? "page" : undefined}
+        className={rowClassName}
+        isActive={onMemories}
+        onClick={open}
+      >
+        <RotateCcwClockIcon />
+        <span className="truncate">Memories</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function SettingsItem() {
+  const { showSettings } = useJournalActions();
+  const open = useCallback(() => {
+    showSettings().catch(() => undefined);
+  }, [showSettings]);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        aria-haspopup="dialog"
+        aria-keyshortcuts="Meta+,"
+        className={rowClassName}
+        onClick={open}
+      >
+        <SettingsIcon />
+        <span className="truncate">Settings</span>
+        <MenuShortcut>{shortcuts.settings}</MenuShortcut>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function SidebarChats() {
+  const { section } = useJournalView();
+  return <ChatList onScreen={section === "chat"} />;
+}
+
+/** The entry list reads the entries here, so a save redraws only the list. */
+function SidebarEntries() {
+  const { deleteEntry, select } = useJournalActions();
+  const { entries, loadingList } = useJournalEntries();
+  const { section, selectedId } = useJournalView();
+  const openEntry = useCallback(
+    (id: number) => {
+      select(id).catch(() => undefined);
+    },
+    [select]
+  );
+  return (
+    <EntriesList
+      entries={entries}
+      loading={loadingList}
+      onDelete={deleteEntry}
+      onSelect={openEntry}
+      selectedId={section === "journal" ? selectedId : null}
+    />
+  );
+}

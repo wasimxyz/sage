@@ -15,11 +15,10 @@ import { hasOpenSurface } from "@/lib/open-surface";
  * hidden never takes it.
  */
 export function useDictationShortcut() {
-  const { detailOpen, section, selection } = useJournalView();
+  const { section } = useJournalView();
   // Not `useDictation`: its phase changes would redraw the whole app shell.
   const { toggle } = useDictationActions();
   const available = useDictationAvailable();
-  const entryOpen = detailOpen && selection !== null;
 
   useEffect(() => {
     if (!available) {
@@ -29,7 +28,7 @@ export function useDictationShortcut() {
       if (event.defaultPrevented || !isDictateKey(event)) {
         return;
       }
-      const target = dictationTarget(section, entryOpen);
+      const target = dictationTarget(section);
       if (target === null || hasOpenSurface()) {
         return;
       }
@@ -38,5 +37,5 @@ export function useDictationShortcut() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [available, entryOpen, section, toggle]);
+  }, [available, section, toggle]);
 }
