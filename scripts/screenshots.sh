@@ -7,7 +7,8 @@
 # Your own journal is never opened: the app always gets a SAGE_DATA_DIR inside
 # a fresh scratch folder, and a bundle id of its own, so its web storage is
 # apart too. Ollama and its models in ~/.ollama are shared, as they are for
-# every Sage.
+# every Sage. The run stops when a model Sage needs is missing, so it never
+# starts a download.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
@@ -48,6 +49,62 @@ clear_copy_storage() {
     "$HOME/Library/Caches/$shots_bundle_id" \
     "$HOME/Library/HTTPStorages/$shots_bundle_id" \
     "$HOME/Library/HTTPStorages/$shots_bundle_id.binarycookies"
+  # WebKit and Metal also keep folders under the per-user cache and temp
+  # folders in /var/folders.
+  for user_dir in "$(getconf DARWIN_USER_CACHE_DIR 2>/dev/null || true)" \
+    "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"; do
+    case $user_dir in
+      /*/) rm -rf "$user_dir$shots_bundle_id" ;;
+    esac
+  done
+}
+
+# Ollama and Chat run in process groups of their own and do not watch Sage,
+# so a copy that crashes leaves them holding 11435 and 2001. Stop anything
+# still running from the copy's bundle.
+stop_copy_processes() {
+  [ -d "$build/Sage.app" ] || return 0
+  copy_app="$(cd "$build" && pwd -P)/Sage.app/"
+  case $copy_app in
+    /*/Sage.app/) ;;
+    *) return 0 ;;
+  esac
+  # Only processes whose executable sits inside the copy's bundle. COPY_APP
+  # must reach awk itself: an empty pattern would match every process.
+  pids=$(ps -x -U "$(id -u)" -o pid=,command= |
+    COPY_APP="$copy_app" SELF="$$" awk '
+      BEGIN { app = ENVIRON["COPY_APP"]; if (length(app) < 12) exit 0 }
+      {
+        pid = $1
+        command = $0
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", command)
+        if (pid != ENVIRON["SELF"] && index(command, app) == 1) print pid
+      }')
+  [ -n "$pids" ] || return 0
+  # The copy starts Sage, Ollama and its runners, and Chat. Far more than
+  # that means the match is wrong, so stop nothing.
+  count=$(echo "$pids" | wc -l | tr -d ' ')
+  if [ "$count" -gt 10 ]; then
+    echo "Found $count processes that look like the copy's, more than it starts. Not stopping any." >&2
+    return 0
+  fi
+  echo "Stopping what the copy left running: $pids" >&2
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  i=0
+  while [ "$i" -lt 50 ]; do
+    left=""
+    for pid in $pids; do
+      if kill -0 "$pid" 2>/dev/null; then
+        left="$left $pid"
+      fi
+    done
+    [ -n "$left" ] || return 0
+    i=$((i + 1))
+    sleep 0.1
+  done
+  # shellcheck disable=SC2086
+  kill -KILL $left 2>/dev/null || true
 }
 
 cleanup() {
@@ -57,6 +114,7 @@ cleanup() {
     kill "$sage_pid" 2>/dev/null || true
     wait "$sage_pid" 2>/dev/null || true
   fi
+  stop_copy_processes
   if [ "$status" -ne 0 ] && [ -n "$work" ] && [ -f "$work/sage.log" ]; then
     echo "Sage log:" >&2
     tail -n 40 "$work/sage.log" >&2 || true
@@ -77,12 +135,11 @@ trap 'exit 1' INT TERM
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/sage-screenshots.XXXXXX")
 data_dir="$work/data"
-# Packaged Sage opens your real journal when SAGE_DATA_DIR is empty, so make
-# sure it names the scratch folder before anything starts.
-case $data_dir in
-  "$work"/data) ;;
-  *) fail "The scratch journal is not inside $work." ;;
-esac
+# Packaged Sage opens your real journal when SAGE_DATA_DIR is empty, so stop
+# unless mktemp made a folder and the journal inside it is new.
+if [ -z "$work" ] || [ ! -d "$work" ] || [ -e "$data_dir" ]; then
+  fail "Could not make a fresh scratch folder for the journal."
+fi
 
 # Without Screen Recording access, screencapture saves only the desktop.
 swiftc -O -o "$work/window" "$root/scripts/screenshots/window.swift"
@@ -123,6 +180,7 @@ echo "Starting Sage on a scratch journal. Keep your hands off the keyboard and t
   cd "$work"
   exec env -u NATIVE_SDK_MODE -u NATIVE_SDK_FRONTEND_URL -u SAGE_OLLAMA_PATH \
     -u SAGE_SPEECH_LIB_PATH -u SAGE_DEV_EVE_WORKFLOW_DIR \
+    -u SAGE_EMBED_MODEL -u SAGE_SUMMARY_MODEL \
     SAGE_DATA_DIR="$data_dir" NATIVE_SDK_LOG_DIR="$work/logs" \
     "$app/Contents/MacOS/Sage" >"$work/sage.log" 2>&1
 ) &

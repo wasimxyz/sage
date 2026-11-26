@@ -142,7 +142,21 @@ fn manifestUpdateString(comptime field: []const u8) []const u8 {
 fn manifestUpdateCheckOnStart() bool {
     if (comptime !@hasField(@TypeOf(app_manifest), "updates")) return false;
     if (comptime !@hasField(@TypeOf(app_manifest.updates), "check_on_start")) return false;
-    return app_manifest.updates.check_on_start;
+    return checksForUpdatesOnStart(app_manifest.updates.check_on_start, build_options.automation);
+}
+
+/// Automation builds drive a throwaway copy for `make eval`, `make seed-dev`,
+/// and `make screenshots`. An update sheet would cover the window they drive,
+/// so they never check at launch.
+fn checksForUpdatesOnStart(manifest_setting: bool, automation: bool) bool {
+    return manifest_setting and !automation;
+}
+
+test "automation builds never check for updates at launch" {
+    try std.testing.expect(checksForUpdatesOnStart(true, false));
+    try std.testing.expect(!checksForUpdatesOnStart(true, true));
+    try std.testing.expect(!checksForUpdatesOnStart(false, false));
+    try std.testing.expect(!checksForUpdatesOnStart(false, true));
 }
 
 const CommandStorage = struct {
@@ -953,8 +967,8 @@ const StateBuffers = struct {
 };
 
 /// Where the window frame is saved. `SAGE_DATA_DIR` keeps it beside the
-/// throwaway journal, so `make eval`, `make seed-dev`, and `make screenshots`
-/// never move the window of the Sage that shares their app id.
+/// throwaway journal, so `make eval` and `make screenshots` never move the
+/// window of the Sage that shares their app id.
 fn stateStorePaths(env_map: *std.process.Environ.Map, bundle_id: []const u8, buffers: *StateBuffers) !native_sdk.window_state.StorePaths {
     if (env_map.get("SAGE_DATA_DIR")) |data_dir| {
         if (data_dir.len > 0) {

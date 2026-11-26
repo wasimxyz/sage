@@ -4,10 +4,12 @@ import {
   closeSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { isMatchingId, requireOk, utf8Chunks } from "../evals/lib/bridge.ts";
 import { loadEntryFiles } from "../evals/lib/dataset.ts";
@@ -102,18 +104,21 @@ export function routeCommand(route: string): string {
 }
 
 /**
- * The only bridge commands this script sends. The journal is a throwaway, but
- * the Keychain item is not: packaged Sage names it after the real app id, and
- * turning Touch ID off or the lock off deletes it. So nothing here turns
- * either off, and nothing deletes data.
+ * The only bridge commands this script sends. The journal is a throwaway, and
+ * its Touch ID key has a Keychain service of its own. Still, nothing here
+ * turns Touch ID or the lock off, deletes data, or downloads a model, so a
+ * mistake can't reach the Keychain item or the models your own Sage uses.
  */
 export const allowedBridgeCommands = [
   "chat.save",
   "embeddings.pending",
+  "embeddings.status",
   "journal.save",
   "lock.setPassword",
   "lock.setTouchId",
   "lock.status",
+  "ollama.models",
+  "ollama.setupStatus",
   "onboarding.remindersOff",
   "onboarding.save",
 ] as const;
@@ -142,6 +147,7 @@ const settleMs = 1500;
 const appearanceSettleMs = 700;
 const focusWaitMs = 120_000;
 const embedWaitMs = 90_000;
+const localAiWaitMs = 60_000;
 
 async function main(): Promise<void> {
   const automation = automationAt(requiredEnv("SAGE_AUTOMATION_CWD"));
@@ -162,6 +168,7 @@ async function main(): Promise<void> {
     windowId: windowIdFor(helper, pid),
   };
   console.log(`Sage window ${ctx.windowId}`);
+  checkModels(ctx);
 
   // A new journal opens on Welcome. Each later step is a saved setup state
   // and a reload, the way a half-finished setup opens on the next launch.
@@ -169,6 +176,7 @@ async function main(): Promise<void> {
     if (shot.step !== "welcome") {
       bridge(ctx, "onboarding.save", { state: "active", step: shot.step });
       automate(automation, ["reload"]);
+      sleep(settleMs);
     }
     capture(ctx, shot.name);
   }
@@ -211,6 +219,76 @@ async function main(): Promise<void> {
   capture(ctx, lockShotName);
 
   console.log(`Saved the screenshots in ${out}.`);
+}
+
+/**
+ * The Local AI step downloads any model Sage needs that this Mac lacks, the
+ * moment it opens. That download goes into the ~/.ollama your own Sage uses,
+ * and its progress would show in the shots. So the run stops first, with the
+ * same check the step makes.
+ */
+function checkModels(ctx: Context): void {
+  const deadline = Date.now() + localAiWaitMs;
+  let setup = bridge(ctx, "ollama.setupStatus", {});
+  while (resultField(setup, "running") !== true) {
+    if (resultField(setup, "installed") === false) {
+      throw new Error("The copy has no Ollama. Run make screenshots again.");
+    }
+    if (Date.now() > deadline) {
+      throw new Error("Local AI did not start in the copy.");
+    }
+    sleep(1000);
+    setup = bridge(ctx, "ollama.setupStatus", {});
+  }
+  const missing: string[] = [];
+  const embedModel = resultField(setup, "embedModel");
+  const summaryModel = resultField(setup, "summaryModel");
+  if (
+    resultField(bridge(ctx, "embeddings.status", {}), "modelPulled") !== true
+  ) {
+    missing.push(
+      typeof embedModel === "string" ? embedModel : "nomic-embed-text"
+    );
+  }
+  const installed = resultField(bridge(ctx, "ollama.models", {}), "models");
+  if (
+    typeof summaryModel !== "string" ||
+    !Array.isArray(installed) ||
+    !hasModel(
+      installed.filter((name): name is string => typeof name === "string"),
+      summaryModel
+    )
+  ) {
+    missing.push(
+      typeof summaryModel === "string" ? summaryModel : "qwen3.5:9b"
+    );
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `This Mac does not have ${missing.join(" or ")}. Download it in Sage under Settings › Models, quit Sage, then run make screenshots again.`
+    );
+  }
+}
+
+/**
+ * The rule the Local AI step uses (`modelNameMatches` in
+ * frontend/src/lib/models.ts): an installed name matches the tag itself, or
+ * the tag followed by `:` or `-`, with any `:latest` left off.
+ */
+export function hasModel(installed: readonly string[], tag: string): boolean {
+  const want = withoutLatest(tag);
+  return installed.some((name) => {
+    const have = withoutLatest(name);
+    return (
+      have === want ||
+      have.startsWith(`${want}:`) ||
+      have.startsWith(`${want}-`)
+    );
+  });
+}
+
+function withoutLatest(name: string): string {
+  return name.endsWith(":latest") ? name.slice(0, -":latest".length) : name;
 }
 
 function saveChat(
@@ -316,7 +394,7 @@ function ensureFrontmost(ctx: Context): void {
   if (runHelper(ctx.helper, ["frontmost", String(ctx.pid)]).status === 0) {
     return;
   }
-  console.log("Click the Sage window to bring it to the front.");
+  console.log("Click the Sage title bar to bring the window to the front.");
   const deadline = Date.now() + focusWaitMs;
   while (Date.now() < deadline) {
     sleep(250);
@@ -367,12 +445,23 @@ function runHelper(helper: string, args: string[]) {
 }
 
 /**
- * Sends a native command and checks that the automation server took it. A
- * name it refuses only shows up as an error line in the snapshot, and the
- * shot would quietly show the wrong screen.
+ * A command name Sage does nothing with. Sending it after a real command
+ * proves the real one has run, because the automation server takes one
+ * command per frame, in order, and publishes that frame's snapshot before it
+ * takes the next.
+ */
+export const syncCommand = "app.sync";
+const queueWaitMs = 5000;
+
+/**
+ * Sends a native command and checks that the app ran it. A name the
+ * automation server refuses only shows up as an error line in the snapshot,
+ * and the shot would quietly show the wrong screen.
  */
 function sendNativeCommand(ctx: Context, name: string): void {
   automate(ctx.automation, ["native-command", name]);
+  automate(ctx.automation, ["native-command", syncCommand]);
+  waitForEmptyQueue(ctx.automation);
   automate(ctx.automation, [
     "assert",
     "--absent",
@@ -380,6 +469,23 @@ function sendNativeCommand(ctx: Context, name: string): void {
     "1000",
     "name=InvalidCommand",
   ]);
+}
+
+/** Queued commands wait in `command-<n>.txt` files until the app takes them. */
+const queuedCommandFile = /^command-\d+\.txt$/u;
+
+export function isQueuedCommandFile(name: string): boolean {
+  return queuedCommandFile.test(name);
+}
+
+function waitForEmptyQueue(automation: Automation): void {
+  const deadline = Date.now() + queueWaitMs;
+  while (readdirSync(automation.dir).some(isQueuedCommandFile)) {
+    if (Date.now() > deadline) {
+      throw new Error("Sage stopped taking automation commands.");
+    }
+    sleep(25);
+  }
 }
 
 function automate(automation: Automation, args: string[]): void {
@@ -402,8 +508,11 @@ function automate(automation: Automation, args: string[]): void {
  */
 export const repeatSafeCommands: ReadonlySet<string> = new Set([
   "embeddings.pending",
+  "embeddings.status",
   "lock.setTouchId",
   "lock.status",
+  "ollama.models",
+  "ollama.setupStatus",
   "onboarding.remindersOff",
   "onboarding.save",
 ]);
@@ -508,7 +617,12 @@ function sleep(ms: number): void {
   spawnSync("sleep", [String(ms / 1000)]);
 }
 
-if (import.meta.main) {
+// `import.meta.main` needs Node 24.2, and the agent allows any Node 24.
+const runDirectly =
+  process.argv[1] !== undefined &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (runDirectly) {
   try {
     const stateFile = flagValue("--window-state");
     if (stateFile === null) {

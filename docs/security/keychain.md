@@ -10,7 +10,7 @@ With no password at all, this copy is the only everyday way in. The recovery key
 
 ## The Keychain item
 
-The item is a generic password. Its service is Sage’s app id (`com.wasimxyz.sage`, or `com.wasimxyz.sage-dev` in development), and its account is `journal-data-key`. Sage first tries to create it with two settings:
+The item is a generic password. Its service is Sage’s app id (`com.wasimxyz.sage`, or `com.wasimxyz.sage-dev` in development), and its account is `journal-data-key`. A journal in `SAGE_DATA_DIR`, such as the throwaway one `make eval` or `make screenshots` opens, uses a service of its own instead: the app id, `.data-`, and a hash of that folder. So a throwaway journal never reads, replaces, or deletes your own item. Sage first tries to create it with two settings:
 
 - **User presence**: macOS itself asks for Touch ID or your Mac login password before it releases the key.
 - **This device only**: the item never syncs to other devices and cannot be read while the Mac is locked.

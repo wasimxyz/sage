@@ -296,7 +296,7 @@ pub fn build(b: *std.Build) void {
     // do not link the Mac window host. The journal tests talk to an
     // in-memory database and do not open a window. Pass `-Dplatform=null`
     // for the app too, and this reuses that module.
-    const test_app_mod = if (selected_platform == .@"null") app_mod else test_app: {
+    const test_mods: TestModules = if (selected_platform == .@"null") .{ .app = app_mod, .runner = runner_mod } else test_mods: {
         const test_options_mod = appOptions(b, trace, "null", web_engine, debug_overlay, automation_enabled, live_ollama, js_bridge_enabled, web_layer, memory_enabled);
         const test_runner_mod = localModule(b, target, optimize, "src/runner.zig");
         test_runner_mod.addImport("native_sdk", native_sdk_mod);
@@ -309,12 +309,21 @@ pub fn build(b: *std.Build) void {
         test_mod.addImport("runner", test_runner_mod);
         test_mod.addImport("agent_instructions", agent_instructions_mod);
         if (app_config.sqlite_capability) addSqliteEngine(b, test_mod, native_sdk_path);
-        break :test_app test_mod;
+        break :test_mods .{ .app = test_mod, .runner = test_runner_mod };
     };
-    const tests = b.addTest(.{ .root_module = test_app_mod });
+    const tests = b.addTest(.{ .root_module = test_mods.app });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    // src/runner.zig is a module of its own, so the app's test build never
+    // sees its tests. They get a build of their own.
+    const runner_tests = b.addTest(.{ .root_module = test_mods.runner });
+    test_step.dependOn(&b.addRunArtifact(runner_tests).step);
 }
+
+const TestModules = struct {
+    app: *std.Build.Module,
+    runner: *std.Build.Module,
+};
 
 // Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C
 // calling convention for long mixed int/pointer/double signatures

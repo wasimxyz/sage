@@ -15,6 +15,8 @@ import {
   allowedBridgeCommands,
   appShots,
   checkBridgeCall,
+  hasModel,
+  isQueuedCommandFile,
   isWindowPngSize,
   journalShotFile,
   lockShotName,
@@ -23,6 +25,7 @@ import {
   routePattern,
   securityShot,
   setupShots,
+  syncCommand,
 } from "./screenshots.ts";
 
 const seedDir = join(import.meta.dirname, "..", "..", "scripts", "seed");
@@ -74,6 +77,7 @@ test("the script sends only its own bridge commands", () => {
     "encryption.disable",
     "data.deleteAll",
     "dream.start",
+    "ollama.pull",
   ]) {
     assert.throws(() => checkBridgeCall(command, {}), command);
   }
@@ -94,6 +98,43 @@ test("only commands that change nothing when repeated are sent again", () => {
 test("Touch ID only ever turns on", () => {
   assert.throws(() => checkBridgeCall("lock.setTouchId", { enabled: false }));
   assert.throws(() => checkBridgeCall("lock.setTouchId", {}));
+});
+
+test("a model counts as installed the way the Local AI step counts it", () => {
+  assert.equal(hasModel(["qwen3.5:9b"], "qwen3.5:9b"), true);
+  assert.equal(hasModel(["qwen3.5:9b-q8_0"], "qwen3.5:9b"), true);
+  assert.equal(hasModel(["nomic-embed-text:latest"], "nomic-embed-text"), true);
+  assert.equal(hasModel(["nomic-embed-text:v1.5"], "nomic-embed-text"), true);
+  assert.equal(hasModel(["qwen3.5:4b"], "qwen3.5:9b"), false);
+  assert.equal(hasModel(["qwen3.5"], "qwen3.5:9b"), false);
+  assert.equal(hasModel([], "qwen3.5:9b"), false);
+});
+
+test("the sync command is one Sage does nothing with", () => {
+  for (const prefix of ["app.route:", "app.appearance:"]) {
+    assert.equal(syncCommand.startsWith(prefix), false, prefix);
+  }
+  for (const command of [
+    "app.lock",
+    "app.settings",
+    "app.import",
+    "app.export",
+  ]) {
+    assert.notEqual(syncCommand, command);
+  }
+});
+
+test("only command-<n>.txt files are queued commands", () => {
+  assert.equal(isQueuedCommandFile("command-12.txt"), true);
+  for (const name of [
+    "snapshot.txt",
+    "bridge-response.txt",
+    "command-.txt",
+    "command-1.txt.tmp",
+    "command-x.txt",
+  ]) {
+    assert.equal(isQueuedCommandFile(name), false, name);
+  }
 });
 
 test("a capture must be the window at 1x or 2x", () => {
