@@ -76,7 +76,7 @@ export function ChatList({ onScreen }: { onScreen: boolean }) {
   // leaving. The empty state shows beside it.
   return (
     <>
-      <ListRows label="Chats">
+      <ListRows label="Conversations">
         {conversations.map((row) => (
           <ChatRow
             animateIn={appearing.has(row.id)}
@@ -89,7 +89,9 @@ export function ChatList({ onScreen }: { onScreen: boolean }) {
           />
         ))}
       </ListRows>
-      {conversations.length === 0 ? <ListEmpty>No chats yet.</ListEmpty> : null}
+      {conversations.length === 0 ? (
+        <ListEmpty>No conversations yet.</ListEmpty>
+      ) : null}
     </>
   );
 }

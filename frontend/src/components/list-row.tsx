@@ -79,7 +79,7 @@ function ListRowTrigger({
           aria-keyshortcuts="Meta+Backspace"
           className={cn(
             listRowClassName,
-            selected && "bg-foreground/10 hover:bg-foreground/10 font-medium"
+            selected && "bg-foreground/10 hover:bg-foreground/10"
           )}
           onClick={onClick}
           onKeyDown={onKeyDown}
@@ -103,7 +103,7 @@ function ListRowDate({ date }: { date: string }) {
   // The open row's gray background needs a darker date to stay readable.
   return (
     <time
-      className="text-muted-foreground group-aria-[current=page]/row:text-sidebar-foreground/75 shrink-0 text-xs font-normal"
+      className="text-muted-foreground group-aria-[current=page]/row:text-sidebar-foreground/75 shrink-0 text-xs"
       dateTime={date}
     >
       {formatSidebarDate(date, parseCalendarDate(today) ?? new Date())}

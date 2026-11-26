@@ -119,14 +119,14 @@ function SidebarTabs({ tab }: { tab: SidebarTab }) {
         onClick={openChat}
         onPreload={preloadChatLayout}
       >
-        <MessageCircleIcon />
+        <MessageCircleIcon className="size-3.5" />
       </SidebarTabButton>
       <SidebarTabButton
         active={tab === "journal"}
         label="Journal"
         onClick={openJournal}
       >
-        <NotebookTextIcon />
+        <NotebookTextIcon className="size-3.5" />
       </SidebarTabButton>
     </nav>
   );
@@ -151,7 +151,7 @@ function SidebarTabButton({
         aria-current={active ? "page" : undefined}
         aria-label={label}
         className={cn(
-          "text-sidebar-foreground/80 h-7 w-8.5 rounded-md",
+          "text-sidebar-foreground/80 h-6 w-7.5 rounded-md",
           active
             ? "bg-background text-sidebar-foreground hover:bg-background dark:bg-sidebar-foreground/15 dark:hover:bg-sidebar-foreground/15 shadow-xs"
             : "hover:bg-background/50 dark:hover:bg-sidebar-foreground/10"
@@ -172,14 +172,14 @@ function SidebarTabButton({
 function TabSidebar({ tab }: { tab: SidebarTab }) {
   return (
     <>
-      <SidebarGroup className="pt-4 pb-0">
+      <SidebarGroup className="pt-3 pb-0">
         <SidebarGroupContent>
           <TabActions tab={tab} />
         </SidebarGroupContent>
       </SidebarGroup>
       <SidebarGroup className="min-h-0 flex-1 pb-0">
         <SidebarGroupLabel>
-          {tab === "chat" ? "Chats" : "Entries"}
+          {tab === "chat" ? "Conversations" : "Entries"}
         </SidebarGroupLabel>
         <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
           {/* Both lists stay mounted, so each keeps its scroll and its rows.

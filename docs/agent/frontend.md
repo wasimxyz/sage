@@ -27,9 +27,9 @@ A module that fails to load stays failed until the page reloads, so a retry in p
 
 ## The Chat tab
 
-The Chat tab’s rows are New chat, Search, and, in a memory build, Memories. Search always shows ⌘K, and New chat shows ⌘N when you hover over it or focus it. Under the rows, a gray Chats label heads the chat list. Dream and Settings sit at the bottom, as on the Journal tab. [The journal](../journal.md) covers the sidebar as a whole.
+The Chat tab’s rows are New chat, Search, and, in a memory build, Memories. Search shows ⌘K and New chat shows ⌘N when you hover over the row or focus it. Under the rows, a gray Conversations label heads the chat list. Dream and Settings sit at the bottom, as on the Journal tab. [The journal](../journal.md) covers the sidebar as a whole.
 
-Each row shows the chat’s title and the day it last changed, such as Today, 3 days ago, or Nov 8, as [How dates read](../journal.md#how-dates-read) explains. Click a row to open that chat in the main pane. The open chat’s row is highlighted while Chat is on screen. While the list loads, it shows placeholder rows, and with no chats it says “No chats yet.” If the list cannot load, it says “Could not load chats.” with a Try again button, so a failed read never looks like an empty list.
+Each row shows the chat’s title and the day it last changed, such as Today, 3 days ago, or Nov 8, as [How dates read](../journal.md#how-dates-read) explains. Click a row to open that chat in the main pane. The open chat’s row is highlighted while Chat is on screen. While the list loads, it shows placeholder rows, and with no chats it says “No conversations yet.” If the list cannot load, it says “Could not load chats.” with a Try again button, so a failed read never looks like an empty list.
 
 New chat opens an empty conversation, and so does ⌘N in the Chat tab.
 

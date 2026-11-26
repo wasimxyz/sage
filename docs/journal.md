@@ -53,7 +53,7 @@ Saving also marks the entry for the next [Dream](dream.md), which refreshes its 
 
 ## How dates read
 
-The Entries and Chats lists in the sidebar show recent days as Today, Yesterday, 3 days ago, or 1 week ago. The 1 week ago label covers 7 to 13 days back. An older day shows a short date, such as Nov 8, and adds the year when it is not this year, such as Nov 8, 2025. A day after today shows the same short date. The labels turn over at midnight. `formatSidebarDate` in `frontend/src/lib/format-date.ts` holds the rules.
+The Entries and Conversations lists in the sidebar show recent days as Today, Yesterday, 3 days ago, or 1 week ago. The 1 week ago label covers 7 to 13 days back. An older day shows a short date, such as Nov 8, and adds the year when it is not this year, such as Nov 8, 2025. A day after today shows the same short date. The labels turn over at midnight. `formatSidebarDate` in `frontend/src/lib/format-date.ts` holds the rules.
 
 The editor shows the full date under the title, such as Friday, October 2, 2026, followed by when you last edited the entry. An open chat shows the day it last changed in lighter text next to its title, in the same full form. The code is `frontend/src/lib/format-date.ts`. Memories show the weekday and a short month in their Updated dates, such as Updated Friday, Oct 2, from `frontend/src/lib/format-relative-age.ts`.
 

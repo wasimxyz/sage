@@ -1169,7 +1169,7 @@ function ConversationSkeleton() {
 function UserMessageSkeleton() {
   return (
     <div
-      className="border-input bg-surface min-h-10 w-full rounded-2xl border"
+      className="bg-bubble ml-auto min-h-10 w-1/2 rounded-2xl"
       data-role="user"
     />
   );

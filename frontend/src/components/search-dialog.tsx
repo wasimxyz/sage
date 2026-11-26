@@ -206,7 +206,7 @@ export function SearchNavItem({ className }: { className?: string }) {
       >
         <SearchIcon />
         <span className="truncate">Search</span>
-        <MenuShortcut always>{shortcuts.search}</MenuShortcut>
+        <MenuShortcut>{shortcuts.search}</MenuShortcut>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
