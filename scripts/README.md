@@ -110,7 +110,7 @@ When `make dev` loads the entries, Sage embeds them, as [The journal](../docs/jo
 
 `make screenshots` runs `screenshots.sh`. It captures the packaged app's screens in light and dark, for the website and the docs. It saves one PNG per screen and appearance in `zig-out/screenshots/`, such as `chat-dark.png`. `make screenshots OUT=/path/to/folder` saves them somewhere else. It never opens your own journal.
 
-The shots are the five setup steps, Home, an open entry, Chat, the four Settings tabs, and the lock screen. The window is 1280 by 800 points, so the files are 2560 by 1600 on a Retina display. They have no shadow, and the corners outside the window are clear.
+The shots are the five setup steps, a new chat, an open entry, a saved chat, the four Settings tabs, and the lock screen. The window is 1280 by 800 points, so the files are 2560 by 1600 on a Retina display. They have no shadow, and the corners outside the window are clear.
 
 ### What it needs
 
@@ -131,9 +131,9 @@ Settings > Models and setup's Local AI step show the models in `~/.ollama` and t
    2. It captures each setup step on the empty journal, saving the step with `onboarding.save` and reloading the page.
    3. It finishes setup, turns the reminders off, and saves the entries in `scripts/seed/` with the same date move as `make seed-dev`.
    4. It saves the chat in `agent/scripts/screenshot-chat.ts`, a question and answer about three Sunday entries with one journal search. The chat is written by hand, so it needs no model and is the same on every run.
-   5. It waits for Sage to embed the new entries, then captures Home, the entry, Chat, and Settings.
+   5. It waits for Sage to embed the new entries, then captures a new chat, the entry, the saved chat, and Settings.
    6. It sets a random password, turns Touch ID on, and captures Settings > Security. Then it locks the app and captures the lock screen.
-5. It stops Sage and anything the copy left running. Ollama and Chat run apart from Sage, so a copy that crashes would leave them on ports 11435 and 2001. Then it deletes the scratch folder, the build, and the copy's web storage and caches under `~/Library` and `/var/folders`. Packaging leaves out the agent's dev modules, so the script installs them again.
+5. It stops Sage and anything the copy left running. Ollama and Chat run apart from Sage, so a copy that crashes would leave them on ports 11435 and 2001. It stops only processes whose program sits inside the copy's `Sage.app`, and none at all if it finds more than 10. Then it deletes the scratch folder, the build, and the copy's web storage and caches under `~/Library` and `/var/folders`. Packaging leaves out the agent's dev modules, so the script installs them again.
 
 Encryption stays off, so no data key goes in the Keychain. A journal in `SAGE_DATA_DIR` keeps its Touch ID key under a Keychain service of its own, as [The Keychain item](../docs/security/keychain.md#the-keychain-item) explains, so the copy can't reach the item your own Sage uses. The script still never turns Touch ID or the lock off.
 
@@ -146,7 +146,7 @@ The automation server can't click in the web view, so automation builds take two
 
 `src/main.zig` handles them only when the build has automation on, so a packaged app ignores them. The automation server reports a command it refuses only as an `error event` line in its snapshot, so the script checks for one after each command. First it sends `app.sync`, a name Sage does nothing with, and waits for the command queue to empty. The server takes one command per frame and writes that frame's snapshot before it takes the next, so by then the snapshot shows any error from the first command. [Testing the lock and encryption](../docs/security/testing.md#driving-a-running-app) has more on the automation server.
 
-The automation server keeps only the last bridge answer, in `bridge-response.txt`. Once the page has entries to load, it makes its own bridge calls, which can write over an answer before the script reads it. So the script saves the entries and the chat while the page is still on setup. Later, it sends a command again only when repeating it changes nothing, such as `embeddings.pending`. A first password can't be set twice, so when that answer is lost, the script asks `lock.status` instead.
+The automation server keeps only the last bridge answer, in `bridge-response.txt`. The page makes its own bridge calls, such as Dream's poll of `dream.status`, and one can write over an answer before the script reads it. So the script sends a command again only when repeating it changes nothing, such as `embeddings.pending`. A save sent twice would make two copies, so each entry and the chat go in one call, and when a save's answer is lost, the script looks for it in `journal.list` or `chat.list` before it saves again. A first password can't be set twice either, so when that answer is lost, the script asks `lock.status` instead.
 
 To change the shots, edit the lists at the top of `agent/scripts/screenshots.ts`. To change the chat, edit `agent/scripts/screenshot-chat.ts`.
 

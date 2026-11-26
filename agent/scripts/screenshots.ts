@@ -11,14 +11,16 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isMatchingId, requireOk, utf8Chunks } from "../evals/lib/bridge.ts";
-import { loadEntryFiles } from "../evals/lib/dataset.ts";
+import { isMatchingId, requireOk } from "../evals/lib/bridge.ts";
+import {
+  type JournalEntryFixture,
+  loadEntryFiles,
+} from "../evals/lib/dataset.ts";
 import {
   type Automation,
   automationAt,
   BridgeTimeoutError,
   callBridge,
-  saveJournalEntry,
   waitForAutomation,
 } from "./automation.ts";
 import { chatSourceFiles, screenshotChat } from "./screenshot-chat.ts";
@@ -71,7 +73,7 @@ export interface ShotIds {
 /** Screens of the unlocked app, each a hash route. */
 export function appShots(ids: ShotIds): { name: string; route: string }[] {
   return [
-    { name: "home", route: "/home" },
+    { name: "new-chat", route: "/chat/new" },
     { name: "journal", route: `/journal/${ids.journalEntry}` },
     { name: "chat", route: `/chat/${ids.chat}` },
     { name: "settings-agent", route: "/settings" },
@@ -85,8 +87,9 @@ export const securityShot = {
   name: "settings-security",
   route: "/settings/security",
 };
-/** Taken last, after `app.lock`. */
+/** Taken last, after `app.lock` from a new chat. */
 export const lockShotName = "lock";
+export const lockRoute = "/chat/new";
 
 /** Hash routes the shots open: lowercase parts after single slashes. */
 export const routePattern = /^(\/[a-z0-9-]+)+$/u;
@@ -110,9 +113,11 @@ export function routeCommand(route: string): string {
  * mistake can't reach the Keychain item or the models your own Sage uses.
  */
 export const allowedBridgeCommands = [
+  "chat.list",
   "chat.save",
   "embeddings.pending",
   "embeddings.status",
+  "journal.list",
   "journal.save",
   "lock.setPassword",
   "lock.setTouchId",
@@ -185,7 +190,7 @@ async function main(): Promise<void> {
   bridge(ctx, "onboarding.remindersOff", {});
   const ids = new Map<string, number>();
   for (const entry of entries) {
-    ids.set(entry.fileName, saveJournalEntry(automation, "shot", entry));
+    ids.set(entry.fileName, saveEntry(ctx, entry));
   }
   console.log(`Saved ${entries.length} entries.`);
   const chatId = saveChat(ctx, entries, ids);
@@ -211,11 +216,11 @@ async function main(): Promise<void> {
   openRoute(ctx, securityShot.route);
   capture(ctx, securityShot.name);
 
-  openRoute(ctx, "/home");
+  openRoute(ctx, lockRoute);
   sendNativeCommand(ctx, "app.lock");
   sleep(settleMs);
   // The same route again only clears focus, so the password field shows no caret.
-  sendNativeCommand(ctx, routeCommand("/home"));
+  sendNativeCommand(ctx, routeCommand(lockRoute));
   capture(ctx, lockShotName);
 
   console.log(`Saved the screenshots in ${out}.`);
@@ -304,34 +309,129 @@ function saveChat(
     return { date: entry.date, id: idFor(ids, fileName), title: entry.title };
   });
   const chat = screenshotChat(sources, new Date());
-  const chunks = utf8Chunks(JSON.stringify(chat.events), 4000);
-  let id: number | null = null;
-  let offset = 0;
-  for (const [index, chunk] of chunks.entries()) {
-    const response = bridge(ctx, "chat.save", {
+  const id = saveInOneCall(
+    ctx,
+    "chat.save",
+    {
       baseSeq: 0,
-      chunk,
+      chunk: oneChunk(JSON.stringify(chat.events), "The chat"),
       contextLength: chat.contextLength,
-      done: index === chunks.length - 1,
+      done: true,
       eveSessionId: null,
-      id,
+      id: null,
       model: chat.model,
-      offset,
+      offset: 0,
       streamIndex: chat.events.length,
       thinking: chat.thinking,
       title: chat.title,
-    });
-    const saved = resultField(response, "id");
-    if (typeof saved === "number") {
-      id = saved;
-    }
-    offset += Buffer.byteLength(chunk, "utf8");
-  }
-  if (id === null) {
-    throw new Error("chat.save did not return an id.");
-  }
+    },
+    () => savedChatId(ctx, chat.title)
+  );
   console.log(`Saved the chat as ${id}.`);
   return id;
+}
+
+function saveEntry(ctx: Context, entry: JournalEntryFixture): number {
+  return saveInOneCall(
+    ctx,
+    "journal.save",
+    {
+      chunk: oneChunk(entry.body, entry.fileName),
+      date: entry.date,
+      done: true,
+      format: "markdown",
+      id: null,
+      offset: 0,
+      title: entry.title,
+      wordCount: entry.wordCount,
+    },
+    () => savedEntryId(ctx, entry)
+  );
+}
+
+/** The most one bridge call carries, as in agent/scripts/automation.ts. */
+export const maxChunkBytes = 4000;
+
+/**
+ * The text of a save that fits in one call. A save split over several calls
+ * leaves a half-finished upload when an answer is lost, so the script only
+ * saves what fits in one.
+ */
+export function oneChunk(text: string, what: string): string {
+  if (Buffer.byteLength(text, "utf8") > maxChunkBytes) {
+    throw new Error(
+      `${what} is longer than ${maxChunkBytes} bytes, too long to save in one call.`
+    );
+  }
+  return text;
+}
+
+const saveTries = 3;
+
+/**
+ * A save sent twice makes two copies, so it is never sent again blind. When
+ * its answer is lost, `findSaved` looks for what it made, and the save goes
+ * again only when nothing is there.
+ */
+function saveInOneCall(
+  ctx: Context,
+  command: string,
+  payload: Record<string, unknown>,
+  findSaved: () => number | null
+): number {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const response = sendBridge(ctx, command, payload, attemptTimeoutMs);
+      requireOk(response, command);
+      const id = resultField(response, "id");
+      if (typeof id !== "number" || id <= 0) {
+        throw new Error(`${command} did not return an id.`);
+      }
+      return id;
+    } catch (error) {
+      if (!(error instanceof BridgeTimeoutError) || attempt >= saveTries) {
+        throw error;
+      }
+      const saved = findSaved();
+      if (saved !== null) {
+        return saved;
+      }
+    }
+  }
+}
+
+function savedEntryId(ctx: Context, entry: JournalEntryFixture): number | null {
+  const entries = resultField(bridge(ctx, "journal.list", {}), "entries");
+  return findSavedId(
+    entries,
+    (row) => row.date === entry.date && row.title === entry.title
+  );
+}
+
+function savedChatId(ctx: Context, title: string): number | null {
+  const chats = resultField(bridge(ctx, "chat.list", {}), "conversations");
+  return findSavedId(chats, (row) => row.title === title);
+}
+
+/** The id of the one row that matches, or null when none or several do. */
+export function findSavedId(
+  rows: unknown,
+  matches: (row: Record<string, unknown>) => boolean
+): number | null {
+  if (!Array.isArray(rows)) {
+    return null;
+  }
+  const found = rows.filter(
+    (row): row is Record<string, unknown> =>
+      row !== null &&
+      typeof row === "object" &&
+      matches(row as Record<string, unknown>)
+  );
+  if (found.length !== 1) {
+    return null;
+  }
+  const { id } = found[0];
+  return typeof id === "number" && id > 0 ? id : null;
 }
 
 /** Sage embeds the new entries in the background. Wait so no progress shows. */
@@ -501,14 +601,17 @@ function automate(automation: Automation, args: string[]): void {
 }
 
 /**
- * Commands that change nothing when sent twice. Once the page has data it
- * makes its own bridge calls, and the automation server keeps only the last
- * response, so an answer can be lost. These are sent again when that
- * happens. The rest run before the page has anything to load.
+ * Commands that change nothing when sent twice. The page makes its own bridge
+ * calls, such as Dream's poll of `dream.status`, and the automation server
+ * keeps only the last response, so an answer can be lost. These are sent
+ * again when that happens. A save looks for what it made first
+ * (`saveInOneCall`), and a first password asks `lock.status`.
  */
 export const repeatSafeCommands: ReadonlySet<string> = new Set([
+  "chat.list",
   "embeddings.pending",
   "embeddings.status",
+  "journal.list",
   "lock.setTouchId",
   "lock.status",
   "ollama.models",
@@ -531,11 +634,15 @@ function bridge(
   return response;
 }
 
-/** Sends one bridge call and returns its answer, ok or not. */
+/**
+ * Sends one bridge call and returns its answer, ok or not. `timeoutMs` sets
+ * how long to wait for a command that is not sent again.
+ */
 function sendBridge(
   ctx: Context,
   command: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  timeoutMs?: number
 ): Record<string, unknown> {
   checkBridgeCall(command, payload);
   const tries = repeatSafeCommands.has(command) ? attempts : 1;
@@ -548,7 +655,7 @@ function sendBridge(
         payload,
         `shot-${command}-${Date.now()}-${requestCount}`,
         isMatchingId,
-        tries > 1 ? attemptTimeoutMs : undefined
+        tries > 1 ? attemptTimeoutMs : timeoutMs
       );
     } catch (error) {
       if (!(error instanceof BridgeTimeoutError) || attempt >= tries) {

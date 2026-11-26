@@ -212,7 +212,8 @@ fn emitAutomationRoute(runtime: *native_sdk.Runtime, route: []const u8) !void {
 test "automation commands parse routes and appearances" {
     try std.testing.expectEqualStrings("chat.3", parseAutomationCommand("app.route:chat.3").?.route);
     try std.testing.expectEqualStrings("settings.models", parseAutomationCommand("app.route:settings.models").?.route);
-    try std.testing.expectEqualStrings("home", parseAutomationCommand("app.route:home").?.route);
+    try std.testing.expectEqualStrings("chat.new", parseAutomationCommand("app.route:chat.new").?.route);
+    try std.testing.expectEqualStrings("journal", parseAutomationCommand("app.route:journal").?.route);
     try std.testing.expectEqual(window_chrome.Appearance.dark, parseAutomationCommand("app.appearance:dark").?.appearance);
     try std.testing.expectEqual(window_chrome.Appearance.light, parseAutomationCommand("app.appearance:light").?.appearance);
 }
@@ -221,7 +222,7 @@ test "automation routes turn dots into slashes" {
     var buffer: [max_automation_route_len + 1]u8 = undefined;
     try std.testing.expectEqualStrings("/chat/3", try automationRoutePath("chat.3", &buffer));
     try std.testing.expectEqualStrings("/settings/models", try automationRoutePath("settings.models", &buffer));
-    try std.testing.expectEqualStrings("/home", try automationRoutePath("home", &buffer));
+    try std.testing.expectEqualStrings("/journal", try automationRoutePath("journal", &buffer));
 }
 
 test "automation commands refuse anything else" {

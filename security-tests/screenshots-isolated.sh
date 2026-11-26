@@ -118,6 +118,41 @@ parse_lines=$(grep -n 'parseAutomationCommand(command\.name)' "$main_zig" | cut 
 [ "$(grep -c 'window_chrome\.setAppearance(' "$main_zig")" -eq 1 ] ||
   fail "src/main.zig sets the appearance from more than one place."
 
+# The cleanup that stops a crashed copy's processes must stop only processes
+# whose program sits inside the copy's bundle. Run it for real on a fake
+# bundle, beside the same program in another bundle, which must keep running.
+# `exec -a` gives a real sleep a program path inside each bundle. Each starts
+# in a subshell, so launchd reaps it and `kill -0` sees it end.
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/screenshots-isolated.XXXXXX")
+copy_pid=""
+other_pid=""
+trap 'kill $copy_pid $other_pid 2>/dev/null || true; rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/build/Sage.app" "$tmp/other/Sage.app"
+start_fake() {
+  (bash -c 'exec -a "$0" /bin/sleep 30' "$1/Sage.app/Contents/Resources/ollama/ollama" \
+    >/dev/null 2>&1 &
+    echo $! >"$2")
+}
+start_fake "$tmp/build" "$tmp/copy.pid"
+start_fake "$tmp/other" "$tmp/other.pid"
+copy_pid=$(cat "$tmp/copy.pid")
+other_pid=$(cat "$tmp/other.pid")
+sleep 0.5
+kill -0 "$copy_pid" 2>/dev/null && kill -0 "$other_pid" 2>/dev/null ||
+  fail "The fake processes for the cleanup test did not start."
+eval "$(sed -n '/^stop_copy_processes() {/,/^}/p' "$runner")"
+command -v stop_copy_processes >/dev/null 2>&1 ||
+  fail "scripts/screenshots.sh has no stop_copy_processes."
+build="$tmp/build"
+stop_copy_processes 2>/dev/null
+sleep 0.3
+if kill -0 "$copy_pid" 2>/dev/null; then
+  fail "stop_copy_processes left a process from the copy's bundle running."
+fi
+kill -0 "$other_pid" 2>/dev/null ||
+  fail "stop_copy_processes stopped a process from another bundle."
+kill "$other_pid" 2>/dev/null || true
+
 # Automation builds never check for updates at launch, so no sheet covers the
 # window the script captures.
 grep -Fq 'checksForUpdatesOnStart(app_manifest.updates.check_on_start, build_options.automation)' "$runner_zig" ||

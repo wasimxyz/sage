@@ -64,21 +64,31 @@ clear_copy_storage() {
 # still running from the copy's bundle.
 stop_copy_processes() {
   [ -d "$build/Sage.app" ] || return 0
-  copy_app="$(cd "$build" && pwd -P)/Sage.app/"
-  case $copy_app in
-    /*/Sage.app/) ;;
-    *) return 0 ;;
-  esac
-  # Only processes whose executable sits inside the copy's bundle. COPY_APP
+  # The bundle as the script named it, and with symlinks resolved, since a
+  # process may show either.
+  copy_app="$build/Sage.app/"
+  copy_app_real="$(cd "$build" && pwd -P)/Sage.app/"
+  for path in "$copy_app" "$copy_app_real"; do
+    case $path in
+      /?*/Sage.app/) ;;
+      *) return 0 ;;
+    esac
+  done
+  # Only processes whose program sits inside the copy's bundle. The paths
   # must reach awk itself: an empty pattern would match every process.
   pids=$(ps -x -U "$(id -u)" -o pid=,command= |
-    COPY_APP="$copy_app" SELF="$$" awk '
-      BEGIN { app = ENVIRON["COPY_APP"]; if (length(app) < 12) exit 0 }
+    COPY_APP="$copy_app" COPY_APP_REAL="$copy_app_real" SELF="$$" awk '
+      BEGIN {
+        app = ENVIRON["COPY_APP"]
+        real = ENVIRON["COPY_APP_REAL"]
+        if (length(app) < 12 || length(real) < 12) exit 0
+      }
       {
         pid = $1
         command = $0
         sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", command)
-        if (pid != ENVIRON["SELF"] && index(command, app) == 1) print pid
+        if (pid == ENVIRON["SELF"]) next
+        if (index(command, app) == 1 || index(command, real) == 1) print pid
       }')
   [ -n "$pids" ] || return 0
   # The copy starts Sage, Ollama and its runners, and Chat. Far more than
@@ -88,17 +98,19 @@ stop_copy_processes() {
     echo "Found $count processes that look like the copy's, more than it starts. Not stopping any." >&2
     return 0
   fi
-  echo "Stopping what the copy left running: $pids" >&2
+  echo "Stopping what the copy left running:" $pids >&2
   # shellcheck disable=SC2086
   kill $pids 2>/dev/null || true
   i=0
+  left=$pids
   while [ "$i" -lt 50 ]; do
-    left=""
-    for pid in $pids; do
+    still=""
+    for pid in $left; do
       if kill -0 "$pid" 2>/dev/null; then
-        left="$left $pid"
+        still="$still $pid"
       fi
     done
+    left=$still
     [ -n "$left" ] || return 0
     i=$((i + 1))
     sleep 0.1
