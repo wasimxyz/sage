@@ -35,7 +35,7 @@ type SettingsApi = ReturnType<typeof useSettings>;
 
 /**
  * Keeps the URL hash in sync with the current section, open journal entry,
- * open chat, Memories tab, and settings tab so Cmd+R, back/forward, and an
+ * open chat, Memories tab, and Settings dialog so Cmd+R, back/forward, and an
  * unlock restore the same place. Answers true once the hash Sage opened with
  * has been applied, so the screen on show is the real one.
  */
@@ -123,7 +123,7 @@ export function useRouteSync(): boolean {
   const { section, selection } = journal.state;
   const { paneKey, selection: chatSelection } = chat.state;
   const { tab: memoriesTab } = memories.state;
-  const { tab: settingsTab } = settings.state;
+  const { open: settingsOpen, tab: settingsTab } = settings.state;
   const entryId = selection.kind === "id" ? selection.id : null;
   const chatId = chatSelection.kind === "saved" ? chatSelection.id : null;
 
@@ -133,6 +133,7 @@ export function useRouteSync(): boolean {
       entryId,
       memoriesTab,
       section,
+      settingsOpen,
       settingsTab,
     });
     const initialRoute = initialUiRouteRef.current;
@@ -186,17 +187,23 @@ export function useRouteSync(): boolean {
     memoriesTab,
     paneKey,
     section,
+    settingsOpen,
     settingsTab,
   ]);
 
   return applied;
 }
 
+/**
+ * The route for what the providers show. With `settingsOpen` false, it is the
+ * screen under the Settings dialog.
+ */
 function routeFromProviders(
   journal: JournalApi,
   chat: ChatApi,
   memories: MemoriesApi,
-  settings: SettingsApi
+  settings: SettingsApi,
+  settingsOpen: boolean
 ): Route {
   return routeFromState({
     chatId:
@@ -205,6 +212,7 @@ function routeFromProviders(
       journal.state.selection.kind === "id" ? journal.state.selection.id : null,
     memoriesTab: memories.state.tab,
     section: journal.state.section,
+    settingsOpen,
     settingsTab: settings.state.tab,
   });
 }
@@ -225,8 +233,27 @@ async function applyHashRoute(
   if (!hashMatches(route)) {
     replaceRoute(route);
   }
-  const current = routeFromProviders(journal, chat, memories, settings);
+  const current = routeFromProviders(
+    journal,
+    chat,
+    memories,
+    settings,
+    settings.state.open
+  );
   if (routesEqual(route, current)) {
+    return;
+  }
+  if (route.section === "settings") {
+    await applySettingsHash(route, journal, settings, isStale);
+    return;
+  }
+  // Every other route is a screen, so the Settings dialog over it closes, as
+  // when Back leaves Settings.
+  if (settings.state.open) {
+    settings.actions.setOpen(false);
+  }
+  const screen = routeFromProviders(journal, chat, memories, settings, false);
+  if (routesEqual(route, screen)) {
     return;
   }
   if (route.section === "journal") {
@@ -237,11 +264,7 @@ async function applyHashRoute(
     await applyMemoriesHash(route, journal, memories, isStale);
     return;
   }
-  if (route.section === "settings") {
-    await applySettingsHash(route, journal, settings, isStale);
-    return;
-  }
-  await applyChatHash(route, current, journal, chat, isStale);
+  await applyChatHash(route, screen, journal, chat, isStale);
 }
 
 async function applyJournalHash(
@@ -275,13 +298,15 @@ async function applyMemoriesHash(
   memories.actions.setTab(route.tab);
 }
 
+// Settings opens over the screen already showing. A launch on a settings
+// hash finds it over a new chat.
 async function applySettingsHash(
   route: Extract<Route, { section: "settings" }>,
   journal: JournalApi,
   settings: SettingsApi,
   isStale: () => boolean
 ): Promise<void> {
-  if (journal.state.section !== "settings") {
+  if (!settings.state.open) {
     await journal.actions.showSettings();
     if (isStale()) {
       return;

@@ -26,18 +26,9 @@ const journalActions: readonly SidebarAction[] = [
   "import",
 ];
 
-/**
- * The tab a screen belongs to. Memories sits in the Chat tab. Settings has
- * its own sidebar menu, so no tab is current there.
- */
-export function tabForSection(section: Section): SidebarTab | null {
-  if (section === "journal") {
-    return "journal";
-  }
-  if (section === "settings") {
-    return null;
-  }
-  return "chat";
+/** The tab a screen belongs to. Memories sits in the Chat tab. */
+export function tabForSection(section: Section): SidebarTab {
+  return section === "journal" ? "journal" : "chat";
 }
 
 /**

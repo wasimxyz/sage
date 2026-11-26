@@ -21,7 +21,8 @@ import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { ProtectReminder } from "@/components/protect-reminder";
 import { ScreenActiveProvider } from "@/components/screen-active";
 import { SearchDialog, SearchProvider } from "@/components/search-dialog";
-import { SettingsScreen } from "@/components/settings-screen";
+import { useSettings } from "@/components/settings-context";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { useDictationShortcut } from "@/hooks/use-dictation-shortcut";
 import { useNewShortcut } from "@/hooks/use-new-shortcut";
@@ -31,7 +32,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Two columns: the sidebar, with its Chat and Journal tabs, and the pane
- * that shows the open chat, entry, Memories, or Settings.
+ * that shows the open chat, entry, or Memories. Settings opens as a dialog
+ * over them.
  */
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
@@ -61,6 +63,7 @@ export function AppShell() {
           <DreamConfirmDialog />
           <DreamStartAnnouncement />
           <SearchDialog />
+          <SettingsDialog />
           <div className="flex min-h-0 min-w-0 flex-1">
             <AppSidebar />
             <SidebarInset className="min-h-0 overflow-hidden">
@@ -85,18 +88,22 @@ function RouteSync({ onApplied }: { onApplied: (applied: boolean) => void }) {
 /**
  * The protect reminder waits for the new chat Sage opens on. Chat mounts at
  * launch before the address is read, so it also waits for the route: a
- * launch that lands on an entry never shows it over the entry.
+ * launch that lands on an entry, or on Settings, never shows it.
  */
 function LaunchReminder({ routeApplied }: { routeApplied: boolean }) {
   const { section } = useJournalView();
   const {
     state: { listLoaded, selection },
   } = useChat();
-  const onNewChat = section === "chat" && selection.kind === "new";
+  const {
+    state: { open: settingsOpen },
+  } = useSettings();
+  const onNewChat =
+    section === "chat" && selection.kind === "new" && !settingsOpen;
   return <ProtectReminder ready={routeApplied && listLoaded && onNewChat} />;
 }
 
-/** Sage > Settings opens the settings screen. */
+/** Sage > Settings opens the Settings dialog. */
 function SettingsMenuListener() {
   const { showSettings } = useJournalActions();
   useEffect(
@@ -150,9 +157,6 @@ function OtherScreen({ section }: { section: Section }) {
   const { memoryEnabled } = useMemoryFeature();
   if (section === "memories" && memoryEnabled) {
     return <MemoriesScreen />;
-  }
-  if (section === "settings") {
-    return <SettingsScreen />;
   }
   return <EditorPane />;
 }

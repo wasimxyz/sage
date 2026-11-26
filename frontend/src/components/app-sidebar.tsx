@@ -25,7 +25,6 @@ import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { MenuShortcut } from "@/components/menu-shortcut";
 import { ScreenActiveProvider } from "@/components/screen-active";
 import { SearchNavItem } from "@/components/search-dialog";
-import { SettingsMenu } from "@/components/settings-menu";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -54,27 +53,20 @@ const rowClassName = "h-9";
 /**
  * The sidebar: a Chat / Journal switch in the title bar row, the tab's
  * actions, its chats or entries, and Dream and Settings at the bottom.
- * Settings swaps it for its own menu.
+ * Settings opens as a dialog, so the sidebar stays as it is.
  */
 export function AppSidebar() {
-  const { section, sidebarMenu } = useJournalView();
+  const { section } = useJournalView();
   const tab = tabForSection(section);
-  const onSettings = sidebarMenu === "settings" || tab === null;
   return (
     <Sidebar
       className="md:[&_[data-slot=sidebar-inner]]:pt-[calc(var(--titlebar-height)-0.5rem)]"
       collapsible="offcanvas"
     >
       <SidebarTopRow>
-        {onSettings ? null : <SidebarTabs tab={tab} />}
+        <SidebarTabs tab={tab} />
       </SidebarTopRow>
-      {onSettings ? (
-        <SidebarContent>
-          <SettingsMenu />
-        </SidebarContent>
-      ) : (
-        <TabSidebar tab={tab} />
-      )}
+      <TabSidebar tab={tab} />
     </Sidebar>
   );
 }
@@ -172,26 +164,14 @@ function SidebarTabButton({
 function TabSidebar({ tab }: { tab: SidebarTab }) {
   return (
     <>
-      <SidebarGroup className="pt-3 pb-0">
-        <SidebarGroupContent>
-          <TabActions tab={tab} />
-        </SidebarGroupContent>
-      </SidebarGroup>
-      <SidebarGroup className="min-h-0 flex-1 pb-0">
-        <SidebarGroupLabel>
-          {tab === "chat" ? "Conversations" : "Entries"}
-        </SidebarGroupLabel>
-        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto">
-          {/* Both lists stay mounted, so each keeps its scroll and its rows.
-              The hidden one closes its menus. */}
-          <TabList active={tab === "chat"}>
-            <SidebarChats />
-          </TabList>
-          <TabList active={tab === "journal"}>
-            <SidebarEntries />
-          </TabList>
-        </div>
-      </SidebarGroup>
+      {/* Both tabs stay mounted, so each keeps its scroll and its rows. The
+          hidden one closes its menus. */}
+      <TabPage active={tab === "chat"} tab="chat">
+        <SidebarChats />
+      </TabPage>
+      <TabPage active={tab === "journal"} tab="journal">
+        <SidebarEntries />
+      </TabPage>
       <SidebarFooter className="gap-1 pt-1">
         <SidebarSeparator className="mx-2 mb-1" />
         <SidebarMenu className="gap-px">
@@ -203,18 +183,37 @@ function TabSidebar({ tab }: { tab: SidebarTab }) {
   );
 }
 
-function TabList({
+/**
+ * One tab's rows, label, and list. They scroll together, under the switch
+ * and above Dream and Settings, which stay put.
+ */
+function TabPage({
   active,
   children,
+  tab,
 }: {
   active: boolean;
   children: ReactNode;
+  tab: SidebarTab;
 }) {
   return (
     <ScreenActiveProvider active={active}>
-      <div hidden={!active} inert={!active}>
-        {children}
-      </div>
+      <SidebarContent
+        className={cn("hide-scrollbar", !active && "hidden")}
+        inert={!active}
+      >
+        <SidebarGroup className="pt-3 pb-0">
+          <SidebarGroupContent>
+            <TabActions tab={tab} />
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup className="pb-0">
+          <SidebarGroupLabel>
+            {tab === "chat" ? "Conversations" : "Entries"}
+          </SidebarGroupLabel>
+          {children}
+        </SidebarGroup>
+      </SidebarContent>
     </ScreenActiveProvider>
   );
 }
@@ -341,6 +340,7 @@ function SettingsItem() {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
+        aria-haspopup="dialog"
         aria-keyshortcuts="Meta+,"
         className={rowClassName}
         onClick={open}

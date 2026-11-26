@@ -5,7 +5,7 @@ import type {
   MessageStreamEvent,
 } from "eve/client";
 import { type EveMessage, useEveAgent } from "eve/react";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, CornerDownLeftIcon } from "lucide-react";
 import { m } from "motion/react";
 import {
   type ChangeEvent,
@@ -1052,7 +1052,7 @@ function ChatPromptForm({
         {dictation ? <ChatDictationTail /> : null}
       </PromptInputBody>
       <PromptInputFooter>
-        <PromptInputTools>
+        <PromptInputTools className="gap-0">
           <ModelPicker />
           {dictation ? <ChatDictateButton locked={locked} /> : null}
         </PromptInputTools>
@@ -1133,12 +1133,20 @@ function ChatPromptSubmit({
   } = useChatDraft();
   // While a reply is on its way the button stops it, so it needs no text.
   const busy = status === "submitted" || status === "streaming";
+  // A plain icon, like the mic beside the model picker. Send is a Return
+  // arrow. Stop, the spinner, and the error mark stay as they are.
   return (
     <PromptInputSubmit
+      className="text-muted-foreground hover:text-foreground hover:!bg-foreground/6 rounded-lg"
       disabled={blocked || (!busy && text.trim().length === 0)}
       onStop={onStop}
       status={status}
-    />
+      variant="ghost"
+    >
+      {busy || status === "error" ? undefined : (
+        <CornerDownLeftIcon className="size-4" />
+      )}
+    </PromptInputSubmit>
   );
 }
 

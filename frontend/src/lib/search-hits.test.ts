@@ -11,7 +11,6 @@ test("search opens on the results for the screen you are on", () => {
   assert.equal(searchTabFor("chat", true), "conversations");
   assert.equal(searchTabFor("journal", true), "journal");
   assert.equal(searchTabFor("memories", true), "memories");
-  assert.equal(searchTabFor("settings", true), "all");
 });
 
 test("search never opens on Memories without memory", () => {

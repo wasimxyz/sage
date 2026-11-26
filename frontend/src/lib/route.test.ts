@@ -121,6 +121,7 @@ test("routeFromState keeps the Memories tab", () => {
       entryId: null,
       memoriesTab: "facts",
       section: "memories",
+      settingsOpen: false,
       settingsTab: "agent",
     }),
     { section: "memories", tab: "facts" }
@@ -160,16 +161,23 @@ test("toHash leaves the Agent tab off the settings hash", () => {
   assert.equal(toHash(parseHash("#/settings/agent")), "/settings");
 });
 
-test("routeFromState keeps the settings tab", () => {
+test("routeFromState is Settings while its dialog is open over a screen", () => {
+  const open = {
+    chatId: 4,
+    entryId: 9,
+    memoriesTab: "facts",
+    settingsTab: "data",
+  } as const;
+  for (const section of ["chat", "journal", "memories"] as const) {
+    assert.deepEqual(
+      routeFromState({ ...open, section, settingsOpen: true }),
+      { section: "settings", tab: "data" }
+    );
+  }
+  // Closing the dialog leaves the screen under it.
   assert.deepEqual(
-    routeFromState({
-      chatId: 4,
-      entryId: 9,
-      memoriesTab: "facts",
-      section: "settings",
-      settingsTab: "data",
-    }),
-    { section: "settings", tab: "data" }
+    routeFromState({ ...open, section: "journal", settingsOpen: false }),
+    { entryId: 9, section: "journal" }
   );
 });
 
@@ -228,6 +236,7 @@ test("toHash writes each chat view and parses back to the same place", () => {
 test("routeFromState shows the chat or entry each tab has open", () => {
   const base = {
     memoriesTab: "facts",
+    settingsOpen: false,
     settingsTab: "agent",
   } as const;
   // Switching tabs changes only the section. Each tab's open item comes back.

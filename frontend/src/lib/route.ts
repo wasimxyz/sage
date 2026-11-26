@@ -168,17 +168,19 @@ export function routesEqual(left: Route, right: Route): boolean {
 }
 
 /**
- * The route for what is on screen. Journal shows its open entry, or a new one
- * when `entryId` is null. Chat shows its open chat, or a new one.
+ * The route for what is on screen. Settings, a dialog, is the route while it
+ * is open, over whatever screen it covers. Journal shows its open entry, or a
+ * new one when `entryId` is null. Chat shows its open chat, or a new one.
  */
 export function routeFromState(input: {
   chatId: number | null;
   entryId: number | null;
   memoriesTab: MemoriesTab;
-  section: "chat" | "journal" | "memories" | "settings";
+  section: "chat" | "journal" | "memories";
+  settingsOpen: boolean;
   settingsTab: SettingsTab;
 }): Route {
-  if (input.section === "settings") {
+  if (input.settingsOpen) {
     return { section: "settings", tab: input.settingsTab };
   }
   if (input.section === "journal") {

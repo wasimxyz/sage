@@ -3,10 +3,11 @@ import { createContext, type ReactNode, use } from "react";
 import type { JournalEntry, JournalEntryMeta } from "@/bridge";
 import type { ParsedImport } from "@/lib/parse-markdown";
 
-/** The screen in the main pane. Chat and Memories are in the Chat tab. */
-export type Section = "chat" | "journal" | "memories" | "settings";
-
-export type SidebarMenu = "nav" | "settings";
+/**
+ * The screen in the main pane. Chat and Memories are in the Chat tab.
+ * Settings is a dialog over it, not a screen.
+ */
+export type Section = "chat" | "journal" | "memories";
 
 export type EditorSelection = { kind: "id"; id: number } | { kind: "draft" };
 
@@ -28,7 +29,6 @@ export interface JournalViewState {
   section: Section;
   selectedId: number | null;
   selection: EditorSelection;
-  sidebarMenu: SidebarMenu;
 }
 
 /** The entry list. It changes on every save, so only the list should read it. */
@@ -39,7 +39,6 @@ export interface JournalEntriesState {
 
 export interface JournalActions {
   beginDataWipe: () => Promise<void>;
-  closeSettings: () => Promise<void>;
   /**
    * Hide an entry now and delete it when the undo toast closes. Stable, so
    * list rows can be memoized.
@@ -58,7 +57,7 @@ export interface JournalActions {
   showChatTab: () => Promise<void>;
   showJournal: () => Promise<void>;
   showMemories: () => Promise<void>;
-  showNavMenu: () => void;
+  /** Save the open entry, then open the Settings dialog over the screen. */
   showSettings: () => Promise<void>;
   startDraft: () => Promise<void>;
 }

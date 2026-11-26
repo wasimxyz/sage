@@ -101,7 +101,6 @@ test("Journal dictates into the open entry", () => {
   assert.equal(dictationTarget("journal"), "entry");
 });
 
-test("Memories and Settings have nowhere to dictate", () => {
+test("Memories has nowhere to dictate", () => {
   assert.equal(dictationTarget("memories"), null);
-  assert.equal(dictationTarget("settings"), null);
 });

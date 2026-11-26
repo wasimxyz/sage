@@ -6,7 +6,7 @@ Dictation is a way to type, not a kind of entry. The words go into the entry lik
 
 ## Starting and stopping
 
-A mic button sits in the entry header, before the ⋯ menu. In Chat, it sits in the message box beside the model picker, and only a live conversation has one. ⌘D does the same as the button. It works on Chat and on Journal, which always holds an entry or a new one, and it does nothing on Memories and Settings. It waits while a dialog, popover, or menu is open, and holding the key does not turn the mic on and off again.
+A mic button sits in the entry header, before the ⋯ menu. In Chat, it sits in the message box beside the model picker, and only a live conversation has one. ⌘D does the same as the button. It works on Chat and on Journal, which always holds an entry or a new one, and it does nothing on Memories. It waits while a dialog, popover, or menu is open, Settings included, and holding the key does not turn the mic on and off again.
 
 The button reads **Starting…** until the mic is on, **Listening** while you speak, and **Finishing…** while the engine settles the last words. Only one dictation runs at a time, so the other mic is off while one is on. The entry mic is also off while an entry loads.
 

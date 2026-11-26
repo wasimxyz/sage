@@ -13,10 +13,6 @@ test("Chat and Memories belong to the Chat tab, Journal to its own", () => {
   assert.equal(tabForSection("journal"), "journal");
 });
 
-test("Settings has no current tab", () => {
-  assert.equal(tabForSection("settings"), null);
-});
-
 test("the Chat tab goes back to the screen last open in it", () => {
   assert.equal(chatTabSection("chat", true), "chat");
   assert.equal(chatTabSection("memories", true), "memories");

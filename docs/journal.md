@@ -4,7 +4,7 @@ This page explains the sidebar and the Journal tab, and how entries are written,
 
 The window has two columns: the sidebar and the main pane. The sidebar has two tabs, Chat and Journal. A switch of two icon buttons at the right end of the title bar row, beside the traffic lights and the sidebar button, picks one. Sage opens on the Chat tab, with a new chat.
 
-Each tab has its own rows at the top, then its list under a gray label, newest first. Dream and Settings sit at the bottom on both tabs. Settings swaps the sidebar for its own menu with Back, and the switch hides there. ⌘B hides the whole sidebar. The code is `frontend/src/components/app-sidebar.tsx`, `frontend/src/lib/sidebar-tab.ts`, and `frontend/src/components/list-row.tsx`.
+Each tab has its own rows at the top, then its list under a gray label, newest first. Dream and Settings sit at the bottom on both tabs. Settings opens as a dialog over the screen, with its sections down the left, and closing it leaves the screen as it was. ⌘B hides the whole sidebar. The code is `frontend/src/components/app-sidebar.tsx`, `frontend/src/lib/sidebar-tab.ts`, and `frontend/src/components/list-row.tsx`.
 
 Each tab keeps what was last open in it until Sage locks or quits. Journal comes back to the same entry. Chat comes back to the same chat, or to Memories if Memories was the last screen open in it. [The Chat frontend](agent/frontend.md#the-chat-tab) covers the Chat tab.
 
@@ -43,7 +43,7 @@ Opening an entry is not an edit. Each entry opens with an empty undo history, so
 
 If an entry fails to open, Sage shows an error, and the editor still holds the entry you had open. Sage does not save what you type there, because it would land in the wrong entry. It tells you so instead. Open another entry, then this one again.
 
-⌘N starts a new entry in the Journal tab and a new chat in the Chat tab, which holds Chat and Memories. It does nothing in Settings, while a memory is open for editing, or while a dialog, popover, or menu is open. The rules live in `frontend/src/lib/new-shortcut.ts`.
+⌘N starts a new entry in the Journal tab and a new chat in the Chat tab, which holds Chat and Memories. It does nothing while a memory is open for editing, or while a dialog, popover, or menu is open, Settings included. The rules live in `frontend/src/lib/new-shortcut.ts`.
 
 A body over 1 MiB is refused. Long bodies travel to the core in 32 KiB chunks, as [Architecture](architecture.md#the-bridge) explains.
 

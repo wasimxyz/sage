@@ -46,7 +46,3 @@ test("Journal starts an entry", () => {
 test("Memories starts nothing while a memory is open for editing", () => {
   assert.equal(newTarget("memories", true), null);
 });
-
-test("Settings starts nothing", () => {
-  assert.equal(newTarget("settings", false), null);
-});

@@ -3,10 +3,13 @@ import { createContext, type ReactNode, use } from "react";
 import type { SettingsTab } from "@/lib/route";
 
 export interface SettingsState {
+  /** True while the Settings dialog is open over the screen. */
+  open: boolean;
   tab: SettingsTab;
 }
 
 export interface SettingsActions {
+  setOpen: (open: boolean) => void;
   setTab: (tab: SettingsTab) => void;
 }
 

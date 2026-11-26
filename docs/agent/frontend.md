@@ -67,6 +67,8 @@ The address bar follows Chat:
 
 `#/chat`, `#/home`, an empty hash, and any hash Sage does not know open `#/chat/new`. When a new chat saves, `#/chat/new` becomes `#/chat/<id>` without adding a history entry. Back and Forward move between the chats you opened, and reloading the page reopens the same view. After an unlock, the hash brings back the screen from before the lock. The rules live in `frontend/src/lib/route.ts` and `frontend/src/hooks/use-route-sync.ts`.
 
+Settings is a dialog over the screen, not a screen of its own (`settings-dialog.tsx`). The Settings row in the sidebar and ⌘, open it, and its sections, Agent, Models, Security, and Data, run down its left side. While it is open, the address is `#/settings` for Agent, or `#/settings/models`, `#/settings/security`, or `#/settings/data`. Back, Esc, the close button, or a click outside closes it and leaves the screen under it as it was. A reload or an unlock with a settings address opens the dialog over a new chat.
+
 ## Dictating a message
 
 A mic button sits in the message box, beside the model picker. Only a live conversation has one, and it is hidden on a Mac that cannot dictate. ⌘D does the same while Chat is on screen. [Dictation](../dictation.md) explains the engine and the permission.
@@ -77,7 +79,7 @@ Dictation ends when you press Send, open another chat, or leave Chat for another
 
 ## Search
 
-⌘K opens the search dialog, and so does the Search row in the sidebar. The dialog opens on the tab for the screen behind it: Conversations on Chat, Journal on Journal, Memories on Memories, and All in Settings. All stays one click away. `searchTabFor` in `frontend/src/lib/search-hits.ts` picks the tab.
+⌘K opens the search dialog, and so does the Search row in the sidebar. The dialog opens on the tab for the screen behind it: Conversations on Chat, Journal on Journal, and Memories on Memories. Over Settings, it opens on the tab for the screen under the dialog. All stays one click away. `searchTabFor` in `frontend/src/lib/search-hits.ts` picks the tab.
 
 Each tab calls its own command:
 

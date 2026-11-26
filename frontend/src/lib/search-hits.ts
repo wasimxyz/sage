@@ -4,8 +4,7 @@ export type SearchTab = "all" | "conversations" | "journal" | "memories";
 
 /**
  * The tab the dialog opens on: the results for the screen you are on. Chat
- * opens on Conversations, Journal on Journal, Memories on Memories, and
- * Settings on All.
+ * opens on Conversations, Journal on Journal, and Memories on Memories.
  */
 export function searchTabFor(
   section: Section,
@@ -14,13 +13,10 @@ export function searchTabFor(
   if (section === "journal") {
     return "journal";
   }
-  if (section === "chat") {
-    return "conversations";
+  if (section === "memories" && memoryEnabled) {
+    return "memories";
   }
-  if (section === "memories") {
-    return memoryEnabled ? "memories" : "conversations";
-  }
-  return "all";
+  return "conversations";
 }
 
 /**
