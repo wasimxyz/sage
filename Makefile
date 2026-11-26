@@ -1,4 +1,4 @@
-.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
+.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev screenshots eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
 
 # `native build` / `native test` drive this repo's ejected build.zig.
 # Pass the global CLI only when it is actually installed; otherwise
@@ -57,6 +57,7 @@ test:
 	sh security-tests/eval-server-token.sh
 	sh security-tests/eval-ignores-data-dir.sh
 	sh security-tests/seed-dev-dev-only.sh
+	sh security-tests/screenshots-isolated.sh
 	sh security-tests/agent-dev-modules.sh
 
 eval:
@@ -116,6 +117,12 @@ SEED ?= $(CURDIR)/scripts/seed
 seed-dev:
 	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
 	YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" SAGE_OLLAMA_PATH="$$ollama_bin" sh scripts/seed-dev.sh
+
+# Build a throwaway packaged Sage with automation on, fill a scratch journal,
+# and capture each screen in light and dark into zig-out/screenshots, or OUT.
+# Never opens your own journal. Needs Screen Recording access for the terminal.
+screenshots:
+	@OUT="$(OUT)" NATIVE_OPTIMIZE="$(NATIVE_OPTIMIZE)" sh scripts/screenshots.sh
 
 package:
 	npm --prefix frontend run build

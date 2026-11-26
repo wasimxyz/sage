@@ -150,6 +150,104 @@ fn originListed(origins: []const []const u8, origin: []const u8) bool {
     return false;
 }
 
+/// Commands only automation builds act on, sent with
+/// `native automate native-command <name>`. `make screenshots` uses them to
+/// open a screen and to pick light or dark without a click.
+const AutomationCommand = union(enum) {
+    /// A hash route with dots for slashes, such as `chat.3` for `/chat/3`.
+    /// The automation server refuses a command name with a slash in it.
+    route: []const u8,
+    appearance: window_chrome.Appearance,
+};
+
+const route_command_prefix = "app.route:";
+const appearance_command_prefix = "app.appearance:";
+const max_automation_route_len = 63;
+
+fn parseAutomationCommand(name: []const u8) ?AutomationCommand {
+    if (std.mem.startsWith(u8, name, route_command_prefix)) {
+        const route = name[route_command_prefix.len..];
+        if (!isAutomationRoute(route)) return null;
+        return .{ .route = route };
+    }
+    if (std.mem.startsWith(u8, name, appearance_command_prefix)) {
+        const value = name[appearance_command_prefix.len..];
+        if (std.mem.eql(u8, value, "light")) return .{ .appearance = .light };
+        if (std.mem.eql(u8, value, "dark")) return .{ .appearance = .dark };
+    }
+    return null;
+}
+
+/// Lowercase letters, digits, and dashes in parts joined by single dots, so
+/// the path goes into the event's JSON as is.
+fn isAutomationRoute(route: []const u8) bool {
+    if (route.len == 0 or route.len > max_automation_route_len) return false;
+    if (route[0] == '.' or route[route.len - 1] == '.') return false;
+    if (std.mem.indexOf(u8, route, "..") != null) return false;
+    for (route) |char| switch (char) {
+        'a'...'z', '0'...'9', '.', '-' => {},
+        else => return false,
+    };
+    return true;
+}
+
+/// `chat.3` becomes `/chat/3`.
+fn automationRoutePath(route: []const u8, buffer: []u8) ![]const u8 {
+    if (route.len + 1 > buffer.len) return error.NoSpaceLeft;
+    buffer[0] = '/';
+    for (route, buffer[1 .. route.len + 1]) |char, *slot| {
+        slot.* = if (char == '.') '/' else char;
+    }
+    return buffer[0 .. route.len + 1];
+}
+
+fn emitAutomationRoute(runtime: *native_sdk.Runtime, route: []const u8) !void {
+    var path_buffer: [max_automation_route_len + 1]u8 = undefined;
+    const path = try automationRoutePath(route, &path_buffer);
+    var buffer: [max_automation_route_len + 16]u8 = undefined;
+    const detail = try std.fmt.bufPrint(&buffer, "{{\"path\":\"{s}\"}}", .{path});
+    try runtime.emitWindowEvent(1, "automation:route", detail);
+}
+
+test "automation commands parse routes and appearances" {
+    try std.testing.expectEqualStrings("chat.3", parseAutomationCommand("app.route:chat.3").?.route);
+    try std.testing.expectEqualStrings("settings.models", parseAutomationCommand("app.route:settings.models").?.route);
+    try std.testing.expectEqualStrings("chat.new", parseAutomationCommand("app.route:chat.new").?.route);
+    try std.testing.expectEqualStrings("journal", parseAutomationCommand("app.route:journal").?.route);
+    try std.testing.expectEqual(window_chrome.Appearance.dark, parseAutomationCommand("app.appearance:dark").?.appearance);
+    try std.testing.expectEqual(window_chrome.Appearance.light, parseAutomationCommand("app.appearance:light").?.appearance);
+}
+
+test "automation routes turn dots into slashes" {
+    var buffer: [max_automation_route_len + 1]u8 = undefined;
+    try std.testing.expectEqualStrings("/chat/3", try automationRoutePath("chat.3", &buffer));
+    try std.testing.expectEqualStrings("/settings/models", try automationRoutePath("settings.models", &buffer));
+    try std.testing.expectEqualStrings("/journal", try automationRoutePath("journal", &buffer));
+}
+
+test "automation commands refuse anything else" {
+    try std.testing.expect(parseAutomationCommand("app.lock") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:/chat/3") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:.chat") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:chat.") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:chat..3") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:chat.\"x") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:Chat") == null);
+    try std.testing.expect(parseAutomationCommand("app.route:" ++ "a" ** (max_automation_route_len + 1)) == null);
+    try std.testing.expect(parseAutomationCommand("app.appearance:auto") == null);
+    try std.testing.expect(parseAutomationCommand("app.appearance:") == null);
+    try std.testing.expect(parseAutomationCommand("app.sync") == null);
+}
+
+// The handlers only run in automation builds. Naming them here makes every
+// test build compile them, so a break shows up in `make test` and not only
+// in `make screenshots`.
+test "automation-only handlers compile in every build" {
+    _ = &emitAutomationRoute;
+    _ = &window_chrome.setAppearance;
+}
+
 test "packaged policy does not trust the vite origin" {
     try std.testing.expect(originListed(navigationOrigins(false), app_origin));
     try std.testing.expect(!originListed(navigationOrigins(false), vite_origin));
@@ -260,6 +358,8 @@ const App = struct {
     env_map: *std.process.Environ.Map,
     io: std.Io,
     app_id: [:0]const u8,
+    /// Set for a journal in `SAGE_DATA_DIR`; see `dataDirKeychainService`.
+    keychain_service: ?[:0]const u8 = null,
     store: journal.Store,
     lock: lock_mod.Lock,
     vault: vault_mod.Vault,
@@ -313,6 +413,11 @@ const App = struct {
     /// journal.readFile access.
     import_picked_paths: [native_sdk.platform.max_dialog_paths_bytes]u8 = undefined,
     import_picked_paths_len: usize = 0,
+
+    /// Where the Touch ID copy of the data key lives in the Keychain.
+    fn keychainService(self: *const App) [:0]const u8 {
+        return self.keychain_service orelse self.app_id;
+    }
 
     fn app(self: *@This()) native_sdk.App {
         return .{
@@ -481,6 +586,11 @@ const App = struct {
                     try runtime.emitWindowEvent(1, "journal:import", "{}");
                 } else if (std.mem.eql(u8, command.name, "app.export")) {
                     try runtime.emitWindowEvent(1, "journal:export", "{}");
+                } else if (build_options.automation) {
+                    if (parseAutomationCommand(command.name)) |automation_command| switch (automation_command) {
+                        .route => |path| try emitAutomationRoute(runtime, path),
+                        .appearance => |appearance| window_chrome.setAppearance(appearance),
+                    };
                 }
             },
             .lifecycle => |phase| {
@@ -1511,7 +1621,7 @@ fn handleLockUnlockRecoveryKey(context: *anyopaque, invocation: native_sdk.bridg
     if (self.lock.touch_id_enabled) {
         var key = self.vault.dataKey() orelse return error.Locked;
         defer std.crypto.secureZero(u8, &key);
-        touch_id_key_saved = keychain.storeKey(self.app_id, &key);
+        touch_id_key_saved = keychain.storeKey(self.keychainService(), &key);
     }
     session_lock.resetIdleClock();
     self.syncLockMenu();
@@ -1553,7 +1663,7 @@ fn handleLockRemovePassword(context: *anyopaque, invocation: native_sdk.bridge.I
         }
         // Touch ID is the everyday way in once the password is gone, so its
         // Keychain copy has to be there before the password is.
-        if (self.lock.touch_id_enabled and !keychain.storeKey(self.app_id, &data_key)) return error.KeychainFailed;
+        if (self.lock.touch_id_enabled and !keychain.storeKey(self.keychainService(), &data_key)) return error.KeychainFailed;
     }
     const result = try self.lock.commitRemovePassword(
         &self.vault,
@@ -1610,7 +1720,7 @@ fn handleLockSetTouchId(context: *anyopaque, invocation: native_sdk.bridge.Invoc
             return;
         };
         defer std.crypto.secureZero(u8, &key);
-        if (!keychain.storeKey(self.app_id, &key)) {
+        if (!keychain.storeKey(self.keychainService(), &key)) {
             respondFail(responder, invocation.request.id, "KeychainFailed");
             return;
         }
@@ -1629,7 +1739,7 @@ fn handleLockSetTouchId(context: *anyopaque, invocation: native_sdk.bridge.Invoc
             return;
         },
     };
-    if (!enabled) _ = keychain.deleteKey(self.app_id);
+    if (!enabled) _ = keychain.deleteKey(self.keychainService());
     self.syncLockMenu();
     responder.success(invocation.request.id, result) catch {};
 }
@@ -1680,7 +1790,7 @@ fn handleEncryptionEnable(context: *anyopaque, invocation: native_sdk.bridge.Inv
     if (self.lock.touch_id_enabled) {
         var key = self.vault.dataKey() orelse return error.Locked;
         defer std.crypto.secureZero(u8, &key);
-        if (!keychain.storeKey(self.app_id, &key)) {
+        if (!keychain.storeKey(self.keychainService(), &key)) {
             if (fresh) {
                 self.store.setRowsEncrypted(false) catch {};
                 self.vault.disable() catch {};
@@ -1897,7 +2007,7 @@ fn finishEncryptionDisable(self: *App) !void {
     try self.store.setRowsEncrypted(false);
     try self.vault.disable();
     syncPendingFlags(self);
-    _ = keychain.deleteKey(self.app_id);
+    _ = keychain.deleteKey(self.keychainService());
 
     // The database is now plaintext and no longer needs the data key. Persist
     // the rebuild separately so a failed or interrupted vacuum can retry.
@@ -3224,7 +3334,7 @@ fn unlockAfterPrompt(self: *App, job: *LockJob) void {
     }
     var key: [vault_mod.data_key_len]u8 = undefined;
     defer std.crypto.secureZero(u8, &key);
-    if (!keychain.readKey(self.app_id, touchid.authenticationContext(), &key)) {
+    if (!keychain.readKey(self.keychainService(), touchid.authenticationContext(), &key)) {
         // With no password set, the recovery key is the way back in.
         respondFail(job.responder, job.request_id, if (self.lock.password_set)
             "Could not read the journal key. Use your password."
@@ -3248,7 +3358,7 @@ fn clearTouchIdAfterPrompt(self: *App, job: *LockJob) void {
         respondLockFail(job.responder, job.request_id, err);
         return;
     };
-    _ = keychain.deleteKey(self.app_id);
+    _ = keychain.deleteKey(self.keychainService());
     self.syncLockMenu();
     job.responder.success(job.request_id, "{\"ok\":true}") catch {};
 }
@@ -3301,6 +3411,61 @@ fn resolveAppDataDir(
     );
 }
 
+const keychain_service_hash_bytes = 8;
+
+/// A journal in `SAGE_DATA_DIR` keeps its Touch ID key under a Keychain
+/// service of its own: the app id, `.data-`, and a hash of the folder. So a
+/// throwaway journal (`make eval`, `make screenshots`) never reads, replaces,
+/// or deletes the key your own journal keeps under the app id. Returns null
+/// when `SAGE_DATA_DIR` is unset or empty.
+fn dataDirKeychainService(
+    allocator: std.mem.Allocator,
+    environ_map: *std.process.Environ.Map,
+    app_id: []const u8,
+) !?[:0]u8 {
+    const data_dir = environ_map.get("SAGE_DATA_DIR") orelse return null;
+    if (data_dir.len == 0) return null;
+    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(data_dir, &digest, .{});
+    const infix = ".data-";
+    const service = try allocator.allocSentinel(u8, app_id.len + infix.len + keychain_service_hash_bytes * 2, 0);
+    @memcpy(service[0..app_id.len], app_id);
+    @memcpy(service[app_id.len..][0..infix.len], infix);
+    const hex = service[app_id.len + infix.len ..];
+    const digits = "0123456789abcdef";
+    for (digest[0..keychain_service_hash_bytes], 0..) |byte, index| {
+        hex[index * 2] = digits[byte >> 4];
+        hex[index * 2 + 1] = digits[byte & 0x0f];
+    }
+    return service;
+}
+
+test "a journal in SAGE_DATA_DIR keeps its Keychain item apart" {
+    const allocator = std.testing.allocator;
+    var env = std.process.Environ.Map.init(allocator);
+    defer env.deinit();
+    try std.testing.expect(try dataDirKeychainService(allocator, &env, "com.wasimxyz.sage") == null);
+    try env.put("SAGE_DATA_DIR", "");
+    try std.testing.expect(try dataDirKeychainService(allocator, &env, "com.wasimxyz.sage") == null);
+
+    try env.put("SAGE_DATA_DIR", "/tmp/sage-a/data");
+    const first = (try dataDirKeychainService(allocator, &env, "com.wasimxyz.sage")).?;
+    defer allocator.free(first);
+    try std.testing.expect(std.mem.startsWith(u8, first, "com.wasimxyz.sage.data-"));
+    try std.testing.expectEqual("com.wasimxyz.sage.data-".len + keychain_service_hash_bytes * 2, first.len);
+    for (first["com.wasimxyz.sage.data-".len..]) |char| {
+        try std.testing.expect(std.ascii.isDigit(char) or (char >= 'a' and char <= 'f'));
+    }
+    const again = (try dataDirKeychainService(allocator, &env, "com.wasimxyz.sage")).?;
+    defer allocator.free(again);
+    try std.testing.expectEqualStrings(first, again);
+
+    try env.put("SAGE_DATA_DIR", "/tmp/sage-b/data");
+    const other = (try dataDirKeychainService(allocator, &env, "com.wasimxyz.sage")).?;
+    defer allocator.free(other);
+    try std.testing.expect(!std.mem.eql(u8, first, other));
+}
+
 pub fn main(init: std.process.Init) !void {
     const dev_mode = if (init.environ_map.get("NATIVE_SDK_MODE")) |mode|
         std.mem.eql(u8, mode, "dev")
@@ -3318,6 +3483,7 @@ pub fn main(init: std.process.Init) !void {
         return error.SqliteDataDirUnavailable;
     try std.Io.Dir.cwd().createDirPath(init.io, app_data_dir);
     const data_dir = try std.heap.page_allocator.dupe(u8, app_data_dir);
+    const keychain_service = try dataDirKeychainService(std.heap.page_allocator, init.environ_map, app_id);
 
     const open_result = try native_sdk.RelationalStore.openMigrated(
         std.heap.page_allocator,
@@ -3345,6 +3511,7 @@ pub fn main(init: std.process.Init) !void {
         .env_map = init.environ_map,
         .io = init.io,
         .app_id = app_id,
+        .keychain_service = keychain_service,
         .store = journal.Store.init(std.heap.page_allocator, db),
         .lock = undefined,
         .vault = undefined,

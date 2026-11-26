@@ -47,8 +47,9 @@ import {
 } from "@/lib/sidebar-tab";
 import { cn } from "@/lib/utils";
 
-// Sidebar rows are a little taller than the menu's default, like the lists.
-const rowClassName = "h-9";
+// Sidebar rows are a little taller than the menu's default, the same height
+// as the chat and entry rows in the lists (`ListRow` in list-row.tsx).
+const rowClassName = "h-8.5";
 
 /**
  * The sidebar: a Chat / Journal switch in the title bar row, the tab's

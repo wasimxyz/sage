@@ -1443,6 +1443,28 @@ export function onJournalExport(callback: () => void): () => void {
   });
 }
 
+/**
+ * Subscribe to `app.route:<route>`, a command only automation builds send.
+ * Returns an unsubscribe.
+ */
+export function onAutomationRoute(
+  callback: (path: string) => void
+): () => void {
+  return onWindowEvent("automation:route", (detail) => {
+    if (
+      detail === null ||
+      typeof detail !== "object" ||
+      Array.isArray(detail)
+    ) {
+      return;
+    }
+    const { path } = detail;
+    if (typeof path === "string" && path.startsWith("/")) {
+      callback(path);
+    }
+  });
+}
+
 // --- dictation ---
 
 export type DictationUnavailableReason =
