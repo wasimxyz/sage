@@ -169,10 +169,10 @@ test("routeFromState is Settings while its dialog is open over a screen", () => 
     settingsTab: "data",
   } as const;
   for (const section of ["chat", "journal", "memories"] as const) {
-    assert.deepEqual(
-      routeFromState({ ...open, section, settingsOpen: true }),
-      { section: "settings", tab: "data" }
-    );
+    assert.deepEqual(routeFromState({ ...open, section, settingsOpen: true }), {
+      section: "settings",
+      tab: "data",
+    });
   }
   // Closing the dialog leaves the screen under it.
   assert.deepEqual(
