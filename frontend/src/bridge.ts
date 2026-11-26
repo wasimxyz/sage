@@ -1014,16 +1014,6 @@ export async function getSystemHardware(): Promise<SystemHardware> {
   };
 }
 
-export interface SystemCalendar {
-  /** NSCalendar's first weekday: 1 is Sunday and 7 is Saturday. */
-  firstWeekday: number;
-}
-
-export async function getSystemCalendar(): Promise<SystemCalendar> {
-  const response = asRecord(await invoke("system.calendar", {}));
-  return { firstWeekday: asNumber(response.firstWeekday) };
-}
-
 export interface OllamaPullProgress {
   active: boolean;
   cancelled: boolean;

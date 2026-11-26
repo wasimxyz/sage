@@ -1492,7 +1492,8 @@ test "a phrase moves from grey to final inside one event" {
     var rig: Rig = undefined;
     try rig.init();
     defer rig.deinit();
-    // The grey phrase and its final land in one drain: one event, no gap.
+    // The grey phrase and its final come from the same feed. The final event
+    // must carry no grey tail beside it.
     rig.engine.script = &.{
         .{ .at_samples = 800, .kind = .volatile_tail, .text = "good morning" },
         .{ .at_samples = 800, .kind = .final, .text = "good morning" },
@@ -1505,14 +1506,19 @@ test "a phrase moves from grey to final inside one event" {
     };
     try rig.pumpUntil(Started.done);
     try rig.pushSamples(800);
-    const Fed = struct {
+    // Wait for the final event itself, not for `fed`. The engine bumps `fed`
+    // before it queues its results, so a drain right after `fed` can run too
+    // early. Once the final is out, the grey result before it is out too.
+    const Finaled = struct {
         fn done(r: *Rig) bool {
-            return r.engine.fed.load(.acquire) >= 800;
+            var index: usize = 0;
+            while (r.payloadAt("dictation:text", index)) |payload| : (index += 1) {
+                if (std.mem.indexOf(u8, payload, "\"final\":\"good morning\"") != null) return true;
+            }
+            return false;
         }
     };
-    try rig.pumpUntil(Fed.done);
-    // Both results are queued by now. Drain once more and read what came out.
-    rig.controller.drain(rig.host());
+    try rig.pumpUntil(Finaled.done);
     var grey_only: usize = 0;
     var with_final: usize = 0;
     var index: usize = 0;

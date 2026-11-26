@@ -1,15 +1,13 @@
-import { BookOpenIcon, Trash2Icon } from "lucide-react";
+import { Trash2Icon } from "lucide-react";
 import { type KeyboardEvent, memo, useCallback, useMemo } from "react";
 import type { JournalEntryMeta } from "@/bridge";
-import { ListRow, ListRows, ListRowsSkeleton } from "@/components/list-row";
-import { ContextMenuItem } from "@/components/ui/context-menu";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+  ListEmpty,
+  ListRow,
+  ListRows,
+  ListRowsSkeleton,
+} from "@/components/list-row";
+import { ContextMenuItem } from "@/components/ui/context-menu";
 import { useAppearingIds } from "@/hooks/use-appearing-ids";
 import { focusNeighborRow, isDeleteKey } from "@/lib/row-keys";
 
@@ -33,7 +31,7 @@ export function EntriesList({
   }
 
   // The list stays mounted when the last row goes, so that row can finish
-  // leaving. The empty state shows beside it.
+  // leaving. The empty line shows beside it.
   return (
     <>
       <ListRows label="Journal entries">
@@ -48,19 +46,7 @@ export function EntriesList({
           />
         ))}
       </ListRows>
-      {entries.length === 0 ? (
-        <Empty className="min-h-64">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <BookOpenIcon />
-            </EmptyMedia>
-            <EmptyTitle>No journal entries</EmptyTitle>
-            <EmptyDescription>
-              Write a new entry to get started.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : null}
+      {entries.length === 0 ? <ListEmpty>No entries yet.</ListEmpty> : null}
     </>
   );
 }

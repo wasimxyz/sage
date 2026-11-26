@@ -9,12 +9,12 @@ import {
 } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCalendarDay } from "@/hooks/use-calendar-day";
-import { formatJournalListDate, parseCalendarDate } from "@/lib/format-date";
+import { formatSidebarDate, parseCalendarDate } from "@/lib/format-date";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
- * One row of a list in a split view: a title and a date on a button, with a
+ * One row of a list in the sidebar: a title and a date on a button, with a
  * right-click menu. Rows grow in and shrink out inside `AnimatePresence`.
  */
 
@@ -28,16 +28,15 @@ const rowOpen = {
   overflow: "hidden",
   transitionEnd: { overflow: "visible" },
 } as const;
-/** The button of a row. Home's rows reuse it, so every list reads the same. */
-export const listRowClassName =
-  "flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl px-3 py-2.5 text-left text-sm outline-none transition-colors hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-foreground/15 active:duration-0";
+const listRowClassName =
+  "group/row flex h-8.5 w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-2.5 text-left text-sm text-sidebar-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent focus-visible:ring-2 active:bg-foreground/15 active:duration-0";
 
 function ListRowRoot({
   actionsRef,
   animateIn,
   children,
 }: {
-  /** Lets a screen close the row's menu, such as when the screen hides. */
+  /** Lets a screen close the row's menu, such as when the list hides. */
   actionsRef?: ComponentProps<typeof ContextMenu>["actionsRef"];
   /** True for a row that arrives on its own, which grows in. */
   animateIn: boolean;
@@ -54,7 +53,7 @@ function ListRowRoot({
       transition={spring}
     >
       {/* The gap between rows lives inside, so the row can shrink to nothing. */}
-      <div className="pb-0.5">
+      <div className="pb-px">
         <ContextMenu actionsRef={actionsRef}>{children}</ContextMenu>
       </div>
     </m.li>
@@ -76,7 +75,7 @@ function ListRowTrigger({
     <ContextMenuTrigger
       render={
         <button
-          aria-current={selected ? "true" : undefined}
+          aria-current={selected ? "page" : undefined}
           aria-keyshortcuts="Meta+Backspace"
           className={cn(
             listRowClassName,
@@ -94,16 +93,20 @@ function ListRowTrigger({
 }
 
 function ListRowTitle({ children }: { children: ReactNode }) {
-  return <span className="min-w-0 truncate font-medium">{children}</span>;
+  return <span className="min-w-0 truncate">{children}</span>;
 }
 
 /** `date` is a calendar day, `yyyy-MM-dd`. */
 function ListRowDate({ date }: { date: string }) {
   // Today and Yesterday turn over at midnight, even if the row does not change.
   const today = useCalendarDay();
+  // The open row's gray background needs a darker date to stay readable.
   return (
-    <time className="text-muted-foreground shrink-0" dateTime={date}>
-      {formatJournalListDate(date, parseCalendarDate(today) ?? new Date())}
+    <time
+      className="text-muted-foreground group-aria-[current=page]/row:text-sidebar-foreground/75 shrink-0 text-xs"
+      dateTime={date}
+    >
+      {formatSidebarDate(date, parseCalendarDate(today) ?? new Date())}
     </time>
   );
 }
@@ -145,13 +148,20 @@ export function ListRowsSkeleton({ label }: { label: string }) {
       <span className="sr-only">{label}</span>
       {skeletonRows.map((row) => (
         <div
-          className="flex items-center justify-between gap-4 rounded-xl px-3 py-2.5"
+          className="flex h-8.5 items-center justify-between gap-3 px-2.5"
           key={row}
         >
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-3.5 w-32" />
+          <Skeleton className="h-3 w-12" />
         </div>
       ))}
     </div>
+  );
+}
+
+/** One gray line, for a list with nothing in it. */
+export function ListEmpty({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-muted-foreground px-2.5 py-1.5 text-sm">{children}</p>
   );
 }

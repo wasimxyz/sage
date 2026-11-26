@@ -1,5 +1,6 @@
 import { domAnimation, LazyMotion, MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
+import type { CSSProperties } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { ChatProvider } from "@/components/chat-provider";
@@ -26,6 +27,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAutomationRoute } from "@/hooks/use-automation-route";
 import { useTextSizeShortcuts } from "@/hooks/use-text-size-shortcuts";
 
+// The sidebar holds the chats or entries, so it is wider than the menu it
+// replaced: about 280 points.
+const sidebarStyle = { "--sidebar-width": "17.5rem" } as CSSProperties;
+
 export default function App() {
   useTextSizeShortcuts();
   useAutomationRoute();
@@ -41,7 +46,10 @@ export default function App() {
       <LazyMotion features={domAnimation} strict>
         <MotionConfig reducedMotion="user">
           <TooltipProvider>
-            <SidebarProvider className="flex h-svh flex-col overflow-hidden">
+            <SidebarProvider
+              className="flex h-svh flex-col overflow-hidden"
+              style={sidebarStyle}
+            >
               <LockProvider>
                 <ModelDownloadsProvider>
                   <MemoryFeatureProvider>

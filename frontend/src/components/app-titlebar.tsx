@@ -4,20 +4,19 @@ import { Hint } from "@/components/hint";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useTitlebarAlignment } from "@/hooks/use-titlebar-alignment";
 import { shortcuts } from "@/lib/shortcuts";
-import { cn } from "@/lib/utils";
 
+/**
+ * The sidebar button beside the traffic lights. It covers only the button,
+ * so the Chat / Journal switch further along the row stays clickable. The
+ * sidebar's own top row drags the window around it.
+ */
 export function AppTitlebar() {
-  const { isMobile, open } = useSidebar();
+  const { open } = useSidebar();
   const rowRef = useTitlebarAlignment<HTMLElement>();
-  const sidebarCoversButton = open && !isMobile;
 
   return (
     <header
-      className={cn(
-        "absolute top-0 left-0 z-20 flex h-(--titlebar-height) items-center bg-transparent pr-2 pl-[calc(var(--titlebar-leading)+0.5rem)]",
-        // Cover the open sidebar so empty title-bar space next to the toggle can drag.
-        open && !isMobile && "w-(--sidebar-width)"
-      )}
+      className="absolute top-0 left-0 z-20 flex h-(--titlebar-height) items-center bg-transparent pr-2 pl-[calc(var(--titlebar-leading)+0.5rem)]"
       data-slot="window-titlebar"
       onPointerDown={onTitlebarPointerDown}
       ref={rowRef}
@@ -25,13 +24,7 @@ export function AppTitlebar() {
       <Hint label="Toggle sidebar" shortcut={shortcuts.toggleSidebar}>
         <SidebarTrigger
           aria-pressed={open}
-          className={cn(
-            "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent",
-            // Home's cloud band sits under the button once the sidebar is out
-            // of the way, and the band is dark enough to need white.
-            sidebarCoversButton ||
-              "in-data-[titlebar=band]:text-white in-data-[titlebar=band]:hover:bg-white/15 in-data-[titlebar=band]:hover:text-white in-data-[titlebar=band]:focus-visible:ring-white/70"
-          )}
+          className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent"
         />
       </Hint>
     </header>

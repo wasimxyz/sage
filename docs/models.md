@@ -1,6 +1,6 @@
 # Models
 
-This page explains which Ollama models Sage uses, how Settings > Models recommends, downloads, and deletes them, and what happens when the Ollama server is not running. The screen is `frontend/src/components/settings-models.tsx`, and the Ollama client is `src/ollama.zig`.
+This page explains which Ollama models Sage uses, how Settings > Models recommends, downloads, and deletes them, and what happens when the Ollama server is not running. The section is `frontend/src/components/settings-models.tsx`, and the Ollama client is `src/ollama.zig`.
 
 ## Which models Sage uses
 

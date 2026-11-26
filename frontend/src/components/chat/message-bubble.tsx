@@ -63,17 +63,20 @@ function UserMessage({ message }: { message: EveMessage }) {
   if (body.length === 0) {
     return null;
   }
+  // Your messages sit at the right, as in a text chat.
   return (
-    <div
-      className={cn(
-        "border-input bg-surface text-foreground w-full rounded-2xl border px-4 py-3 text-sm break-words whitespace-pre-wrap",
-        BUBBLE_CONTAINMENT,
-        SEARCH_FOCUS_RING
-      )}
-      data-message-id={message.id}
-      data-role="user"
-    >
-      {body}
+    <div className="flex w-full justify-end">
+      <div
+        className={cn(
+          "bg-bubble text-foreground w-fit max-w-[80%] rounded-2xl px-4 py-3 text-sm break-words whitespace-pre-wrap",
+          BUBBLE_CONTAINMENT,
+          SEARCH_FOCUS_RING
+        )}
+        data-message-id={message.id}
+        data-role="user"
+      >
+        {body}
+      </div>
     </div>
   );
 }
