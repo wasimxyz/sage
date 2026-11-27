@@ -56,6 +56,19 @@ test("the workflow guard loads ahead of the server, after any options already se
   assert.equal(env.SAGE_DISCOVERY_FILE, undefined);
 });
 
+test("the server never gets the Dream prompt folder, even when the shell has one", () => {
+  const env = eveDevEnv({
+    agentDir,
+    base: {
+      PATH: "/usr/bin",
+      SAGE_EVAL_DREAM_PROMPTS: "/repo/agent/evals/dream-prompts/careful",
+    },
+    ollamaBaseUrl: "http://127.0.0.1:11436/api",
+    withWorkflowGuard: false,
+  });
+  assert.equal(env.SAGE_EVAL_DREAM_PROMPTS, undefined);
+});
+
 test("eveBin points at the installed eve", () => {
   assert.equal(eveBin(agentDir), join(agentDir, "node_modules", ".bin", "eve"));
   assert.equal(EVE_DEV_ARGS[0], "dev");

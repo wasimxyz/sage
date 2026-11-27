@@ -3476,6 +3476,16 @@ pub fn main(init: std.process.Init) !void {
     // and every other launch uses `SAGE_OLLAMA_PATH` on 11436.
     const ollama_bundled = ollama_server.runsFromBundle(init.io);
     ollama.port = ollama.portForMode(ollama_bundled);
+    // Also set before any thread starts. Only a build compiled with
+    // -Dautomation=true reads SAGE_EVAL_DREAM_PROMPTS, the same flag that adds
+    // `zero://inline`. In every other build `resolveDreamPrompts` compiles to
+    // the built-in prompts, so a packaged Sage never looks at the variable.
+    ollama.dream_prompts = ollama.resolveDreamPrompts(
+        build_options.automation,
+        init.io,
+        std.heap.page_allocator,
+        init.environ_map,
+    );
     const app_id: [:0]const u8 = if (dev_mode) "com.wasimxyz.sage-dev" else "com.wasimxyz.sage";
 
     var data_dir_buffer: [512]u8 = undefined;

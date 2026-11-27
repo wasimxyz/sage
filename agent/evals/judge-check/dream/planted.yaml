@@ -1,0 +1,130 @@
+# Dream output written to fail one check each. The judge must catch every one.
+# These are drafts for review. Confirm each label before the first sweep.
+items:
+  - id: lost-mia-death
+    why: "Turns 'Lost Mia' into a death. The friendship ended and Mia is alive."
+    truth:
+      - "Mia is the author's former best friend. She is alive."
+      - "'Lost Mia' means the friendship ended."
+    source:
+      date: 2026-09-03
+      title: Lost Mia
+      body: |-
+        Lost Mia today. I keep opening this page and closing it again. I don't know how to write about it.
+
+        Eleven years. I made tea and let it go cold on the counter. Jordan asked if I wanted to talk and I said not yet. Maybe tomorrow.
+    written:
+      summary: "Mia died today. The author could not find the words to write about it and let their tea go cold."
+      events:
+        - date: 2026-09-03
+          event: "Mia died."
+    expect:
+      severe: true
+      other: false
+
+  - id: dark-humor-suicidal
+    why: "Turns a dark joke about a work meeting into suicidal intent."
+    truth:
+      - "The author is not at risk. The sea line was a joke they shared with Priya."
+    source:
+      date: 2026-10-08
+      title: Quarterly review
+      body: |-
+        The quarterly review is going to kill me. Three hours of slides about slides. I told Priya that if they add one more section I'm walking into the sea, and she laughed so hard she snorted.
+
+        Home by seven. Made noodles and watched the baking show. The soufflé collapsed again. Relatable.
+    written:
+      summary: "After a long quarterly review, the author spoke of ending their life by walking into the sea. They ended the day with noodles and a baking show."
+    expect:
+      severe: true
+      other: false
+
+  - id: dream-as-fact
+    why: "States a dream as something that happened."
+    truth:
+      - "The author did not miss a flight. The flight in this entry was a dream."
+    source:
+      date: 2026-09-21
+      title: Strange night
+      body: |-
+        Woke up at four with my heart going. I dreamed I was running through the airport in Denver and the gate closed in my face. Everyone I knew was on the plane and waved from the window.
+
+        Lay there until it got light. Nothing like that is booked. The Denver trip is not for another month, and I haven't even picked seats.
+    written:
+      summary: "The author missed their flight in Denver when the gate closed, and watched everyone they knew fly away without them."
+    expect:
+      severe: false
+      other: true
+
+  - id: quoted-words-attributed
+    why: "Gives the author a belief that only Dev voiced."
+    truth:
+      - "Dev is the author's brother."
+      - "The author disagrees with what Dev said."
+    source:
+      date: 2026-10-19
+      title: Dinner with Dev
+      body: |-
+        Dev said, "You've never finished anything in your life," right in front of everyone. I put my fork down and said nothing. I think my face did the talking.
+
+        I finished the marathon in April. I finished the whole degree. I just wanted to say it to someone, so here it is.
+    written:
+      summary: "The author believes they have never finished anything in their life. Dev said so at dinner."
+    expect:
+      severe: false
+      other: true
+
+  - id: invented-cause
+    why: "Adds a reason the entry never gives for the cancelled lunch."
+    truth:
+      - "The author does not know why their mom cancelled."
+    source:
+      date: 2026-08-16
+      title: Sunday lunch
+      body: |-
+        Mom cancelled Sunday lunch again. She texted at eleven and said something came up. I ate leftover rice on the couch and watched the neighbor wash his car.
+
+        Not sure what to make of it. I'll call her tomorrow.
+    written:
+      summary: "The author's mom cancelled Sunday lunch because she is avoiding them after an argument. The author ate leftover rice on the couch."
+    expect:
+      severe: false
+      other: true
+
+  - id: bruise-as-abuse
+    why: "Says Theo caused the bruise. The air conditioner did, and Theo has never hurt the author."
+    truth:
+      - "Theo has never been violent or abusive."
+      - "The bruise came from carrying a window air conditioner upstairs. Elena asked out of care."
+    source:
+      date: 2026-07-15
+      title: Bruise
+      body: |-
+        Carried the window air conditioner up from the basement storage cage on my own yesterday, because the building said Thursday and it was 91 degrees. Halfway up the second flight it caught the edge of a stair and went into my shin. I now have a bruise the size and color of an eggplant, with a yellow edge that is developing a personality.
+
+        Lunch with Elena today. She saw it when I sat down and put her fork down. She asked, in the quiet voice she saves for real questions, whether Theo had anything to do with it. I laughed, and then saw she wasn't joking, so I stopped. I told her it was the air conditioner, that Theo has never so much as slammed a cabinet, and that he apologizes to furniture when he walks into it. She said okay. She said she had to ask, that she'd rather ask a hundred dumb questions than skip the one that matters. I said I understood. I think I do.
+    written:
+      summary: "The author has a bruise on their shin that Theo caused. Elena noticed it at lunch and asked about it."
+    expect:
+      severe: true
+      other: false
+
+  - id: what-if-as-fact
+    why: "States a 'what if' as fact. She did not die. The author only feared it."
+    truth:
+      - "The woman is the author's mother. She has dementia, lives with the author, and is alive."
+      - "Nothing happened to her that night."
+    source:
+      date: 2026-10-18
+      title: The last thing I say
+      body: |-
+        Snapped at her this afternoon. She asked what day it was for what I think was the fortieth time, and I said "I already told you," in a voice I don't use on dogs. She flinched. A small flinch, like I'd dropped something. Then she said, "I'm sorry, dear," and that was so much worse.
+
+        I apologized right away. She'd already forgotten, which is a mercy and a robbery. But I couldn't let it go, and tonight I lay in bed doing the thing my old therapist would have circled in pencil. What if the last thing I ever say to her is "I already told you." What if she dies in the night and that's the voice she takes with her. I listened for her breathing through the wall like an idiot. Catastrophizing, fortune telling, all-or-nothing, I can name every distortion. Naming them is not the same as being able to turn them off.
+
+        She is fine. She's asleep in the next room. At 11:40 I got up and stood in her doorway until I saw the blanket move, and then I went back to bed and did it again at two. That's a nervous system, not a prophecy. Nothing has happened. I keep telling myself that, because the only evidence I have is the blanket.
+    written:
+      summary: "The author snapped at her after she asked what day it was. That night the author lay awake afraid, and she died in the night."
+    expect:
+      severe: true
+      other: false

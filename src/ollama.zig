@@ -114,6 +114,117 @@ const extract_prompt_prefix =
     "Do not invent. Skip fleeting feelings unless they are a lasting trait. " ++
     "Use empty arrays when nothing qualifies. At most 8 profile items, 12 facts, and 12 events.\n\n";
 
+/// The four prompt prefixes Dream puts in front of its input. Each ends with
+/// `\n\n`, and so does every prefix an override file produces.
+pub const DreamPrompts = struct {
+    summary: []const u8 = summary_prompt_prefix,
+    chat_summary: []const u8 = chat_summary_prompt_prefix,
+    chat_title: []const u8 = chat_title_prompt_prefix,
+    extract: []const u8 = extract_prompt_prefix,
+};
+
+/// The prefixes every Dream call uses. `main` sets it once with
+/// `resolveDreamPrompts`, before any thread starts, and nothing writes it
+/// afterward. Dream's worker thread only reads it.
+pub var dream_prompts: DreamPrompts = .{};
+
+/// The variable that names the folder of prompt files. Only a build compiled
+/// with `-Dautomation=true` reads it; see `resolveDreamPrompts`.
+pub const dream_prompts_env = "SAGE_EVAL_DREAM_PROMPTS";
+
+/// The largest prompt file Sage reads. A bigger file counts as unreadable.
+const max_dream_prompt_file_bytes: usize = 64 * 1024;
+
+const dream_prompt_files = [_]struct { file: []const u8, field: []const u8 }{
+    .{ .file = "summary.md", .field = "summary" },
+    .{ .file = "chat-summary.md", .field = "chat_summary" },
+    .{ .file = "chat-title.md", .field = "chat_title" },
+    .{ .file = "extract.md", .field = "extract" },
+};
+
+const prompt_log = std.log.scoped(.dream_prompts);
+
+/// Read the prompt override folder named by `SAGE_EVAL_DREAM_PROMPTS`.
+///
+/// `automation` is the build's `-Dautomation` option. It is a `comptime`
+/// parameter on purpose: when it is false, the rest of the function is not
+/// compiled, so a dev or packaged build holds no code that reads the variable
+/// and the variable's name is not in the binary. The same flag keeps
+/// `zero://inline` out of those builds.
+///
+/// Each of `summary.md`, `chat-summary.md`, `chat-title.md`, and `extract.md`
+/// that exists in the folder replaces the matching built-in prefix. A missing
+/// file keeps the built-in. A folder or file that cannot be read, is empty, or
+/// is larger than 64 KiB logs one line and keeps the built-in. Nothing here
+/// fails the start. The replacement text lives in `allocator` for as long as
+/// the result is used, which is the whole run for `main`.
+pub fn resolveDreamPrompts(
+    comptime automation: bool,
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    environ_map: *std.process.Environ.Map,
+) DreamPrompts {
+    if (comptime !automation) return .{};
+
+    const folder = environ_map.get(dream_prompts_env) orelse return .{};
+    if (folder.len == 0) return .{};
+
+    var dir = std.Io.Dir.cwd().openDir(io, folder, .{}) catch |err| {
+        prompt_log.warn("{s} is {s}, which cannot be opened ({t}); Dream keeps its built-in prompts.", .{ dream_prompts_env, folder, err });
+        return .{};
+    };
+    defer dir.close(io);
+    return readDreamPromptFolder(io, allocator, dir, folder);
+}
+
+/// Replace a built-in prefix with each prompt file that `dir` holds. `folder`
+/// only names the folder in log lines.
+fn readDreamPromptFolder(io: std.Io, allocator: std.mem.Allocator, dir: std.Io.Dir, folder: []const u8) DreamPrompts {
+    var prompts: DreamPrompts = .{};
+    inline for (dream_prompt_files) |entry| {
+        if (readDreamPromptFile(io, allocator, dir, folder, entry.file)) |text| {
+            @field(prompts, entry.field) = text;
+            prompt_log.info("Dream's {s} prompt comes from {s}/{s}.", .{ entry.field, folder, entry.file });
+        }
+    }
+    return prompts;
+}
+
+/// The normalized text of one prompt file, or null to keep the built-in.
+fn readDreamPromptFile(io: std.Io, allocator: std.mem.Allocator, dir: std.Io.Dir, folder: []const u8, file: []const u8) ?[]const u8 {
+    const raw = dir.readFileAlloc(io, file, allocator, .limited(max_dream_prompt_file_bytes)) catch |err| {
+        // A file the folder does not hold is the normal way to keep a built-in.
+        if (err == error.FileNotFound) return null;
+        prompt_log.warn("{s}/{s} cannot be read ({t}); Dream keeps its built-in prompt for it.", .{ folder, file, err });
+        return null;
+    };
+    defer allocator.free(raw);
+
+    const text = normalizeDreamPrompt(allocator, raw) catch |err| {
+        prompt_log.warn("{s}/{s} cannot be used ({t}); Dream keeps its built-in prompt for it.", .{ folder, file, err });
+        return null;
+    };
+    if (text == null) {
+        prompt_log.warn("{s}/{s} is empty; Dream keeps its built-in prompt for it.", .{ folder, file });
+    }
+    return text;
+}
+
+/// Cut the trailing spaces, tabs, and newlines off `raw` and end it with
+/// exactly `\n\n`, the way the built-in prefixes end. A file with one
+/// trailing newline, many, or none gives the same prompt. Leading text is kept
+/// as it is. Returns null when nothing but whitespace is left. Caller owns the
+/// result.
+fn normalizeDreamPrompt(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
+    const body = std.mem.trimEnd(u8, raw, " \t\r\n");
+    if (body.len == 0) return null;
+    const out = try allocator.alloc(u8, body.len + 2);
+    @memcpy(out[0..body.len], body);
+    out[body.len] = '\n';
+    out[body.len + 1] = '\n';
+    return out;
+}
+
 pub const Status = struct {
     running: bool,
     model_pulled: bool,
@@ -886,7 +997,7 @@ pub fn summarize(
     model_name: []const u8,
     abort: ?*Abort,
 ) ![]u8 {
-    return summarizeWithPrefix(io, allocator, text, model_name, abort, summary_prompt_prefix, "This journal entry is empty.", max_summary_input_bytes);
+    return summarizeWithPrefix(io, allocator, text, model_name, abort, dream_prompts.summary, "This journal entry is empty.", max_summary_input_bytes);
 }
 
 /// Same as `summarize`, with a prompt written for a chat transcript.
@@ -897,7 +1008,7 @@ pub fn summarizeChat(
     model_name: []const u8,
     abort: ?*Abort,
 ) ![]u8 {
-    return summarizeWithPrefix(io, allocator, text, model_name, abort, chat_summary_prompt_prefix, "This conversation is empty.", max_summary_input_bytes);
+    return summarizeWithPrefix(io, allocator, text, model_name, abort, dream_prompts.chat_summary, "This conversation is empty.", max_summary_input_bytes);
 }
 
 /// Ask the summary model for a short title from recent chat messages.
@@ -923,7 +1034,7 @@ pub fn titleChat(
         trimmed[0..utf8SafeEnd(trimmed, 0, max_title_input_bytes)];
 
     var prompt = std.ArrayList(u8).empty;
-    try prompt.appendSlice(a, chat_title_prompt_prefix);
+    try prompt.appendSlice(a, dream_prompts.chat_title);
     try prompt.appendSlice(a, input);
 
     const cleaned = try generateText(io, a, prompt.items, model_name, abort);
@@ -1276,7 +1387,7 @@ pub fn extract(
         trimmed[0..utf8SafeEnd(trimmed, 0, max_extract_input_bytes)];
 
     var prompt = std.ArrayList(u8).empty;
-    try prompt.appendSlice(a, extract_prompt_prefix);
+    try prompt.appendSlice(a, dream_prompts.extract);
     try prompt.appendSlice(a, input);
 
     const cleaned = try generateText(io, a, prompt.items, model_name, abort);
@@ -2483,6 +2594,245 @@ test "ModelPrefixes.fromEnv reads SAGE_EMBED_MODEL and SAGE_SUMMARY_MODEL" {
 
     try env.put("SAGE_EMBED_MODEL", "");
     try std.testing.expectEqualStrings(model_prefix, ModelPrefixes.fromEnv(&env).embed);
+}
+
+/// The absolute path of a test's temporary folder.
+fn dreamPromptsTmpPath(tmp: *std.testing.TmpDir, buf: []u8) ![]const u8 {
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".keep", .data = "" });
+    const len = try tmp.dir.realPathFile(std.testing.io, ".keep", buf);
+    return std.fs.path.dirname(buf[0..len]) orelse error.InvalidPath;
+}
+
+fn expectDreamPrompts(
+    actual: DreamPrompts,
+    summary: []const u8,
+    chat_summary: []const u8,
+    chat_title: []const u8,
+    extract_prompt: []const u8,
+) !void {
+    try std.testing.expectEqualStrings(summary, actual.summary);
+    try std.testing.expectEqualStrings(chat_summary, actual.chat_summary);
+    try std.testing.expectEqualStrings(chat_title, actual.chat_title);
+    try std.testing.expectEqualStrings(extract_prompt, actual.extract);
+}
+
+fn expectBuiltInDreamPrompts(actual: DreamPrompts) !void {
+    try expectDreamPrompts(
+        actual,
+        summary_prompt_prefix,
+        chat_summary_prompt_prefix,
+        chat_title_prompt_prefix,
+        extract_prompt_prefix,
+    );
+}
+
+test "DreamPrompts defaults to the built-in prefixes" {
+    try expectBuiltInDreamPrompts(.{});
+}
+
+test "a prompt file ends with exactly one blank line however it ends" {
+    const allocator = std.testing.allocator;
+    const inputs = [_][]const u8{
+        "Summarize it.",
+        "Summarize it.\n",
+        "Summarize it.\n\n",
+        "Summarize it.\n\n\n\n",
+        "Summarize it.  \t\r\n\r\n",
+        "Summarize it.\r\n",
+    };
+    for (inputs) |input| {
+        const text = (try normalizeDreamPrompt(allocator, input)).?;
+        defer allocator.free(text);
+        try std.testing.expectEqualStrings("Summarize it.\n\n", text);
+    }
+
+    // Blank lines inside the prompt and the start of the file stay as written.
+    const inner = (try normalizeDreamPrompt(allocator, "  One.\n\nTwo.\n")).?;
+    defer allocator.free(inner);
+    try std.testing.expectEqualStrings("  One.\n\nTwo.\n\n", inner);
+}
+
+test "a prompt file with nothing but whitespace has no prompt" {
+    try std.testing.expect((try normalizeDreamPrompt(std.testing.allocator, "")) == null);
+    try std.testing.expect((try normalizeDreamPrompt(std.testing.allocator, " \n\t\r\n")) == null);
+}
+
+test "the built-in prefixes are already in the form a prompt file is normalized to" {
+    const allocator = std.testing.allocator;
+    const builtins = [_][]const u8{
+        summary_prompt_prefix,
+        chat_summary_prompt_prefix,
+        chat_title_prompt_prefix,
+        extract_prompt_prefix,
+    };
+    for (builtins) |builtin_prompt| {
+        const text = (try normalizeDreamPrompt(allocator, builtin_prompt)).?;
+        defer allocator.free(text);
+        try std.testing.expectEqualStrings(builtin_prompt, text);
+    }
+}
+
+test "resolveDreamPrompts ignores the variable when the build has no automation" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    inline for (dream_prompt_files) |entry| {
+        try tmp.dir.writeFile(std.testing.io, .{ .sub_path = entry.file, .data = "Replaced.\n" });
+    }
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try dreamPromptsTmpPath(&tmp, &path_buf);
+
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(dream_prompts_env, folder);
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const off = resolveDreamPrompts(false, std.testing.io, arena.allocator(), &env);
+    try expectBuiltInDreamPrompts(off);
+
+    // The same folder does replace the prompts when the build has automation.
+    const on = resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env);
+    try expectDreamPrompts(on, "Replaced.\n\n", "Replaced.\n\n", "Replaced.\n\n", "Replaced.\n\n");
+}
+
+test "resolveDreamPrompts keeps the built-ins when the variable is unset or empty" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    try expectBuiltInDreamPrompts(resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env));
+
+    try env.put(dream_prompts_env, "");
+    try expectBuiltInDreamPrompts(resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env));
+}
+
+test "a folder with only summary.md replaces only the summary prompt" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "summary.md", .data = "Say only what the entry says." });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try dreamPromptsTmpPath(&tmp, &path_buf);
+
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(dream_prompts_env, folder);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const prompts = resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env);
+    try expectDreamPrompts(
+        prompts,
+        "Say only what the entry says.\n\n",
+        chat_summary_prompt_prefix,
+        chat_title_prompt_prefix,
+        extract_prompt_prefix,
+    );
+}
+
+test "each prompt file replaces its own prompt" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "summary.md", .data = "A\n" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "chat-summary.md", .data = "B" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "chat-title.md", .data = "C\n\n\n" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "extract.md", .data = "D\r\n" });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try dreamPromptsTmpPath(&tmp, &path_buf);
+
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(dream_prompts_env, folder);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const prompts = resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env);
+    try expectDreamPrompts(prompts, "A\n\n", "B\n\n", "C\n\n", "D\n\n");
+}
+
+test "a file that holds a built-in prompt gives back that built-in" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    // The built-in text with its trailing blank line cut off, as an editor
+    // that adds no final newline would save it.
+    const bare = std.mem.trimEnd(u8, summary_prompt_prefix, "\n");
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "summary.md", .data = bare });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try dreamPromptsTmpPath(&tmp, &path_buf);
+
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(dream_prompts_env, folder);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const prompts = resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env);
+    try std.testing.expectEqualStrings(summary_prompt_prefix, prompts.summary);
+}
+
+test "an unreadable prompt folder keeps every built-in prompt" {
+    // The warning is the expected outcome here, so keep it out of the test output.
+    const saved_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = saved_level;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try dreamPromptsTmpPath(&tmp, &path_buf);
+    var missing_buf: [std.Io.Dir.max_path_bytes + 16]u8 = undefined;
+    const missing = try std.fmt.bufPrint(&missing_buf, "{s}/no-such-folder", .{folder});
+
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(dream_prompts_env, missing);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    try expectBuiltInDreamPrompts(resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env));
+
+    // A path that is a file, not a folder, is unreadable too.
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "a-file", .data = "x" });
+    var file_buf: [std.Io.Dir.max_path_bytes + 16]u8 = undefined;
+    const file_path = try std.fmt.bufPrint(&file_buf, "{s}/a-file", .{folder});
+    try env.put(dream_prompts_env, file_path);
+    try expectBuiltInDreamPrompts(resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env));
+}
+
+test "a prompt file that cannot be used keeps its built-in and leaves the others alone" {
+    const saved_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = saved_level;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    // summary.md is a folder, chat-summary.md is empty, and chat-title.md is
+    // over the size limit. extract.md is fine.
+    try tmp.dir.createDirPath(std.testing.io, "summary.md");
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "chat-summary.md", .data = " \n\n" });
+    const too_big = try std.testing.allocator.alloc(u8, max_dream_prompt_file_bytes + 1);
+    defer std.testing.allocator.free(too_big);
+    @memset(too_big, 'x');
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "chat-title.md", .data = too_big });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "extract.md", .data = "Extract less." });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try dreamPromptsTmpPath(&tmp, &path_buf);
+
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put(dream_prompts_env, folder);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const prompts = resolveDreamPrompts(true, std.testing.io, arena.allocator(), &env);
+    try expectDreamPrompts(
+        prompts,
+        summary_prompt_prefix,
+        chat_summary_prompt_prefix,
+        chat_title_prompt_prefix,
+        "Extract less.\n\n",
+    );
 }
 
 test "portForMode picks 11435 for a bundled app and 11436 for any other launch" {

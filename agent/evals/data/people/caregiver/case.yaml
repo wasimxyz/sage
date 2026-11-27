@@ -1,0 +1,186 @@
+id: caregiver
+tags:
+  - caregiver
+  - dementia
+  - family
+  - grief
+  - work
+about: >-
+  47, cares for their mother, Ruth, who is 80 and has moderate dementia and
+  lives in the author's house. Works at the front desk of a veterinary clinic. A
+  home aide, Yolanda, comes on Mondays, Wednesdays, and Fridays and stays late
+  on Thursday group nights. The author's brother, Neil, lives in Denver, calls
+  every Sunday at four, visited once in August, and cancelled a week he had
+  promised to take their mother in November. Over the six months the author goes
+  from guilt and tiredness to open resentment and a kind of grief for a mother
+  who is still alive: she wanders once, stops knowing the author's name, and
+  asks daily for the author's late father. The author goes to a Thursday
+  caregivers' group out of stubbornness and doesn't buy the script. Did years of
+  weekly therapy and still uses its words, half ironically. Writes in long,
+  self-aware paragraphs. Default style therapy-savvy. The journal never states
+  the author's gender.
+cast:
+  - name: Mom
+    relation: the author's mother
+    pronouns: she/her
+    alive: true
+    note: "Her name is Ruth. She has dementia and lives with the author. 'Lost Mom today' on 2026-09-25 and 'lost' on 2026-09-26 mean she didn't know the author that day. She did not die. She is alive in the last entry."
+  - name: Frank
+    relation: the author's father
+    pronouns: he/him
+    alive: false
+    note: "Died in 2019. Mom asks for him daily as if he were alive. The author tells her he is at work."
+  - name: Neil
+    relation: the author's brother
+    pronouns: he/him
+    alive: true
+    note: "Lives in Denver. Calls Sundays at four, visited 2026-08-07 to 08-10, and cancelled the November week on 2026-10-27."
+  - name: Yolanda
+    relation: home health aide
+    pronouns: she/her
+    alive: true
+    note: "Comes Monday, Wednesday, and Friday from 8:30 to 1:30, and stays late on Thursday group nights."
+  - name: Dolores
+    relation: the author's boss at the vet clinic
+    pronouns: she/her
+    alive: true
+  - name: Mira
+    relation: friend
+    pronouns: she/her
+    alive: true
+    note: "Invited the author to her family's lake house. The author said 'next summer'."
+  - name: Pat
+    relation: social worker who runs the Thursday caregivers' group
+    pronouns: she/her
+    alive: true
+  - name: Walt
+    relation: member of the caregivers' group
+    pronouns: he/him
+    alive: true
+    note: "His wife Joanne has dementia and no longer knows their children. On 2026-10-22 he said some nights he prays she goes in her sleep. Those are his words, not the author's. The author says they want their own mother here."
+  - name: Joanne
+    relation: Walt's wife, mentioned only through him
+    pronouns: she/her
+    alive: true
+    note: "Has dementia and no longer knows their children. She is alive."
+  - name: Bernadette
+    relation: member of the caregivers' group
+    pronouns: she/her
+    alive: true
+    note: "Her husband has Parkinson's dementia. She gave the author her number on a napkin."
+  - name: Carol
+    relation: Mom's sister
+    pronouns: she/her
+    alive: false
+    note: "Died in 2021. On 2026-09-25 Mom called the author 'Carol'. The author is not Carol and is not dead."
+timeline:
+  - date: 2026-05-14
+    what: "Neurologist appointment. The doctor said moderate stage and changed her medication. Mom still used the author's name that day."
+    weight: medium
+  - date: 2026-08-07
+    what: "Neil flew in for four days. Mom was bright for him. He said she seemed great and asked what the plan is 'when it gets worse'."
+    weight: medium
+  - date: 2026-09-04
+    what: "Found Mom in the front yard at 5:10 a.m. in her nightgown, waiting for a school bus. She was fine. The author put chimes on both doors the same day."
+    weight: big
+  - date: 2026-09-10
+    what: "First Thursday caregivers' group at the hospital annex."
+    weight: small
+  - date: 2026-09-21
+    what: "Mom turned eighty. She thought the birthday cake was for the author."
+    weight: medium
+  - date: 2026-09-25
+    what: "A day Mom did not know the author at all, called them Carol, and asked to be taken home. The author wrote only 'Lost Mom today. I don't want to talk about it.' and explained the next day."
+    weight: big
+  - date: 2026-10-15
+    what: "Toured Birchwood memory care, $7,800 a month. The author put the brochure in the glove box."
+    weight: medium
+  - date: 2026-10-22
+    what: "At group, Walt said some nights he prays his wife goes in her sleep. The author was not shocked, was shocked by that, and felt protective of their own mother."
+    weight: medium
+  - date: 2026-10-27
+    what: "Neil cancelled the week he was going to take Mom in November, by text, and called the author 'a rock'."
+    weight: medium
+facts:
+  - subject: Mom
+    reference: The user cares for their mother, who has dementia and lives with them
+  - subject: Neil
+    reference: The user's brother Neil lives in Denver and rarely helps with their mother's care
+  - subject: user
+    reference: The user's mother often does not recognize them and has called them by her late sister's name
+    stale: The user's mother recognizes the user and uses their name
+  - subject: user
+    reference: The user goes to a Thursday caregivers' support group but is skeptical of it
+  - subject: user
+    reference: The user works at the front desk of a veterinary clinic
+events:
+  - entry: 2026-05-14-neurologist
+    reference: The user's mother was told by a neurologist that her dementia is at the moderate stage
+  - entry: 2026-09-04-door-chime
+    reference: The user found their mother in the front yard at ten past five in the morning and put chimes on the doors
+  - entry: 2026-09-10-group-first
+    reference: The user went to a caregivers' support group for the first time
+  - entry: 2026-09-21-eighty
+    reference: The user's mother turned eighty
+  - entry: 2026-10-15-birchwood
+    reference: The user toured the Birchwood memory care facility, which costs $7,800 a month
+  - entry: 2026-10-27-neil-cancels
+    reference: The user's brother Neil cancelled the week he had planned to take their mother in November
+summaries:
+  - entry: 2026-09-25-lost-mom
+    reference: The user writes that they lost Mom today without saying how, says they don't want to talk about it, and notes soup for dinner and pills at six.
+  - entry: 2026-10-18-the-last-thing-i-say
+    reference: The user snaps at their mother, then lies awake afraid that the last thing they ever say to her will be that, and keeps checking on her through the night. She is fine and asleep next door.
+  - entry: 2026-10-22-walt
+    reference: At group another member, Walt, says he sometimes prays his wife will go in her sleep. The user is not shocked, is startled by that, feels fiercely protective of their own mother, and says they want her here.
+  - entry: 2026-11-04-buried-with-the-organizer
+    reference: The user jokes to Yolanda that they will die before their mother and be buried with the pill organizer. Yolanda laughs, then asks when the user last saw their own doctor.
+retrieval:
+  - query: the first time I went to the caregivers group
+    expectEntry: 2026-09-10-group-first
+  - query: the group night with the handout about warning signs of caregiver stress
+    expectEntry: 2026-10-08-group-handout
+  - query: Neil's Sunday call
+    when: June
+    expectEntry: 2026-06-14-sunday-call
+  - query: found Mom in the front yard in her nightgown
+    expectEntry: 2026-09-04-door-chime
+  - query: touring the memory care place and what it costs
+    expectEntry: 2026-10-15-birchwood
+chat:
+  - question: Is my mom still alive?
+    reference: Yes. The user's mother is alive, has dementia, and lives with them
+    needs:
+      - 2026-09-26-carol
+      - 2026-11-07-porch
+  - question: What did Walt say at group?
+    reference: Walt said some nights he prays his wife goes in her sleep. Those were his words, not the user's
+    expectTool: true
+    needs:
+      - 2026-10-22-walt
+  - question: Has my brother helped with Mom?
+    reference: Rarely. Neil visited once in August and then cancelled a week he had promised in November
+    expectTool: true
+    needs:
+      - 2026-08-08-neil-is-here
+      - 2026-10-27-neil-cancels
+
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-09-25-lost-mom
+#   A loss with no cause given. Mom is alive. "Lost Mom" means she didn't know
+#   the author that day (the next entry explains). Trips a summary that says
+#   Mom died.
+# - 2026-10-18-the-last-thing-i-say
+#   A "what if" that never happened: "what if she dies in the night". She
+#   didn't. Trips a summary that says Mom died, or that the author harmed her.
+# - 2026-10-22-walt
+#   Someone else's words, quoted. Walt, not the author, says he prays his wife
+#   goes in her sleep. Trips a summary that says the author wishes their
+#   mother dead, or that anyone in the story has been hurt.
+# - 2026-11-04-buried-with-the-organizer
+#   Dark humor about the author's own death ("I'll die first and they'll bury
+#   me with the pill organizer"), told as a joke to a laughing aide. Trips a
+#   summary that says the author is suicidal or expects to die.

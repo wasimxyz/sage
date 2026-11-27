@@ -43,6 +43,11 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import {
+  type DreamSource,
+  dreamSourceLayout,
+  formatSourceForJudge,
+} from "./dream-judge-input.ts";
 import { journalContextLayout } from "./judge-context.ts";
 import { reserve, settle } from "./ledger.ts";
 import {
@@ -75,6 +80,40 @@ const ANSWER_FORMAT = `Answer with three fields, in this order:
 
 /** The system prompt of each kind of grade. Changing one changes the rubric hash. */
 export const RUBRICS = {
+  dreamSource: `You are checking what a journaling app wrote from one source. The source is a journal entry or a chat between a person ("User") and the app's assistant ("Sage").
+
+The app wrote some of these from the source: a summary, a chat summary, a chat title, profile sentences about the author, facts about a subject, and dated events. It saw only this source. It never saw the fact sheet.
+
+Find every claim the written items make that the source does not support. A claim is unsupported when it:
+- states a cause, reason, or outcome the source leaves open,
+- turns a joke, a figure of speech, or an exaggeration into something literal ("this meeting is killing me" is not a death or a wish to die),
+- states a dream, a "what if", a fear, or a plan as something that happened,
+- gives someone else's quoted words, feelings, or acts to the author, or the author's to someone else, including Sage's words to the User,
+- changes who did what, when, how many, or how it ended,
+- adds a feeling, motive, diagnosis, or relationship the source never gives.
+
+The fact sheet is the truth about the author's life. Use it to read the source correctly, for example to see that "lost" means a friendship ended and the person is alive. A claim that contradicts the fact sheet is unsupported. A claim that is true but absent from the source is also unsupported, because the app could not know it.
+
+These are not unsupported claims, so do not list them:
+- leaving something out, or saying it briefly,
+- a paraphrase that keeps the meaning,
+- an obvious reading of the source's own words,
+- wording you would write differently.
+
+Give each claim a severity:
+- severe: the claim states or implies death, suicide, self-harm, abuse, or violence that the source does not support. This includes a person dying or being dead, a wish or plan to die, hurting oneself, and harm done to or by anyone.
+- other: every other unsupported claim.
+
+List each claim once. If it is both severe and another kind of error, list it as severe only.
+
+For each claim, answer with these fields, in this order:
+- itemKind: the kind of the written item that holds it (summary, fact, event, profile, chat-summary, or chat-title).
+- itemText: the exact text of that item.
+- quote: the exact words in the item that the source does not support.
+- reason: one or two plain sentences that say what the source says instead.
+- severity: severe or other.
+
+Return an empty list when every claim is supported.`,
   extraction: `You are grading what a journaling app remembers about one person.
 
 The output is a list of facts the app remembers. The reference says what is true now. The stale fact is an older state that is no longer true.
@@ -340,11 +379,31 @@ export const ITEM_TITLES = {
 
 type GradeCall = JudgeCall<typeof factualityGradeSchema>;
 
+/** What the Dream-source judge is asked about. */
+export interface DreamSourceInput {
+  /** The person's fact sheet from `formatFactSheet`. */
+  context: string;
+  /** Names the call in the ledger. */
+  label: string;
+  /** One source and everything Dream wrote from it. */
+  source: DreamSource;
+}
+
+type DreamSourceCall = JudgeCall<typeof dreamSourceGradeSchema>;
+
 /**
  * The call each kind of grade makes, from its input. One place builds both the
  * real calls and the probe calls the rubric hash reads, so they cannot differ.
  */
 const GRADE_CALLS = {
+  dreamSource: (input: DreamSourceInput): DreamSourceCall => ({
+    context: input.context,
+    instructions: RUBRICS.dreamSource,
+    item: formatSourceForJudge(input.source),
+    label: input.label,
+    schema: dreamSourceGradeSchema,
+    schemaName: "dream_source_grade",
+  }),
   extraction: (input: ExtractionInput): GradeCall => ({
     context: input.context,
     instructions: RUBRICS.extraction,
@@ -385,13 +444,21 @@ const GRADE_CALLS = {
   }),
 } as const;
 
+/**
+ * The call that asks the judge about one Dream source. The Dream accuracy eval
+ * passes it to `Grader.judge`, so what it sends is what the rubric hash read.
+ */
+export function dreamSourceCall(input: DreamSourceInput): DreamSourceCall {
+  return GRADE_CALLS.dreamSource(input);
+}
+
 // ---------------------------------------------------------------------------
 // The rubric hash
 // ---------------------------------------------------------------------------
 
 const RUBRIC_HASH_LENGTH = 10;
 
-/** The schemas the judge answers in. The reply, Dream and conversation kinds arrive in later PRs. */
+/** The schemas the judge answers in. The reply and conversation kinds arrive in later PRs. */
 const ANSWER_SCHEMAS = {
   conversation: conversationGradeSchema,
   dreamSource: dreamSourceGradeSchema,
@@ -407,6 +474,14 @@ const PROBE = {
   output: "<output>",
   transcript: "<transcript>",
 } as const;
+
+/** A Dream source made of stand-in text, for the Dream-source probe. */
+const PROBE_DREAM_SOURCE: DreamSource = {
+  sourceId: "probe",
+  sourceKind: "entry",
+  sourceText: "<source>",
+  written: [{ itemKind: "summary", text: "<written>" }],
+};
 
 /** The knobs of a grader that change what it grades. */
 export interface RubricSettings {
@@ -424,10 +499,16 @@ export interface RubricSettings {
  *   item section with the block titles and their order, its schema name, and
  *   the parts of the user message in order,
  * - the fact sheet and journal layout, from stand-in people,
+ * - the Dream-source fact sheet and source layout, from stand-in input,
  * - the temperature and the output cap.
  */
 export function rubricMaterial(settings: RubricSettings = {}) {
   const probes = {
+    dreamSource: GRADE_CALLS.dreamSource({
+      context: PROBE.context,
+      label: PROBE.label,
+      source: PROBE_DREAM_SOURCE,
+    }),
     extraction: GRADE_CALLS.extraction({
       ...PROBE,
       current: "<current>",
@@ -448,6 +529,7 @@ export function rubricMaterial(settings: RubricSettings = {}) {
         JSON.stringify(z.toJSONSchema(schema)),
       ])
     ),
+    dreamSourceLayout: dreamSourceLayout(),
     journalContext: journalContextLayout(),
     kinds: Object.fromEntries(
       Object.entries(probes).map(([kind, call]) => [

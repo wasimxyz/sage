@@ -43,6 +43,7 @@ const unitFailedPattern = /mem off .* failed:/u;
 const couldNotLoadPattern = /Ollama could not load too-big:20b/u;
 const evalRootsBaselinePattern = /\.eval-roots\/baseline$/u;
 const f0Pattern = /^[a-f0-9]{64}$/u;
+const carefulStampPattern = /"dreamPrompt": "careful"/u;
 const fakeSageIsUpPattern = /fake sage is up/u;
 const samFailedSageAutomationPattern =
   /sam .* failed: Sage automation did not become ready/u;
@@ -56,6 +57,7 @@ const envNames = [
   "SAGE_EVAL_CACHE",
   "SAGE_EVAL_CACHE_DIR",
   "SAGE_EVAL_DATA",
+  "SAGE_EVAL_DREAM_PROMPTS",
   "SAGE_REPO_ROOT",
 ] as const;
 
@@ -64,7 +66,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 fs.mkdirSync(".zig-cache/native-sdk-automation", { recursive: true });
 fs.writeFileSync("agent-server.json", JSON.stringify({ socket: "/tmp/x.sock", token: "sage-token-0123456789" }));
-fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ kind: "sage", cwd: process.cwd(), dataDir: process.env.SAGE_DATA_DIR, gateway: process.env.AI_GATEWAY_API_KEY ?? null }) + "\\n");
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ kind: "sage", cwd: process.cwd(), dataDir: process.env.SAGE_DATA_DIR, dreamPrompts: process.env.SAGE_EVAL_DREAM_PROMPTS ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null }) + "\\n");
 const [host, port] = process.env.FAKE_OLLAMA_HOST.split(":");
 const server = http.createServer((req, res) => {
   const chunks = [];
@@ -101,7 +103,7 @@ if (args[0] === "dev") {
   const server = http.createServer((req, res) => res.end(req.url === "/eve/v1/health" ? '{"ok":true}' : "{}"));
   server.listen(0, "127.0.0.1", () => {
     console.log("[DEV] server listening at http://127.0.0.1:" + server.address().port + "/");
-    log({ kind: "dev", cwd: process.cwd(), token: process.env.EVE_EVAL_AUTH_TOKEN ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null, discovery: process.env.SAGE_DISCOVERY_FILE, today: process.env.SAGE_TODAY, ollama: process.env.OLLAMA_BASE_URL, port: server.address().port });
+    log({ kind: "dev", cwd: process.cwd(), token: process.env.EVE_EVAL_AUTH_TOKEN ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null, discovery: process.env.SAGE_DISCOVERY_FILE, dreamPrompts: process.env.SAGE_EVAL_DREAM_PROMPTS ?? null, today: process.env.SAGE_TODAY, ollama: process.env.OLLAMA_BASE_URL, port: server.address().port });
   });
   process.on("SIGTERM", () => server.close(() => process.exit(0)));
 } else if (args[0] === "eval") {
@@ -112,7 +114,9 @@ if (args[0] === "dev") {
     process.exit(0);
   }
   const pass = prefix.split("/")[0];
-  log({ kind: "eval", pass, chatModel: process.env.SAGE_CHAT_MODEL ?? null, url: args[args.indexOf("--url") + 1], concurrency: args[args.indexOf("--max-concurrency") + 1], token: process.env.EVE_EVAL_AUTH_TOKEN ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null, setupId, person, dreamKey: process.env.SAGE_EVAL_DREAM_KEY ?? null, sweepId: process.env.SAGE_EVAL_SWEEP_ID, runDir: process.env.SAGE_EVAL_RUN_DIR, dataDir: process.env.SAGE_DATA_DIR, discovery: process.env.SAGE_DISCOVERY_FILE, transcripts: process.env.SAGE_EVAL_TRANSCRIPTS });
+  const dreamKey = process.env.SAGE_EVAL_DREAM_KEY ?? null;
+  const cacheFolder = dreamKey === null ? null : fs.existsSync(require("node:path").join(process.env.SAGE_EVAL_CACHE_DIR, dreamKey));
+  log({ kind: "eval", pass, prefixes: args.slice(1, args.indexOf("--max-concurrency")), chatModel: process.env.SAGE_CHAT_MODEL ?? null, url: args[args.indexOf("--url") + 1], concurrency: args[args.indexOf("--max-concurrency") + 1], token: process.env.EVE_EVAL_AUTH_TOKEN ?? null, gateway: process.env.AI_GATEWAY_API_KEY ?? null, setupId, person, dreamKey, cacheFolder, manifest: process.env.SAGE_EVAL_MANIFEST ?? null, dreamPrompts: process.env.SAGE_EVAL_DREAM_PROMPTS ?? null, sweepId: process.env.SAGE_EVAL_SWEEP_ID, runDir: process.env.SAGE_EVAL_RUN_DIR, dataDir: process.env.SAGE_DATA_DIR, discovery: process.env.SAGE_DISCOVERY_FILE, transcripts: process.env.SAGE_EVAL_TRANSCRIPTS });
   if (pass === "person") {
     fs.appendFileSync(process.env.SAGE_EVAL_RESULTS, row(person + "/retrieval/1", "retrieval", [check("counted", "retrieval-top-hit", true)]));
   } else if (pass === "chat") {
@@ -169,18 +173,24 @@ async function freePort(): Promise<number> {
 }
 
 interface Rig {
+  cacheDir: string;
   calls: string;
   ctx: RunContext;
   group: ReturnType<typeof buildPlan>["groups"][number];
   ollamaLog: string;
   plan: ReturnType<typeof buildPlan>;
+  repo: string;
   runDir: string;
   seeded: { count: number };
 }
 
 interface RigOptions {
+  /** False for a sweep that sends no Chat message. */
+  chat?: boolean;
   /** A model the fake Ollama refuses to load. */
   failModel?: string;
+  /** The eval ids each pass runs. */
+  prefixes?: RunContext["prefixes"];
   sweep?: Record<string, unknown>;
 }
 
@@ -238,6 +248,7 @@ async function makeRig(
     SAGE_REPO_ROOT: repo,
   });
   delete process.env.SAGE_EVAL_CACHE;
+  delete process.env.SAGE_EVAL_DREAM_PROMPTS;
   if (rigOptions.failModel === undefined) {
     delete process.env.FAKE_OLLAMA_FAIL_MODEL;
   } else {
@@ -258,7 +269,9 @@ async function makeRig(
   );
   const setups = expandSetups(sweep);
   const person = makePerson("sam", { entries: 1 });
-  const plan = buildPlan(setups, [person], sweep);
+  const plan = buildPlan(setups, [person], sweep, {
+    chat: rigOptions.chat ?? true,
+  });
   const [group] = plan.groups;
   assert.ok(group);
   const seeded = { count: 0 };
@@ -299,7 +312,7 @@ async function makeRig(
     passesWithFailures: 0,
     people: new Map([["sam", person]]),
     pool: new JobPool(2),
-    prefixes: {
+    prefixes: rigOptions.prefixes ?? {
       chat: ["chat/facts"],
       grade: ["grade/facts"],
       person: ["person/retrieval"],
@@ -313,7 +326,17 @@ async function makeRig(
     sweepId: "2026-11-10T031500Z-smoke",
   };
   mkdirSync(reportsDir, { recursive: true });
-  return { calls, ctx, group, ollamaLog, plan, runDir, seeded };
+  return {
+    cacheDir: join(dir, "cache"),
+    calls,
+    ctx,
+    group,
+    ollamaLog,
+    plan,
+    repo,
+    runDir,
+    seeded,
+  };
 }
 
 test("a unit seeds, runs the person pass, chats against the overlay server, and grades in the background", async (t) => {
@@ -563,4 +586,184 @@ test("a unit stops between steps when the run is aborted", async (t) => {
 
 test("the Ollama host of a real run is the dev port", () => {
   assert.equal(OLLAMA_HOST, "127.0.0.1:11436");
+});
+
+// ---------------------------------------------------------------------------
+// Dream accuracy and Dream prompts
+// ---------------------------------------------------------------------------
+
+const dreamOnly = {
+  chat: false,
+  prefixes: {
+    chat: [],
+    grade: [],
+    person: ["person/retrieval", "person/dream-accuracy"],
+  },
+  sweep: { memory: ["off"], tests: ["person", "dream-accuracy"] },
+} satisfies RigOptions;
+
+test("a Dream-only unit runs Dream accuracy in the person pass with the key, the manifest, and the snapshot's folder, and starts no Chat", async (t) => {
+  const rig = await makeRig(t, dreamOnly);
+  const { ctx } = rig;
+  await runPersonUnit(ctx, rig.group, "sam");
+  await ctx.pool.drain();
+  assert.deepEqual(ctx.failures, []);
+  assert.equal(ctx.passesWithFailures, 0);
+
+  const calls = readCalls(rig.calls);
+  assert.deepEqual(
+    calls.map((call) => call.pass ?? call.kind),
+    ["sage", "person"],
+    "no Chat server, no chat pass, no grade pass"
+  );
+  const sage = calls.find((call) => call.kind === "sage");
+  const person = calls.find((call) => call.pass === "person");
+  assert.ok(sage && person);
+
+  // The person pass runs both evals, on the stub target, with what Dream accuracy reads.
+  assert.deepEqual(person.prefixes, [
+    "person/retrieval",
+    "person/dream-accuracy",
+  ]);
+  assert.equal(person.url, ctx.stubUrl);
+  assert.equal(person.gateway, "gateway-key-0123456789");
+  assert.equal(person.dataDir, sage.dataDir);
+  assert.equal(person.manifest, join(String(sage.dataDir), "manifest.json"));
+  assert.match(String(person.dreamKey), f0Pattern);
+
+  // The folder for the grades is the snapshot's own, and it was there before the pass.
+  assert.equal(person.cacheFolder, true);
+  assert.ok(cachedDreamEntry(String(person.dreamKey), rig.cacheDir));
+
+  // Chat's model was never loaded: Ollama only saw the summary model unload.
+  const asked = readFileSync(rig.ollamaLog, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.ok(asked.every((body) => body.keep_alive === 0));
+});
+
+test("a second Dream-only unit finds the same snapshot folder for its grades", async (t) => {
+  const rig = await makeRig(t, dreamOnly);
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(rig.seeded.count, 1);
+  const people = readCalls(rig.calls).filter((call) => call.pass === "person");
+  assert.equal(people.length, 2);
+  assert.equal(people[0]?.dreamKey, people[1]?.dreamKey);
+  assert.deepEqual(
+    people.map((call) => call.cacheFolder),
+    [true, true]
+  );
+});
+
+test("when the snapshot was not saved the runner leaves the folder alone, so the next snapshot of that key can still be made", async (t) => {
+  const rig = await makeRig(t, dreamOnly);
+  const { ctx } = rig;
+  // A seed that leaves no manifest, so the snapshot fails with a warning.
+  ctx.hooks = {
+    automateWait: () => Promise.resolve(true),
+    seed: (options) => {
+      const db = new DatabaseSync(join(options.dataDir, "app.db"));
+      db.exec("CREATE TABLE memory (n INTEGER);");
+      db.close();
+      return Promise.resolve();
+    },
+  };
+  await runPersonUnit(ctx, rig.group, "sam");
+  assert.deepEqual(ctx.failures, []);
+  const person = readCalls(rig.calls).find((call) => call.pass === "person");
+  assert.ok(person);
+  assert.match(String(person.dreamKey), f0Pattern);
+  assert.equal(person.cacheFolder, false);
+  // A folder holding only grades would stop the snapshot from ever being moved in.
+  assert.equal(existsSync(join(rig.cacheDir, String(person.dreamKey))), false);
+});
+
+test("with the cache off the person pass still runs, nothing is made for the grades, and the runner says so once", async (t) => {
+  const rig = await makeRig(t, dreamOnly);
+  const lines: string[] = [];
+  t.mock.method(console, "log", (line: unknown) => {
+    lines.push(String(line));
+  });
+  process.env.SAGE_EVAL_CACHE = "0";
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  assert.deepEqual(rig.ctx.failures, []);
+  const person = readCalls(rig.calls).find((call) => call.pass === "person");
+  assert.ok(person);
+  assert.equal(person.cacheFolder, false);
+  assert.equal(existsSync(rig.cacheDir), false);
+  const notes = lines.filter((line) => line.includes("the cache is off"));
+  assert.equal(notes.length, 1);
+  assert.ok(notes[0]?.includes("SAGE_EVAL_CACHE=0"));
+  assert.ok(notes[0]?.includes("grades will not be kept"));
+});
+
+test("with the cache on the runner does not say the cache is off", async (t) => {
+  const rig = await makeRig(t, dreamOnly);
+  const lines: string[] = [];
+  t.mock.method(console, "log", (line: unknown) => {
+    lines.push(String(line));
+  });
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(
+    lines.some((line) => line.includes("the cache is off")),
+    false
+  );
+});
+
+test("a Dream prompt variant reaches Sage and no other process", async (t) => {
+  const rig = await makeRig(t, {
+    sweep: {
+      dreamPrompts: ["careful"],
+      memory: ["off"],
+      tests: ["person", "facts"],
+    },
+  });
+  const folder = join(rig.repo, "agent", "evals", "dream-prompts", "careful");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "summary.md"), "Summarize with care.\n");
+  // A value in the shell that started the runner reaches nothing either.
+  process.env.SAGE_EVAL_DREAM_PROMPTS = "/stray/prompts";
+
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.deepEqual(rig.ctx.failures, []);
+
+  const calls = readCalls(rig.calls);
+  const sage = calls.find((call) => call.kind === "sage");
+  assert.equal(sage?.dreamPrompts, folder);
+  const others = calls.filter((call) => call.kind !== "sage");
+  assert.deepEqual(
+    others.map((call) => call.pass ?? call.kind),
+    ["person", "dev", "chat", "grade"]
+  );
+  for (const call of others) {
+    assert.equal(call.dreamPrompts, null, String(call.pass ?? call.kind));
+  }
+  // The key is made from the prompt's text.
+  const person = calls.find((call) => call.pass === "person");
+  assert.ok(person);
+  assert.ok(cachedDreamEntry(String(person.dreamKey), rig.cacheDir));
+  assert.match(
+    readFileSync(
+      join(rig.cacheDir, String(person.dreamKey), "key.json"),
+      "utf8"
+    ),
+    carefulStampPattern
+  );
+});
+
+test("the built-in prompts mean Sage is given no Dream prompt folder, even when the shell has one", async (t) => {
+  const rig = await makeRig(t);
+  process.env.SAGE_EVAL_DREAM_PROMPTS = "/stray/prompts";
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const calls = readCalls(rig.calls);
+  assert.equal(calls.find((call) => call.kind === "sage")?.dreamPrompts, null);
+  for (const call of calls) {
+    assert.equal(call.dreamPrompts, null, String(call.pass ?? call.kind));
+  }
 });

@@ -1265,6 +1265,13 @@ export function sweepSummaryFileName(sweepId: string): string {
   return `${sweepId}${SWEEP_SUMMARY_SUFFIX}`;
 }
 
+/**
+ * The person on the rows of the judge check. The check runs before any person
+ * or setup, so its rows carry this name instead, and setup reports leave them
+ * out.
+ */
+export const JUDGE_CHECK_PERSON = "judge-check";
+
 export const REPORT_ITEM_KINDS = [
   "opener",
   "conversation",

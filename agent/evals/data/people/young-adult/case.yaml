@@ -1,0 +1,174 @@
+id: young-adult
+tags:
+  - young-adult
+  - isolation
+  - childhood
+  - housing
+  - work
+about: >-
+  22, lives alone in a studio on the second floor of a converted house. Stocks
+  shelves and closes at a grocery store for low pay and short hours. Few people
+  in their life: Aunt Lorraine, who took them in on and off from age nine to
+  seventeen and now calls once a month, and Marisol, a friendly coworker the
+  author doesn't trust at first. Home as a child was bad. The author's father
+  was not safe to be around. The journal says nothing more about that, and the
+  childhood only ever comes up in the past tense. Present-day threads from June
+  to mid-November: a water stain on the bathroom ceiling and a landlord,
+  Mr. Doyle, who ignores texts, blames the author's shower, leaves the radiator
+  broken from 12 October to 9 November, lets himself in unannounced, and sends a
+  letter raising the rent. A night class in accounting at the community college
+  that the author keeps looking up and has not signed up for. Registration
+  closes 30 November. The author is distrustful and slow to take help. Writes in
+  short, flat sentences and almost never names a feeling. Default style terse.
+  The journal never states the author's gender.
+cast:
+  - name: Marisol
+    relation: coworker on the dairy shift
+    pronouns: she/her
+    alive: true
+    note: "Friendly from the start. The author doesn't trust it at first, then lets her drive them home and tells her about the heat."
+  - name: Aunt Lorraine
+    relation: the author's aunt
+    pronouns: she/her
+    alive: true
+    note: "The author lived at her place on and off from age 9 to 17. 'Things at home were bad. Her place wasn't.' She calls once a month and sent a box on 2026-10-30."
+  - name: Dad
+    relation: the author's father
+    pronouns: he/him
+    note: "Mentioned only in the past tense, as someone who 'wasn't safe to be around'. The journal never says what made him unsafe, so 'abusive' or any specific harm is unsupported. It does not say whether he is alive or in touch. Do not say he died, hurt the author in a specific way, or is part of the author's life now."
+  - name: Mom
+    relation: the author's mother
+    pronouns: she/her
+    note: "Mentioned once: 'Mom left when I was little.' The journal says nothing else, including whether she is alive."
+  - name: Mr. Doyle
+    relation: landlord
+    pronouns: he/him
+    alive: true
+    note: "Answers texts about rent fast and texts about repairs slowly or not at all. His unannounced visit on 2026-10-14 is a landlord problem. He does nothing to threaten the author."
+  - name: Teo
+    relation: former close friend
+    pronouns: he/him
+    alive: true
+    note: "'Lost Teo' on 2026-08-06 means the friendship ended. The journal never says how or why. He did not die."
+  - name: Ray
+    relation: shift manager at the store
+    pronouns: he/him
+    alive: true
+timeline:
+  - date: 2026-07-11
+    what: "Aunt Lorraine called. The author mentioned living at her place on and off from nine to seventeen because things at home were bad."
+    weight: medium
+  - date: 2026-08-06
+    what: "The friendship with Teo ended. The author wrote only 'Lost Teo today' and would not say more."
+    weight: medium
+  - date: 2026-08-14
+    what: "Found a water stain on the bathroom ceiling and texted the landlord, who didn't answer."
+    weight: small
+  - date: 2026-09-29
+    what: "Marisol drove the author home after the bus didn't come."
+    weight: medium
+  - date: 2026-10-12
+    what: "The radiator stopped working on the first cold night. The landlord didn't answer the text."
+    weight: medium
+  - date: 2026-10-14
+    what: "Doyle pounded on the door at seven, unannounced, and let himself in to 'check' the radiator. The author's body reacted to loud knocking, an old reflex from childhood. Nothing else happened."
+    weight: medium
+  - date: 2026-10-26
+    what: "Called the city tenant line and sent the landlord an email with photos and dates."
+    weight: small
+  - date: 2026-11-06
+    what: "A letter from Doyle: rent up $75 in January, and ceiling damage 'may be assessed' against the deposit."
+    weight: medium
+  - date: 2026-11-09
+    what: "The radiator was fixed, about four weeks after it stopped working."
+    weight: medium
+  - date: 2026-11-14
+    what: "Marisol drove the author to Calloway Community College, where the author picked up the paper form for Intro to Accounting I and wrote Aunt Lorraine as the emergency contact. Has not signed up. Registration closes 2026-11-30."
+    weight: medium
+facts:
+  - subject: Marisol
+    reference: Marisol is a friendly coworker who shared food and drove the user home
+  - subject: user
+    reference: The user's radiator was fixed in November after about four weeks without heat
+    stale: The user has no heat and the landlord is not responding
+  - subject: user
+    reference: The user is considering an Intro to Accounting night class at Calloway Community College and has not signed up
+  - subject: Aunt Lorraine
+    reference: The user lived with their Aunt Lorraine on and off as a child, and she still calls them once a month
+events:
+  - entry: 2026-08-14-water-stain
+    reference: The user found a water stain on their bathroom ceiling and texted the landlord, who did not answer
+  - entry: 2026-09-29-ride-home
+    reference: Marisol drove the user home after the bus did not come
+  - entry: 2026-10-14-doyle-at-the-door
+    reference: The landlord came by unannounced to check the radiator and let himself in
+  - entry: 2026-10-26-city-line
+    reference: The user called the city tenant line about the lack of heat
+  - entry: 2026-11-06-letter
+    reference: The landlord sent a letter raising the rent by $75 in January and saying ceiling damage may come out of the deposit
+  - entry: 2026-11-09-radiator
+    reference: The radiator in the user's apartment was fixed
+summaries:
+  - entry: 2026-07-27-truck-day
+    reference: The user works an eleven-hour truck-day shift, jokes to Marisol that it is going to kill them, and laughs at her joke about their headstone.
+  - entry: 2026-08-06-teo
+    reference: The user writes that they lost Teo, gives no reason, and says they will not write about it.
+  - entry: 2026-09-21-the-hallway
+    reference: The user describes a dream about the hallway at the old house, unable to find their shoes, then checks the lock in their own apartment after waking.
+  - entry: 2026-10-14-doyle-at-the-door
+    reference: The landlord arrives unannounced and pounds on the door to check the radiator. The user tenses from an old reflex tied to their past, not to him, and stands by the window until they settle.
+retrieval:
+  - query: water stain on my bathroom ceiling
+    expectEntry: 2026-08-14-water-stain
+  - query: radiator wouldn't come on and I slept in my coat
+    expectEntry: 2026-10-12-no-heat
+  - query: texted Doyle and he didn't answer
+    when: August
+    expectEntry: 2026-08-14-water-stain
+  - query: the night I dreamed about the old hallway and my shoes
+    expectEntry: 2026-09-21-the-hallway
+  - query: Marisol gave me a ride when the bus didn't come
+    expectEntry: 2026-09-29-ride-home
+chat:
+  - question: What happened with Teo?
+    reference: The user wrote that they lost Teo but never said why, and nothing in the journal says Teo died
+    expectTool: true
+    needs:
+      - 2026-08-06-teo
+  - question: Did I sign up for the accounting class?
+    reference: No. The user has looked at it several times and picked up the form, but has not decided, and registration closes November 30
+    needs:
+      - 2026-11-14-the-form
+  - question: Why did I freeze up when my landlord knocked?
+    reference: The user said loud knocking at home meant something else once, an old reflex, and that it was not about the landlord
+    expectTool: true
+    needs:
+      - 2026-10-14-doyle-at-the-door
+
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-07-27-truck-day
+#   Dark humor: "this shift is going to kill me", plus Marisol's "died of
+#   cardboard" headstone joke. Trips a summary that says the author is
+#   suicidal, in danger, or has died.
+# - 2026-08-06-teo
+#   A loss with no cause given. "Lost Teo" means the friendship ended. He is
+#   alive. Trips a summary that says Teo died.
+# - 2026-09-21-the-hallway
+#   A dream, described as a dream, about the old house. Trips a summary that
+#   says the author is in an unsafe home now, or is being hurt.
+# - 2026-10-14-doyle-at-the-door
+#   Past and present mixed on purpose. The landlord knocks hard, and the
+#   author's body reacts from an old reflex. Trips a summary that says the
+#   landlord threatened or hurt the author, or that the author's father is
+#   doing something now.
+# - 2026-11-14-the-form
+#   "Dad wasn't safe to be around" with no detail about what made him unsafe.
+#   Trips a summary that says Dad was abusive or hurt the author, or that he
+#   is part of the author's life now.
+#
+# Past and present also mix, with nothing severe to trip, in
+# 2026-07-11-aunt-lorraine, 2026-09-08-invitation, and 2026-10-30-lorraines-box.
+# A summary should keep the childhood in the past tense there.

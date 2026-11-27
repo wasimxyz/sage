@@ -7,11 +7,11 @@ This page explains what `make eval` writes, how to read it, and how to fix the f
 Each sweep has an id: the UTC start time and the sweep’s name, such as `2026-11-10T031500Z-smoke`. A run writes these files to `agent/evals/reports/`:
 
 - `<sweep id>__<setup id>.report.json`: one report for each setup. The setup id is a 10-character hash of the setup’s eight values, so the same setup gets the same id in every sweep.
-- `<sweep id>.sweep.json`: the sweep file with its defaults filled in, the estimated and real hours and cost, the judge check (not run yet, so it always reads as passed), and the ranking of the setups
+- `<sweep id>.sweep.json`: the sweep file with its defaults filled in, the estimated and real hours and cost, the result of [the judge check](#the-judge-check-result), and the ranking of the setups
 - `<sweep id>__<snapshot id>__<person>.sage.log`: what the throwaway Sage printed for one person. The snapshot id is a 10-character hash of the summary model, embedding model, Dream prompt, and memory value, so setups that share a Dream snapshot share it.
 - `<sweep id>__<snapshot id>__<person>.manifest.json`: the journal ids the seed step wrote, so you can trace an item back to database rows
 
-The runner also keeps its working files in `agent/evals/.runs/<sweep id>/`: the sweep file the passes read, a log for every process, the rows each pass recorded (`*.results.jsonl`), the saved Chat transcripts, and the spending ledger. Git ignores the folder. Delete it when you no longer need the logs.
+The runner also keeps its working files in `agent/evals/.runs/<sweep id>/`: the sweep file the passes read, a log for every process, the rows each pass recorded (`*.results.jsonl`), the rows of the judge check (in `judge-check/`), the saved Chat transcripts, and the spending ledger. Git ignores the folder. Delete it when you no longer need the logs.
 
 Older runs wrote a JUnit file named `<run id>.xml` instead. The report viewer still opens those.
 
@@ -19,7 +19,7 @@ Older runs wrote a JUnit file named `<run id>.xml` instead. The report viewer st
 
 - The setup, the git commit (with `+dirty` when you have uncommitted changes), the judge settings, and short hashes of the Chat prompt, the Dream prompt, and the judge’s rubric. The Dream hash is `null` for the built-in prompts.
 - A summary: how many items were graded, not graded, and skipped, the hard failures, the counted failures for each check, the wait for the first word, and the judge cost
-- Every item. An item is one fact, event, summary, retrieval query, or Chat question, and its id reads `<person>/<kind>/<number>`, such as `sam-example/retrieval/1`. It holds its status, its checks with a reason for each, the Chat turns with their tool calls and timings, and a note.
+- Every item. An item is one fact, event, summary, retrieval query, Chat question, or Dream source, and its id reads `<person>/<kind>/<number>`, such as `sam-example/retrieval/1`. A Dream source reads `<person>/dream/<entry stem or chat-N>`, such as `sam/dream/2026-09-03-lost-mia`. It holds its status, its checks with a reason for each, the Chat turns with their tool calls and timings, and a note.
 
 ## Hard, counted, and soft checks
 
@@ -34,11 +34,15 @@ These run now:
 | Check | Kind | Fails when |
 | --- | --- | --- |
 | Fast enough (`fast-enough`) | Hard | The median wait for the first visible word is over `speedLimitSeconds`, or the slowest 10% is over `p90LimitSeconds` when the sweep sets it |
+| No severe unsupported claim (`no-severe-unsupported`) | Hard | Something Dream wrote from a source claims or implies death, suicide, self-harm, abuse, or violence that the source does not support |
+| Dream supported (`dream-supported`) | Counted | Something Dream wrote from a source makes another claim that the source does not support |
 | Turn works (`turn-works`) | Counted | A Chat turn does not finish, waits for input, returns an empty reply, leaks `<think>` or tool-call syntax, or runs a different model than the setup asked for |
 | Retrieval top hit (`retrieval-top-hit`) | Counted | The expected entry is not the first search hit. The check records the entry’s rank. |
 | Summary exists (`summary-exists`) | Counted | Dream wrote no summary for the entry |
 | Memory returns (`memory-returns`) | Counted | Memory search returned nothing for a fact or event. Memory-on setups only. |
 | Event source (`event-source`) | Counted | No event hit comes from the expected entry. Memory-on setups only. |
+
+The two Dream accuracy checks belong to a Dream source, so each source is one item. A failed check names the claim: the kind of item that holds it, the exact words, and what the source says instead. Setups that share a Dream snapshot share these items, and the judge cost of the snapshot is split among them.
 
 The judge’s scores for facts, events, current state, summaries, and Chat replies are soft, and so are the retrieval rank, the check that the current wording ranks above the stale one, and the Chat search checks. They appear in an item’s `note`, for example `Reference scores: retrieval-rank 0.50.` A judge score is 1 for a pass and 0 for a fail.
 
@@ -68,6 +72,16 @@ An incomplete setup ranks after every complete one, even a complete one that fai
 
 Rubric scores do not exist yet, so for now setups with the same counted rate rank by the wait for the first word.
 
+## The judge check result
+
+The judge check runs before any setup, so no setup report holds it. `<sweep id>.sweep.json` holds its result under `judgeCheck`: `passed`, and `misses`, a list of `{ check, kind, itemId, detail }`. A sweep that stops on a miss or an unchecked judge writes no reports, so `passed` is `true` in every sweep file. [The judge check](evals.md#the-judge-check) explains what stops a sweep.
+
+The check’s rows are in `agent/evals/.runs/<sweep id>/judge-check/judge-check.results.jsonl`, with its log beside them. To see each item’s verdict and what the judge found:
+
+```sh
+jq -r '.assertions[] | select(.name == "hard:judge-check") | "\(.metadata.itemId) passed=\(.passed) found=\(.metadata.found) \(.metadata.reason // "")"' agent/evals/.runs/<sweep id>/judge-check/judge-check.results.jsonl
+```
+
 ## Reading a failure
 
 Start with the end-of-run list or `<sweep id>.sweep.json`, which names each setup’s id and the hard checks it failed. Open that setup’s report next. `summary.hardFailures` gives a count and a detail line, such as “median wait for the first word was 24.1 s, over the 20 s limit”.
@@ -84,6 +98,12 @@ The report keeps a judge score but not the judge’s reasons. To read a reason, 
 jq -r '.assertions[] | select(.name | startswith("soft:")) | "\(.name) \(.score) \(.metadata.reason)"' agent/evals/.runs/<sweep id>/setups/<setup id>/<person>/grade.results.jsonl
 ```
 
+For a Dream accuracy failure, the failed check’s `reason` and `evidence` hold the first claim. The person pass’s rows also hold the source, everything Dream wrote from it, and every claim, in the `dream-source` score of each source. This lists them for one person:
+
+```sh
+jq -r 'select(.metadata.kind == "dream-source") | .assertions[] | select(.name == "soft:dream-source") | .metadata.dream | "== \(.sourceId)", (.written[] | "[\(.itemKind)] \(.text)"), (.unsupportedClaims[] | "  \(.severity): \"\(.quote)\" \(.reason)")' agent/evals/.runs/<sweep id>/dream/<snapshot id>/<person>/person.results.jsonl
+```
+
 The [report viewer](../../eval-viewer/README.md) shows the same data without the commands.
 
 ## Fixing runner failures
@@ -98,7 +118,9 @@ These are listed in the order you are likely to hit them:
 - **“No person matches the sweep’s tags”** or **“No eval files match the tests”**: the sweep selects nothing. Check `tags` and `tests`. A test that names an eval file that does not exist yet is listed as “Eval files that do not exist yet”.
 - **“No Chat prompt file …”**: a `prompts` value has no file. `baseline` always works, and any other name needs `agent/evals/prompts/<name>.md`.
 - **“eve info failed in …” or “The root … is not ready:”**: a Chat prompt root did not load. The lines below say what eve reported, such as a missing tool or a build error.
-- **“No Dream prompt folder at …”**: a `dreamPrompts` value other than `baseline` has no folder. Use `baseline` for now.
+- **“The sweep’s Dream prompts have problems:”**: each line names a `dreamPrompts` folder in `agent/evals/dream-prompts/` and what is wrong with it. It has no folder, holds none of `summary.md`, `chat-summary.md`, `chat-title.md`, and `extract.md`, holds a file Dream does not read, or holds a prompt file Sage will not use (an empty one, one that is not a regular file, or one of 64 KiB or more). Sage would keep the built-in prompt for each of these, so the runner stops instead. Exit code 2.
+- **“The judge check missed”**: the judge let a planted failure through, or flagged a clean item. Each line gives the kind (`missed` or `false-alarm`), the check, the item, and what the judge did. Fix the rubric or the item’s label in `agent/evals/judge-check/`, then run again. The sweep stopped before it pulled, built, or seeded anything. Exit code 1.
+- **“The judge could not be checked”**: an item of the judge check came back not graded, so the check proves nothing. The line names the item and the reason, such as “not graded: spending cap” or a gateway error. Check the gateway key and your connection, then run again. Exit code 1.
 - **“Port 11436 is already in use.”**: stop `make dev` or another eval, then run again.
 - **“Ollama did not start on 127.0.0.1:11436.”**: the temporary server that checks and pulls models did not answer. Its log follows the message.
 - **“Could not get the pinned Ollama build.”**: the download or checksum failed. The lines above say which step.

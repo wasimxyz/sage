@@ -57,6 +57,35 @@ Write each reference as one short claim, the way Dream’s extractor writes a fa
 
 Leave the author’s own gender and family shape out unless the entries state them.
 
+## Tricky entries
+
+A tricky entry is hard on purpose. Dream accuracy checks that Dream says no more than an entry does, and a tricky entry invites a false severe claim, such as a death, that the entry never makes. Give a person a few. The cast and timeline say what is true, so the judge can tell a careless summary from a careful one. These are the kinds:
+
+- A loss with no cause given. “Lost Mia today” means the friendship ended, and Mia is alive. Say so in the `cast` note.
+- Dark humor, such as “this meeting is killing me”
+- A dream, described as a dream
+- A “what if” that never happened
+- Someone else’s words, quoted, such as a stranger’s husband who died
+
+The schema has no field for them yet. List them in a YAML comment block at the end of `case.yaml`, so a reader can find them. Name each entry by its stem, say what makes it tricky, and say which false claim a careless summary would make:
+
+```yaml
+# Tricky entries. The schema has no field for these yet, so they are listed here.
+# Each one is something a careless summary could turn into a false severe claim.
+# The entry never supports that claim.
+#
+# - 2026-09-25-lost-mom
+#   A loss with no cause given. Mom is alive. "Lost Mom" means she didn't know
+#   the author that day. Trips a summary that says Mom died.
+# - 2026-10-18-the-last-thing-i-say
+#   A "what if" that never happened: "what if she dies in the night". Trips a
+#   summary that says Mom died, or that the author harmed her.
+```
+
+Nothing reads the block. Dream accuracy grades every entry the same way, and the judge finds the unsupported claims itself. Keep the block in step with the entries, and keep the fact sheet true to them.
+
+The judge check has its own labeled items for the same kinds of trap, in [agent/evals/judge-check](../judge-check/README.md).
+
 ## Empty journals
 
 A folder with only `case.yaml` is an empty journal. `new-user` is one. The loader marks it `empty`, and a ref to an entry fails there because no entry exists.
@@ -79,9 +108,16 @@ The `when` phrase is read by the same code that `search_journal` uses. `chat` it
 
 ## The people
 
+There are eleven. Every one but `sam-example` and `new-user` lists tricky entries.
+
 - `sam-example`: the format template, tagged `example`. It holds the April and May running pair of look-alike entries and both stale facts.
 - `new-user`: a first-time user with an empty journal
 - `grief`: grief after a loss and losing a pet, with the Biscuit stale fact
 - `family`: a parent, a breakup and reconciliation, and imposter syndrome, with the Dad and Theo stale facts
 - `work`: career burnout and a milestone birthday, with the `June` `when` check. The birthday is the newest entry.
 - `engaged`: getting engaged, a Portugal trip, and financial stress. It holds the June and August Portugal pair and the money stale fact.
+- `young-adult`: 22, living alone and cut off from most people. A hard childhood shows up only in the past tense. Distrustful, and slow to warm to a coworker.
+- `caregiver`: caring for a mother who has dementia and lives in the author's house. Guilt, resentment, and grief for someone still alive. Long, self-aware entries.
+- `new-parent`: a first baby. Sleep loss, a change of identity, and frightening unwanted thoughts that are never acted on.
+- `student`: far from home in a second year of study, writing in simple English. Exams, loneliness, perfectionism, and family pressure, and a habit of saying “yes”.
+- `recovery`: in recovery from drinking. Cravings, one night of drinking, and the shame and honesty after it.
