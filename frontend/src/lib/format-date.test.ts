@@ -3,8 +3,9 @@ import test from "node:test";
 
 import {
   formatEntryDate,
-  formatJournalListDate,
   formatShortEntryDate,
+  formatSidebarDate,
+  formatTodayHeading,
   localDateKey,
   msUntilNextDay,
 } from "./format-date.ts";
@@ -23,18 +24,15 @@ test("localDateKey leaves a value that is not a date alone", () => {
   assert.equal(localDateKey(""), "");
 });
 
-test("a chat saved this evening reads Today in the list", () => {
+test("a chat saved this evening reads Today in the sidebar", () => {
   const now = new Date(2026, 9, 18, 9, 0);
   const savedLastNight = new Date(2026, 9, 17, 23, 30).toISOString();
   const savedThisMorning = new Date(2026, 9, 18, 0, 30).toISOString();
   assert.equal(
-    formatJournalListDate(localDateKey(savedLastNight), now),
+    formatSidebarDate(localDateKey(savedLastNight), now),
     "Yesterday"
   );
-  assert.equal(
-    formatJournalListDate(localDateKey(savedThisMorning), now),
-    "Today"
-  );
+  assert.equal(formatSidebarDate(localDateKey(savedThisMorning), now), "Today");
 });
 
 test("formatEntryDate leads with the weekday unless asked not to", () => {
@@ -45,25 +43,35 @@ test("formatEntryDate leads with the weekday unless asked not to", () => {
   );
 });
 
-test("an older date in the list shows the weekday", () => {
+test("an older date in the sidebar is short, with the year when it is not this one", () => {
   const now = new Date(2026, 9, 18, 9, 0);
-  assert.equal(formatJournalListDate("2026-10-02", now), "Friday, Oct 2");
-  assert.equal(
-    formatJournalListDate("2025-11-28", now),
-    "Friday, Nov 28, 2025"
-  );
-  assert.equal(
-    formatJournalListDate("2026-11-30", now),
-    "Monday, November 30, 2026"
-  );
+  assert.equal(formatSidebarDate("2026-10-04", now), "Oct 4");
+  assert.equal(formatSidebarDate("2026-01-02", now), "Jan 2");
+  assert.equal(formatSidebarDate("2025-11-28", now), "Nov 28, 2025");
 });
 
-test("a relative date in the list has no weekday", () => {
+test("a day ahead in the sidebar reads as a short date", () => {
   const now = new Date(2026, 9, 18, 9, 0);
-  assert.equal(formatJournalListDate("2026-10-18", now), "Today");
-  assert.equal(formatJournalListDate("2026-10-17", now), "Yesterday");
-  assert.equal(formatJournalListDate("2026-10-13", now), "5 days ago");
-  assert.equal(formatJournalListDate("2026-10-08", now), "1 week ago");
+  assert.equal(formatSidebarDate("2026-10-19", now), "Oct 19");
+  assert.equal(formatSidebarDate("2027-01-02", now), "Jan 2, 2027");
+});
+
+test("a recent date in the sidebar reads in words", () => {
+  const now = new Date(2026, 9, 18, 9, 0);
+  assert.equal(formatSidebarDate("2026-10-18", now), "Today");
+  assert.equal(formatSidebarDate("2026-10-17", now), "Yesterday");
+  assert.equal(formatSidebarDate("2026-10-15", now), "3 days ago");
+  assert.equal(formatSidebarDate("2026-10-12", now), "6 days ago");
+  assert.equal(formatSidebarDate("2026-10-11", now), "1 week ago");
+  assert.equal(formatSidebarDate("2026-10-05", now), "1 week ago");
+  assert.equal(formatSidebarDate("2026-10-04", now), "Oct 4");
+});
+
+test("today's heading names the weekday, month, and day", () => {
+  assert.equal(
+    formatTodayHeading(new Date(2026, 10, 23, 18)),
+    "Monday, November 23"
+  );
 });
 
 test("msUntilNextDay counts down to the next local midnight", () => {

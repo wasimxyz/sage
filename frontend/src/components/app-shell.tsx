@@ -1,92 +1,109 @@
-import {
-  HouseIcon,
-  MessageCircleIcon,
-  NotebookTextIcon,
-  RotateCcwClockIcon,
-  SettingsIcon,
-} from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";
 
 import { onOpenSettings } from "@/bridge";
+import { AppSidebar } from "@/components/app-sidebar";
 import { AppTitlebar } from "@/components/app-titlebar";
-import { preloadChatLayout } from "@/components/chat-layout-loader";
+import { RenameChatProvider } from "@/components/chat/rename-chat-dialog";
+import { useChat } from "@/components/chat-provider";
 import { ChatRoute } from "@/components/chat-route";
 import {
   DreamConfirmDialog,
-  DreamNav,
   DreamStartAnnouncement,
 } from "@/components/dream-nav";
-import { HomeScreen } from "@/components/home-screen";
+import EditorPane from "@/components/editor";
 import {
   type Section,
-  type SidebarMenu as SidebarMenuName,
   useJournalActions,
   useJournalView,
 } from "@/components/journal-context";
-import { JournalLayout } from "@/components/journal-layout";
 import { MemoriesScreen } from "@/components/memories-screen";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
-import { MenuShortcut } from "@/components/menu-shortcut";
+import { ProtectReminder } from "@/components/protect-reminder";
 import { ScreenActiveProvider } from "@/components/screen-active";
 import { SearchDialog, SearchProvider } from "@/components/search-dialog";
-import { SettingsMenu } from "@/components/settings-menu";
-import { SettingsScreen } from "@/components/settings-screen";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { useSettings } from "@/components/settings-context";
+import { SettingsDialog } from "@/components/settings-dialog";
+import { SidebarInset } from "@/components/ui/sidebar";
+import { useDictationShortcut } from "@/hooks/use-dictation-shortcut";
 import { useNewShortcut } from "@/hooks/use-new-shortcut";
 import { useRouteSync } from "@/hooks/use-route-sync";
 import { useWindowFullscreen } from "@/hooks/use-window-fullscreen";
-import { shortcuts } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
+/**
+ * Two columns: the sidebar, with its Chat and Journal tabs, and the pane
+ * that shows the open chat, entry, or Memories. Settings opens as a dialog
+ * over them.
+ */
 export function AppShell() {
   const fullscreen = useWindowFullscreen();
+  const [routeApplied, setRouteApplied] = useState(false);
   useNewShortcut();
+  useDictationShortcut();
   return (
     <SearchProvider>
-      <div
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
-        style={
-          {
-            // 4.75rem clears the traffic lights inset 1rem. In fullscreen the
-            // toggle icon lines up with the sidebar icons, which sit 1rem in:
-            // 0.125rem + 0.5rem padding + 0.375rem inside the 1.75rem button.
-            "--titlebar-leading": fullscreen ? "0.125rem" : "4.75rem",
-          } as CSSProperties
-        }
-      >
-        <RouteSync />
-        <SettingsMenuListener />
-        <AppTitlebar />
-        <DreamConfirmDialog />
-        <DreamStartAnnouncement />
-        <SearchDialog />
-        <div className="flex min-h-0 min-w-0 flex-1">
-          <AppSidebar />
-          <SidebarInset className="min-h-0 overflow-hidden">
-            <AppMain />
-          </SidebarInset>
+      {/* The chat rows in the sidebar and the open chat's ⋯ menu share one
+          rename dialog. */}
+      <RenameChatProvider>
+        <div
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+          style={
+            {
+              // 4.75rem clears the traffic lights inset 1rem. In fullscreen the
+              // toggle icon lines up with the sidebar icons, which sit 1rem in:
+              // 0.125rem + 0.5rem padding + 0.375rem inside the 1.75rem button.
+              "--titlebar-leading": fullscreen ? "0.125rem" : "4.75rem",
+            } as CSSProperties
+          }
+        >
+          <RouteSync onApplied={setRouteApplied} />
+          <LaunchReminder routeApplied={routeApplied} />
+          <SettingsMenuListener />
+          <AppTitlebar />
+          <DreamConfirmDialog />
+          <DreamStartAnnouncement />
+          <SearchDialog />
+          <SettingsDialog />
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <AppSidebar />
+            <SidebarInset className="min-h-0 overflow-hidden">
+              <AppMain />
+            </SidebarInset>
+          </div>
         </div>
-      </div>
+      </RenameChatProvider>
     </SearchProvider>
   );
 }
 
-function RouteSync() {
-  useRouteSync();
+// Its own component, so the many states route sync reads redraw only this.
+function RouteSync({ onApplied }: { onApplied: (applied: boolean) => void }) {
+  const applied = useRouteSync();
+  useEffect(() => {
+    onApplied(applied);
+  }, [applied, onApplied]);
   return null;
 }
 
-/** Sage > Settings opens the settings screen. */
+/**
+ * The protect reminder waits for the new chat Sage opens on. Chat mounts at
+ * launch before the address is read, so it also waits for the route: a
+ * launch that lands on an entry, or on Settings, never shows it.
+ */
+function LaunchReminder({ routeApplied }: { routeApplied: boolean }) {
+  const { section } = useJournalView();
+  const {
+    state: { listLoaded, selection },
+  } = useChat();
+  const {
+    state: { open: settingsOpen },
+  } = useSettings();
+  const onNewChat =
+    section === "chat" && selection.kind === "new" && !settingsOpen;
+  return <ProtectReminder ready={routeApplied && listLoaded && onNewChat} />;
+}
+
+/** Sage > Settings opens the Settings dialog. */
 function SettingsMenuListener() {
   const { showSettings } = useJournalActions();
   useEffect(
@@ -99,106 +116,6 @@ function SettingsMenuListener() {
   return null;
 }
 
-function AppSidebar() {
-  const { sidebarMenu } = useJournalView();
-  return (
-    <Sidebar
-      className="md:[&_[data-slot=sidebar-inner]]:pt-[calc(var(--titlebar-height)-0.5rem)]"
-      collapsible="offcanvas"
-    >
-      <SidebarContent>
-        <SidebarBody menu={sidebarMenu} />
-      </SidebarContent>
-      {sidebarMenu === "nav" ? <SettingsNav /> : null}
-    </Sidebar>
-  );
-}
-
-function SidebarBody({ menu }: { menu: SidebarMenuName }) {
-  if (menu === "settings") {
-    return <SettingsMenu />;
-  }
-  return <NavMenu />;
-}
-
-function NavMenu() {
-  const { showChat, showHome, showJournal, showMemories } = useJournalActions();
-  const { section } = useJournalView();
-  const { memoryEnabled } = useMemoryFeature();
-  return (
-    <>
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={section === "home"}
-                onClick={showHome}
-              >
-                <HouseIcon />
-                <span>Home</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={section === "journal"}
-                onClick={showJournal}
-              >
-                <NotebookTextIcon />
-                <span>Journal</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={section === "chat"}
-                onClick={showChat}
-                onFocus={preloadChatLayout}
-                onPointerEnter={preloadChatLayout}
-              >
-                <MessageCircleIcon />
-                <span>Chat</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            {memoryEnabled ? (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={section === "memories"}
-                  onClick={showMemories}
-                >
-                  <RotateCcwClockIcon />
-                  <span>Memories</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ) : null}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-      <DreamNav />
-    </>
-  );
-}
-
-function SettingsNav() {
-  const { showSettings } = useJournalActions();
-  return (
-    <SidebarFooter>
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            aria-keyshortcuts="Meta+,"
-            className="mb-0.5"
-            onClick={showSettings}
-          >
-            <SettingsIcon />
-            <span className="truncate">Settings</span>
-            <MenuShortcut>{shortcuts.settings}</MenuShortcut>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </SidebarFooter>
-  );
-}
-
 // One element for the life of the shell. A render of AppMain, such as for a
 // change in the journal, then leaves the hidden chat alone.
 const chatLayout = <ChatRoute />;
@@ -209,7 +126,7 @@ function AppMain() {
   // Chat mounts the first time it opens and then stays, out of sight while
   // another screen shows. The transcript, its scroll, and a reply that is
   // still coming in are as you left them when you come back. It is hidden,
-  // not removed from the layout, so the scroll and the panel keep measuring.
+  // not removed from the layout, so the scroll keeps measuring.
   const [chatMounted, setChatMounted] = useState(onChat);
   if (onChat && !chatMounted) {
     setChatMounted(true);
@@ -238,14 +155,8 @@ function AppMain() {
 /** Every screen but Chat. These unmount when you leave them. */
 function OtherScreen({ section }: { section: Section }) {
   const { memoryEnabled } = useMemoryFeature();
-  if (section === "home") {
-    return <HomeScreen />;
-  }
   if (section === "memories" && memoryEnabled) {
     return <MemoriesScreen />;
   }
-  if (section === "settings") {
-    return <SettingsScreen />;
-  }
-  return <JournalLayout />;
+  return <EditorPane />;
 }

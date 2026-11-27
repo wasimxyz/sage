@@ -21,9 +21,10 @@ import {
 
 /**
  * Asks someone who skipped Protect to turn on a lock and encryption, up to
- * three times. It lives on Home and waits for Home to load, so it never opens
- * over the editor or Chat. It counts the reminder when the dialog appears, so
- * quitting with it open still counts.
+ * three times. It waits for a new chat, the screen Sage opens on, with the
+ * chat list loaded, so it never opens over an open chat or entry. It counts
+ * the reminder when the dialog appears, so quitting with it open still
+ * counts.
  */
 export function ProtectReminder({ ready }: { ready: boolean }) {
   const {

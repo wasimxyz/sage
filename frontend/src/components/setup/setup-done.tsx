@@ -87,7 +87,7 @@ export function SetupDone() {
           <SetupFooterEnd>
             <Button onClick={leaveSetupToDraft}>Write your first entry</Button>
             <Button onClick={leaveSetup} variant="outline">
-              Go to Home
+              Go to Chat
             </Button>
           </SetupFooterEnd>
         </SetupFooter>

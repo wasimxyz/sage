@@ -1,4 +1,4 @@
-.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
+.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev screenshots eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
 
 # `native build` / `native test` drive this repo's ejected build.zig.
 # Pass the global CLI only when it is actually installed; otherwise
@@ -53,6 +53,7 @@ test:
 	sh scripts/reset-dev.test.sh
 	node --test --experimental-strip-types security-tests/*.test.ts
 	sh security-tests/seed-dev-dev-only.sh
+	sh security-tests/screenshots-isolated.sh
 	sh security-tests/agent-dev-modules.sh
 
 # Runs a sweep file from agent/evals/sweeps. SWEEP picks the file. ARGS adds
@@ -78,7 +79,8 @@ fe-build:
 build: fe-build
 	native build $(NATIVE_SDK_FLAG) $(MEMORY_FLAG) -Doptimize=$(NATIVE_OPTIMIZE)
 
-# The dev app runs the pinned Ollama CLI from third_party/ollama/ on port 11436.
+# The dev app runs the pinned Ollama CLI from third_party/ollama/ on port 11436,
+# and loads the speech library the build installs in zig-out/lib/.
 dev:
 	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
 	agent_pid=""; \
@@ -99,7 +101,7 @@ dev:
 		done; \
 	fi; \
 	trap 'if [ -n "$$agent_pid" ]; then kill $$agent_pid 2>/dev/null; pkill -P $$agent_pid 2>/dev/null; fi' EXIT INT TERM; \
-	SAGE_OLLAMA_PATH="$$ollama_bin" SAGE_DEV_EVE_WORKFLOW_DIR="$(CURDIR)/agent/.eve/.workflow-data" native dev $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)
+	SAGE_OLLAMA_PATH="$$ollama_bin" SAGE_SPEECH_LIB_PATH="$(CURDIR)/zig-out/lib/libSageSpeech.dylib" SAGE_DEV_EVE_WORKFLOW_DIR="$(CURDIR)/agent/.eve/.workflow-data" native dev $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)
 
 # Delete the dev app's data so the next `make dev` opens first-launch setup.
 # Never touches the packaged app. YES=1 skips the prompt.
@@ -114,13 +116,19 @@ seed-dev:
 	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
 	YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" SAGE_OLLAMA_PATH="$$ollama_bin" sh scripts/seed-dev.sh
 
+# Build a throwaway packaged Sage with automation on, fill a scratch journal,
+# and capture each screen in light and dark into zig-out/screenshots, or OUT.
+# Never opens your own journal. Needs Screen Recording access for the terminal.
+screenshots:
+	@OUT="$(OUT)" NATIVE_OPTIMIZE="$(NATIVE_OPTIMIZE)" sh scripts/screenshots.sh
+
 package:
 	npm --prefix frontend run build
 	npm --prefix agent install --omit=dev
 	npm --prefix agent run build
 	native build $(NATIVE_SDK_FLAG) $(MEMORY_FLAG) -Doptimize=$(NATIVE_OPTIMIZE)
 	native package --target macos --binary zig-out/bin/Sage
-	sh scripts/copy-agent-into-app.sh zig-out/package/Sage.app
+	sh scripts/copy-agent-into-app.sh zig-out/package/Sage.app zig-out/lib/libSageSpeech.dylib
 
 package-archive: package
 	sh scripts/archive-packaged-app.sh

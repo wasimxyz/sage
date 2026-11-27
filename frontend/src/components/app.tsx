@@ -1,8 +1,10 @@
 import { domAnimation, LazyMotion, MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
+import type { CSSProperties } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { ChatProvider } from "@/components/chat-provider";
+import { DictationProvider } from "@/components/dictation-provider";
 import { DreamProvider } from "@/components/dream-provider";
 import { FileMenuProvider } from "@/components/file-menu-provider";
 import { useJournalView } from "@/components/journal-context";
@@ -22,10 +24,16 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAutomationRoute } from "@/hooks/use-automation-route";
 import { useTextSizeShortcuts } from "@/hooks/use-text-size-shortcuts";
+
+// The sidebar holds the chats or entries, so it is wider than the menu it
+// replaced: about 280 points.
+const sidebarStyle = { "--sidebar-width": "17.5rem" } as CSSProperties;
 
 export default function App() {
   useTextSizeShortcuts();
+  useAutomationRoute();
   // Keep color-scheme off the root so WebKit does not fill the page after reload.
   return (
     <ThemeProvider
@@ -38,25 +46,30 @@ export default function App() {
       <LazyMotion features={domAnimation} strict>
         <MotionConfig reducedMotion="user">
           <TooltipProvider>
-            <SidebarProvider className="flex h-svh flex-col overflow-hidden">
+            <SidebarProvider
+              className="flex h-svh flex-col overflow-hidden"
+              style={sidebarStyle}
+            >
               <LockProvider>
                 <ModelDownloadsProvider>
                   <MemoryFeatureProvider>
                     <OllamaProvider>
                       <DreamProvider>
                         <SettingsProvider>
-                          <JournalProvider>
-                            <FileMenuProvider>
-                              <ChatProvider>
-                                <MemoriesProvider>
-                                  <OnboardingProvider>
-                                    <OnboardingGate />
-                                    <AppToaster />
-                                  </OnboardingProvider>
-                                </MemoriesProvider>
-                              </ChatProvider>
-                            </FileMenuProvider>
-                          </JournalProvider>
+                          <DictationProvider>
+                            <JournalProvider>
+                              <FileMenuProvider>
+                                <ChatProvider>
+                                  <MemoriesProvider>
+                                    <OnboardingProvider>
+                                      <OnboardingGate />
+                                      <AppToaster />
+                                    </OnboardingProvider>
+                                  </MemoriesProvider>
+                                </ChatProvider>
+                              </FileMenuProvider>
+                            </JournalProvider>
+                          </DictationProvider>
                         </SettingsProvider>
                       </DreamProvider>
                     </OllamaProvider>
