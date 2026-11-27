@@ -141,7 +141,7 @@ The past chats are part of the Dream cache key, so editing one runs Dream again 
 
 ## The cloud judge
 
-The judge is `moonshotai/kimi-k3.1-pro`, reached through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). To use another model, set `judge: { model: <gateway model id> }` in the sweep file.
+The judge is DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), reached through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). To use another model, set `judge: { model: <gateway model id> }` in the sweep file.
 
 Set one credential in `agent/.env.local` or in your shell:
 
@@ -226,7 +226,7 @@ Every key is optional. An unknown key or a value of the wrong type stops the run
 | `repeats` | `1` | How many times each Chat question runs |
 | `tests` | `[person, facts]` | Which tests run: `person` (extraction, summaries, retrieval), `dream-accuracy`, `facts` (Chat facts), and `openers` |
 | `tags` | `[]` | The people to cover, and the openers to send. A person is in when their `tags`, or the tags of one of their openers, match. An opener runs when its own tags or its person’s match. With no tags, everyone and every opener is in. |
-| `judge` | `{ model: moonshotai/kimi-k3.1-pro }` | The judge model |
+| `judge` | `{ model: deepseek/deepseek-v4.1-flash }` | The judge model |
 | `speedLimitSeconds` | `20` | The limit for the median first-word wait |
 | `p90LimitSeconds` | `null` | A limit for the slowest 10%. `null` sets none. |
 | `maxSwapGrowthMB` | `512` | The most swap may grow while a setup generates, as [Memory pressure](#memory-pressure) explains |
@@ -326,8 +326,9 @@ The folder name is a hash of these inputs:
 - The Dream prompt text, or a marker for the built-in prompts
 - The memory value, off or on
 - The Dream source files: `src/dream.zig`, `src/ollama.zig`, `src/journal.zig`, and `src/schema/*.sql`
+- The seeding files: `agent/scripts/seed-dataset.ts`, `agent/scripts/automation.ts`, and the loader that reads each entry, `agent/evals/lib/dataset.ts`
 
-Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
+Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. A change to the loader does, for every person, because the loader reads the entries too. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
 
 The Dream accuracy grades are saved in the same folder, as [the grade cache](#the-grade-cache) explains.
 
@@ -444,7 +445,7 @@ The [eval viewer](../../eval-viewer/README.md) lists uploaded reports.
 
 1. Run `make eval ARGS='--dry-run'`. It needs no gateway key and runs no models. It shows the plan, the models you still need to pull, and the estimate.
 2. Add `AI_GATEWAY_API_KEY` to `agent/.env.local`.
-3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for under $2. The first run also runs Dream, which takes the longest.
+3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for about $0.20. The first run also runs Dream, which takes the longest.
 4. Read the report in [Eval reports](evals-reports.md). The Sam journal is a format template, so use its report to learn the format, not to judge quality.
 5. Run `make eval`, then add your own people under `agent/evals/data/`, as [Eval fixtures](../../agent/evals/data/README.md) explains.
 

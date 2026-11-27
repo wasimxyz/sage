@@ -283,7 +283,7 @@ test("an empty sweep file gets today's single run", () => {
   assert.deepEqual(sweep.tests, ["person", "facts"]);
   assert.deepEqual(sweep.tags, []);
   assert.equal(sweep.repeats, 1);
-  assert.equal(sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(sweep.judge.model, "deepseek/deepseek-v4.1-flash");
   assert.equal(sweep.simulatedUser.model, "deepseek/deepseek-v4.1-flash");
   assert.deepEqual(sweep.simulatedUser.providers, [
     ...DEFAULT_SIMULATED_USER_PROVIDERS,
@@ -311,7 +311,7 @@ test("a partly filled judge keeps the other defaults", () => {
   const sweep = parseSweepFile({ simulatedUser: { maxOutputPricePerM: 1 } });
   assert.equal(sweep.simulatedUser.maxOutputPricePerM, 1);
   assert.equal(sweep.simulatedUser.model, "deepseek/deepseek-v4.1-flash");
-  assert.equal(sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(sweep.judge.model, "deepseek/deepseek-v4.1-flash");
 });
 
 test("a sweep file rejects a mistyped key, with its name", () => {

@@ -464,8 +464,9 @@ export function rubricLevelToScore(level: number): number {
 export const DEFAULT_SUMMARY_MODEL = "qwen3.5:9b";
 export const DEFAULT_EMBED_MODEL = "nomic-embed-text";
 export const DEFAULT_CHAT_MODEL = "qwen3.5:9b";
-export const DEFAULT_JUDGE_MODEL = "moonshotai/kimi-k3.1-pro";
 export const DEFAULT_SIMULATED_USER_MODEL = "deepseek/deepseek-v4.1-flash";
+/** The judge uses the same model as the simulated user. */
+export const DEFAULT_JUDGE_MODEL = DEFAULT_SIMULATED_USER_MODEL;
 export const DEFAULT_SIMULATED_USER_PROVIDERS = [
   "morph",
   "deepinfra",
