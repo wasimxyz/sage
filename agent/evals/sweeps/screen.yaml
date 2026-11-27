@@ -31,7 +31,7 @@ memory: [ off ]
 repeats: 1
 tests: [ person, openers ]
 tags: [ screen ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 simulatedUser:
   model: deepseek/deepseek-v4.1-flash
   providers: [ morph, deepinfra, runinfra, relace ]

@@ -379,7 +379,7 @@ The [eval viewer](../../eval-viewer/README.md) lists uploaded reports.
 
 1. Run `make eval ARGS='--dry-run'`. It needs no gateway key and runs no models. It shows the plan, the models you still need to pull, and the estimate.
 2. Add `AI_GATEWAY_API_KEY` to `agent/.env.local`.
-3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for under $2. The first run also runs Dream, which takes the longest.
+3. Run `make eval SWEEP=smoke` on a Mac with room for the models above. It grades only the Sam format template on one setup, for about $0.20. The first run also runs Dream, which takes the longest.
 4. Read the report in [Eval reports](evals-reports.md). The Sam journal is a format template, so use its report to learn the format, not to judge quality.
 5. Run `make eval`, then add your own people under `agent/evals/data/`, as [Eval fixtures](../../agent/evals/data/README.md) explains.
 

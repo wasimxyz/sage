@@ -229,7 +229,8 @@ async function estimateShipped(name: string) {
     judgeCheck: await judgeCheckSize(),
     plan,
     prices: {
-      judge: { inputPerM: 2, outputPerM: 10 },
+      // AI Gateway's list price for deepseek/deepseek-v4.1-flash on 2026-11-26.
+      judge: { inputPerM: 0.3, outputPerM: 1.2 },
       simulatedUser: { inputPerM: 0.2, outputPerM: 0.5 },
     },
     sweep,

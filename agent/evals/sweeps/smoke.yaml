@@ -1,6 +1,6 @@
 # A check of the runner itself: one setup, and one person. Tiny, but the judge
 # check that starts every sweep grades all its items, and that is most of the
-# cost. The runner's estimate for the whole run is about $1.50, with no discount
+# cost. The runner's estimate for the whole run is about $0.20, with no discount
 # for cached input. The $2 cap leaves room for that, so the check never stops
 # the sweep for money.
 #
