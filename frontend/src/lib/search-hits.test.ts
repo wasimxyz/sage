@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { settledSearchQuery, visibleHits } from "./search-hits.ts";
+import {
+  searchTabFor,
+  settledSearchQuery,
+  visibleHits,
+} from "./search-hits.ts";
+
+test("search opens on the results for the screen you are on", () => {
+  assert.equal(searchTabFor("chat", true), "conversations");
+  assert.equal(searchTabFor("journal", true), "journal");
+  assert.equal(searchTabFor("memories", true), "memories");
+});
+
+test("search never opens on Memories without memory", () => {
+  assert.equal(searchTabFor("memories", false), "conversations");
+  assert.equal(searchTabFor("chat", false), "conversations");
+});
 
 test("settledSearchQuery on Journal is the journal stamp", () => {
   assert.equal(settledSearchQuery("journal", "fog", "", ""), "fog");

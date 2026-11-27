@@ -8,12 +8,19 @@ import {
 } from "react";
 
 import { useChat } from "@/components/chat-provider";
+import { joinPhrase } from "@/lib/dictation-text";
 
 interface ChatDraftState {
   text: string;
 }
 
 interface ChatDraftActions {
+  /**
+   * Adds dictated words to the end of the box, with the space they need. It
+   * reads the text as it is when it runs, so words that arrive close together
+   * all land.
+   */
+  appendText: (phrase: string) => void;
   setText: (text: string) => void;
 }
 
@@ -66,7 +73,22 @@ export function ChatDraftProvider({ children }: { children: ReactNode }) {
     },
     [paneKey]
   );
-  const actions = useMemo<ChatDraftActions>(() => ({ setText }), [setText]);
+  const appendText = useCallback(
+    (phrase: string) => {
+      setDraft((current) => {
+        const base = current.paneKey === paneKey ? current.text : "";
+        const added = joinPhrase(base.slice(-2), phrase);
+        return added.length === 0
+          ? current
+          : { paneKey, text: `${base}${added}` };
+      });
+    },
+    [paneKey]
+  );
+  const actions = useMemo<ChatDraftActions>(
+    () => ({ appendText, setText }),
+    [appendText, setText]
+  );
   const value = useMemo<ChatDraftContextValue>(
     () => ({
       actions,

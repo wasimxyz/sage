@@ -1,0 +1,14 @@
+# Your recordings and transcripts live in ~/SageDictationSpike, never here.
+# These rules are a second guard in case some end up in this folder anyway.
+*.wav
+*.m4a
+*.aiff
+*.caf
+*.jsonl
+out/
+refs/
+clips/
+
+.build/
+.venv/
+__pycache__/

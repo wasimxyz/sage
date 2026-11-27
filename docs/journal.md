@@ -1,8 +1,20 @@
 # The journal
 
-This page explains how entries are written, saved, imported, exported, and searched, and what the Home screen shows. The screen code is `frontend/src/components/editor.tsx` and `frontend/src/components/journal-provider.tsx`. Storage is the journal section of `src/journal.zig`.
+This page explains the sidebar and the Journal tab, and how entries are written, saved, imported, exported, and searched. The screen code is `frontend/src/components/editor.tsx` and `frontend/src/components/journal-provider.tsx`. Storage is the journal section of `src/journal.zig`.
 
-Journal and Chat share one layout: a list on the left, and a panel that opens beside it when you choose a row. The panel can go full screen, and you can drag the divider to resize it. The code is `frontend/src/components/split-view.tsx` and `frontend/src/components/list-row.tsx`. [The Chat frontend](agent/frontend.md#the-chat-panel) covers the Chat side.
+The window has two columns: the sidebar and the main pane. The sidebar has two tabs, Chat and Journal. A switch of two icon buttons at the right end of the title bar row, beside the traffic lights and the sidebar button, picks one. Sage opens on the Chat tab, with a new chat.
+
+Each tab has its own rows at the top, then its list under a gray label, newest first. Dream and Settings sit at the bottom on both tabs. Settings opens as a dialog over the screen, with its sections down the left, and closing it leaves the screen as it was. ⌘B hides the whole sidebar. The code is `frontend/src/components/app-sidebar.tsx`, `frontend/src/lib/sidebar-tab.ts`, and `frontend/src/components/list-row.tsx`.
+
+Each tab keeps what was last open in it until Sage locks or quits. Journal comes back to the same entry. Chat comes back to the same chat, or to Memories if Memories was the last screen open in it. [The Chat frontend](agent/frontend.md#the-chat-tab) covers the Chat tab.
+
+## The Journal tab
+
+The Journal tab’s rows are New entry, Search, and Import. Import opens the same picker and preview as File > Import. Under them, a gray Entries label heads the list, which shows each entry’s title and date, as [How dates read](#how-dates-read) explains. Click a row to open the entry in the main pane, and right-click it for Delete. With no entries, the list says “No entries yet.”
+
+Journal always holds an entry. The first visit shows a blank new entry, which saves only once you type in it. New entry and ⌘N start another. Deleting the open entry shows a blank new entry in its place.
+
+The address bar follows the tab. `#/journal` is a new entry, and `#/journal/<id>` is a saved one. A new entry’s first save turns `#/journal` into `#/journal/<id>` without adding a history entry, as a new chat does.
 
 ## What an entry holds
 
@@ -23,11 +35,15 @@ There is no Underline button, and ⌘U and ⇧⌘U do nothing. Text underlined i
 
 Cmd+S saves at once and shows a message that Sage saves your entry automatically.
 
+## Dictating
+
+⌘D, or the mic button in the entry header, turns on dictation. Your words appear in the entry as you speak, grey at first and then as normal text, and Esc or ⌘D stops it. They land at the cursor, or at the end of the body when the title has focus. After you stop, a **Tidy** button cleans up what you just said, and the selection menu has a **Tidy** button for any plain paragraphs you select. Dictated words are saved like typed ones. [Dictation](dictation.md) has the details.
+
 Opening an entry is not an edit. Each entry opens with an empty undo history, so ⌘Z cannot undo the opening or bring back the text of the entry you had open before. A new entry starts the same way, and the title box is read-only while an entry loads. The reset lives in `frontend/src/lib/editor-history.ts`.
 
 If an entry fails to open, Sage shows an error, and the editor still holds the entry you had open. Sage does not save what you type there, because it would land in the wrong entry. It tells you so instead. Open another entry, then this one again.
 
-⌘N starts a new entry from Home, Journal, or Memories. It starts a chat while Chat is open. It does nothing in Settings, while a memory is open for editing, or while a dialog, popover, or menu is open. The shortcut lives in `frontend/src/hooks/use-new-shortcut.ts`.
+⌘N starts a new entry in the Journal tab and a new chat in the Chat tab, which holds Chat and Memories. It does nothing while a memory is open for editing, or while a dialog, popover, or menu is open, Settings included. The rules live in `frontend/src/lib/new-shortcut.ts`.
 
 A body over 1 MiB is refused. Long bodies travel to the core in 32 KiB chunks, as [Architecture](architecture.md#the-bridge) explains.
 
@@ -37,9 +53,9 @@ Saving also marks the entry for the next [Dream](dream.md), which refreshes its 
 
 ## How dates read
 
-The entry list and the Chat list show recent days as Today, Yesterday, 3 days ago, or 1 week ago. A day two weeks back or earlier shows its weekday, such as Friday, Oct 2, and adds the year when it is not this year. Relative labels never show a weekday.
+The Entries and Conversations lists in the sidebar show recent days as Today, Yesterday, 3 days ago, or 1 week ago. The 1 week ago label covers 7 to 13 days back. An older day shows a short date, such as Nov 8, and adds the year when it is not this year, such as Nov 8, 2025. A day after today shows the same short date. The labels turn over at midnight. `formatSidebarDate` in `frontend/src/lib/format-date.ts` holds the rules.
 
-The editor shows the full date under the title, such as Friday, October 2, 2026, followed by when you last edited the entry. An open chat shows the day it last changed in lighter text next to its title, in the same full form. Memories use the same weekday in their Updated dates. The code is `frontend/src/lib/format-date.ts`. Home labels its rows its own way, as [The Home screen](#the-home-screen) explains.
+The editor shows the full date under the title, such as Friday, October 2, 2026, followed by when you last edited the entry. An open chat shows the day it last changed in lighter text next to its title, in the same full form. The code is `frontend/src/lib/format-date.ts`. Memories show the weekday and a short month in their Updated dates, such as Updated Friday, Oct 2, from `frontend/src/lib/format-relative-age.ts`.
 
 ## Importing Markdown
 
@@ -60,7 +76,7 @@ The folder picker runs in the core through `journal.exportDialog`, and `journal.
 
 ## Searching entries
 
-⌘K opens the search dialog. Its Journal tab calls `journal.search`, which matches the query against titles and bodies. Results are newest first and capped at 25.
+⌘K, or the Search row in the sidebar, opens the search dialog. From the Journal tab, the dialog opens on its own Journal results, and All is one click away. Those results come from `journal.search`, which matches the query against titles and bodies, newest first and capped at 25. Choosing a hit opens that entry in the Journal tab.
 
 Search runs once you stop typing for 300 ms. The last results stay up until the new ones arrive, so the list does not blank out while you type.
 
@@ -68,37 +84,13 @@ With encryption on, SQL cannot match text inside ciphertext. Sage decrypts each 
 
 Chat finds entries a different way: it ranks entry summaries by meaning, and it can limit the search to a time such as “last week” or “in March”. [The eve app](agent/eve-app.md#tools) covers that tool.
 
-## The Home screen
-
-Sage opens on Home. Home shows a band of clouds, a row of squares for the month, and your recent entries and chats. The screen code is `frontend/src/components/home-screen.tsx`, and the date logic is `frontend/src/lib/home.ts`.
-
-Home has no command of its own for entries and chats. It reads the lists Sage loads at unlock. When Dream finishes, the chat list reloads, so new chat titles show up on Home.
-
-### The band
-
-The band holds today's date, a greeting, and two buttons: **New entry** and **New chat**. The greeting reads “Good morning.” from 5 AM to noon, “Good afternoon.” from noon to 5 PM, and “Good evening.” the rest of the day. The date, the greeting, and the month update at 5 AM, noon, 5 PM, and midnight, and again when you come back to the window after the Mac has slept.
-
-A line under the greeting reads A month ago today, you wrote “Title.” when you wrote an entry on the same day of last month. A **Reread** link opens it. With several entries on that day, Sage picks the newest. The line uses the saved title alone, and no model writes it. Home hides the line when there is no such entry, and when last month has no such day, as with March 31.
-
-The clouds come from the Sage website. `frontend/src/components/clouds.tsx` draws them on a canvas and lets them drift slowly, at about 12 frames a second. They hold still when Reduce motion is on, even if you turn it on while Sage is open, and they stop drawing while the window is hidden or the band is scrolled out of view. `frontend/src/index.css` sets the dot colors for light and dark. The lock screen draws the same clouds behind its card and holds them still.
-
-### The month row
-
-The row has one small square for each day of the month. A day with an entry is filled blue, today has an outline, and days still to come are empty outlines. Choosing a filled day opens its newest entry. Each square has a label, such as “October 19, entry written”. Home shows no streaks, counts, or scores.
-
-### Entries and chats
-
-Entries and chats appear together, newest first, under Today, This week, and Last week. A group with nothing in it is hidden. Each row shows an icon for its type and a title. It never shows text from the entry or the chat. The right side shows the time for Today, the weekday for This week, and a short date such as “Sat, Oct 17” for Last week. A chat belongs to the local day it last changed. Choosing a row, a day square, or Reread opens that entry or chat full screen, and the back arrow returns to the list beside it. Going to Home ends full screen, so **New entry** and **New chat** open beside their lists.
-
-A week starts on the first day of the week in System Settings > General > Language & Region. Sage reads it through `system.calendar`, and the week starts on Sunday if that fails.
-
-With no entries and no chats, the lists give way to “Your entries and chats will show up here.” When everything is older than last week, they give way to “Nothing from this week or last week. Older entries are in Journal, and older chats are in Chat.”
-
 ## Deleting entries
 
 Delete an entry from its row (right-click, or press ⌘⌫ with the row focused) or from the ⋯ menu in the editor. The entry leaves the list at once, and a toast with its title offers Undo for 5 seconds. Undo brings the entry back with the text you had typed. If the entry cannot save, Sage keeps it and says so.
 
-Sage deletes the entry when the toast closes. It also tries when you close the window. Until then, Home, search, and the list leave it out. Starting Dream or an export finishes the delete first. A locked Sage cannot delete anything, so if it locks or quits during the wait, it saves the delete and runs it after the next unlock. Until then the entry stays in your journal.
+Deleting the open entry shows a blank new entry, and Undo opens the entry again.
+
+Sage deletes the entry when the toast closes. It also tries when you close the window. Until then, search and the list leave it out. Starting Dream or an export finishes the delete first. A locked Sage cannot delete anything, so if it locks or quits during the wait, it saves the delete and runs it after the next unlock. Until then the entry stays in your journal.
 
 `journal.delete` removes one entry, its embeddings and summary, and every memory Dream wrote from it. Settings > Data can delete every entry at once, as [Chat storage](agent/storage.md#deleting-data) explains.
 
@@ -111,8 +103,8 @@ While Sage is locked, every command below answers “Sage is locked.”
 - `journal.save`: creates or updates one entry, sent in chunks
 - `journal.delete`: removes one entry
 - `journal.search`: text search over titles and bodies
+- `journal.tidy`: cleans up spoken or selected text with the summary model and answers with the new text, as [Dictation](dictation.md#tidy) explains
 - `journal.importDialog` and `journal.readFile`: pick Markdown files and read them
 - `journal.exportDialog` and `journal.export`: pick a folder and write the export
-- `system.calendar`: the first day of the week on this Mac, for Home
 - `embeddings.status`: whether Ollama is running and the embedding model is pulled
 - `embeddings.pending` and `embeddings.generate`: list entries and chats that need embedding, and embed one entry, or the next messages of one chat with `{ "chatId" }`

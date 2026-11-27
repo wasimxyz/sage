@@ -65,12 +65,12 @@ test("setup left half done opens where the person stopped", () => {
   }
 });
 
-test("done and skipped open Home", () => {
+test("done and skipped open the app", () => {
   assert.deepEqual(launchScreen({ state: "done", step: "all_set" }), {
-    kind: "home",
+    kind: "app",
   });
   assert.deepEqual(launchScreen({ state: "skipped", step: "local_ai" }), {
-    kind: "home",
+    kind: "app",
   });
 });
 
