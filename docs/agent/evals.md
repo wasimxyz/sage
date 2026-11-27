@@ -218,7 +218,7 @@ The past chats are part of the Dream cache key, so editing one runs Dream again 
 
 ## The cloud judge
 
-The judge is `moonshotai/kimi-k3.1-pro`, reached through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). To use another model, set `judge: { model: <gateway model id> }` in the sweep file.
+The judge is DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), reached through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). To use another model, set `judge: { model: <gateway model id> }` in the sweep file.
 
 Set one credential in `agent/.env.local` or in your shell:
 
@@ -311,7 +311,7 @@ Every key is optional. An unknown key or a value of the wrong type stops the run
 | `tests` | `[person, facts]` | Which tests run: `person` (extraction, summaries, retrieval), `dream-accuracy`, `facts` (Chat facts), `openers`, and `conversations` |
 | `tags` | `[]` | The people to cover, and the openers and conversations to send. A person is in when their `tags`, or the tags of one of their openers or conversations, match. An opener or conversation runs when its own tags or its person’s match. With no tags, everyone and every item is in. |
 | `excludeTags` | `[]` | People to leave out: anyone whose `tags` hold one of these. The shipped sweeps use `[long]` to leave out `long-history`, and so do their `alsoEmpty` items on the empty journal. The estimate leaves them out too. |
-| `judge` | `{ model: moonshotai/kimi-k3.1-pro }` | The judge model |
+| `judge` | `{ model: deepseek/deepseek-v4.1-flash }` | The judge model |
 | `speedLimitSeconds` | `20` | The limit for the median first-word wait |
 | `p90LimitSeconds` | `null` | A limit for the slowest 10%. `null` sets none. |
 | `maxSwapGrowthMB` | `512` | The most swap may grow while a setup generates, as [Memory pressure](#memory-pressure) explains |
@@ -414,8 +414,9 @@ The folder name is a hash of these inputs:
 - The Dream prompt text, or a marker for the built-in prompts
 - The memory value, off or on
 - The Dream source files: `src/dream.zig`, `src/ollama.zig`, `src/journal.zig`, and `src/schema/*.sql`
+- The seeding files: `agent/scripts/seed-dataset.ts`, `agent/scripts/automation.ts`, `agent/scripts/seed-chats.ts`, `agent/scripts/eval/chat-times.ts`, and the loader that reads each entry and chat, `agent/evals/lib/dataset.ts`
 
-Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
+Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. A change to the loader does, for every person, because the loader reads the entries too. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
 
 The Dream accuracy grades are saved in the same folder, as [the grade cache](#the-grade-cache) explains.
 

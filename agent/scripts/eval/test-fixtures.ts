@@ -9,9 +9,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type test from "node:test";
 
+import { dreamSourceFiles, seedSourceFiles } from "../../evals/lib/cache.ts";
 import { parsePersonCase } from "../../evals/lib/schema.ts";
 import type { LoadedChat, LoadedEntry, LoadedPerson } from "./people.ts";
 
@@ -52,6 +53,14 @@ function entryOf(index: number): LoadedEntry {
 }
 
 /** A made-up person with the given items. */
+/** Writes each source and seeding file the Dream cache key reads, so a fake repo can be hashed. */
+export function writeCacheKeyFiles(repo: string): void {
+  for (const rel of [...dreamSourceFiles, ...seedSourceFiles]) {
+    mkdirSync(dirname(join(repo, rel)), { recursive: true });
+    writeFileSync(join(repo, rel), rel);
+  }
+}
+
 export function makePerson(
   id: string,
   options: PersonOptions = {}

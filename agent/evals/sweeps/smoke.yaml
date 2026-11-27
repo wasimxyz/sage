@@ -24,6 +24,6 @@ tags: [ example ]
 # long-history takes hours to run Dream the first time, so only deep and dream
 # sweeps include it.
 excludeTags: [ long ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 speedLimitSeconds: 20
 spendingCapUsd: 3
