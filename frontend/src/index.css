@@ -48,6 +48,7 @@
   --color-row-hover: var(--row-hover);
   --color-brand: var(--brand);
   --color-surface: var(--surface);
+  --color-bubble: var(--bubble);
   --color-dragon: var(--dragon);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -61,9 +62,11 @@
 :root {
   --surface: #ffffff;
   --dragon: #c85152;
-  --background: oklch(0.98 0 0);
+  --background: #ffffff;
   --foreground: oklch(0.205 0 0);
   --row-hover: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  /* Your chat messages: a step lighter than the sidebar. */
+  --bubble: oklch(0.95 0 0);
   --card: #ffffff;
   --card-foreground: oklch(0.205 0 0);
   --popover: #ffffff;
@@ -88,7 +91,7 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.94 0 0);
+  --sidebar: oklch(0.95 0 0);
   --sidebar-foreground: oklch(0.205 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -98,7 +101,7 @@
   --sidebar-ring: oklch(0.708 0 0);
   /* Hidden titlebar band. Leading inset is set in app-shell.tsx. */
   --titlebar-height: 3.25rem;
-  /* The one blue: filled day squares on Home and the Dream dot. */
+  /* The one blue: the Dream dot and the new chat's faint clouds. */
   --brand: #3461bf;
   /* Cloud dots, read by components/clouds.tsx, and the sky behind them. */
   --cloud-dot-rgb: 255, 255, 255;
@@ -106,9 +109,9 @@
   --cloud-dot-hi: 0.9;
   --cloud-stars: 0;
   --sky: linear-gradient(180deg, #2e6bc9 0%, #5d97e0 55%, #b4d3f4 100%);
-  /* The Home band runs from the dark end, under the text, to the light end. */
-  --band-from: #2b53ad;
-  --band-to: #7ea3e0;
+  /* The faint clouds behind a new chat: brand blue, only where a cloud is. */
+  --cloud-faint-rgb: 52, 97, 191;
+  --cloud-faint-hi: 0.22;
   --card-shadow:
     0 0 0 0.5px rgb(0 0 0 / 0.15), 0 30px 60px -12px rgb(16 40 90 / 0.4);
 }
@@ -118,6 +121,7 @@
   --dragon: #c85152;
   --background: oklch(0.21 0 0);
   --foreground: oklch(0.9 0 0);
+  --bubble: oklch(0.29 0 0);
   --card: oklch(0.28 0 0);
   --card-foreground: oklch(0.9 0 0);
   --popover: oklch(0.28 0 0);
@@ -141,7 +145,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.26 0 0);
+  --sidebar: oklch(0.27 0 0);
   --sidebar-foreground: oklch(0.9 0 0);
   --sidebar-primary: oklch(0.9 0 0);
   --sidebar-primary-foreground: oklch(0.21 0 0);
@@ -155,8 +159,8 @@
   --cloud-dot-hi: 0.42;
   --cloud-stars: 1;
   --sky: linear-gradient(180deg, #050a1a 0%, #0c1736 60%, #1a2a52 100%);
-  --band-from: #080e24;
-  --band-to: #1d3266;
+  --cloud-faint-rgb: 125, 156, 232;
+  --cloud-faint-hi: 0.14;
   --card-shadow:
     0 0 0 1px rgb(255 255 255 / 0.1), 0 30px 60px -12px rgb(0 0 0 / 0.6);
 }
@@ -403,6 +407,25 @@ html:has(
 .tiptap pre code {
   padding: 0;
   background: transparent;
+}
+
+/* Clouds that read as texture behind text. Only dots inside a cloud show. */
+.clouds-faint {
+  --cloud-dot-rgb: var(--cloud-faint-rgb);
+  --cloud-dot-lo: 0;
+  --cloud-dot-hi: var(--cloud-faint-hi);
+  --cloud-stars: 0;
+}
+
+/* Keeps the new chat's clouds to the upper left, the upper right, and the
+   bottom, away from the greeting and the message box. */
+.clouds-edges {
+  --clouds-edges:
+    radial-gradient(ellipse 22rem 8rem at 12% 22%, #000 25%, transparent 75%),
+    radial-gradient(ellipse 18rem 7rem at 90% 12%, #000 25%, transparent 75%),
+    radial-gradient(ellipse 24rem 7rem at 72% 96%, #000 25%, transparent 75%);
+  -webkit-mask-image: var(--clouds-edges);
+  mask-image: var(--clouds-edges);
 }
 
 @utility hide-scrollbar {

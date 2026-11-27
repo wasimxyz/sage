@@ -142,7 +142,21 @@ fn manifestUpdateString(comptime field: []const u8) []const u8 {
 fn manifestUpdateCheckOnStart() bool {
     if (comptime !@hasField(@TypeOf(app_manifest), "updates")) return false;
     if (comptime !@hasField(@TypeOf(app_manifest.updates), "check_on_start")) return false;
-    return app_manifest.updates.check_on_start;
+    return checksForUpdatesOnStart(app_manifest.updates.check_on_start, build_options.automation);
+}
+
+/// Automation builds drive a throwaway copy for `make eval`, `make seed-dev`,
+/// and `make screenshots`. An update sheet would cover the window they drive,
+/// so they never check at launch.
+fn checksForUpdatesOnStart(manifest_setting: bool, automation: bool) bool {
+    return manifest_setting and !automation;
+}
+
+test "automation builds never check for updates at launch" {
+    try std.testing.expect(checksForUpdatesOnStart(true, false));
+    try std.testing.expect(!checksForUpdatesOnStart(true, true));
+    try std.testing.expect(!checksForUpdatesOnStart(false, false));
+    try std.testing.expect(!checksForUpdatesOnStart(false, true));
 }
 
 const CommandStorage = struct {
@@ -952,8 +966,42 @@ const StateBuffers = struct {
     restored_windows: [native_sdk.platform.max_windows]native_sdk.WindowOptions = undefined,
 };
 
+/// Where the window frame is saved. `SAGE_DATA_DIR` keeps it beside the
+/// throwaway journal, so `make eval` and `make screenshots` never move the
+/// window of the Sage that shares their app id.
+fn stateStorePaths(env_map: *std.process.Environ.Map, bundle_id: []const u8, buffers: *StateBuffers) !native_sdk.window_state.StorePaths {
+    if (env_map.get("SAGE_DATA_DIR")) |data_dir| {
+        if (data_dir.len > 0) {
+            const state_dir = try std.fmt.bufPrint(&buffers.state_dir, "{s}/State", .{data_dir});
+            const file_path = try std.fmt.bufPrint(&buffers.file_path, "{s}/windows.zon", .{state_dir});
+            return .{ .state_dir = state_dir, .file_path = file_path };
+        }
+    }
+    return native_sdk.window_state.defaultPaths(&buffers.state_dir, &buffers.file_path, bundle_id, native_sdk.debug.envFromMap(env_map));
+}
+
+test "SAGE_DATA_DIR keeps the window state beside the journal" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("SAGE_DATA_DIR", "/tmp/sage-shots/data");
+    var buffers: StateBuffers = .{};
+    const paths = try stateStorePaths(&env, "com.wasimxyz.sage", &buffers);
+    try std.testing.expectEqualStrings("/tmp/sage-shots/data/State", paths.state_dir);
+    try std.testing.expectEqualStrings("/tmp/sage-shots/data/State/windows.zon", paths.file_path);
+}
+
+test "without SAGE_DATA_DIR the window state stays under the app id" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("HOME", "/Users/test");
+    var buffers: StateBuffers = .{};
+    const paths = try stateStorePaths(&env, "com.wasimxyz.sage", &buffers);
+    try std.testing.expect(std.mem.indexOf(u8, paths.state_dir, "com.wasimxyz.sage") != null);
+    try std.testing.expect(std.mem.endsWith(u8, paths.file_path, "windows.zon"));
+}
+
 fn prepareStateStore(io: std.Io, env_map: *std.process.Environ.Map, app_info: *native_sdk.AppInfo, buffers: *StateBuffers) ?native_sdk.window_state.Store {
-    const paths = native_sdk.window_state.defaultPaths(&buffers.state_dir, &buffers.file_path, app_info.bundle_id, native_sdk.debug.envFromMap(env_map)) catch return null;
+    const paths = stateStorePaths(env_map, app_info.bundle_id, buffers) catch return null;
     const store = native_sdk.window_state.Store.init(io, paths.state_dir, paths.file_path);
     if (app_info.windows.len > 0) {
         const restored_windows = buffers.restored_windows[0..app_info.windows.len];

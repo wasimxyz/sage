@@ -4,7 +4,6 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useDream } from "@/components/dream-provider";
 import { Hint } from "@/components/hint";
 import { useMemoryFeature } from "@/components/memory-feature-provider";
-import { SearchNavItem } from "@/components/search-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,37 +14,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarSeparator,
-} from "@/components/ui/sidebar";
+import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { ollamaDownDreamPrompt } from "@/lib/dream-errors";
 import { formatDreamProgress } from "@/lib/dream-progress";
 import { formatLastDreamed } from "@/lib/format-relative-age";
+import { cn } from "@/lib/utils";
 
 const ageTickMs = 60_000;
 
-export function DreamNav() {
+/**
+ * Dream's row at the bottom of the sidebar, on both tabs. While Dream runs,
+ * the percent shows under it.
+ */
+export function DreamNavItem({ className }: { className?: string }) {
   return (
-    <>
-      <SidebarSeparator />
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <SearchNavItem />
-            <SidebarMenuItem>
-              <DreamMenu />
-            </SidebarMenuItem>
-          </SidebarMenu>
-          <DreamStatusLine />
-        </SidebarGroupContent>
-      </SidebarGroup>
-    </>
+    <SidebarMenuItem>
+      <DreamMenu className={className} />
+      <DreamStatusLine />
+    </SidebarMenuItem>
   );
 }
 
@@ -61,17 +48,17 @@ export function DreamStartAnnouncement() {
   return <output className="sr-only">{running ? "Dream started" : ""}</output>;
 }
 
-function DreamMenu() {
+function DreamMenu({ className }: { className?: string }) {
   const {
     state: { running },
   } = useDream();
   if (running) {
-    return <DreamingMenuButton />;
+    return <DreamingMenuButton className={className} />;
   }
-  return <IdleDreamMenuButton />;
+  return <IdleDreamMenuButton className={className} />;
 }
 
-function IdleDreamMenuButton() {
+function IdleDreamMenuButton({ className }: { className?: string }) {
   const {
     actions: { prompt },
     state: { lastDreamedAt, pending },
@@ -79,7 +66,10 @@ function IdleDreamMenuButton() {
   const now = useRelativeNow();
   const age = lastDreamedAt ? formatLastDreamed(lastDreamedAt, now) : "";
   const button = (
-    <SidebarMenuButton className="justify-between" onClick={prompt}>
+    <SidebarMenuButton
+      className={cn("justify-between", className)}
+      onClick={prompt}
+    >
       <DreamMenuLabel>Dream</DreamMenuLabel>
       {pending > 0 ? <PendingDot /> : null}
     </SidebarMenuButton>
@@ -90,8 +80,8 @@ function IdleDreamMenuButton() {
   return <Hint label={`Last dreamed ${age}`}>{button}</Hint>;
 }
 
-// Sits in a 14px box, the same size as the chevron on the Chat item, so the
-// two share a right edge and a center line.
+// Sits in a 14px box, the same size as the row's icons, so it lines up with
+// the shortcuts at the right edge of the other rows.
 function PendingDot() {
   return (
     <span className="flex size-3.5 shrink-0 items-center justify-center">
@@ -101,9 +91,9 @@ function PendingDot() {
   );
 }
 
-function DreamingMenuButton() {
+function DreamingMenuButton({ className }: { className?: string }) {
   return (
-    <SidebarMenuButton aria-busy disabled>
+    <SidebarMenuButton aria-busy className={className} disabled>
       <DreamMenuLabel>Dreaming…</DreamMenuLabel>
     </SidebarMenuButton>
   );

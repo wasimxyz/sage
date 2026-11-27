@@ -58,12 +58,20 @@ export function waitForAutomation(automation: Automation): void {
   }
 }
 
+/**
+ * No answer came for a bridge request in time. The automation server keeps
+ * only the last response, so a page that is making its own bridge calls can
+ * write over the answer before it is read.
+ */
+export class BridgeTimeoutError extends Error {}
+
 export function callBridge(
   automation: Automation,
   command: string,
   payload: Record<string, unknown>,
   id: string,
-  ready: (response: Record<string, unknown>) => boolean = isMatchingId
+  ready: (response: Record<string, unknown>) => boolean = isMatchingId,
+  timeoutMs: number = bridgeTimeoutMs
 ): Record<string, unknown> {
   mkdirSync(automation.dir, { recursive: true });
   const request = JSON.stringify({ command, id, payload });
@@ -72,7 +80,7 @@ export function callBridge(
     join(automation.dir, `command-${sequence}.txt`),
     `bridge ${request}\n`
   );
-  return waitForBridgeResponse(automation, id, ready);
+  return waitForBridgeResponse(automation, id, ready, timeoutMs);
 }
 
 /**
@@ -151,9 +159,10 @@ export function waitForDream(
 function waitForBridgeResponse(
   automation: Automation,
   id: string,
-  ready: (response: Record<string, unknown>) => boolean
+  ready: (response: Record<string, unknown>) => boolean,
+  timeoutMs: number
 ): Record<string, unknown> {
-  const deadline = Date.now() + bridgeTimeoutMs;
+  const deadline = Date.now() + timeoutMs;
   let lastMatch: Record<string, unknown> | null = null;
   let lastSeen: Record<string, unknown> | null = null;
 
@@ -172,7 +181,7 @@ function waitForBridgeResponse(
     }
     sleep(20);
   }
-  throw new Error(
+  throw new BridgeTimeoutError(
     `Bridge ${id} did not finish. Last matching response: ${JSON.stringify(lastMatch)}. Last seen: ${JSON.stringify(lastSeen)}`
   );
 }

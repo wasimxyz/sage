@@ -5,7 +5,7 @@ import type {
   MessageStreamEvent,
 } from "eve/client";
 import { type EveMessage, useEveAgent } from "eve/react";
-import { ArrowDownIcon, MessageCircleIcon } from "lucide-react";
+import { ArrowDownIcon, CornerDownLeftIcon } from "lucide-react";
 import { m } from "motion/react";
 import {
   type ChangeEvent,
@@ -40,6 +40,10 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { AssistantPending } from "@/components/chat/assistant-pending";
 import {
+  ChatDictateButton,
+  ChatDictationTail,
+} from "@/components/chat/chat-dictation";
+import {
   useChatDraft,
   useChatDraftActions,
 } from "@/components/chat/chat-draft";
@@ -63,13 +67,14 @@ import {
   isChatComposerLocked,
   useChat,
 } from "@/components/chat-provider";
+import { Clouds } from "@/components/clouds";
+import { useDictationActions } from "@/components/dictation-provider";
 import { useDream } from "@/components/dream-provider";
 import { Hint } from "@/components/hint";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
 import {
@@ -82,6 +87,7 @@ import {
   useMessageScroller,
 } from "@/components/ui/message-scroller";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useGreetingNow } from "@/hooks/use-greeting-now";
 import { shouldShowAssistantPending } from "@/lib/chat/assistant-pending";
 import {
   formatChatSaveError,
@@ -108,6 +114,8 @@ import {
   projectedMessageIdAtSeq,
   sessionNamespacingReducer,
 } from "@/lib/chat/session-recovery";
+import { formatTodayHeading } from "@/lib/format-date";
+import { greetingFor } from "@/lib/greeting";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -195,7 +203,7 @@ function loadForMount(selection: ChatSelection): {
   return { load: fresh, reread: true };
 }
 
-/** The panel beside the chat list. */
+/** The open chat, or a new one, in the Chat tab's pane. */
 export function ChatScreen() {
   const {
     state: { paneKey },
@@ -497,6 +505,7 @@ function ChatTurnSession({
   const {
     state: { running: dreaming },
   } = useDream();
+  const { leave: leaveDictation } = useDictationActions();
   // Capture once. Later saves replace eventsRef with the new session, and
   // clientContext lasts only for the current turn, so later sends in this
   // remount still need the old transcript.
@@ -661,6 +670,8 @@ function ChatTurnSession({
       clearError();
       lastSubmittedRef.current = next;
       pendingActionRef.current = "send";
+      // Sending ends dictation. Grey words that have not settled are not sent.
+      leaveDictation("chat");
       setText("");
       const send = async () => {
         if (idRef.current === null) {
@@ -681,6 +692,7 @@ function ChatTurnSession({
       handleAgentError,
       idRef,
       lastSubmittedRef,
+      leaveDictation,
       lockContextLength,
       models,
       pendingActionRef,
@@ -696,9 +708,14 @@ function ChatTurnSession({
 
   const { messages } = agent.data;
   const pending = shouldShowAssistantPending(messages, agent.status);
+  // A new chat greets you, with the message box in the middle. The first
+  // message moves the box to the bottom. The box stays the same element, so
+  // it keeps focus through the move.
+  const welcome = messages.length === 0 && initialEvents.length === 0;
 
   return (
-    <ChatPane>
+    <ChatPane className={cn(welcome && "relative justify-center pb-24")}>
+      {welcome ? <ChatWelcome /> : null}
       {messages.length > 0 ? (
         <ChatTranscriptShell
           busy={busy}
@@ -734,15 +751,10 @@ function ChatTurnSession({
             </MessageScrollerItem>
           ))}
         </ChatTranscriptShell>
-      ) : (
-        <ChatEmptyState
-          description="Talk through your thoughts with a companion that knows what you've written. Nothing you share leaves this space."
-          icon={<MessageCircleIcon />}
-          title="Chat with Sage"
-        />
-      )}
-      <ChatComposerBar>
+      ) : null}
+      <ChatComposerBar welcome={welcome}>
         <ChatPromptForm
+          dictation
           onStop={stopTurn}
           onSubmit={handleSubmit}
           submitBlocked={agentToken === null || resuming}
@@ -939,17 +951,14 @@ function ChatTranscriptShell({
 
 function ChatEmptyState({
   description,
-  icon,
   title,
 }: {
   description: string;
-  icon?: ReactNode;
   title: string;
 }) {
   return (
     <Empty className={cn("min-h-0", TRANSCRIPT_GUTTER_CLASS)}>
       <EmptyHeader>
-        {icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
@@ -957,12 +966,50 @@ function ChatEmptyState({
   );
 }
 
-function ChatComposerBar({ children }: { children: ReactNode }) {
+/**
+ * The top of a new chat: faint, still clouds near the edges, then today's
+ * date and a greeting over the message box.
+ */
+function ChatWelcome() {
+  const now = useGreetingNow();
+  return (
+    <>
+      <Clouds
+        className="clouds-edges pointer-events-none absolute inset-0"
+        still
+        tone="faint"
+      />
+      <div
+        className={cn(
+          TRANSCRIPT_GUTTER_CLASS,
+          "relative flex flex-col items-center gap-2 pb-4 text-center"
+        )}
+      >
+        <p className="text-muted-foreground text-sm font-medium">
+          {formatTodayHeading(now)}
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {greetingFor(now)}
+        </h1>
+      </div>
+    </>
+  );
+}
+
+function ChatComposerBar({
+  children,
+  welcome = false,
+}: {
+  children: ReactNode;
+  /** On a new chat the box sits under the greeting, over the clouds. */
+  welcome?: boolean;
+}) {
   return (
     <div
       className={cn(
         TRANSCRIPT_GUTTER_CLASS,
-        "bg-background/80 shrink-0 pt-3 pb-5 backdrop-blur"
+        "shrink-0 pt-3 pb-5",
+        welcome ? "relative" : "bg-background/80 backdrop-blur"
       )}
       data-slot="chat-composer-bar"
     >
@@ -977,11 +1024,14 @@ function ChatComposerBar({ children }: { children: ReactNode }) {
 }
 
 function ChatPromptForm({
+  dictation = false,
   onStop,
   onSubmit,
   submitBlocked,
   submitStatus,
 }: {
+  /** Show the mic. Only a live conversation can take dictated words. */
+  dictation?: boolean;
   onStop?: () => void;
   onSubmit: (message: PromptInputMessage) => void;
   /** Sending is not possible yet, whatever the box holds. */
@@ -999,10 +1049,12 @@ function ChatPromptForm({
     <PromptInput className="w-full" onSubmit={onSubmit}>
       <PromptInputBody className="relative w-full">
         <ChatPromptTextarea dreaming={dreaming} locked={locked} />
+        {dictation ? <ChatDictationTail /> : null}
       </PromptInputBody>
       <PromptInputFooter>
-        <PromptInputTools>
+        <PromptInputTools className="gap-0">
           <ModelPicker />
+          {dictation ? <ChatDictateButton locked={locked} /> : null}
         </PromptInputTools>
         <ChatPromptSubmit
           blocked={locked || submitBlocked}
@@ -1081,12 +1133,20 @@ function ChatPromptSubmit({
   } = useChatDraft();
   // While a reply is on its way the button stops it, so it needs no text.
   const busy = status === "submitted" || status === "streaming";
+  // A plain icon, like the mic beside the model picker. Send is a Return
+  // arrow. Stop, the spinner, and the error mark stay as they are.
   return (
     <PromptInputSubmit
+      className="text-muted-foreground hover:text-foreground hover:!bg-foreground/6 rounded-lg"
       disabled={blocked || (!busy && text.trim().length === 0)}
       onStop={onStop}
       status={status}
-    />
+      variant="ghost"
+    >
+      {busy || status === "error" ? undefined : (
+        <CornerDownLeftIcon className="size-4" />
+      )}
+    </PromptInputSubmit>
   );
 }
 
@@ -1117,7 +1177,7 @@ function ConversationSkeleton() {
 function UserMessageSkeleton() {
   return (
     <div
-      className="border-input bg-surface min-h-10 w-full rounded-2xl border"
+      className="bg-bubble ml-auto min-h-10 w-1/2 rounded-2xl"
       data-role="user"
     />
   );

@@ -65,7 +65,7 @@ export function useModelDownloads(): ModelDownloadsContextValue {
 
 /**
  * Downloads the models setup asks for, one at a time, and reports every
- * download to Settings > Models too. It sits above setup and Home, so a
+ * download to Settings > Models too. It sits above setup and the app, so a
  * download keeps going after setup ends or is skipped. The queue is saved in
  * `app_setting`, so a restart, a refresh, or an unlock picks it up again until
  * each model is ready or cancelled.

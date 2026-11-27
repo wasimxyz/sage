@@ -43,8 +43,8 @@ export function useRenameChat(): RenameChatContextValue {
 }
 
 /**
- * Holds the chat being renamed and shows the dialog once, so a row, its
- * context menu, and the panel's ⋯ menu all open the same one. What it shares
+ * Holds the chat being renamed and shows the dialog once, so a sidebar row,
+ * its context menu, and the open chat's ⋯ menu all open the same one. What it shares
  * never changes, so opening the dialog does not render the rows.
  */
 export function RenameChatProvider({ children }: { children: ReactNode }) {
