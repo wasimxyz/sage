@@ -13,7 +13,7 @@ contextLengths: [ 32768 ]
 memory: [ off, on ]
 repeats: 1
 tests: [ person, dream-accuracy, facts, openers ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 speedLimitSeconds: 20
 p90LimitSeconds: null
 maxSwapGrowthMB: 512

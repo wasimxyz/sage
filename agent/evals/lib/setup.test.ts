@@ -202,5 +202,5 @@ test("readPassSweep reads the sweep without a setup id, and gives defaults witho
     12
   );
   assert.equal(readPassSweep({}).spendingCapUsd, 50);
-  assert.equal(readPassSweep({}).judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(readPassSweep({}).judge.model, "deepseek/deepseek-v4.1-flash");
 });
