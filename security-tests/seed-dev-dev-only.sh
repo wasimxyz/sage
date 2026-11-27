@@ -65,7 +65,7 @@ fi
 
 # make dev, make build, and make package never get an automation build.
 if grep -Fq -- '-Dautomation' "$makefile"; then
-  fail "The Makefile builds with -Dautomation. Only scripts/seed-dev.sh and the eval runner (agent/scripts/eval/sage.ts) may."
+  fail "The Makefile builds with -Dautomation. Only scripts/seed-dev.sh, the eval runner (agent/scripts/eval/sage.ts), and scripts/screenshots.sh may."
 fi
 
 echo "seed-dev-dev-only tests passed"

@@ -1,0 +1,15 @@
+[project]
+name = "sage-dictation-spike"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "jiwer>=4.0.0",
+    "numpy>=2.5.4",
+    "sherpa-onnx>=2.0.1",
+    "soundfile>=0.14.0",
+    "soxr>=1.1.0",
+    "whisper-normalizer>=1.0.0",
+]
+
+[tool.ruff]
+line-length = 120

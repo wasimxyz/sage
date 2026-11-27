@@ -23,13 +23,13 @@ export const maxReminders = 3;
 const reminderWaitMs = [0, 3 * dayMs, 7 * dayMs] as const;
 
 export type LaunchScreen =
-  | { kind: "home" }
+  | { kind: "app" }
   | { kind: "setup"; step: OnboardingStep };
 
 /**
  * Which screen a launch opens. A missing state means a new person, so setup
  * starts at Welcome. An active state means setup was left half done, so it
- * opens where the person stopped. Done and skipped open Home.
+ * opens where the person stopped. Done and skipped open the app.
  */
 export function launchScreen(
   status: Pick<OnboardingStatus, "state" | "step">
@@ -40,7 +40,7 @@ export function launchScreen(
   if (status.state === "active") {
     return { kind: "setup", step: status.step };
   }
-  return { kind: "home" };
+  return { kind: "app" };
 }
 
 export type OllamaScreen = "downloads" | "missing" | "start";
