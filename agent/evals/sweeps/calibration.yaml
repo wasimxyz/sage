@@ -13,5 +13,5 @@
 # the sample of one sweep, set compare to that sweep's id, or pass
 # --compare <sweep id> in ARGS.
 tests: [ calibration ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 spendingCapUsd: 10

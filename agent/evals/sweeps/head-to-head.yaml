@@ -13,5 +13,5 @@
 # that uses the judge.
 tests: [ head-to-head ]
 compareTop: 3
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 spendingCapUsd: 30

@@ -182,7 +182,7 @@ test("the calibration and head-to-head sweeps run alone, with the judge and a ca
   const calibration = await loadSweep("calibration", {}, dir);
   assert.deepEqual(calibration.sweep.tests, ["calibration"]);
   assert.equal(calibration.sweep.compare, undefined);
-  assert.equal(calibration.sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(calibration.sweep.judge.model, "deepseek/deepseek-v4.1-flash");
   assert.equal(calibration.sweep.spendingCapUsd, 10);
 
   const headToHead = await loadSweep("head-to-head", {}, dir);
