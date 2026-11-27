@@ -724,7 +724,7 @@ function replyEval(
 }
 
 /** Reads the manifest once, and only when a check asks. A missing or broken file reads as none. */
-function manifestReader(
+export function manifestReader(
   env: Env,
   deps: ReplyEvalDeps
 ): () => Manifest | undefined {

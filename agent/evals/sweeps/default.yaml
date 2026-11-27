@@ -13,6 +13,9 @@ contextLengths: [ 32768 ]
 memory: [ off, on ]
 repeats: 1
 tests: [ person, dream-accuracy, facts, openers ]
+# long-history (tagged long) takes hours to run Dream the first time, so only
+# the deep and dream sweeps include it.
+excludeTags: [ long ]
 judge: { model: deepseek/deepseek-v4.1-flash }
 speedLimitSeconds: 20
 p90LimitSeconds: null

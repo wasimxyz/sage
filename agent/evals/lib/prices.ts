@@ -285,15 +285,20 @@ function worstOutputPerM(endpoint: unknown): number | undefined {
  * pricing counts at its peak price, so one that doubles at peak hours is left
  * out when double its price is over the limit.
  *
- * `maxOutputPerM` is the dearest output price among the providers returned,
- * the price a spending estimate should use for requests routed to them.
- * Throws when no provider qualifies, because an empty list would let the
- * gateway route anywhere.
+ * `outputPerM` is each returned provider's output price, by the gateway's name
+ * for it. `maxOutputPerM` is the dearest of them. A caller that routes to only
+ * some of the providers should price at the dearest of those, from
+ * `outputPerM`. Throws when no provider qualifies, because an empty list would
+ * let the gateway route anywhere.
  */
 export async function allowedProviders(
   model: string,
   maxOutputPricePerM: number
-): Promise<{ maxOutputPerM: number; providers: string[] }> {
+): Promise<{
+  maxOutputPerM: number;
+  outputPerM: Record<string, number>;
+  providers: string[];
+}> {
   const path = model.split("/").map(encodeURIComponent).join("/");
   let payload: unknown;
   try {
@@ -336,6 +341,7 @@ export async function allowedProviders(
   );
   return {
     maxOutputPerM: Math.max(...sorted.map(([, price]) => price)),
+    outputPerM: Object.fromEntries(sorted),
     providers: sorted.map(([name]) => name),
   };
 }

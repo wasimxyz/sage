@@ -35,10 +35,18 @@ export const ESTIMATE_DEFAULTS = {
   personCheckSeconds: 4,
   replySeconds: { off: 25, on: 60 },
   sageStartSeconds: 20,
+  // The simulated user's call for each person message after the opening.
+  simulatedUserSeconds: 5,
 } as const;
 
 /** Tokens per cloud call. The judge's prompt is mostly a cacheable prefix. */
 export const ESTIMATE_TOKENS = {
+  // One call for a whole conversation: the journal, then every exchange.
+  conversationJudge: {
+    cachedInputTokens: 9600,
+    inputTokens: 16_000,
+    outputTokens: 1500,
+  },
   dreamSourceJudge: { inputTokens: 5000, outputTokens: 1000 },
   factJudge: { inputTokens: 3000, outputTokens: 400 },
   replyJudge: {
@@ -46,6 +54,8 @@ export const ESTIMATE_TOKENS = {
     inputTokens: 12_000,
     outputTokens: 2000,
   },
+  // The person's last call: the card and the whole conversation, then a rating.
+  simulatedUserRating: { inputTokens: 3000, outputTokens: 120 },
   simulatedUserTurn: { inputTokens: 2000, outputTokens: 250 },
 } as const;
 
@@ -116,7 +126,12 @@ export interface EstimateInput {
    * costs one source grade and a reply item one reply grade. Leave it out for
    * a plan that has no check.
    */
-  judgeCheck?: { dreamItems: number; replyItems: number };
+  judgeCheck?: {
+    /** Whole-conversation grades. Each conversation item's graded replies count as `replyItems`. */
+    conversationItems?: number;
+    dreamItems: number;
+    replyItems: number;
+  };
   plan: RunPlan;
   prices: { judge: ModelPrice; simulatedUser: ModelPrice };
   sweep: SweepFile;
@@ -129,12 +144,21 @@ export interface Estimate {
   lines: string[];
 }
 
+/**
+ * What one person sends in one setup. A conversation is counted at its
+ * `maxTurns`, the most it can take, so the estimate runs high for the ones that
+ * end sooner. Each turn has a Sage reply, graded as a reply, and a call to the
+ * simulated user (the opening is written in advance, so it has none).
+ */
 function replyCount(
   counts: RunPlan["people"][number]["counts"],
   sweep: SweepFile
-): { conversationTurns: number; replies: number } {
+): { conversations: number; conversationTurns: number; replies: number } {
   const wants = (test: SweepFile["tests"][number]) =>
     sweep.tests.includes(test);
+  const conversations = wants("conversations")
+    ? counts.conversations * sweep.repeats
+    : 0;
   const conversationTurns = wants("conversations")
     ? counts.conversationTurns * sweep.repeats
     : 0;
@@ -142,7 +166,7 @@ function replyCount(
     (wants("facts") ? counts.chatRefs * sweep.repeats : 0) +
     (wants("openers") ? counts.openers * sweep.repeats : 0) +
     conversationTurns;
-  return { conversationTurns, replies };
+  return { conversations, conversationTurns, replies };
 }
 
 function dreamSeconds(group: PlanGroup, entries: number): number {
@@ -204,15 +228,25 @@ function addSetupChat(
   person: Person
 ): void {
   const { history, prices, sweep } = input;
-  const { conversationTurns, replies } = replyCount(person.counts, sweep);
+  const { conversations, conversationTurns, replies } = replyCount(
+    person.counts,
+    sweep
+  );
   const perReply =
     history.get(historyKey(setup.chatModel, setup.thinking)) ??
     ESTIMATE_DEFAULTS.replySeconds[setup.thinking === "off" ? "off" : "on"];
-  sums.chatSecs += replies * perReply;
-  sums.judgeUsd += replies * costUsd(prices.judge, ESTIMATE_TOKENS.replyJudge);
+  sums.chatSecs +=
+    replies * perReply +
+    (conversationTurns - conversations) *
+      ESTIMATE_DEFAULTS.simulatedUserSeconds;
+  sums.judgeUsd +=
+    replies * costUsd(prices.judge, ESTIMATE_TOKENS.replyJudge) +
+    conversations * costUsd(prices.judge, ESTIMATE_TOKENS.conversationJudge);
   sums.simUsd +=
-    conversationTurns *
-    costUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserTurn);
+    (conversationTurns - conversations) *
+      costUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserTurn) +
+    conversations *
+      costUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserRating);
 }
 
 export function estimateRun(input: EstimateInput): Estimate {
@@ -226,13 +260,21 @@ export function estimateRun(input: EstimateInput): Estimate {
     personSecs: 0,
     simUsd: 0,
   };
-  const check = input.judgeCheck ?? { dreamItems: 0, replyItems: 0 };
+  const check = {
+    conversationItems: 0,
+    dreamItems: 0,
+    replyItems: 0,
+    ...input.judgeCheck,
+  };
   const checkUsd =
     check.dreamItems *
       costUsd(input.prices.judge, ESTIMATE_TOKENS.dreamSourceJudge) +
-    check.replyItems * costUsd(input.prices.judge, ESTIMATE_TOKENS.replyJudge);
+    check.replyItems * costUsd(input.prices.judge, ESTIMATE_TOKENS.replyJudge) +
+    check.conversationItems *
+      costUsd(input.prices.judge, ESTIMATE_TOKENS.conversationJudge);
   const checkSecs =
-    (check.dreamItems + check.replyItems) * defaults.judgeCheckSecondsPerItem;
+    (check.dreamItems + check.replyItems + check.conversationItems) *
+    defaults.judgeCheckSecondsPerItem;
   sums.judgeUsd += checkUsd;
   for (const group of plan.groups) {
     for (const person of plan.people) {
@@ -254,7 +296,8 @@ export function estimateRun(input: EstimateInput): Estimate {
     defaults.gradeTailMinutes * 60;
   const totalSecs =
     fixedSecs + checkSecs + sums.dreamSecs + sums.personSecs + sums.chatSecs;
-  const checkItems = check.dreamItems + check.replyItems;
+  const checkItems =
+    check.dreamItems + check.replyItems + check.conversationItems;
   const lines = [
     ...(checkItems === 0
       ? []

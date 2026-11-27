@@ -632,6 +632,10 @@ test("rubricHash changes with the title of any block in the item section", () =>
     ["reply", "reference"],
     ["reply", "reply"],
     ["reply", "toolCalls"],
+    ["reply", "earlier"],
+    ["conversation", "answer"],
+    ["conversation", "conversation"],
+    ["conversation", "details"],
   ] as const) {
     withTitle(kind, name, "A different title", () => {
       assert.notEqual(rubricHash(), before, `${kind}.${name}`);
@@ -644,6 +648,8 @@ test("the rubric hash material covers every part that shapes a grade", () => {
   const material = rubricMaterial();
   assert.deepEqual(Object.keys(material), [
     "answers",
+    "conversation",
+    "conversationRules",
     "dreamSourceLayout",
     "journalContext",
     "kinds",
@@ -669,6 +675,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     ["evidence", "reason", "pass"]
   );
   assert.deepEqual(Object.keys(material.kinds), [
+    "conversation",
     "dreamSource",
     "extraction",
     "factuality",
@@ -682,7 +689,7 @@ test("the rubric hash material covers every part that shapes a grade", () => {
     }
     assert.equal(probe.schemaName, `${kind}_grade`);
     assert.equal(probe.parts[0], "<fact sheet and journal>");
-    if (kind !== "reply") {
+    if (kind !== "reply" && kind !== "conversation") {
       // The user message goes out as the fact sheet, the transcript, then the item.
       assert.equal(probe.parts[1], "<transcript>");
     }

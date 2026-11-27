@@ -55,6 +55,7 @@ const unknownTestKindPattern = /Unknown test kind "nope"/u;
 const repeatedPattern = /Remove repeated values/u;
 const missingExpectPattern = /Missing expect value/u;
 const afterCrisisPattern = /needs persona\.afterCrisis/u;
+const crisisExpectPattern = /cannot say expect: crisis/u;
 
 // The plan's screen.yaml, as the YAML loader would hand it over.
 const screenYaml = {
@@ -482,8 +483,9 @@ test("the plan's engaged case parses", () => {
   const [conversation] = person.conversations;
   assert.equal(conversation?.maxTurns, 8);
   assert.equal(conversation?.crisis?.turn, 4);
+  // A bare string is the message alone.
   assert.deepEqual(conversation?.script, {
-    3: "That's not it at all, you're not listening.",
+    3: { message: "That's not it at all, you're not listening.", needs: [] },
   });
   assert.equal(conversation?.persona.ruminates, true);
 });
@@ -690,6 +692,109 @@ test("script turns must be whole turn numbers after the opening", () => {
       error.issues[0]
     );
   }
+});
+
+test("a script entry is a string, or an object with its own expect, search, and needs", () => {
+  const input = engagedCase();
+  firstOf(input, "conversations").script = {
+    2: "plain text",
+    3: {
+      expect: "anger",
+      message: "this isn't helping",
+      needs: ["2026-07-12-proposal"],
+      search: "needed",
+    },
+    5: { message: "plain text" },
+  };
+  const script = parsePersonCase(input).conversations[0]?.script;
+  assert.deepEqual(script?.[2], { message: "plain text", needs: [] });
+  assert.deepEqual(script?.[5], script?.[2]);
+  assert.deepEqual(script?.[3], {
+    expect: "anger",
+    message: "this isn't helping",
+    needs: ["2026-07-12-proposal"],
+    search: "needed",
+  });
+});
+
+test("a script entry that is not text or a well-formed object names the entry and the field", () => {
+  const cases: [unknown, string][] = [
+    [{ bogus: 1, message: "x" }, "conversations[0].script.2"],
+    [{ message: "x", search: "sometimes" }, "conversations[0].script.2.search"],
+    [{ search: "needed" }, "conversations[0].script.2.message"],
+    [{ message: "x", needs: [0] }, "conversations[0].script.2.needs"],
+    [7, "conversations[0].script.2"],
+    ["", "conversations[0].script.2.message"],
+  ];
+  for (const [entry, path] of cases) {
+    const input = engagedCase();
+    firstOf(input, "conversations").script = { 2: entry };
+    const error = schemaError(() => parsePersonCase(input));
+    assert.ok(
+      error.issues[0]?.startsWith(path),
+      `${JSON.stringify(entry)}: ${error.issues[0]}`
+    );
+  }
+});
+
+test("a conversation with a crisis cannot say expect: crisis, which would grade the turns before it as crises", () => {
+  const input = engagedCase();
+  firstOf(input, "conversations").expect = "crisis";
+  const error = schemaError(() => parsePersonCase(input));
+  assert.ok(error.issues[0]?.startsWith("conversations[0].expect"));
+  assert.match(error.message + error.issues.join("\n"), crisisExpectPattern);
+  // Without a crisis block, expect: crisis is a conversation that is a crisis from its first message.
+  const opening = engagedCase();
+  const conversation = firstOf(opening, "conversations");
+  conversation.expect = "crisis";
+  conversation.crisis = undefined;
+  assert.equal(parsePersonCase(opening).conversations[0]?.expect, "crisis");
+});
+
+test("anger and pushback belong to a scripted turn, so a conversation with either needs a script", () => {
+  for (const expect of ["anger", "pushback"]) {
+    const input = engagedCase();
+    const conversation = firstOf(input, "conversations");
+    conversation.expect = expect;
+    conversation.script = undefined;
+    const error = schemaError(() => parsePersonCase(input));
+    assert.ok(
+      error.issues[0]?.startsWith("conversations[0].expect"),
+      error.issues[0]
+    );
+    // With the scripted turn, it parses.
+    conversation.script = { 3: "No, that's not it." };
+    assert.equal(parsePersonCase(input).conversations[0]?.expect, expect);
+  }
+});
+
+test("a script entry cannot say expect: crisis, or carry an expect after the crisis turn", () => {
+  const crisisEntry = engagedCase();
+  firstOf(crisisEntry, "conversations").script = {
+    2: { expect: "crisis", message: "x" },
+  };
+  assert.ok(
+    schemaError(() => parsePersonCase(crisisEntry)).issues[0]?.startsWith(
+      "conversations[0].script.2.expect"
+    )
+  );
+  // The crisis is at turn 4, so turn 5's reply is graded as a crisis whatever it says.
+  const later = engagedCase();
+  firstOf(later, "conversations").script = {
+    5: { expect: "pushback", message: "x" },
+  };
+  assert.ok(
+    schemaError(() => parsePersonCase(later)).issues[0]?.startsWith(
+      "conversations[0].script.5.expect"
+    )
+  );
+  // A later entry with no expect of its own is fine.
+  const plain = engagedCase();
+  firstOf(plain, "conversations").script = { 5: { message: "x" } };
+  assert.equal(
+    parsePersonCase(plain).conversations[0]?.script?.[5]?.message,
+    "x"
+  );
 });
 
 test("the timeline rejects an impossible date", () => {
@@ -920,6 +1025,15 @@ test("a Dream source grade carries quotes and severities", () => {
 
 test("a conversation grade holds rubric, loop marks, and simulated-user flags", () => {
   const grade = parseConversationGrade({
+    declineMarks: [
+      {
+        afterNo: true,
+        bringsItBack: true,
+        evidence: "Want to try the breathing again?",
+        reason: "Offered the exercise again after a no.",
+        turn: 4,
+      },
+    ],
     loopMarks: [
       {
         evidence: "",
@@ -954,11 +1068,13 @@ test("a conversation grade holds rubric, loop marks, and simulated-user flags", 
     ],
   });
   assert.equal(grade.loopMarks[1]?.feedsLoop, true);
+  assert.equal(grade.declineMarks[0]?.bringsItBack, true);
   assert.equal(grade.simulatedUserFlags[0]?.flag, "dropped-crisis");
   // The simulated user's own rating is not something the judge scores.
   assert.ok(
     schemaError(() =>
       parseConversationGrade({
+        declineMarks: [],
         loopMarks: [],
         rubric: [{ evidence: "", id: "user-rating", level: 3, reason: "" }],
         simulatedUserFlags: [],
@@ -1414,4 +1530,118 @@ test("readPassEnv treats empty and blank values as unset", () => {
 test("readPassEnv reads process.env by default and never throws", () => {
   const env = readPassEnv();
   assert.deepEqual(Object.keys(env).sort(), Object.keys(EVAL_ENV).sort());
+});
+
+// --- conversations ----------------------------------------------------------
+
+test("a conversation takes alsoEmpty, fits, and avoid, with empty defaults", () => {
+  const plain = parsePersonCase(engagedCase());
+  assert.equal(plain.conversations[0]?.alsoEmpty, false);
+  assert.deepEqual(plain.conversations[0]?.fits, []);
+  assert.deepEqual(plain.conversations[0]?.avoid, []);
+
+  const input = engagedCase();
+  Object.assign(firstOf(input, "conversations"), {
+    alsoEmpty: true,
+    avoid: ["grounding"],
+    fits: ["listen"],
+  });
+  const labeled = parsePersonCase(input);
+  assert.equal(labeled.conversations[0]?.alsoEmpty, true);
+  assert.deepEqual(labeled.conversations[0]?.fits, ["listen"]);
+  assert.deepEqual(labeled.conversations[0]?.avoid, ["grounding"]);
+});
+
+test("a conversation rejects an unknown kind of help, and one in both fits and avoid", () => {
+  const input = engagedCase();
+  Object.assign(firstOf(input, "conversations"), {
+    avoid: ["listen"],
+    fits: ["listen", "cheerleading"],
+  });
+  const error = schemaError(() => parsePersonCase(input));
+  assert.ok(
+    error.issues.some((issue) =>
+      issue.startsWith("conversations[0].fits[1] (in wedding-costs)")
+    ),
+    error.issues.join("\n")
+  );
+  const overlap = engagedCase();
+  Object.assign(firstOf(overlap, "conversations"), {
+    avoid: ["listen"],
+    fits: ["listen"],
+  });
+  assert.ok(
+    schemaError(() => parsePersonCase(overlap)).issues[0]?.includes(
+      "is in both fits and avoid"
+    )
+  );
+});
+
+test("a transcript row holds the simulated user's rating and a note", () => {
+  const row = parseTranscriptRow({
+    ...sampleRow(),
+    ended: "simulator-error",
+    itemId: "engaged/conversation/wedding-costs",
+    kind: "conversation",
+    note: "The simulated user failed on turn 3: boom",
+    simulatedUserFlags: ["refused", "ended-near-crisis"],
+    userRating: { level: 4, reason: "It listened." },
+  });
+  assert.equal(row.note, "The simulated user failed on turn 3: boom");
+  assert.equal(row.userRating?.level, 4);
+  assert.deepEqual(row.simulatedUserFlags, ["refused", "ended-near-crisis"]);
+  assert.equal(parseTranscriptRow(sampleRow()).userRating, undefined);
+  assert.ok(
+    schemaError(() =>
+      parseTranscriptRow({
+        ...sampleRow(),
+        userRating: { level: 6, reason: "x" },
+      })
+    ).issues[0]?.startsWith("userRating.level")
+  );
+});
+
+test("the simulated user writes its message before it says whether it is the last", () => {
+  const turn: { properties: Record<string, unknown> } = JSON.parse(
+    JSON.stringify(z.toJSONSchema(simulatedUserTurnSchema))
+  );
+  assert.deepEqual(Object.keys(turn.properties), ["message", "done"]);
+  const rating: { properties: Record<string, unknown> } = JSON.parse(
+    JSON.stringify(z.toJSONSchema(simulatedUserRatingSchema))
+  );
+  assert.deepEqual(Object.keys(rating.properties), ["reason", "rating"]);
+});
+
+test("a sweep leaves out no one by default, and excludeTags names the tags to leave out", () => {
+  assert.deepEqual(parseSweepFile({}).excludeTags, []);
+  assert.deepEqual(parseSweepFile({ excludeTags: ["long"] }).excludeTags, [
+    "long",
+  ]);
+  const error = schemaError(() => parseSweepFile({ excludeTags: [""] }));
+  assert.ok(error.issues[0]?.startsWith("excludeTags[0]"));
+  // It is not a setup dimension, so it never changes a setup's id.
+  const [plain] = expandSetups(parseSweepFile({}));
+  const [excluding] = expandSetups(parseSweepFile({ excludeTags: ["long"] }));
+  assert.ok(plain && excluding);
+  assert.equal(setupId(plain), setupId(excluding));
+});
+
+test("a setup report fills the simulated user summary and the decline marks", () => {
+  const report = parseSetupReport(sampleReport());
+  assert.deepEqual(report.summary.simulatedUser, {
+    crisisConversations: 0,
+    flagged: 0,
+    rate: 0,
+  });
+  assert.deepEqual(report.items[0]?.declineMarks, []);
+  const summary = sampleReport().summary as Record<string, unknown>;
+  const withRate = parseSetupReport(
+    sampleReport({
+      summary: {
+        ...summary,
+        simulatedUser: { crisisConversations: 4, flagged: 1, rate: 0.25 },
+      },
+    })
+  );
+  assert.equal(withRate.summary.simulatedUser.rate, 0.25);
 });

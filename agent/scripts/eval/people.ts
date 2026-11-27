@@ -3,6 +3,10 @@
 // holds. The loader itself is `agent/evals/lib/dataset.ts`.
 
 import {
+  alsoEmptyConversations,
+  needsEmptyJournalForConversations,
+} from "../../evals/lib/conversations.ts";
+import {
   evalDataRoot,
   type LoadedPerson,
   loadPeople,
@@ -12,6 +16,7 @@ import {
   alsoEmptyOpeners,
   EMPTY_JOURNAL_PERSON,
   needsEmptyJournal,
+  personExcluded,
   itemMatchesTags as tagsMatch,
 } from "../../evals/lib/openers.ts";
 
@@ -53,6 +58,12 @@ export function dataProblems(
           `${person.id}: opener ${wanting.map((opener) => opener.id).join(", ")} is marked alsoEmpty, but there is no ${EMPTY_JOURNAL_PERSON} person with an empty journal to run it against.`
         );
       }
+      const wantingConversations = alsoEmptyConversations(person, []);
+      if (wantingConversations.length > 0) {
+        problems.push(
+          `${person.id}: conversation ${wantingConversations.map((conversation) => conversation.id).join(", ")} is marked alsoEmpty, but there is no ${EMPTY_JOURNAL_PERSON} person with an empty journal to run it against.`
+        );
+      }
     }
   }
   return problems;
@@ -80,12 +91,17 @@ export function itemMatchesTags(
 
 /**
  * A person is in the sweep when their tags match, or any opener or
- * conversation does. Their fact checks run in full once they are in.
+ * conversation does. Their fact checks run in full once they are in. A person
+ * whose tags hold one of the sweep's `excludeTags` is never in.
  */
 export function personInSweep(
   person: LoadedPerson,
-  sweepTags: readonly string[]
+  sweepTags: readonly string[],
+  excludeTags: readonly string[] = []
 ): boolean {
+  if (personExcluded(person, excludeTags)) {
+    return false;
+  }
   if (sweepTags.length === 0) {
     return true;
   }
@@ -100,27 +116,34 @@ export function personInSweep(
 }
 
 /**
- * The people a sweep covers. Openers marked `alsoEmpty` run against the
- * empty-journal person's Sage (`new-user`). So when the sweep sends openers
- * and a covered person has such an opener the tags pick, that person is
- * covered too, even if nothing of their own matches. Pass `openers: false`
- * for a sweep that sends none.
+ * The people a sweep covers. Openers and conversations marked `alsoEmpty` run
+ * against the empty-journal person's Sage (`new-user`). So when the sweep sends
+ * openers and a covered person has such an opener the tags pick, that person is
+ * covered too, even if nothing of their own matches. Pass `openers: false` for
+ * a sweep that sends none. Conversations work the same way, but only when the
+ * caller passes `conversations: true`. People whose tags hold one of
+ * `excludeTags` are left out, and so are their `alsoEmpty` items.
  */
 export function selectPeople(
   people: readonly LoadedPerson[],
   sweepTags: readonly string[],
-  options: { openers?: boolean } = {}
+  options: {
+    conversations?: boolean;
+    excludeTags?: readonly string[];
+    openers?: boolean;
+  } = {}
 ): LoadedPerson[] {
-  const chosen = people.filter((person) => personInSweep(person, sweepTags));
+  const chosen = people.filter((person) =>
+    personInSweep(person, sweepTags, options.excludeTags)
+  );
   const host = people.find(
     (person) => person.id === EMPTY_JOURNAL_PERSON && person.empty
   );
-  if (
-    options.openers === false ||
-    host === undefined ||
-    chosen.includes(host) ||
-    !needsEmptyJournal(chosen, sweepTags)
-  ) {
+  const needsHost =
+    (options.openers !== false && needsEmptyJournal(chosen, sweepTags)) ||
+    (options.conversations === true &&
+      needsEmptyJournalForConversations(chosen, sweepTags));
+  if (host === undefined || chosen.includes(host) || !needsHost) {
     return chosen;
   }
   return people.filter((person) => person === host || chosen.includes(person));
@@ -163,10 +186,36 @@ export function emptyJournalOpenerCount(
     .reduce((sum, other) => sum + alsoEmptyOpeners(other, sweepTags).length, 0);
 }
 
+/**
+ * How many conversations other people run on the empty journal, and how many
+ * turns they can take, for the person whose Sage has it. Zero for anyone else.
+ */
+export function emptyJournalConversationCount(
+  person: LoadedPerson,
+  covered: readonly LoadedPerson[],
+  sweepTags: readonly string[]
+): { conversations: number; turns: number } {
+  const total = { conversations: 0, turns: 0 };
+  if (person.id !== EMPTY_JOURNAL_PERSON || !person.empty) {
+    return total;
+  }
+  for (const other of covered) {
+    if (other.id === person.id) {
+      continue;
+    }
+    for (const conversation of alsoEmptyConversations(other, sweepTags)) {
+      total.conversations += 1;
+      total.turns += conversation.maxTurns;
+    }
+  }
+  return total;
+}
+
 export function countItems(
   person: LoadedPerson,
   sweepTags: readonly string[],
-  emptyJournalOpeners = 0
+  emptyJournalOpeners = 0,
+  emptyJournalConversations = { conversations: 0, turns: 0 }
 ): ItemCounts {
   const { chat, conversations, events, facts, openers, retrieval, summaries } =
     person.personCase;
@@ -175,11 +224,13 @@ export function countItems(
   );
   return {
     chatRefs: chat.length,
-    conversations: matchingConversations.length,
-    conversationTurns: matchingConversations.reduce(
-      (sum, conversation) => sum + conversation.maxTurns,
-      0
-    ),
+    conversations:
+      matchingConversations.length + emptyJournalConversations.conversations,
+    conversationTurns:
+      matchingConversations.reduce(
+        (sum, conversation) => sum + conversation.maxTurns,
+        0
+      ) + emptyJournalConversations.turns,
     entries: person.entries.length,
     judgedRefs: facts.length + events.length + summaries.length,
     openers:

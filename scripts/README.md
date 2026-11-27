@@ -42,7 +42,7 @@ Building the speech library needs the macOS 26 SDK. The release workflow, `.gith
 
 ## Eval
 
-`make eval` is not a shell script. It runs the TypeScript runner, `agent/scripts/eval/run.ts`, with a sweep file. The runner gets the pinned Ollama from `fetch-ollama.sh`, and it stops if port 11436 is in use, which `make dev` also uses. It grades Dream and Chat with a cloud judge, writes reports under `agent/evals/reports/`, and then runs `eval-upload.sh` to ask whether to upload them. [Eval suite](../docs/agent/evals.md) has the options, and [Eval suite internals](../agent/evals/README.md) has the sequence.
+`make eval` is not a shell script. It runs the TypeScript runner, `agent/scripts/eval/run.ts`, with a sweep file. The runner gets the pinned Ollama from `fetch-ollama.sh`, and it stops if port 11436 is in use, which `make dev` also uses. Only you run it: in an agent’s shell it exits with code 2 before doing anything. It grades Dream and Chat with a cloud judge, writes reports under `agent/evals/reports/`, and then runs `eval-upload.sh` to ask whether to upload them. [Eval suite](../docs/agent/evals.md) has the options, and [Eval suite internals](../agent/evals/README.md) has the sequence.
 
 `make eval-upload` runs `eval-upload.sh` on its own, to upload reports from an earlier run. On a terminal it asks first, and the default is no. When input is not a terminal, it skips the upload. The upload script reads `agent/.env`, then `agent/.env.local`, for the Blob token. A variable already set in the shell keeps its value.
 

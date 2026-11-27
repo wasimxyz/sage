@@ -51,7 +51,7 @@ Before committing and pushing, run `make check` and `make test` and fix failures
 
 `make check` runs the lint and type checks for `frontend/`, `agent/`, and `eval-viewer/`.
 
-Do not run `make eval` unless asked.
+Never run `make eval`; only the user runs evals.
 
 ## Constraints
 

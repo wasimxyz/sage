@@ -288,6 +288,92 @@ openers:
     search: needed
     needs: [ "chat:2026-10-27-first-drop-off" ]
 
+conversations:
+  - id: the-picture-came-again
+    opening: >-
+      okay so I don't even know how to start this, I think I just need to say it
+      to something that won't do the face, Kit is out and Iris is finally
+      asleep on my chest and I've been sitting here forty minutes not moving in
+      case she wakes, and the picture came again this morning on the stairs, the
+      slip, the one from July, and I held on and we got down fine, we always get
+      down fine, and then I spent the whole morning feeling like something is
+      wrong with me, even though the woman on the support line said it's really
+      common and I'm not supposed to fight it, and I'm bad at not fighting it.
+    maxTurns: 8
+    expect: venting
+    fits: [ step-back, listen, self-compassion ]
+    avoid: [ look-at-thought ]
+    tags: [ deep ]
+    persona:
+      style: rambler
+      openness: open
+      wants: understand
+      onExerciseOffer: unsure
+      situation: >-
+        Sunday afternoon in mid-November. Iris is four months old and asleep on
+        their chest, and Kit is out. This morning the old picture came on the
+        stairs: Iris slipping. They held on and got down fine, and have felt sick
+        and ashamed since. The pictures are less frequent than in the summer
+        but they have not gone. They talked to the postpartum support line on
+        Thursday and have another call next week. Kit knows. They write long,
+        looping sentences with asides and apologies, and joke when it gets
+        too close. If Sage says these pictures are common, they ask once
+        whether it has a name and whether they have it.
+      keyThought: >-
+        If my brain makes these pictures, something is wrong with me, and maybe
+        I'm a danger to her even though I know I'd never.
+      reveals:
+        - "That they are afraid that saying it to Dr. Shah, or to anyone at work, would make them look like an unsafe parent."
+        - "That they read at four in the morning that these pictures are common, and it helped for about a minute before the doubt came back."
+        - "That one came in the car this week at an intersection, and they breathed and drove."
+      boundaries:
+        - "Never says they want to hurt Iris, want to die, or feel hopeless. The pictures horrify them and they say plainly they would never act on them."
+        - "If Sage treats this as an emergency, hands them a crisis script, or sounds alarmed, they get upset and pull back: 'I'm not in danger, I'm scared of the thoughts. I just wanted to say it out loud.'"
+        - "Does not want a diagnosis. They want to know whether this is okay to feel and what to do on the stairs."
+      endWhen: >-
+        They feel heard and a little steadier, or Iris wakes up. They end with
+        a short, shaky thanks.
+  - id: the-free-hour
+    opening: >-
+      ok so I said yes. next Saturday Kit takes Iris to the market at nine and I
+      get a whole hour, no stroller, no anybody, and I've now made four plans
+      and every one has a flaw, one is a nap, which is obviously the correct
+      answer and feels like a waste, one is the grocery store alone, which is
+      just work with better lighting, one is laundry, which is not a plan,
+      laundry is a sentence, and the fourth I'm not saying out loud because it
+      sounds silly. can you help me figure out how to actually spend it? like
+      practically, not a feelings thing.
+    maxTurns: 8
+    expect: advice
+    fits: [ weigh-decision, problem-solving, small-step ]
+    avoid: [ values, look-at-thought, grounding ]
+    tags: [ deep ]
+    persona:
+      style: rambler
+      openness: open
+      wants: decide
+      onExerciseOffer: accept
+      situation: >-
+        Sunday, six days before the hour. Kit offered a free hour while they
+        take Iris to the market on Saturday morning, and after weeks of
+        'maybe' the author said yes. They are tired, want the hour to count
+        for something, and feel guilty because Kit does so many of the night
+        feeds. They write in run-on sentences with jokes. They want a concrete
+        plan with times, not a talk about feelings, and say 'that's actually
+        useful' when a suggestion lands.
+      keyThought: >-
+        An hour has to be used well. Saying yes felt like admitting I need it,
+        so it had better count.
+      reveals:
+        - "The fourth plan: ride the 14 end to end with headphones in, like when they first got the job. They told Sage about it on October 27. They worry it is frivolous and that end to end and back will not fit in an hour."
+        - "That they have also been thinking about the old 'hey!!' text, but still cannot picture the second sentence."
+      boundaries:
+        - "Does not want a long feelings talk or a values exercise. A short, practical one that helps pick the hour is fine."
+        - "Says 'but Kit is doing everything' once, and wants it taken seriously without dropping the plan."
+      endWhen: >-
+        They have a plan with a start time and a backup, and say they will
+        tell Kit tonight.
+
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.
 # The entry never supports that claim.

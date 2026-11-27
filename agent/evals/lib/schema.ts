@@ -257,6 +257,20 @@ export const EXPECTS = [
 ] as const;
 export type Expect = (typeof EXPECTS)[number];
 
+/**
+ * Kinds of message that answer what Sage just said, so a conversation cannot
+ * be about one of them from its first turn. A conversation that names one as
+ * its `expect` says that its scripted turns carry it. Every other turn is
+ * graded as `ORDINARY_EXPECT`.
+ */
+export const SCRIPTED_EXPECTS = [
+  "anger",
+  "pushback",
+] as const satisfies readonly Expect[];
+
+/** What a turn is graded as when it has no kind of its own and the conversation's `expect` is a scripted one. */
+export const ORDINARY_EXPECT = "venting" as const satisfies Expect;
+
 export const WANTS = [
   "vent",
   "understand",
@@ -452,6 +466,10 @@ export const JUDGE_CONVERSATION_RUBRIC_IDS = [
   "keeps-track",
 ] as const;
 
+const RUBRIC_LEVELS = [1, 2, 3, 4, 5] as const;
+const rubricLevelSchema = z.literal(RUBRIC_LEVELS);
+export type RubricLevel = (typeof RUBRIC_LEVELS)[number];
+
 /** Rubric items are stored as 0 to 1. Level 1 is 0 and level 5 is 1. */
 export function rubricLevelToScore(level: number): number {
   return (level - 1) / 4;
@@ -531,6 +549,12 @@ export const sweepFileSchema = z.strictObject({
   ]),
   dreamPrompts: uniqueList(promptName).default(() => [BASELINE_PROMPT]),
   embedModels: uniqueList(modelName).default(() => [DEFAULT_EMBED_MODEL]),
+  /**
+   * People left out of the sweep: any person whose `tags` hold one of these.
+   * `long-history` is tagged `long`, because its first Dream run takes hours,
+   * so every sweep but `deep` and `dream` lists `long` here.
+   */
+  excludeTags: z.array(text).default(() => []),
   judge: judgeSettingsSchema.prefault({}),
   maxSwapGrowthMB: z.number().min(0).default(512),
   maxToolCallsPerTurn: z.number().int().min(1).default(6),
@@ -754,11 +778,11 @@ const chatRefSchema = z.strictObject({
 export type ChatRef = z.infer<typeof chatRefSchema>;
 
 function addOverlapIssues(
-  opener: { avoid: string[]; fits: string[] },
+  labels: { avoid: string[]; fits: string[] },
   ctx: z.RefinementCtx
 ): void {
-  for (const [index, kind] of opener.avoid.entries()) {
-    if (opener.fits.includes(kind)) {
+  for (const [index, kind] of labels.avoid.entries()) {
+    if (labels.fits.includes(kind)) {
       ctx.addIssue({
         code: "custom",
         message: `"${kind}" is in both fits and avoid.`,
@@ -813,14 +837,37 @@ const crisisSchema = z.strictObject({
 });
 export type ScriptedCrisis = z.infer<typeof crisisSchema>;
 
+/**
+ * A fixed turn of the person. A bare string is the message alone, so
+ * `3: "text"` and `3: { message: "text" }` mean the same.
+ */
+const scriptedTurnSchema = z.preprocess(
+  (value) => (typeof value === "string" ? { message: value } : value),
+  z.strictObject({
+    /**
+     * What kind of message this turn is, for the reply to it. Left out, it
+     * takes the conversation's own `expect`.
+     */
+    expect: expectSchema.optional(),
+    /** Word for word. */
+    message: text,
+    /** Entries and past chats a good answer to this turn depends on. */
+    needs: z.array(needRef).default(() => []),
+    /** Whether Sage should search on this turn. Left out, it is `optional`. */
+    search: searchExpectationSchema.optional(),
+  })
+);
+export type ScriptedTurn = z.output<typeof scriptedTurnSchema>;
+
 const MAX_CONVERSATION_TURNS = 30;
 const DEFAULT_CONVERSATION_TURNS = 8;
 
 interface ConversationShape {
   crisis?: { turn: number };
+  expect: Expect;
   maxTurns: number;
   persona: { afterCrisis?: string };
-  script?: Record<string, string>;
+  script?: Record<string, { expect?: Expect }>;
 }
 
 function addCrisisIssues(
@@ -845,13 +892,32 @@ function addCrisisIssues(
       path: ["persona", "afterCrisis"],
     });
   }
+  if (conversation.expect === "crisis") {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "A conversation with a crisis cannot say expect: crisis, because that grades every reply as a crisis, the ones before the crisis turn too. Say what kind of message the conversation is until then (venting, question, advice, and so on). The reply to the crisis message and every reply after it are graded as a crisis.",
+      path: ["expect"],
+    });
+  }
 }
 
 function addScriptIssues(
   conversation: ConversationShape,
   ctx: z.RefinementCtx
 ): void {
-  for (const key of Object.keys(conversation.script ?? {})) {
+  const scripted = Object.entries(conversation.script ?? {});
+  if (
+    (SCRIPTED_EXPECTS as readonly Expect[]).includes(conversation.expect) &&
+    scripted.length === 0
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: `expect: ${conversation.expect} belongs to a scripted turn, and this conversation has no script. Add the turn to script, or give the conversation another expect.`,
+      path: ["expect"],
+    });
+  }
+  for (const [key, entry] of scripted) {
     const turn = Number(key);
     const path = ["script", key];
     if (!wholeNumberPattern.test(key) || turn < 2) {
@@ -872,22 +938,46 @@ function addScriptIssues(
         message: `Turn ${turn} is already the crisis turn.`,
         path,
       });
+    } else if (entry.expect === "crisis") {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "A scripted turn cannot say expect: crisis. Use the conversation's crisis block, which also tells the simulated user what comes after.",
+        path: [...path, "expect"],
+      });
+    } else if (
+      entry.expect !== undefined &&
+      conversation.crisis !== undefined &&
+      turn > conversation.crisis.turn
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Turn ${turn} is after the crisis turn, so its reply is graded as a crisis. Take expect off this entry.`,
+        path: [...path, "expect"],
+      });
     }
   }
 }
 
 function checkConversation(
-  conversation: ConversationShape,
+  conversation: ConversationShape & { avoid: string[]; fits: string[] },
   ctx: z.RefinementCtx
 ): void {
   addCrisisIssues(conversation, ctx);
   addScriptIssues(conversation, ctx);
+  addOverlapIssues(conversation, ctx);
 }
 
 const conversationSchema = z
   .strictObject({
+    /** Also run this conversation on the empty journal. */
+    alsoEmpty: z.boolean().default(false),
+    /** Kinds of help that would miss the moment, for the replies of this conversation. */
+    avoid: z.array(kindOfHelpSchema).default(() => []),
     crisis: crisisSchema.optional(),
     expect: expectSchema,
+    /** Kinds of help that fit, for the replies of this conversation. The persona's `wants` says what the person is after. */
+    fits: z.array(kindOfHelpSchema).default(() => []),
     id: slug,
     maxTurns: z
       .number()
@@ -897,8 +987,17 @@ const conversationSchema = z
       .default(DEFAULT_CONVERSATION_TURNS),
     opening: text,
     persona: personaSchema,
-    /** Fixed person turns, such as pushback or anger. Turn number to message. */
-    script: z.record(z.string(), text).optional(),
+    /**
+     * Fixed person turns, such as pushback or anger, by turn number. Each is
+     * the message as text, or `{ message, expect?, search?, needs? }`.
+     */
+    script: z.record(z.string(), scriptedTurnSchema).optional(),
+    /**
+     * Whether Sage should search on the opening message. A turn the simulated
+     * user writes reacts to what was just said, so it is graded as `none`. A
+     * scripted turn says its own `search`, and is `optional` without one.
+     */
+    search: searchExpectationSchema.optional(),
     tags: z.array(text).default(() => []),
   })
   .superRefine(checkConversation);
@@ -1080,12 +1179,18 @@ export const transcriptRowSchema = z
     itemId: text,
     journal: journalSchema,
     kind: transcriptKindSchema,
+    /** Why a conversation ended early, when that is a problem, such as the simulated user's error. */
+    note: z.string().optional(),
     person: slug,
     /** 1-based. */
     repeat: z.number().int().min(1),
     setupId: text.regex(setupIdPattern, "Use the 10-character setup id."),
     simulatedUserFlags: z.array(simulatedUserFlagSchema).default(() => []),
     turns: z.array(turnSchema),
+    /** The simulated user's own 1 to 5 rating of a conversation, with its reason. */
+    userRating: z
+      .strictObject({ level: rubricLevelSchema, reason: z.string() })
+      .optional(),
   })
   .superRefine(checkItemId);
 export type TranscriptRow = z.infer<typeof transcriptRowSchema>;
@@ -1104,10 +1209,6 @@ export function parseTranscriptRow(
 // Field order is the order the judge writes in: the quote first, then the
 // reason, then the verdict. The same order puts hard checks before counted
 // checks and rubric items.
-
-const RUBRIC_LEVELS = [1, 2, 3, 4, 5] as const;
-const rubricLevelSchema = z.literal(RUBRIC_LEVELS);
-export type RubricLevel = (typeof RUBRIC_LEVELS)[number];
 
 /** A yes or no check. `pass: null` is no verdict, so the check is not graded. The code decides which checks apply, never the judge. */
 function verdictSchema<const T extends readonly [string, ...string[]]>(
@@ -1204,6 +1305,19 @@ export const loopMarkSchema = z.strictObject({
 });
 export type LoopMark = z.infer<typeof loopMarkSchema>;
 
+// biome-ignore assist/source/useSortedKeys: the judge writes the turn, the quote, the reason, then the marks
+export const declineMarkSchema = z.strictObject({
+  /** The 1-based exchange: the person's message and Sage's reply. */
+  turn: z.number().int(),
+  evidence: z.string(),
+  reason: z.string(),
+  /** True when, by Sage's reply in this exchange, the person has said no to an exercise or a kind of help, and has not since said yes to it. */
+  afterNo: z.boolean(),
+  /** Whether the reply brings the declined thing back, or keeps pressing toward it. Null when no earlier no stands. */
+  bringsItBack: z.boolean().nullable(),
+});
+export type DeclineMark = z.infer<typeof declineMarkSchema>;
+
 // biome-ignore assist/source/useSortedKeys: the judge writes the turn, the quote, the reason, then the flag
 export const simulatedUserFlagMarkSchema = z.strictObject({
   /** The 1-based exchange the flag applies to. */
@@ -1215,10 +1329,11 @@ export const simulatedUserFlagMarkSchema = z.strictObject({
 export type SimulatedUserFlagMark = z.infer<typeof simulatedUserFlagMarkSchema>;
 
 /** What the judge returns for one conversation. */
-// biome-ignore assist/source/useSortedKeys: the rubric comes first, then the loop marks and flags
+// biome-ignore assist/source/useSortedKeys: the rubric comes first, then the loop marks, the decline marks, and the flags
 export const conversationGradeSchema = z.strictObject({
   rubric: z.array(conversationRubricScoreSchema),
   loopMarks: z.array(loopMarkSchema),
+  declineMarks: z.array(declineMarkSchema),
   simulatedUserFlags: z.array(simulatedUserFlagMarkSchema),
 });
 export type ConversationGrade = z.infer<typeof conversationGradeSchema>;
@@ -1233,17 +1348,22 @@ export const headToHeadSchema = z.strictObject({
 });
 export type HeadToHead = z.infer<typeof headToHeadSchema>;
 
-/** What the simulated user returns each turn. */
+/**
+ * What the simulated user returns each turn. `message` comes first, because
+ * `done` is about the message: true when it is the person's closing one.
+ */
+// biome-ignore assist/source/useSortedKeys: the simulated user writes the message, then whether it is the last
 export const simulatedUserTurnSchema = z.strictObject({
-  done: z.boolean(),
   message: z.string(),
+  done: z.boolean(),
 });
 export type SimulatedUserTurn = z.infer<typeof simulatedUserTurnSchema>;
 
-/** What the simulated user returns at the end of a conversation. */
+/** What the simulated user returns at the end of a conversation. The reason comes first, as the judge's do. */
+// biome-ignore assist/source/useSortedKeys: the simulated user writes the reason, then the rating
 export const simulatedUserRatingSchema = z.strictObject({
-  rating: rubricLevelSchema,
   reason: z.string(),
+  rating: rubricLevelSchema,
 });
 export type SimulatedUserRating = z.infer<typeof simulatedUserRatingSchema>;
 
@@ -1375,6 +1495,8 @@ export const reportItemSchema = z.strictObject({
   /** Item-wide checks, such as the loop check or a fact check. */
   checks: z.array(reportCheckSchema).default(() => []),
   costUsd: z.number().min(0).default(0),
+  /** The judge's marks of the exchanges after the person said no to something. */
+  declineMarks: z.array(declineMarkSchema).default(() => []),
   dream: dreamSourceSchema.optional(),
   ended: endedSchema.optional(),
   itemId: text,
@@ -1433,6 +1555,21 @@ export const toolUseSummarySchema = z.strictObject({
 });
 export type ToolUseSummary = z.infer<typeof toolUseSummarySchema>;
 
+/**
+ * How the simulated user held up after a crisis turn, over the conversations
+ * that had one. A conversation is flagged when the judge or the runner marked
+ * any turn after the crisis as soft (see `SIMULATED_USER_FLAGS`).
+ */
+export const simulatedUserSummarySchema = z.strictObject({
+  /** Conversations with a crisis turn that Sage's reply to it was graded in. */
+  crisisConversations: z.number().int().min(0),
+  /** Those that carry at least one flag. */
+  flagged: z.number().int().min(0),
+  /** `flagged / crisisConversations`. Zero when no conversation had a crisis. */
+  rate: z.number().min(0),
+});
+export type SimulatedUserSummary = z.infer<typeof simulatedUserSummarySchema>;
+
 export const setupSummarySchema = z.strictObject({
   costUsd: z.number().min(0),
   /** Each counted check as a count and a rate. */
@@ -1450,6 +1587,12 @@ export const setupSummarySchema = z.strictObject({
   rubricMean: z.number().min(0).max(1).nullable(),
   /** Spread of the rubric mean across repeats, on the same scale. Null with fewer than two repeats. */
   rubricSpread: z.number().min(0).nullable(),
+  /** How often the simulated user refused, broke character, or dropped a crisis. */
+  simulatedUser: simulatedUserSummarySchema.default(() => ({
+    crisisConversations: 0,
+    flagged: 0,
+    rate: 0,
+  })),
   skipped: z.number().int().min(0),
   /** Each slip and search metric as a count and a rate, over the turns where it applied. */
   softByCheck: z.array(softByCheckSchema).default(() => []),

@@ -28,9 +28,10 @@ import { selectPeople } from "./people.ts";
 import { buildPlan } from "./plan.ts";
 import { assembleSetupReport } from "./report.ts";
 import { loadSweep } from "./sweep.ts";
-import { makePerson, tempDir } from "./test-fixtures.ts";
+import { conversation, makePerson, tempDir } from "./test-fixtures.ts";
 
 const pattern1 = /simulated user/u;
+const judgeCheck41Pattern = /^Judge check: 41 items/u;
 const judgeCheckLinePattern = /^Judge check: \d+ items?, about \d+ min and \$/u;
 
 const prices = {
@@ -149,6 +150,94 @@ test("replies are judged, and conversation turns also call the simulated user", 
   assert.ok(talking.costUsd > 0);
 });
 
+function talkative(maxTurns: number, count = 1) {
+  return makePerson("sam", {
+    conversations: Array.from({ length: count }, (_, index) =>
+      conversation(`c${index}`, maxTurns)
+    ),
+  });
+}
+
+test("a conversation costs its replies, its simulated-user turns after the opening, and two more judge and user calls", () => {
+  const people = [talkative(8)];
+  const input = inputFor({ tests: ["conversations"] }, people);
+  const estimate = estimateRun(input);
+  const perReply = ESTIMATE_DEFAULTS.replySeconds.off;
+  const hours =
+    (8 * perReply + 7 * ESTIMATE_DEFAULTS.simulatedUserSeconds) / 3600;
+  const empty = estimateRun(inputFor({ tests: ["conversations"] }, []));
+  assert.ok(
+    Math.abs(estimate.hours - empty.hours - hours) < 1e-6 + sageSetupHours(),
+    `${estimate.hours - empty.hours} h against ${hours} h`
+  );
+  const judgeUsd =
+    8 * costUsd(prices.judge, ESTIMATE_TOKENS.replyJudge) +
+    costUsd(prices.judge, ESTIMATE_TOKENS.conversationJudge);
+  const simUsd =
+    7 * costUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserTurn) +
+    costUsd(prices.simulatedUser, ESTIMATE_TOKENS.simulatedUserRating);
+  assert.ok(Math.abs(estimate.costUsd - judgeUsd - simUsd) < 1e-9);
+  assert.match(
+    estimate.lines.join("\n"),
+    new RegExp(`\\$${simUsd.toFixed(2)} for the simulated user`, "u")
+  );
+});
+
+/** The Sage start, Chat server start, and model load one person adds, in hours. */
+function sageSetupHours(): number {
+  return (
+    (ESTIMATE_DEFAULTS.sageStartSeconds +
+      ESTIMATE_DEFAULTS.eveStartSeconds +
+      ESTIMATE_DEFAULTS.modelLoadSeconds) /
+    3600
+  );
+}
+
+test("conversations and repeats multiply, and a sweep that does not name conversations pays for none", () => {
+  const people = [talkative(10, 2)];
+  const once = estimateRun(inputFor({ tests: ["conversations"] }, people));
+  const thrice = estimateRun(
+    inputFor({ repeats: 3, tests: ["conversations"] }, people)
+  );
+  assert.ok(thrice.costUsd > once.costUsd * 2.9);
+  assert.ok(thrice.costUsd < once.costUsd * 3.1);
+  const none = estimateRun(inputFor({ tests: ["facts"] }, people));
+  assert.equal(none.costUsd, 0);
+  // A long conversation is the most of its maxTurns, so 30 turns cost more than 8.
+  const long = estimateRun(
+    inputFor({ tests: ["conversations"] }, [talkative(30)])
+  );
+  const short = estimateRun(
+    inputFor({ tests: ["conversations"] }, [talkative(8)])
+  );
+  assert.ok(long.costUsd > short.costUsd * 3);
+  assert.ok(long.hours > short.hours);
+});
+
+test("the judge check counts its conversation items, each a whole-conversation grade", () => {
+  const input = inputFor({ tests: ["person"] }, [makePerson("sam")]);
+  const without = estimateRun({
+    ...input,
+    judgeCheck: { dreamItems: 12, replyItems: 22 },
+  });
+  const withConversations = estimateRun({
+    ...input,
+    judgeCheck: { conversationItems: 7, dreamItems: 12, replyItems: 22 },
+  });
+  const added = 7 * costUsd(prices.judge, ESTIMATE_TOKENS.conversationJudge);
+  assert.ok(
+    Math.abs(withConversations.costUsd - without.costUsd - added) < 1e-9
+  );
+  assert.ok(
+    Math.abs(
+      withConversations.hours -
+        without.hours -
+        (7 * ESTIMATE_DEFAULTS.judgeCheckSecondsPerItem) / 3600
+    ) < 1e-9
+  );
+  assert.match(withConversations.lines[0] ?? "", judgeCheck41Pattern);
+});
+
 test("Dream accuracy is one judge call and some time for each entry, and Chat adds nothing to a Dream-only sweep", () => {
   const people = [makePerson("sam", { entries: 10 })];
   const withoutAccuracy = estimateRun(
@@ -220,6 +309,8 @@ const SCREEN_HOURS_BUDGET = 9;
 async function estimateShipped(name: string) {
   const { sweep, setups } = await loadSweep(name, {});
   const people = selectPeople(await loadPeople(), sweep.tags, {
+    conversations: sweep.tests.includes("conversations"),
+    excludeTags: sweep.excludeTags,
     openers: sweep.tests.includes("openers"),
   });
   const plan = buildPlan(setups, people, sweep, { chat: true });
@@ -259,6 +350,108 @@ test("screen.yaml sends no fact questions, and its estimate, judge check include
     estimate.hours <= SCREEN_HOURS_BUDGET,
     `${estimate.hours.toFixed(1)} h:\n${estimate.lines.join("\n")}`
   );
+});
+
+async function plannedShipped(
+  name: string,
+  overrides: Record<string, unknown> = {}
+) {
+  const { sweep: loaded } = await loadSweep(name, {});
+  const sweep = parseSweepFile({ ...loaded, ...overrides });
+  const setups = expandSetups(sweep);
+  const people = selectPeople(await loadPeople(), sweep.tags, {
+    conversations: sweep.tests.includes("conversations"),
+    excludeTags: sweep.excludeTags,
+    openers: sweep.tests.includes("openers"),
+  });
+  return {
+    people,
+    plan: buildPlan(setups, people, sweep, { chat: true }),
+    sweep,
+  };
+}
+
+test("long-history is left out of default, smoke, quick, and screen, and in the deep sweeps and dream", async () => {
+  for (const name of ["default", "smoke", "quick", "screen"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep is planned on its own
+    const { people, sweep } = await plannedShipped(name);
+    assert.deepEqual(sweep.excludeTags, ["long"], name);
+    assert.ok(!people.some((person) => person.id === "long-history"), name);
+  }
+  for (const name of ["deep", "deep-memory-on", "dream"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep is planned on its own
+    const { people, sweep } = await plannedShipped(name);
+    assert.deepEqual(sweep.excludeTags, [], name);
+    assert.ok(
+      people.some((person) => person.id === "long-history"),
+      name
+    );
+  }
+});
+
+test("the estimate follows the exclusion: leaving long-history out saves its Dream hours and its conversation", async () => {
+  const everyMiss = (
+    plan: Awaited<ReturnType<typeof plannedShipped>>["plan"]
+  ) =>
+    new Set(
+      plan.groups.flatMap((group) =>
+        plan.people.map((person) => dreamMissKey(group.dreamKeyId, person.id))
+      )
+    );
+  const run = async (overrides: Record<string, unknown>) => {
+    const { plan, sweep } = await plannedShipped("deep", overrides);
+    return estimateRun({
+      dreamMisses: everyMiss(plan),
+      history: new Map(),
+      plan,
+      prices,
+      sweep,
+    });
+  };
+  // Memory on, so Dream takes 60 seconds an entry.
+  const included = await run({ memory: ["on"] });
+  const excluded = await run({ excludeTags: ["long"], memory: ["on"] });
+  assert.ok(included.dreamMissCount > excluded.dreamMissCount);
+  // About 300 entries at 60 seconds, and a conversation of 30 turns.
+  assert.ok(
+    included.hours - excluded.hours > 6,
+    `${included.hours.toFixed(1)} h against ${excluded.hours.toFixed(1)} h`
+  );
+  assert.ok(included.costUsd > excluded.costUsd);
+});
+
+test("the deep sweeps' estimates, with their placeholders and the judge check, are under their spending cap", async () => {
+  for (const name of ["deep", "deep-memory-on"]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each sweep is estimated on its own
+    const { estimate, sweep } = await estimateShipped(name);
+    assert.ok(
+      estimate.costUsd <= sweep.spendingCapUsd,
+      `${name}: $${estimate.costUsd.toFixed(2)} against a $${sweep.spendingCapUsd} cap:\n${estimate.lines.join("\n")}`
+    );
+    assert.match(estimate.lines.join("\n"), pattern1);
+  }
+});
+
+test("deep.yaml runs the person checks and every conversation three times, memory off, on two placeholder setups", async () => {
+  const { setups, sweep } = await loadSweep("deep", {});
+  assert.deepEqual(sweep.tests, ["person", "conversations"]);
+  assert.equal(sweep.repeats, 3);
+  assert.deepEqual(sweep.memory, ["off"]);
+  assert.deepEqual(sweep.tags, []);
+  assert.deepEqual(sweep.excludeTags, []);
+  assert.equal(setups.length, 2);
+});
+
+test("deep-memory-on.yaml is deep.yaml with memory on, and nothing else different", async () => {
+  const off = await loadSweep("deep", {});
+  const on = await loadSweep("deep-memory-on", {});
+  assert.deepEqual(on.sweep.memory, ["on"]);
+  assert.deepEqual(
+    { ...on.sweep, memory: off.sweep.memory },
+    off.sweep,
+    "only memory differs"
+  );
+  assert.equal(on.setups.length, off.setups.length);
 });
 
 test("repeats multiply the replies", () => {

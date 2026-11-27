@@ -2,10 +2,10 @@
 //
 //   node --experimental-strip-types agent/scripts/eval/run.ts [--sweep <name>] [--dry-run] [--yes] [eve filters]
 //
-// Replaces scripts/eval-run.sh. The run goes in stages: plan, check the Chat
-// prompts and the grade target, check the models and print the estimate, ask,
-// pull, build, run, and write the reports. `--dry-run` stops after the
-// estimate.
+// Replaces scripts/eval-run.sh. The run goes in stages: plan, check the
+// simulated user (when the sweep runs conversations), check the Chat prompts
+// and the grade target, check the models and print the estimate, ask, pull,
+// build, run, and write the reports. `--dry-run` stops after the estimate.
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -34,6 +34,7 @@ import {
   DEFAULT_PRICE,
   DEFAULT_SIMULATED_USER_PRICE,
   loadPriceBook,
+  simulatedUserProblem,
   spentUsd,
 } from "./cloud.ts";
 import { collectSetupData } from "./collect.ts";
@@ -93,6 +94,7 @@ import {
   type ResolvedTests,
   type RunPlan,
   resolveTests,
+  runsConversations,
 } from "./plan.ts";
 import { captureCommand, killAllTracked, terminateAllTracked } from "./proc.ts";
 import {
@@ -256,9 +258,13 @@ async function planSweep(options: CliOptions): Promise<Planned> {
   if (problems.length > 0) {
     throw new Stop(`The eval data has problems:\n  ${problems.join("\n  ")}`);
   }
-  // Openers marked alsoEmpty run on the empty journal, which is new-user's Sage,
-  // so a sweep that sends openers covers new-user when it needs to.
+  // Openers and conversations marked alsoEmpty run on the empty journal, which
+  // is new-user's Sage, so a sweep that sends them covers new-user when it
+  // needs to. People the sweep excludes by tag (long-history is tagged long)
+  // are left out, and so are their alsoEmpty items.
   const selected = selectPeople(everyone, sweep.tags, {
+    conversations: sweep.tests.includes("conversations"),
+    excludeTags: sweep.excludeTags,
     openers: sweep.tests.includes("openers"),
   });
   if (selected.length === 0) {
@@ -640,6 +646,20 @@ async function sweepBody(
   mkdirSync(join(runDir, "logs"), { recursive: true });
   const sweepFile = join(runDir, "sweep.json");
   writeFileSync(sweepFile, resolvedSweepJson(sweep));
+
+  // The simulated user goes first, before any local work. A sweep with
+  // conversations cannot hold one without it, and a night of generation should
+  // not be spent finding that out at the first conversation.
+  if (runsConversations(planned.resolved.prefixes)) {
+    const problem = await simulatedUserProblem(sweep.simulatedUser, runDir);
+    if (problem !== undefined) {
+      console.error(problem);
+      if (!options.dryRun) {
+        throw new Stop("", 2);
+      }
+      log("A real run would stop here.");
+    }
+  }
 
   const { chat } = planned.plan;
   heading(chat ? "Chat prompts and grade target" : "Grade target");
