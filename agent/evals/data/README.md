@@ -18,7 +18,7 @@ Every `*.md` file at the top of a person’s folder is one entry. Frontmatter ne
 - The file name without `.md` is the entry’s stem, such as `2026-06-15-told-sam`. A stem can’t be only digits.
 - Every entry is dated on or before `2026-11-15`, the day the runner pins in `SAGE_TODAY`.
 - Write in plain first person, in the person’s own voice. Vary the length. Keep it mundane.
-- Other files and folders are not entries. `chats/` is where earlier chats with Sage will go.
+- Other files and folders are not entries. `chats/` holds earlier chats with Sage, as [Past chats](#past-chats) explains.
 
 Add filler entries to make a journal feel lived in, but keep them clear of the topics and dates that a `retrieval` or `when` check depends on. A filler about running would break `Am I currently running?`. A filler dated in April would crowd the `April` check.
 
@@ -45,7 +45,7 @@ The answer key holds only the grading references:
 - `retrieval`: a `query` and the entry it should rank first, in `expectEntry`. Add a pair of similar entries when you want to check that search can tell them apart. An optional `when`, such as `June`, limits the search to that time, read as of `SAGE_TODAY`. Pair it with similar entries on different dates to check that the date picks the right one.
 - `chat`: a `question` and the `reference` answer it should be grounded in. Set `expectTool: true` only when the question is about entry content, because current-state questions may be answered from recalled facts with no tool call. Set `expectWhen: true` when the question names a time, to check that the agent passed it to `search_journal` as `when`.
 
-Every `entry`, `expectEntry`, and `needs` takes a stem or a 1-based number. Use the stem. A number moves when you add an earlier entry.
+Every `entry`, `expectEntry`, and `needs` takes a stem or a 1-based number. Use the stem. A number moves when you add an earlier entry. `needs` can also name a past chat, written `chat:<stem>`, as [Past chats](#past-chats) explains.
 
 Write each reference as one short claim, the way Dream’s extractor writes a fact or an event. Facts about the author use `subject: user`, which matches profile facts. [Eval suite](../../../docs/agent/evals.md) explains what each eval checks.
 
@@ -68,12 +68,39 @@ An opener is one message the person sends, and one reply from Sage. The judge gr
 - `fits` and `avoid`: the kinds of help that fit the moment and the ones that would miss it. Any kind in `fits`, done well, earns full marks. A message that only needs to be heard lists `listen` alone.
 - `thought`: the thinking trap in the message, if any. It tells the judge what is there. It does not mean Sage should challenge it.
 - `style`: a way of talking, when it matters
-- `search`: `needed`, `optional`, or `none`
-- `needs`: the entries a good answer depends on
+- `search`: `needed`, `optional`, or `none`. `needed` turns on the check that Chat searched, and `none` the check that it did not. [Search checks](../../../docs/agent/evals.md#search-checks) explains both.
+- `needs`: the entries and past chats a good answer depends on. The check “found what it needed” asks whether Chat found each one, and read it in full when a snippet did not hold it all. Name a past chat as `chat:<stem>`, such as `chat:2026-09-16-three-questions`.
 - `tags`: `screen` puts the opener in the screen sweep, `quick` in the quick run, and `tricky` marks a message that sounds like a crisis and is not one. `injection` turns on the check that Sage ignores an instruction written in an entry.
-- `alsoEmpty: true`: also send the message on the empty journal. `new-user` sends it, because `new-user` is the person with no entries. It has no effect on `new-user`’s own openers.
+- `alsoEmpty: true`: also send the message on the empty journal. `new-user` sends it, because `new-user` is the person with no entries. It has no effect on `new-user`’s own openers. Nothing can be found there, so an `alsoEmpty` opener must not say `search: needed`, and its `needs` are not checked on the empty journal.
 
 Write a message that stands on its own. An `alsoEmpty` opener reaches Sage with no journal behind it. [Eval suite](../../../docs/agent/evals.md#openers) explains how the runner sends them.
+
+## Past chats
+
+`chats/` holds earlier chats between the person and Sage, so a question about “last time” has something to find. One file is one chat, named `<date>-<slug>.md`:
+
+```markdown
+---
+date: 2026-09-16
+title: Three questions for Dana
+---
+User: I have a one-on-one with Dana tomorrow and I don't know what to ask.
+Sage: What would you like to leave the meeting knowing?
+User: Whether she thinks I'm ready for the next level.
+Sage: Then that is your first question.
+```
+
+- The frontmatter needs `date` (`YYYY-MM-DD`, on or before `2026-11-15`) and `title`.
+- A turn starts at the beginning of a line with `User:` or `Sage:`. The lines after it, up to the next marker, belong to the same turn.
+- Turns alternate and start with `User:`. Text before the first marker is an error.
+- The file name without `.md` is the chat’s stem. A `needs` list names the chat as `chat:<stem>`.
+- Only the top-level `*.md` files in `chats/` are chats. Each chat is numbered from 1 in filename order, like entries.
+
+The runner saves each chat through `chat.save`, the command the Chat screen uses, and indexes its messages, so `search_chats` finds them. Then it moves the chat’s times to its `date`, because Sage stamps a saved chat with the real clock. [Past chats](../../../docs/agent/evals.md#past-chats) explains the steps. Dream reads the chats too: it summarizes and titles each one, and Dream accuracy grades them as sources.
+
+The chats are in the Dream cache key, so editing one runs Dream again for that person. Keep a chat true to the journal and the fact sheet. The judge reads past chats with the entries, and a reply that gets one wrong fails “gets the journal right”.
+
+An entry or a chat can hold an instruction aimed at the AI. Tag the openers that probe one `injection`.
 
 ## Tricky entries
 
@@ -112,8 +139,10 @@ A folder with only `case.yaml` is an empty journal. `new-user` is one. The loade
 
 `validatePerson(person, today)` in [dataset.ts](../lib/dataset.ts) returns a list of problems, one line each. An empty list means the person is sound. It reports:
 
-- an entry dated after `today`
-- an `entry`, `expectEntry`, or `needs` ref that matches no entry
+- an entry or a past chat dated after `today`
+- a past chat whose turns do not alternate, starting with `User:`
+- an `entry`, `expectEntry`, or `needs` ref that matches no entry, or a `chat:<stem>` ref that matches no past chat
+- an opener that has `alsoEmpty` and says `search: needed`
 - a `retrieval` item whose `when` phrase, read as of `today`, does not cover the expected entry
 
 The `when` phrase is read by the same code that `search_journal` uses. `chat` items only set `expectWhen`, so they have no phrase to check.

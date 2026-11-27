@@ -25,6 +25,7 @@ import {
   setupId as setupIdOf,
 } from "../../evals/lib/schema.ts";
 import { collectSetupData } from "./collect.ts";
+import { readMemoryReadings, readSwapReading } from "./memory-pressure.ts";
 import { OLLAMA_HOST } from "./ollama.ts";
 import { JobPool } from "./passes.ts";
 import { buildPlan } from "./plan.ts";
@@ -36,6 +37,8 @@ import {
   writeCacheKeyFiles,
 } from "./test-fixtures.ts";
 import { type RunContext, runPersonUnit } from "./unit.ts";
+
+const pattern1 = /Chat 32 is not in the database/u;
 
 const tooBigFailurePattern =
   /too-big:20b .* could not start: Ollama could not load too-big:20b \(HTTP 500\)/u;
@@ -189,10 +192,18 @@ interface RigOptions {
   chat?: boolean;
   /** A model the fake Ollama refuses to load. */
   failModel?: string;
+  /** Who the unit is about. Defaults to Sam with one entry. */
+  person?: ReturnType<typeof makePerson>;
   /** The eval ids each pass runs. */
   prefixes?: RunContext["prefixes"];
   sweep?: Record<string, unknown>;
 }
+
+/** Memory probes that see nothing, so a test never runs `sysctl`. */
+const blindProbes = {
+  loadedModels: () => Promise.resolve([]),
+  swapUsage: () => Promise.resolve(null),
+};
 
 async function makeRig(
   t: test.TestContext,
@@ -268,7 +279,7 @@ async function makeRig(
     rigOptions.sweep ?? { memory: ["off"], tests: ["person", "facts"] }
   );
   const setups = expandSetups(sweep);
-  const person = makePerson("sam", { entries: 1 });
+  const person = rigOptions.person ?? makePerson("sam", { entries: 1 });
   const plan = buildPlan(setups, [person], sweep, {
     chat: rigOptions.chat ?? true,
   });
@@ -290,6 +301,7 @@ async function makeRig(
     filters: [],
     hooks: {
       automateWait: () => Promise.resolve(true),
+      memoryProbes: blindProbes,
       seed: (options) => {
         seeded.count += 1;
         const db = new DatabaseSync(join(options.dataDir, "app.db"));
@@ -766,4 +778,208 @@ test("the built-in prompts mean Sage is given no Dream prompt folder, even when 
   for (const call of calls) {
     assert.equal(call.dreamPrompts, null, String(call.pass ?? call.kind));
   }
+});
+
+// ---------------------------------------------------------------------------
+// Past chats and memory pressure
+// ---------------------------------------------------------------------------
+
+const PAST_CHATS = [
+  {
+    date: "2026-09-12",
+    fileName: "2026-09-12-after-group.md",
+    index: 1,
+    stem: "2026-09-12-after-group",
+    title: "After the group",
+    turns: [
+      { role: "user" as const, text: "I went to the group." },
+      { role: "assistant" as const, text: "How was it?" },
+    ],
+    wordCount: 7,
+  },
+  {
+    date: "2026-10-24",
+    fileName: "2026-10-24-numbers.md",
+    index: 2,
+    stem: "2026-10-24-numbers",
+    title: "The numbers",
+    turns: [
+      { role: "user" as const, text: "I have the numbers." },
+      { role: "assistant" as const, text: "What will you do?" },
+    ],
+    wordCount: 7,
+  },
+];
+
+/** Hooks that log the seed stages and the time rewrite in the order they happen. */
+function chatHooks(rig: Rig, events: string[]) {
+  const sages = () =>
+    readCalls(rig.calls).filter((call) => call.kind === "sage").length;
+  const rewrites: { chats: unknown; dbPath: string }[] = [];
+  const hooks: NonNullable<RunContext["hooks"]> = {
+    automateWait: () => Promise.resolve(true),
+    memoryProbes: blindProbes,
+    rewriteChatTimes: (dbPath, chats) => {
+      events.push(`rewrite with ${sages()} Sage start`);
+      rewrites.push({ chats, dbPath });
+    },
+    seed: (options) => {
+      events.push(`seed ${options.stage ?? "all"} with ${sages()} Sage start`);
+      if (options.stage !== "dream") {
+        const db = new DatabaseSync(join(options.dataDir, "app.db"));
+        db.exec(
+          "PRAGMA journal_mode=WAL; CREATE TABLE memory (n INTEGER); INSERT INTO memory VALUES (1);"
+        );
+        db.close();
+        writeFileSync(
+          options.manifestPath,
+          '{"cases":{"sam":{"chatIds":[31,32],"journalIds":[1]}}}\n'
+        );
+      }
+      return Promise.resolve();
+    },
+  };
+  return { hooks, rewrites };
+}
+
+test("a person with past chats is seeded in two stages, with the chat times rewritten after the first and a new Sage for the second", async (t) => {
+  const rig = await makeRig(t, {
+    person: makePerson("sam", { chats: PAST_CHATS, entries: 1 }),
+  });
+  const events: string[] = [];
+  const { hooks, rewrites } = chatHooks(rig, events);
+  rig.ctx.hooks = hooks;
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.deepEqual(events, [
+    "seed content with 1 Sage start",
+    "rewrite with 1 Sage start",
+    "seed dream with 2 Sage start",
+  ]);
+  const sages = readCalls(rig.calls).filter((call) => call.kind === "sage");
+  assert.equal(sages.length, 2);
+  assert.equal(sages[0]?.cwd, sages[1]?.cwd, "the same data directory");
+
+  // The rewrite gets the database of that directory, and each chat's id and day.
+  assert.equal(rewrites.length, 1);
+  assert.equal(
+    withoutPrivate(String(rewrites[0]?.dbPath)),
+    withoutPrivate(join(String(sages[0]?.dataDir), "app.db"))
+  );
+  assert.deepEqual(rewrites[0]?.chats, [
+    { date: "2026-09-12", id: 31 },
+    { date: "2026-10-24", id: 32 },
+  ]);
+  // The snapshot is of the database after the rewrite and Dream.
+  const person = readCalls(rig.calls).find((call) => call.pass === "person");
+  assert.ok(person);
+  assert.ok(cachedDreamEntry(String(person.dreamKey), rig.cacheDir));
+  // The person and Chat passes run after both stages, on the second Sage.
+  const kinds = readCalls(rig.calls).map((call) => call.pass ?? call.kind);
+  assert.deepEqual(
+    kinds.filter((kind) => kind !== "grade"),
+    ["sage", "sage", "person", "dev", "chat"]
+  );
+});
+
+test("a person with no past chats is seeded in one go, with no stage, and nothing is rewritten", async (t) => {
+  const rig = await makeRig(t);
+  const events: string[] = [];
+  const { hooks } = chatHooks(rig, events);
+  rig.ctx.hooks = hooks;
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.deepEqual(events, ["seed all with 1 Sage start"]);
+});
+
+test("a cached Dream snapshot skips both stages and the rewrite", async (t) => {
+  const rig = await makeRig(t, {
+    person: makePerson("sam", { chats: PAST_CHATS, entries: 1 }),
+  });
+  const events: string[] = [];
+  rig.ctx.hooks = chatHooks(rig, events).hooks;
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.equal(events.length, 3);
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(events.length, 3, "the second unit only restored the snapshot");
+  const sages = readCalls(rig.calls).filter((call) => call.kind === "sage");
+  assert.equal(sages.length, 3, "two for the first unit, one for the second");
+});
+
+test("a failing rewrite is a recorded failure for the unit, and no second stage runs", async (t) => {
+  const rig = await makeRig(t, {
+    person: makePerson("sam", { chats: PAST_CHATS, entries: 1 }),
+  });
+  const events: string[] = [];
+  const { hooks } = chatHooks(rig, events);
+  hooks.rewriteChatTimes = () => {
+    events.push("rewrite fails");
+    throw new Error("Chat 32 is not in the database.");
+  };
+  rig.ctx.hooks = hooks;
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.equal(rig.ctx.failures.length, 1);
+  assert.match(rig.ctx.failures[0] ?? "", pattern1);
+  assert.deepEqual(events, ["seed content with 1 Sage start", "rewrite fails"]);
+});
+
+test("memory is sampled from the model load to the end of the chat pass, and the reading is kept for the setup", async (t) => {
+  const rig = await makeRig(t);
+  const looks = { models: 0, swap: 0 };
+  const swap = ["100.00", "900.00"];
+  rig.ctx.hooks = {
+    ...rig.ctx.hooks,
+    memoryProbes: {
+      loadedModels: () => {
+        looks.models += 1;
+        return Promise.resolve([{ name: "qwen3.5:9b", size: 4 * 1024 ** 3 }]);
+      },
+      swapUsage: () => {
+        const used = swap[Math.min(looks.swap, swap.length - 1)];
+        looks.swap += 1;
+        return Promise.resolve(
+          `vm.swapusage: total = 4096.00M  used = ${used}M  free = 100.00M  (encrypted)`
+        );
+      },
+    },
+  };
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.deepEqual(rig.ctx.failures, []);
+  const [setup] = expandSetups(rig.ctx.sweep);
+  assert.ok(setup);
+  assert.deepEqual(readSwapReading(rig.runDir, setupIdOf(setup)), {
+    modelSizeMB: 4096,
+    swapBaselineMB: 100,
+    swapGrowthMB: 800,
+  });
+  const readings = readMemoryReadings(rig.runDir, setupIdOf(setup));
+  assert.equal(readings.length, 1, "one pass for one person");
+  assert.ok(looks.swap >= 2);
+});
+
+test("a model that will not load still has its memory reading, because the load is what may swap", async (t) => {
+  const rig = await makeRig(t, {
+    failModel: "too-big:20b",
+    sweep: {
+      chatModels: ["too-big:20b"],
+      memory: ["off"],
+      tests: ["person", "facts"],
+    },
+  });
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const [setup] = expandSetups(rig.ctx.sweep);
+  assert.ok(setup);
+  assert.equal(readMemoryReadings(rig.runDir, setupIdOf(setup)).length, 1);
+  // The grade pass never ran for it.
+  assert.equal(
+    readCalls(rig.calls).filter((call) => call.pass === "grade").length,
+    0
+  );
 });

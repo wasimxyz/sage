@@ -48,6 +48,7 @@ const repeatsPattern = /repeats the id "same"/u;
 // ---------------------------------------------------------------------------
 
 const sam: LoadedPerson = {
+  chats: [],
   dir: "/data/people/sam",
   empty: false,
   entries: [
@@ -84,6 +85,7 @@ const sam: LoadedPerson = {
   }),
 };
 const newUser: LoadedPerson = {
+  chats: [],
   dir: "/data/people/new-user",
   empty: true,
   entries: [],
@@ -296,8 +298,12 @@ test("a bad file names the field, and an unknown key is refused", () => {
   assert.throws(() =>
     item({ expect: { rubric: { warmth: { max: 2, min: 4 } } } })
   );
-  assert.throws(() =>
+  // Search quality is a reply rubric item now, and a conversation item is not.
+  assert.doesNotThrow(() =>
     item({ expect: { rubric: { "search-quality": { min: 3 } } } })
+  );
+  assert.throws(() =>
+    item({ expect: { rubric: { "follows-lead": { min: 3 } } } })
   );
   assert.throws(() => item({ journal: "somewhere" }));
 });
@@ -486,7 +492,10 @@ test("a journal error the judge lists fails journal-right even when its verdict 
     ],
   });
   assert.deepEqual(
-    flaggedChecks({ counted: ["journal-right"], hard: [], rubric: [] }, grade),
+    flaggedChecks(
+      { counted: ["journal-right"], hard: [], rubric: [], slips: [] },
+      grade
+    ),
     ["journal-right"]
   );
   assert.equal(compareReplyVerdict(resolved, grade).match, true);

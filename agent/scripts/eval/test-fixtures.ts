@@ -14,7 +14,7 @@ import type test from "node:test";
 
 import { dreamSourceFiles, seedSourceFiles } from "../../evals/lib/cache.ts";
 import { parsePersonCase } from "../../evals/lib/schema.ts";
-import type { LoadedEntry, LoadedPerson } from "./people.ts";
+import type { LoadedChat, LoadedEntry, LoadedPerson } from "./people.ts";
 
 export function tempDir(
   t: test.TestContext,
@@ -27,6 +27,8 @@ export function tempDir(
 
 interface PersonOptions {
   chat?: unknown[];
+  /** Past chats with Sage. */
+  chats?: LoadedChat[];
   conversations?: unknown[];
   entries?: number;
   events?: unknown[];
@@ -67,6 +69,7 @@ export function makePerson(
     entryOf(i + 1)
   );
   return {
+    chats: options.chats ?? [],
     dir: `/data/people/${id}`,
     empty: entries.length === 0,
     entries,

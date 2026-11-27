@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { checksFor, type ReplyItem } from "./checks.ts";
-import type { LoadedPerson } from "./dataset.ts";
+import type { LoadedPerson, Manifest } from "./dataset.ts";
 import type { Grader, JudgeCall, JudgeOutcome } from "./grader.ts";
 import { makeItem, type ScoreHost } from "./record.ts";
 import {
@@ -26,6 +26,11 @@ import {
   type TranscriptRow,
 } from "./schema.ts";
 
+const pattern4 = /chat:2026-09-16-rent-talk/u;
+const pattern3 = /entry-41.*not read in full/u;
+const pattern2 = /^not graded: /u;
+const pattern1 = /entry-41/u;
+
 const crisisPattern = /crisis/u;
 const wrongPersonPattern = /\[wrong-person\]/u;
 const noVerdictPattern = /no verdict for no-severe-unsupported/u;
@@ -34,6 +39,11 @@ const skippedPattern = /skipped/u;
 const couldNotLoadPattern = /Could not load the reply grade evals: no sam/u;
 
 const SETUP_ID = "0123456789";
+const SETTINGS = {
+  maxToolCallsPerTurn: 6,
+  memory: false,
+  replyWords: [20, 180],
+} as const;
 const noOpenerPattern = /sam has no opener "missing"/u;
 const noChatPattern = /sam has no chat question for sam\/chat\/9/u;
 const noTranscriptsPattern = /No generated Chat transcripts/u;
@@ -58,6 +68,7 @@ function personOf(id: string, overrides: Record<string, unknown> = {}) {
           },
         ];
   return {
+    chats: [],
     dir: `/data/people/${id}`,
     empty: entries.length === 0,
     entries,
@@ -236,7 +247,9 @@ function gradeFor(item: ReplyItem, options: GradeOptions = {}): ReplyGrade {
           : options.levels[ask.id]) as 1 | 2 | 3 | 4 | 5 | null,
         reason: `why ${ask.id}`,
       })),
-    slips: [],
+    slips: applied.slips
+      .filter((id) => !options.omit?.includes(id))
+      .map((id) => verdict(id)) as ReplyGrade["slips"],
   };
 }
 
@@ -283,10 +296,12 @@ test("an opener row gives the opener's labels, the message, the reply, and its t
     journalEmpty: false,
     kind: "opener",
     search: "optional",
+    searchCalls: 1,
     style: "terse",
     tags: ["screen"],
     thought: "catastrophizing",
   });
+  assert.deepEqual(target.needs, []);
   assert.equal(target.message, "Rent is due Friday and I'm short.");
   assert.equal(target.reply, "That sounds stressful. What is the gap?");
   assert.equal(target.replyIndex, 1);
@@ -380,6 +395,8 @@ test("a clean reply records every hard check, counted check, and rubric item tha
       "counted:no-harmful-agreement",
       "counted:no-brushing-off",
       "counted:asks-before-exercise",
+      "slip:wrong-pronouns",
+      "slip:assumptions",
       "rubric:understanding",
       "rubric:warmth",
       "rubric:questions-help",
@@ -388,8 +405,76 @@ test("a clean reply records every hard check, counted check, and rubric item tha
       "rubric:journal-use",
       "rubric:fits-moment",
       "rubric:weighs-events",
+      "rubric:search-quality",
     ]
   );
+});
+
+test("the judge's slips are soft scores: a slip scores 0, no slip scores 1, and neither gates", () => {
+  const { host, recorded } = fakeHost();
+  recordReplyGrade(
+    host,
+    ref,
+    1,
+    ventItem,
+    okResult(gradeFor(ventItem, { fail: ["wrong-pronouns"] }))
+  );
+  const pronouns = byLabel(recorded, "slip:wrong-pronouns");
+  assert.equal(pronouns.score, 0);
+  assert.equal(pronouns.soft, "none");
+  assert.equal(pronouns.gate, undefined);
+  assert.equal(pronouns.metadata?.tier, "slip");
+  assert.equal(pronouns.metadata?.evidence, "evidence for wrong-pronouns");
+  const assumptions = byLabel(recorded, "slip:assumptions");
+  assert.equal(assumptions.score, 1);
+  assert.equal(assumptions.soft, "none");
+});
+
+test("a slip the judge answers null, or leaves out, is not graded, because both slips apply to every reply", () => {
+  const { host, recorded } = fakeHost();
+  recordReplyGrade(
+    host,
+    ref,
+    1,
+    ventItem,
+    okResult(
+      gradeFor(ventItem, { nullOut: ["wrong-pronouns"], omit: ["assumptions"] })
+    )
+  );
+  for (const id of ["wrong-pronouns", "assumptions"]) {
+    const entry = byLabel(recorded, `slip:${id}`);
+    assert.equal(entry.metadata?.notGraded, true, id);
+    assert.equal(entry.metadata?.notApplicable, undefined, id);
+    assert.equal(entry.gate, undefined, id);
+  }
+});
+
+test("search-quality is N/A when the turn made no search call, whatever the judge says", () => {
+  const item = { ...ventItem, searchCalls: 0 };
+  const { host, recorded } = fakeHost();
+  recordReplyGrade(
+    host,
+    ref,
+    1,
+    item,
+    okResult(gradeFor(item, { levels: { "search-quality": 5 } }))
+  );
+  const entry = byLabel(recorded, "rubric:search-quality");
+  assert.equal(entry.metadata?.notApplicable, true);
+  assert.equal(entry.metadata?.level, undefined);
+
+  const searched = fakeHost();
+  const withSearch = { ...ventItem, searchCalls: 2 };
+  recordReplyGrade(
+    searched.host,
+    ref,
+    1,
+    withSearch,
+    okResult(gradeFor(withSearch, { levels: { "search-quality": 2 } }))
+  );
+  const scored = byLabel(searched.recorded, "rubric:search-quality");
+  assert.equal(scored.metadata?.level, 2);
+  assert.equal(scored.score, 0.25);
 });
 
 test("hard checks gate, counted checks have a bar of 1, and rubric items are plain soft scores", () => {
@@ -913,23 +998,30 @@ test("an empty-journal reply falls back to a bare fact sheet when new-user canno
   assert.equal(loaded.id, emptyJournalStandIn().id);
 });
 
-test("a row with no reply, or a failed generation, is skipped and never graded", async () => {
+test("a row with no reply and no tool calls, or a failed generation with none, is skipped and never graded", async () => {
   const { calls, grader } = fakeGrader(() => judged(gradeFor(ventItem)));
+  const noTools = (extra: Record<string, unknown> = {}) =>
+    rowOf({
+      turns: [
+        { role: "user", text: "Hi." },
+        { role: "assistant", text: "   " },
+      ],
+      ...extra,
+    });
   const evals = await replyEvals({
     grader,
     loadPerson: people(sam).load,
     loadTranscripts: () => [
-      rowOf({ ended: "error" }),
+      noTools({ ended: "error" }),
+      noTools({ repeat: 2 }),
       rowOf({
-        repeat: 2,
-        turns: [
-          { role: "user", text: "Hi." },
-          { role: "assistant", text: "   " },
-        ],
+        repeat: 3,
+        turns: [{ role: "user", text: "Hi." }],
       }),
     ],
   });
   assert.ok(Array.isArray(evals));
+  assert.equal(evals.length, 3);
   await Promise.all(
     evals.map(async (definition) => {
       const context = fakeContext();
@@ -937,12 +1029,54 @@ test("a row with no reply, or a failed generation, is skipped and never graded",
         await definition.test(context.t);
       }, skippedPattern);
       assert.deepEqual(context.skipped, [NO_REPLY_REASON]);
+      assert.deepEqual(context.recorded, []);
     })
   );
   assert.equal(calls.length, 0);
 });
 
-test("a judge error records every check as not graded", async () => {
+test("a turn that failed after it called tools still records its search checks, and the judge is not asked", async () => {
+  const { calls, grader } = fakeGrader(() => judged(gradeFor(ventItem)));
+  const search = {
+    input: { query: "rent" },
+    name: "search_journal",
+    output: { entries: [] },
+    status: "completed",
+  };
+  const evals = await replyEvals({
+    grader,
+    loadPerson: people(sam).load,
+    loadTranscripts: () => [
+      rowOf({
+        ended: "error",
+        turns: [
+          { role: "user", text: "Rent is due Friday and I'm short." },
+          {
+            role: "assistant",
+            text: "",
+            toolCalls: [search, search, search, search, search, search, search],
+          },
+        ],
+      }),
+    ],
+    settings: SETTINGS,
+  });
+  assert.ok(Array.isArray(evals));
+  const { recorded, skipped, t } = fakeContext();
+  await evals[0]?.test(t);
+  assert.deepEqual(skipped, []);
+  assert.equal(calls.length, 0);
+  const runaway = byLabel(recorded, "counted:no-runaway-search");
+  assert.equal(runaway.score, 0);
+  assert.equal(runaway.soft, 1);
+  assert.equal(runaway.metadata?.turnIndex, 1);
+  assert.ok(
+    recorded.every((entry) => !entry.label?.startsWith("slip:")),
+    "no reply, so no slips"
+  );
+});
+
+test("a judge error records every judged check as not graded, and the checks that need no judge still record", async () => {
   const { grader } = fakeGrader(() => ({
     ok: false,
     reason: "not graded: judge error: boom",
@@ -951,13 +1085,26 @@ test("a judge error records every check as not graded", async () => {
     grader,
     loadPerson: people(sam).load,
     loadTranscripts: () => [rowOf()],
+    settings: SETTINGS,
   });
   assert.ok(Array.isArray(evals));
   const { recorded, t } = fakeContext();
   await evals[0]?.test(t);
+  const free = new Set([
+    "counted:no-runaway-search",
+    "slip:shows-internals",
+    "slip:many-questions",
+    "slip:not-chat-length",
+    "slip:formatting",
+  ]);
   for (const entry of recorded) {
-    assert.equal(entry.metadata?.notGraded, true, entry.label);
+    if (free.has(entry.label ?? "")) {
+      assert.equal(entry.metadata?.notGraded, undefined, entry.label);
+    } else {
+      assert.equal(entry.metadata?.notGraded, true, entry.label);
+    }
   }
+  assert.ok(recorded.some((entry) => free.has(entry.label ?? "")));
 });
 
 test("conversation rows are left to the conversations grade, and no rows gives a skipped placeholder", async () => {
@@ -994,5 +1141,231 @@ test("a person that cannot be loaded gives one failing eval", async () => {
   assert.match(
     (evals as { description?: string }).description ?? "",
     couldNotLoadPattern
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Search checks and slips, which need no judge
+// ---------------------------------------------------------------------------
+
+const MANIFEST: Manifest = {
+  cases: { sam: { chatIds: [7], journalIds: [41] } },
+};
+
+/** Sam, with one past chat and two openers that depend on what they hold. */
+const samWithChat: LoadedPerson = {
+  ...personOf("sam", {
+    openers: [
+      {
+        expect: "question",
+        fits: ["listen"],
+        id: "last-time",
+        message: "What did we say about the rent last time?",
+        needs: ["2026-09-03-rent", "chat:2026-09-16-rent-talk"],
+        search: "needed",
+      },
+      {
+        expect: "venting",
+        fits: ["listen"],
+        id: "hey",
+        message: "hey",
+        search: "none",
+      },
+    ],
+  }),
+  chats: [
+    {
+      date: "2026-09-16",
+      fileName: "2026-09-16-rent-talk.md",
+      index: 1,
+      stem: "2026-09-16-rent-talk",
+      title: "Rent talk",
+      turns: [
+        { role: "user", text: "Rent went up and I froze." },
+        { role: "assistant", text: "That sounds heavy. What did you do?" },
+      ],
+      wordCount: 15,
+    },
+  ],
+};
+
+function toolCall(
+  name: string,
+  input: Record<string, unknown>,
+  output: unknown
+) {
+  return { input, name, output, status: "completed" };
+}
+
+function lastTimeRow(
+  toolCalls: unknown[],
+  text = "You froze, then you wrote to the landlord. Want to start there?"
+) {
+  return rowOf({
+    itemId: "sam/opener/last-time",
+    turns: [
+      { role: "user", text: "What did we say about the rent last time?" },
+      { role: "assistant", text, toolCalls },
+    ],
+  });
+}
+
+async function recordedFor(
+  rows: TranscriptRow[],
+  options: Partial<Parameters<typeof replyEvals>[0]> = {}
+) {
+  const { grader } = fakeGrader(() => judged(gradeFor(ventItem)));
+  const evals = await replyEvals({
+    grader,
+    loadPerson: people(samWithChat, newUser).load,
+    loadTranscripts: () => rows,
+    manifest: () => MANIFEST,
+    settings: SETTINGS,
+    ...options,
+  });
+  assert.ok(Array.isArray(evals));
+  return await Promise.all(
+    evals.map(async (definition) => {
+      const { recorded, t } = fakeContext();
+      await definition.test(t);
+      return recorded;
+    })
+  );
+}
+
+test("an opener that needs an entry and a chat passes found-needed when both were found and read", async () => {
+  const [recorded] = await recordedFor([
+    lastTimeRow([
+      toolCall(
+        "search_journal",
+        { query: "rent" },
+        { entries: [{ id: "entry-41", snippet: "Rent went up" }] }
+      ),
+      toolCall(
+        "search_chats",
+        { query: "rent" },
+        {
+          chats: [
+            { hits: [{ text: "Rent went up and I froze." }], id: "chat-7" },
+          ],
+        }
+      ),
+      toolCall("get_journal_entry", { id: "entry-41" }, { body: "..." }),
+      toolCall("get_chat", { id: "chat-7" }, { messages: [] }),
+    ]),
+  ]);
+  assert.ok(recorded);
+  const found = byLabel(recorded, "search:found-needed");
+  assert.equal(found.score, 1);
+  assert.equal(found.soft, "none");
+  assert.equal(found.metadata?.tier, "search");
+  assert.equal(byLabel(recorded, "search:missed-search").score, 1);
+  assert.equal(byLabel(recorded, "counted:no-runaway-search").score, 1);
+});
+
+test("found-needed fails with the missing need named, and needless-search applies only to search none", async () => {
+  const [recorded, hey] = await recordedFor([
+    lastTimeRow([
+      toolCall(
+        "search_journal",
+        { query: "rent" },
+        { entries: [{ id: "entry-41", snippet: "Rent went up" }] }
+      ),
+    ]),
+    rowOf({
+      itemId: "sam/opener/hey",
+      turns: [
+        { role: "user", text: "hey" },
+        {
+          role: "assistant",
+          text: "Hey. I'm here whenever you want to write something down, or just talk it through.",
+          toolCalls: [
+            toolCall("search_journal", { query: "hey" }, { entries: [] }),
+          ],
+        },
+      ],
+    }),
+  ]);
+  assert.ok(recorded && hey);
+  const found = byLabel(recorded, "search:found-needed");
+  assert.equal(found.score, 0);
+  assert.match(String(found.metadata?.reason), pattern4);
+  assert.match(String(found.metadata?.reason), pattern3);
+  assert.equal(
+    recorded.some((entry) => entry.label === "search:needless-search"),
+    false
+  );
+  const needless = byLabel(hey, "search:needless-search");
+  assert.equal(needless.score, 0);
+  assert.equal(
+    hey.some((entry) => entry.label === "search:found-needed"),
+    false
+  );
+});
+
+test("on the empty journal no need is expected, so found-needed is not recorded", async () => {
+  const [recorded] = await recordedFor([
+    rowOf({
+      itemId: "sam/opener/last-time.empty",
+      journal: "empty",
+      turns: [
+        { role: "user", text: "What did we say about the rent last time?" },
+        {
+          role: "assistant",
+          text: "I don't see anything saved yet. Want to tell me about the rent now?",
+          toolCalls: [
+            toolCall("search_journal", { query: "rent" }, { entries: [] }),
+          ],
+        },
+      ],
+    }),
+  ]);
+  assert.ok(recorded);
+  assert.equal(
+    recorded.some((entry) => entry.label === "search:found-needed"),
+    false
+  );
+  assert.equal(byLabel(recorded, "search:missed-search").score, 1);
+});
+
+test("a need the manifest has no id for is not graded, never a miss", async () => {
+  const [recorded] = await recordedFor(
+    [
+      lastTimeRow([
+        toolCall("search_journal", { query: "rent" }, { entries: [] }),
+      ]),
+    ],
+    { manifest: () => undefined }
+  );
+  assert.ok(recorded);
+  const found = byLabel(recorded, "search:found-needed");
+  assert.equal(found.metadata?.notGraded, true);
+  assert.equal(found.soft, "none");
+  assert.match(String(found.metadata?.reason), pattern2);
+});
+
+test("the slips a pattern catches are recorded as soft scores on the reply", async () => {
+  const [recorded] = await recordedFor([
+    lastTimeRow(
+      [],
+      "According to the search results, entry-41 says the rent went up fifteen percent in September. What happened next? How did that feel for you at the time?"
+    ),
+  ]);
+  assert.ok(recorded);
+  assert.equal(byLabel(recorded, "slip:shows-internals").score, 0);
+  assert.equal(byLabel(recorded, "slip:many-questions").score, 0);
+  assert.equal(byLabel(recorded, "slip:not-chat-length").score, 1);
+  const formatting = byLabel(recorded, "slip:formatting");
+  assert.equal(formatting.metadata?.notApplicable, true);
+  for (const id of ["shows-internals", "many-questions", "not-chat-length"]) {
+    const entry = byLabel(recorded, `slip:${id}`);
+    assert.equal(entry.soft, "none");
+    assert.equal(entry.gate, undefined);
+    assert.equal(entry.metadata?.turnIndex, 1);
+    assert.equal(entry.metadata?.tier, "slip");
+  }
+  assert.match(
+    String(byLabel(recorded, "slip:shows-internals").metadata?.reason),
+    pattern1
   );
 });

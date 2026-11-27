@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 import { loadYaml } from "eve/evals/loaders";
 
 import { resolveWhen } from "../../agent/lib/when.ts";
-import { type PersonCase, parsePersonCase } from "./schema.ts";
+import { chatNeedStem, type PersonCase, parsePersonCase } from "./schema.ts";
 
 const leadingBomPattern = /^﻿/u;
 const lineBreakPattern = /\r?\n/u;
+const turnMarkerPattern = /^(User|Sage):[ \t]*(.*)$/u;
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/u;
 const frontmatterKeyPattern = /^(\w[\w-]*)\s*:\s*(.*)$/u;
@@ -46,7 +47,28 @@ export interface LoadedEntry {
 /** The old name for a loaded entry, still imported by `scripts/automation.ts`. */
 export type JournalEntryFixture = LoadedEntry;
 
+/** One turn of a past chat. `user` is the person ("User:"), `assistant` is Sage ("Sage:"). */
+export interface ChatTurn {
+  role: "assistant" | "user";
+  text: string;
+}
+
+/** An earlier chat with Sage, from `chats/<date>-<slug>.md`. */
+export interface LoadedChat {
+  date: string;
+  fileName: string;
+  /** 1-based, in filename order. */
+  index: number;
+  /** The file name without `.md`. A `needs` ref reaches it as `chat:<stem>`. */
+  stem: string;
+  title: string;
+  turns: ChatTurn[];
+  wordCount: number;
+}
+
 export interface LoadedPerson {
+  /** Earlier chats with Sage, in filename order. Empty when there is no `chats/` folder. */
+  chats: LoadedChat[];
   dir: string;
   /** No `.md` entries, so the journal is empty. */
   empty: boolean;
@@ -56,7 +78,7 @@ export interface LoadedPerson {
 }
 
 export interface Manifest {
-  cases: Record<string, { journalIds: number[] }>;
+  cases: Record<string, { chatIds?: number[]; journalIds: number[] }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +140,8 @@ export async function loadPerson(id: string): Promise<LoadedPerson> {
       );
     }
   }
-  return { dir, empty: entries.length === 0, entries, id, personCase };
+  const chats = await loadChatFiles(dir);
+  return { chats, dir, empty: entries.length === 0, entries, id, personCase };
 }
 
 async function listPeopleIds(): Promise<string[]> {
@@ -170,6 +193,47 @@ export function resolveEntry(
   return entry;
 }
 
+/**
+ * The past chat a `chat:<stem>` ref points at. Pass the stem, or the whole ref.
+ */
+export function resolveChat(
+  person: Pick<LoadedPerson, "chats" | "id">,
+  ref: string
+): LoadedChat {
+  const stem = chatNeedStem(ref) ?? ref;
+  if (person.chats.length === 0) {
+    throw new Error(
+      `${person.id} has no past chats, so there is no chat "${stem}".`
+    );
+  }
+  const chat = person.chats.find((candidate) => candidate.stem === stem);
+  if (chat === undefined) {
+    const hint = markdownSuffixPattern.test(stem)
+      ? " Leave off .md."
+      : ` A stem looks like "${person.chats[0]?.stem}".`;
+    throw new Error(
+      `${person.id} has no past chat with the stem "${stem}".${hint}`
+    );
+  }
+  return chat;
+}
+
+/** What a `needs` ref points at: an entry, or a past chat written as `chat:<stem>`. */
+export type ResolvedNeed =
+  | { chat: LoadedChat; kind: "chat" }
+  | { entry: LoadedEntry; kind: "entry" };
+
+/** Resolves one `needs` ref. Throws a readable error when nothing matches. */
+export function resolveNeed(
+  person: LoadedPerson,
+  ref: number | string
+): ResolvedNeed {
+  if (chatNeedStem(ref) !== null) {
+    return { chat: resolveChat(person, String(ref)), kind: "chat" };
+  }
+  return { entry: resolveEntry(person, ref), kind: "entry" };
+}
+
 // ---------------------------------------------------------------------------
 // Checks on a loaded person
 // ---------------------------------------------------------------------------
@@ -178,8 +242,12 @@ export function resolveEntry(
  * Problems in a person's files, one line each, as of `today`. An empty list
  * means the person is sound.
  *
- * - An entry is dated after `today`.
- * - A ref in `events`, `summaries`, `retrieval`, `chat`, or `openers` names no entry.
+ * - An entry or a past chat is dated after `today`.
+ * - A past chat's turns do not alternate, starting with the person.
+ * - A ref in `events`, `summaries`, `retrieval`, `chat`, or `openers` names no
+ *   entry. A `needs` ref written `chat:<stem>` names a past chat instead.
+ * - An opener that also runs on the empty journal says `search: needed`, which
+ *   expects a hit that journal cannot give.
  * - A retrieval item with `when` expects an entry outside the days that phrase
  *   covers on `today`, read the way `search_journal` reads it.
  */
@@ -187,6 +255,15 @@ export function validatePerson(person: LoadedPerson, today: string): string[] {
   if (!isRealDate(today)) {
     return [`Today must be a YYYY-MM-DD date, not "${today}".`];
   }
+  return [
+    ...datingProblems(person, today),
+    ...answerKeyProblems(person, today),
+    ...needsProblems(person),
+  ];
+}
+
+/** Entries and past chats dated after `today`, and past chats whose turns do not alternate. */
+function datingProblems(person: LoadedPerson, today: string): string[] {
   const problems: string[] = [];
   for (const entry of person.entries) {
     if (entry.date > today) {
@@ -195,6 +272,23 @@ export function validatePerson(person: LoadedPerson, today: string): string[] {
       );
     }
   }
+  for (const chat of person.chats) {
+    if (chat.date > today) {
+      problems.push(
+        `chats/${chat.fileName} is dated ${chat.date}, after ${today}.`
+      );
+    }
+    const alternation = alternationProblem(chat);
+    if (alternation !== undefined) {
+      problems.push(`chats/${chat.fileName}: ${alternation}`);
+    }
+  }
+  return problems;
+}
+
+/** Refs in `events`, `summaries`, and `retrieval` that match no entry, and `when` windows that miss. */
+function answerKeyProblems(person: LoadedPerson, today: string): string[] {
+  const problems: string[] = [];
   const { personCase } = person;
   for (const [index, item] of personCase.events.entries()) {
     lookUp(person, `events[${index}].entry`, item.entry, problems);
@@ -217,17 +311,56 @@ export function validatePerson(person: LoadedPerson, today: string): string[] {
       }
     }
   }
+  return problems;
+}
+
+/** `needs` refs that match nothing, and openers that expect a hit on the empty journal. */
+function needsProblems(person: LoadedPerson): string[] {
+  const problems: string[] = [];
+  const { personCase } = person;
   for (const [index, item] of personCase.chat.entries()) {
     for (const ref of item.needs) {
-      lookUp(person, `chat[${index}].needs`, ref, problems);
+      lookUpNeed(person, `chat[${index}].needs`, ref, problems);
     }
   }
   for (const item of personCase.openers) {
     for (const ref of item.needs) {
-      lookUp(person, `openers (in ${item.id}).needs`, ref, problems);
+      lookUpNeed(person, `openers (in ${item.id}).needs`, ref, problems);
+    }
+    if (item.alsoEmpty && item.search === "needed") {
+      problems.push(
+        `openers (in ${item.id}): alsoEmpty is set, but search is needed. The empty journal has nothing to find, so use search none or optional, or take alsoEmpty off.`
+      );
     }
   }
   return problems;
+}
+
+/** Why a chat's turns do not alternate, starting with the person, or undefined when they do. */
+function alternationProblem(chat: LoadedChat): string | undefined {
+  for (const [index, turn] of chat.turns.entries()) {
+    const expected = index % 2 === 0 ? "user" : "assistant";
+    if (turn.role !== expected) {
+      const marker = expected === "user" ? "User:" : "Sage:";
+      return `turn ${index + 1} should start with ${marker}. Turns alternate, starting with User:.`;
+    }
+  }
+  return undefined;
+}
+
+function lookUpNeed(
+  person: LoadedPerson,
+  label: string,
+  ref: number | string,
+  problems: string[]
+): void {
+  try {
+    resolveNeed(person, ref);
+  } catch (error) {
+    problems.push(
+      `${label}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 function lookUp(
@@ -304,6 +437,25 @@ export function journalIdFor(
   return id;
 }
 
+/** The id Sage gave a past chat when the seed step saved it. */
+export function chatIdFor(
+  manifest: Manifest,
+  personId: string,
+  chat: Pick<LoadedChat, "index" | "stem">
+): number {
+  const entry = manifest.cases[personId];
+  if (entry === undefined) {
+    throw new Error(`Manifest has no ids for ${personId}.`);
+  }
+  const id = entry.chatIds?.[chat.index - 1];
+  if (id === undefined) {
+    throw new Error(
+      `${personId} has no chat id for past chat ${chat.index} (${chat.stem}).`
+    );
+  }
+  return id;
+}
+
 function readManifestSync(path: string): Manifest {
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
   if (
@@ -315,7 +467,7 @@ function readManifestSync(path: string): Manifest {
   ) {
     throw new Error("Eval manifest is missing a cases object.");
   }
-  const cases: Record<string, { journalIds: number[] }> = {};
+  const cases: Manifest["cases"] = {};
   for (const [id, value] of Object.entries(
     parsed.cases as Record<string, unknown>
   )) {
@@ -328,7 +480,22 @@ function readManifestSync(path: string): Manifest {
     ) {
       throw new Error(`Eval manifest case ${id} is missing journalIds.`);
     }
-    cases[id] = { journalIds: value.journalIds };
+    const chatIds = "chatIds" in value ? value.chatIds : undefined;
+    if (
+      chatIds !== undefined &&
+      !(
+        Array.isArray(chatIds) &&
+        chatIds.every((item) => typeof item === "number")
+      )
+    ) {
+      throw new Error(
+        `Eval manifest case ${id} has chatIds that are not numbers.`
+      );
+    }
+    cases[id] =
+      chatIds === undefined
+        ? { journalIds: value.journalIds }
+        : { chatIds, journalIds: value.journalIds };
   }
   return { cases };
 }
@@ -430,6 +597,102 @@ export async function loadEntryFiles(dir: string): Promise<LoadedEntry[]> {
     });
   }
   return entries;
+}
+
+/**
+ * Splits the body of a chat file into turns. A turn starts at the beginning of
+ * a line with `User:` or `Sage:`. Lines after it, up to the next marker, are
+ * part of the same turn. Text before the first marker, and a turn with no
+ * text, are errors.
+ */
+export function parseChatTurns(body: string): ChatTurn[] {
+  const turns: { role: ChatTurn["role"]; lines: string[] }[] = [];
+  for (const line of body.split(lineBreakPattern)) {
+    const marker = turnMarkerPattern.exec(line);
+    if (marker !== null) {
+      turns.push({
+        lines: [marker[2] ?? ""],
+        role: marker[1] === "User" ? "user" : "assistant",
+      });
+      continue;
+    }
+    const current = turns.at(-1);
+    if (current !== undefined) {
+      current.lines.push(line);
+    } else if (line.trim().length > 0) {
+      throw new Error(
+        `text before the first "User:" or "Sage:" line: "${line.trim().slice(0, 40)}".`
+      );
+    }
+  }
+  return turns.map((turn, index) => {
+    const text = turn.lines.join("\n").trim();
+    if (text.length === 0) {
+      throw new Error(`turn ${index + 1} has no text.`);
+    }
+    return { role: turn.role, text };
+  });
+}
+
+/**
+ * Reads the `*.md` files in a person's `chats/` folder, in filename order. A
+ * file has `date` and `title` in its frontmatter and `User:` and `Sage:` turns
+ * in its body. A person with no `chats/` folder has no past chats.
+ */
+export async function loadChatFiles(personDir: string): Promise<LoadedChat[]> {
+  const dir = join(personDir, "chats");
+  let found: Dirent[];
+  try {
+    found = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (isMissing(error)) {
+      return [];
+    }
+    throw error;
+  }
+  const names = found
+    .filter((item) => item.isFile() && item.name.endsWith(".md"))
+    .map((item) => item.name)
+    .sort();
+  const files = await Promise.all(
+    names.map(async (fileName) => ({
+      fileName,
+      raw: await readFile(join(dir, fileName), "utf8"),
+    }))
+  );
+  return files.map(({ fileName, raw }, offset) => {
+    const label = `chats/${fileName}`;
+    const parsed = parseFrontmatter(raw);
+    const date = parsed.date?.trim() ?? "";
+    const title = parsed.title?.trim() ?? "";
+    if (!(isoDatePattern.test(date) && isRealDate(date))) {
+      throw new Error(`${label} needs a YYYY-MM-DD date in frontmatter.`);
+    }
+    if (title.length === 0) {
+      throw new Error(`${label} needs a title in frontmatter.`);
+    }
+    let turns: ChatTurn[];
+    try {
+      turns = parseChatTurns(parsed.body);
+    } catch (error) {
+      throw new Error(
+        `${label}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+    if (turns.length === 0) {
+      throw new Error(`${label} has no User: or Sage: turns.`);
+    }
+    return {
+      date,
+      fileName,
+      index: offset + 1,
+      stem: fileName.replace(markdownSuffixPattern, ""),
+      title,
+      turns,
+      wordCount: turns.reduce((sum, turn) => sum + countWords(turn.text), 0),
+    };
+  });
 }
 
 function stripQuotes(value: string): string {

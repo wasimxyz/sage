@@ -15,6 +15,7 @@ const couldNotLoadThePattern = /Could not load the summaries evals/u;
 const nobodyHasNoCasePattern = /nobody has no case\.yaml/u;
 
 const person: LoadedPerson = {
+  chats: [],
   dir: "/nowhere",
   empty: true,
   entries: [],

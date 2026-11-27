@@ -15,7 +15,11 @@ import {
   itemMatchesTags as tagsMatch,
 } from "../../evals/lib/openers.ts";
 
-export type { LoadedEntry, LoadedPerson } from "../../evals/lib/dataset.ts";
+export type {
+  LoadedChat,
+  LoadedEntry,
+  LoadedPerson,
+} from "../../evals/lib/dataset.ts";
 
 export async function loadAllPeople(): Promise<LoadedPerson[]> {
   const people = await loadPeople();

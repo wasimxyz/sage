@@ -11,10 +11,14 @@ import {
   needsDream,
   restoreSnapshot,
   seedEnv,
+  seededChatDays,
+  seedsInStages,
   snapshotDigests,
   snapshotDream,
 } from "./dream.ts";
 import { makePerson, tempDir, writeCacheKeyFiles } from "./test-fixtures.ts";
+
+const pattern2 = /no chat id for past chat 3/u;
 
 const pattern1 = /^[a-f0-9]{64}$/u;
 const noFolderPattern =
@@ -108,6 +112,88 @@ test("the Dream key follows the person's files and the memory flag", async (t) =
   );
   writeFileSync(join(dataRoot, "people", "sam", "2026-06-02-two.md"), "two\n");
   assert.notEqual((await dreamKeyFor(unitFor("off"), digests)).key, first.key);
+});
+
+test("a past chat is part of the Dream key, and editing one runs Dream again", async (t) => {
+  const { dataRoot } = withTempRepo(t);
+  const before = await dreamKeyFor(unitFor("off"), digests);
+  const chats = join(dataRoot, "people", "sam", "chats");
+  mkdirSync(chats, { recursive: true });
+  const file = join(chats, "2026-07-01-first.md");
+  writeFileSync(
+    file,
+    "---\ndate: 2026-07-01\ntitle: First\n---\nUser: hi\nSage: hello\n"
+  );
+  const added = await dreamKeyFor(unitFor("off"), digests);
+  assert.notEqual(added.key, before.key, "a new chat");
+  writeFileSync(
+    file,
+    "---\ndate: 2026-07-02\ntitle: First\n---\nUser: hi\nSage: hello\n"
+  );
+  const edited = await dreamKeyFor(unitFor("off"), digests);
+  assert.notEqual(edited.key, added.key, "a changed date");
+  writeFileSync(
+    join(chats, "2026-07-09-second.md"),
+    "---\ndate: 2026-07-09\ntitle: Second\n---\nUser: a\nSage: b\n"
+  );
+  assert.notEqual((await dreamKeyFor(unitFor("off"), digests)).key, edited.key);
+});
+
+test("a person with chats and no entries still needs Dream, and one with past chats is seeded in stages", () => {
+  const chat = {
+    date: "2026-09-12",
+    fileName: "2026-09-12-a.md",
+    index: 1,
+    stem: "2026-09-12-a",
+    title: "A",
+    turns: [
+      { role: "user" as const, text: "Hi." },
+      { role: "assistant" as const, text: "Hello." },
+    ],
+    wordCount: 2,
+  };
+  const chatty = makePerson("kim", { chats: [chat], entries: 0 });
+  assert.equal(needsDream(chatty), true);
+  assert.equal(seedsInStages(chatty), true);
+  assert.equal(seedsInStages(makePerson("sam")), false);
+  assert.equal(seedsInStages(makePerson("kim", { entries: 0 })), false);
+});
+
+test("seededChatDays pairs each past chat's id from the manifest with its day", (t) => {
+  const dir = tempDir(t);
+  const manifestPath = join(dir, "manifest.json");
+  writeFileSync(
+    manifestPath,
+    '{"cases":{"sam":{"chatIds":[31,32],"journalIds":[1]}}}\n'
+  );
+  const turns = [
+    { role: "user" as const, text: "Hi." },
+    { role: "assistant" as const, text: "Hello." },
+  ];
+  const chat = (index: number, date: string) => ({
+    date,
+    fileName: `${date}-c${index}.md`,
+    index,
+    stem: `${date}-c${index}`,
+    title: `C${index}`,
+    turns,
+    wordCount: 2,
+  });
+  const person = makePerson("sam", {
+    chats: [chat(1, "2026-09-12"), chat(2, "2026-10-24")],
+  });
+  assert.deepEqual(seededChatDays(person, manifestPath), [
+    { date: "2026-09-12", id: 31 },
+    { date: "2026-10-24", id: 32 },
+  ]);
+  const short = makePerson("sam", {
+    chats: [
+      chat(1, "2026-09-12"),
+      chat(2, "2026-10-24"),
+      chat(3, "2026-11-01"),
+    ],
+  });
+  assert.throws(() => seededChatDays(short, manifestPath), pattern2);
 });
 
 test("a changed model digest changes the key", async (t) => {
@@ -248,6 +334,24 @@ test("the seed script's environment names the person, the folder, and the manife
   assert.equal(env.SAGE_AUTOMATION_CWD, "/tmp/sage-eval-x");
   assert.equal(env.SAGE_DATA_DIR, "/tmp/sage-eval-x");
   assert.equal(env.SAGE_EVAL_DATA, dataRoot);
+  assert.equal(
+    env.SAGE_EVAL_SEED_STAGE,
+    "all",
+    "one go unless a stage is named"
+  );
+});
+
+test("the seed script's environment carries the stage a person with past chats is seeded in", () => {
+  for (const stage of ["content", "dream"] as const) {
+    const env = seedEnv({
+      automationCwd: "/tmp/sage-eval-x",
+      dataDir: "/tmp/sage-eval-x",
+      manifestPath: "/tmp/sage-eval-x/manifest.json",
+      personId: "sam",
+      stage,
+    });
+    assert.equal(env.SAGE_EVAL_SEED_STAGE, stage);
+  }
 });
 
 test("the seed script's environment never carries the Dream prompt folder", (t) => {

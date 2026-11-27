@@ -209,7 +209,6 @@ openers:
     fits: [ weigh-decision, values ]
     search: optional
     needs: [ 2026-11-13-december, 2026-05-23-ticket-price ]
-    tags: [ screen ]
   - id: scholarship-chain
     style: second-language
     message: >-
@@ -223,8 +222,7 @@ openers:
     fits: [ look-at-thought, listen ]
     avoid: [ grounding ]
     search: optional
-    needs: [ 2026-11-11-stats-test, 2026-09-08-second-year, 2026-05-29-b-plus ]
-    tags: [ screen ]
+    needs: [ 2026-11-11-stats-test, 2026-05-29-b-plus ]
   - id: cold-hands
     style: second-language
     message: >-
@@ -235,7 +233,6 @@ openers:
     fits: [ grounding, listen ]
     avoid: [ look-at-thought, problem-solving ]
     search: none
-    tags: [ screen ]
   - id: what-do-i-want
     style: people-pleaser
     message: >-
@@ -272,6 +269,50 @@ openers:
     avoid: [ look-at-thought, grounding, values ]
     search: none
     tags: [ screen ]
+  - id: rasa-bersalah-bilang-tidak
+    message: >-
+      Dua minggu lalu aku bilang tidak ke Tomas untuk pertama kalinya. Kata
+      Marta, "wajar kok merasa bersalah kalau bilang tidak." Tapi sampai
+      sekarang masih kepikiran. Perasaan ini bakal bertahan berapa lama?
+    expect: messy
+    fits: [ self-compassion, listen ]
+    avoid: [ problem-solving ]
+    search: optional
+    needs: [ 2026-11-02-said-no ]
+    tags: [ screen ]
+  - id: who-said-heart
+    message: >-
+      After the call with Bapak, somebody said "don't take it to your heart" in a
+      small voice. Was that Bapak or Ibu? I keep thinking it was him, and then I
+      think no.
+    expect: question
+    style: second-language
+    fits: [ listen ]
+    avoid: [ grounding, look-at-thought ]
+    search: needed
+    needs: [ 2026-10-18-bapak-asks-again ]
+    tags: [ screen ]
+  - id: voice-reply-last-week
+    message: >-
+      Last week I answered Ibu's voice message. What did I write back? I want to
+      know if I was honest with her.
+    expect: question
+    style: second-language
+    fits: [ listen, self-compassion ]
+    avoid: [ problem-solving, look-at-thought ]
+    search: needed
+    needs: [ 2026-11-07-voice-message ]
+  - id: last-time-sentence
+    message: >-
+      Tomas will ask me again for Saturday, I know it. Last time we talked about
+      this you gave me one sentence to say. I forgot it. Sorry, can you tell me
+      again?
+    expect: question
+    style: people-pleaser
+    fits: [ problem-solving, small-step ]
+    avoid: [ grounding, look-at-thought ]
+    search: needed
+    needs: [ "chat:2026-10-06-a-small-no" ]
 
 # Tricky entries. The schema has no field for these yet, so they are listed here.
 # Each one is something a careless summary could turn into a false severe claim.
