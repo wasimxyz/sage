@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { evalDataRoot } from "./dataset.ts";
 import { ollamaBaseURL } from "./models.ts";
+import type { Memory } from "./schema.ts";
 
 const trailingSlashPattern = /\/$/u;
 
@@ -33,10 +34,45 @@ export const dreamSourceFiles = [
   "src/journal.zig",
 ] as const;
 
+/**
+ * Files that decide what is seeded into the throwaway journal before Dream runs:
+ * the seeding script, the bridge calls it makes, and the loader that reads each
+ * entry. A change to any of them changes what Dream reads. The loader also reads
+ * `case.yaml`, so a change to it runs Dream again even when only a check moved.
+ */
+export const seedSourceFiles = [
+  "agent/scripts/seed-dataset.ts",
+  "agent/scripts/automation.ts",
+  "agent/evals/lib/dataset.ts",
+] as const;
+
+/** The files a Dream prompt folder can hold. A missing file keeps the built-in prompt. */
+export const dreamPromptFiles = [
+  "summary.md",
+  "chat-summary.md",
+  "chat-title.md",
+  "extract.md",
+] as const;
+
+export const baselineDreamPrompt = "baseline";
+
+/**
+ * Everything that decides what a Dream snapshot holds. One snapshot is one
+ * person, so `case.yaml` is not part of it: editing a test does not run Dream
+ * again.
+ */
 export interface CacheKeyParts {
   dataRoot: string;
+  /**
+   * The text of each Dream prompt file the variant has, by file name. Null for
+   * the built-in prompts, which are constants in the Dream source files hashed
+   * below.
+   */
+  dreamPrompts: Record<string, string> | null;
   embedDigest: string;
   embedModel: string;
+  memory: Memory;
+  person: string;
   repoRoot: string;
   summaryDigest: string;
   summaryModel: string;
@@ -44,10 +80,23 @@ export interface CacheKeyParts {
 
 export interface CacheStamp {
   createdAt: string;
+  dreamPrompt?: string;
   embedDigest: string;
   embedModel: string;
   key: string;
+  memory?: Memory;
+  person?: string;
   summaryDigest: string;
+  summaryModel: string;
+}
+
+/** What `loadCacheKeyParts` needs to know about one Dream run. */
+export interface CacheKeyInput {
+  /** `baseline`, or the name of a folder under `agent/evals/dream-prompts/`. */
+  dreamPrompt: string;
+  embedModel: string;
+  memory: Memory;
+  person: string;
   summaryModel: string;
 }
 
@@ -100,27 +149,55 @@ export function computeCacheKey(parts: CacheKeyParts): string {
   hash.update("\0");
   hash.update(parts.embedDigest);
   hash.update("\0");
-  hashDirectory(hash, parts.dataRoot, "data");
+  hash.update("memory");
+  hash.update("\0");
+  hash.update(parts.memory);
+  hash.update("\0");
+  hashDreamPrompts(hash, parts.dreamPrompts);
+  hashPerson(hash, join(parts.dataRoot, "people", parts.person), parts.person);
   hashListedFiles(hash, parts.repoRoot, dreamSourceFiles, "source");
+  hashListedFiles(hash, parts.repoRoot, seedSourceFiles, "seed");
   hashSchemaSql(hash, parts.repoRoot);
   return hash.digest("hex");
 }
 
+/** `agent/evals/dream-prompts/<name>/` */
+export function dreamPromptsDir(repo: string, name: string): string {
+  return join(repo, "agent", "evals", "dream-prompts", name);
+}
+
+/**
+ * The text of the Dream prompt files a variant has. Null for `baseline`, the
+ * built-in prompts. Throws when a named variant has no folder.
+ */
+export function readDreamPrompts(
+  repo: string,
+  name: string
+): Record<string, string> | null {
+  if (name === baselineDreamPrompt) {
+    return null;
+  }
+  const dir = dreamPromptsDir(repo, name);
+  if (!(existsSync(dir) && statSync(dir).isDirectory())) {
+    throw new Error(`No Dream prompt folder at ${dir}.`);
+  }
+  const texts: Record<string, string> = {};
+  for (const file of dreamPromptFiles) {
+    const path = join(dir, file);
+    if (existsSync(path)) {
+      texts[file] = readFileSync(path, "utf8");
+    }
+  }
+  return texts;
+}
+
 export async function loadCacheKeyParts(
+  input: CacheKeyInput,
   lookupDigests: (
     models: string[]
   ) => Promise<Partial<Record<string, string>>> = fetchOllamaDigests
 ): Promise<CacheKeyParts> {
-  const summaryModel =
-    process.env.SAGE_SUMMARY_MODEL !== undefined &&
-    process.env.SAGE_SUMMARY_MODEL.length > 0
-      ? process.env.SAGE_SUMMARY_MODEL
-      : "qwen3.5:9b";
-  const embedModel =
-    process.env.SAGE_EMBED_MODEL !== undefined &&
-    process.env.SAGE_EMBED_MODEL.length > 0
-      ? process.env.SAGE_EMBED_MODEL
-      : "nomic-embed-text";
+  const { embedModel, summaryModel } = input;
   let summaryDigest = "";
   let embedDigest = "";
   try {
@@ -132,20 +209,25 @@ export async function loadCacheKeyParts(
       "Could not read Ollama model digests; cache key uses model names only."
     );
   }
+  const repo = repoRoot();
   return {
     dataRoot: evalDataRoot(),
+    dreamPrompts: readDreamPrompts(repo, input.dreamPrompt),
     embedDigest,
     embedModel,
-    repoRoot: repoRoot(),
+    memory: input.memory,
+    person: input.person,
+    repoRoot: repo,
     summaryDigest,
     summaryModel,
   };
 }
 
 export async function fetchOllamaDigests(
-  models: string[]
+  models: string[],
+  baseURL: string = ollamaBaseURL()
 ): Promise<Partial<Record<string, string>>> {
-  const url = `${ollamaBaseURL().replace(trailingSlashPattern, "")}/tags`;
+  const url = `${baseURL.replace(trailingSlashPattern, "")}/tags`;
   const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
   if (!response.ok) {
     throw new Error(`Ollama tags returned HTTP ${response.status}.`);
@@ -210,41 +292,118 @@ export function snapshotDreamCache(options: SnapshotOptions): string {
   return dest;
 }
 
-export async function snapshotDreamCacheFromEnv(key?: string): Promise<string> {
-  const parts = await loadCacheKeyParts();
-  const resolvedKey =
-    key !== undefined && key.length > 0 ? key : computeCacheKey(parts);
+/** The cache entry for a key, or null when there is none. */
+export function cachedDreamEntry(
+  key: string,
+  cacheDir = evalCacheDir()
+): string | null {
+  const dir = evalCacheEntryDir(key, cacheDir);
+  return existsSync(join(dir, "app.db")) &&
+    existsSync(join(dir, "manifest.json"))
+    ? dir
+    : null;
+}
+
+/**
+ * Copies a snapshot's database and manifest into a data directory. Returns
+ * false on a miss. Run it before Sage starts, so Sage opens the restored file.
+ */
+export function restoreDreamCache(options: {
+  cacheDir?: string;
+  dataDir: string;
+  key: string;
+  manifestPath: string;
+}): boolean {
+  const dir = cachedDreamEntry(options.key, options.cacheDir);
+  if (dir === null) {
+    return false;
+  }
+  copyFileSync(join(dir, "app.db"), join(options.dataDir, "app.db"));
+  copyFileSync(join(dir, "manifest.json"), options.manifestPath);
+  return true;
+}
+
+/** Snapshots a finished Dream run into the cache, with a stamp of what made it. */
+export function snapshotDreamRun(options: {
+  cacheDir?: string;
+  dataDir: string;
+  dreamPrompt: string;
+  key: string;
+  manifestPath: string;
+  parts: CacheKeyParts;
+}): string {
+  const { parts } = options;
   return snapshotDreamCache({
-    cacheDir: evalCacheDir(),
-    dataDir: requireDataDir(),
-    key: resolvedKey,
-    manifestPath: process.env.SAGE_EVAL_MANIFEST,
+    cacheDir: options.cacheDir ?? evalCacheDir(),
+    dataDir: options.dataDir,
+    key: options.key,
+    manifestPath: options.manifestPath,
     stamp: {
       createdAt: new Date().toISOString(),
+      dreamPrompt: options.dreamPrompt,
       embedDigest: parts.embedDigest,
       embedModel: parts.embedModel,
-      key: resolvedKey,
+      key: options.key,
+      memory: parts.memory,
+      person: parts.person,
       summaryDigest: parts.summaryDigest,
       summaryModel: parts.summaryModel,
     },
   });
 }
 
-function hashDirectory(
+function hashDreamPrompts(
   hash: ReturnType<typeof createHash>,
-  root: string,
-  label: string
+  prompts: Record<string, string> | null
 ): void {
-  if (!existsSync(root)) {
-    throw new Error(`Missing ${root}`);
+  hash.update("dream-prompts");
+  hash.update("\0");
+  if (prompts === null) {
+    // The built-in prompts are constants in src/ollama.zig, and the source
+    // hash below covers that file.
+    hash.update("builtin");
+    hash.update("\0");
+    return;
   }
-  const files = listFilesRecursive(root);
-  hash.update(label);
+  for (const file of Object.keys(prompts).sort()) {
+    hash.update(file);
+    hash.update("\0");
+    hash.update(prompts[file] ?? "");
+    hash.update("\0");
+  }
+}
+
+/**
+ * One person's entries (the `.md` files beside `case.yaml`) and past chats
+ * (`chats/`). `case.yaml` stays out, so editing a test does not run Dream
+ * again.
+ */
+function hashPerson(
+  hash: ReturnType<typeof createHash>,
+  dir: string,
+  person: string
+): void {
+  if (!existsSync(dir)) {
+    throw new Error(`Missing ${dir}`);
+  }
+  const files = readdirSync(dir)
+    .filter((name) => name.endsWith(".md") && !name.startsWith("."))
+    .sort()
+    .filter((name) => statSync(join(dir, name)).isFile());
+  const chatsDir = join(dir, "chats");
+  if (existsSync(chatsDir) && statSync(chatsDir).isDirectory()) {
+    for (const rel of listFilesRecursive(chatsDir)) {
+      files.push(`chats/${rel}`);
+    }
+  }
+  hash.update("person");
+  hash.update("\0");
+  hash.update(person);
   hash.update("\0");
   for (const rel of files) {
     hash.update(rel);
     hash.update("\0");
-    hash.update(readFileSync(join(root, rel)));
+    hash.update(readFileSync(join(dir, rel)));
     hash.update("\0");
   }
 }
@@ -322,13 +481,23 @@ function checkpointWal(dbPath: string): void {
     let lastError: unknown;
     for (let attempt = 0; attempt < checkpointAttempts; attempt += 1) {
       try {
-        db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-        return;
+        // A checkpoint that cannot finish does not throw. It answers with a
+        // row whose `busy` column is 1, and the log then still holds changes
+        // that a copy of app.db alone would miss.
+        const row = db.prepare("PRAGMA wal_checkpoint(TRUNCATE);").get() as
+          | { busy?: number | bigint }
+          | undefined;
+        if (Number(row?.busy ?? 0) === 0) {
+          return;
+        }
+        lastError = new Error(
+          "WAL checkpoint could not finish because the database is busy."
+        );
       } catch (error) {
         lastError = error;
-        if (attempt + 1 < checkpointAttempts) {
-          sleepSync(checkpointRetryMs);
-        }
+      }
+      if (attempt + 1 < checkpointAttempts) {
+        sleepSync(checkpointRetryMs);
       }
     }
     throw lastError instanceof Error
@@ -341,14 +510,6 @@ function checkpointWal(dbPath: string): void {
 
 function sleepSync(ms: number): void {
   spawnSync("sleep", [String(ms / 1000)]);
-}
-
-function requireDataDir(): string {
-  const dir = process.env.SAGE_DATA_DIR;
-  if (dir === undefined || dir.length === 0) {
-    throw new Error("SAGE_DATA_DIR is not set.");
-  }
-  return dir;
 }
 
 function requireSqlite(): typeof import("node:sqlite") {

@@ -1,0 +1,20 @@
+# Today's models and every check this branch has: Dream's facts, events,
+# summaries, and journal search for each person, plus Chat's fact questions.
+# Memory runs off and on, so the memory checks keep running.
+summaryModels: [ qwen3.5:9b ]
+embedModels: [ nomic-embed-text ]
+dreamPrompts: [ baseline ]
+chatModels: [ qwen3.5:9b ]
+prompts: [ baseline ]
+thinking: [ off ]
+contextLengths: [ 32768 ]
+memory: [ off, on ]
+repeats: 1
+tests: [ person, facts ]
+judge: { model: deepseek/deepseek-v4.1-flash }
+speedLimitSeconds: 20
+p90LimitSeconds: null
+maxSwapGrowthMB: 512
+maxToolCallsPerTurn: 6
+replyWords: [ 20, 180 ]
+spendingCapUsd: 50

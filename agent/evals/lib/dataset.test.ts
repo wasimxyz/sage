@@ -1,25 +1,115 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   countWords,
-  type EvalManifest,
   evalDataRoot,
   journalIdFor,
-  loadAllCases,
-  loadCaseDir,
+  type LoadedPerson,
+  loadEntryFiles,
   loadManifest,
+  loadPeople,
+  loadPerson,
   parseFrontmatter,
-  requireSeededEntry,
-  tagsFor,
+  resolveEntry,
+  validatePerson,
 } from "./dataset.ts";
 
-const missingPattern = /missing/u;
-const entry99Pattern = /entry 99/u;
-const dateFormatPattern = /YYYY-MM-DD/u;
+const TODAY = "2026-11-15";
+
+const missingPattern = /Manifest has no journal ids for missing/u;
+const noEntry99Pattern = /no entry number 99/u;
+const noEntry0Pattern = /no entry number 0/u;
+const unknownStemPattern = /no entry with the stem "nope"/u;
+const leaveOffMdPattern = /Leave off \.md/u;
+const emptyJournalPattern = /empty journal/u;
+const dateFormatPattern = /bad-date\.md needs a YYYY-MM-DD date/u;
+const impossibleDatePattern = /impossible\.md needs a YYYY-MM-DD date/u;
+const titlePattern = /no-title\.md needs a title/u;
+const bodyPattern = /no-body\.md has an empty body/u;
+const noCaseYamlPattern = /ghost has no case\.yaml/u;
+const idMismatchPattern = /id "other".*match the folder name/u;
+const badIdPattern = /not a person id/u;
+const digitsStemPattern = /only with digits/u;
+const schemaPattern = /Invalid case\.yaml for broken/u;
+const unknownPersonPattern = /Unknown person "nobody"\. Known: alpha, beta/u;
+const manifestEnvPattern = /SAGE_EVAL_MANIFEST is not set/u;
+const badEventPattern = /^events\[0\]\.entry: .*no entry number 9/u;
+const badSummaryPattern = /^summaries\[0\]\.entry: .*stem "missing-stem"/u;
+const badRetrievalPattern =
+  /^retrieval\[0\] \(query "q"\) expectEntry: .*stem "also-missing"/u;
+const badChatPattern = /^chat\[0\]\.needs: .*no entry number 4/u;
+const badOpenerPattern = /^openers \(in hello\)\.needs: .*stem "nope"/u;
+const lastMonthPattern =
+  /retrieval\[4\].*when "last month" covers 2026-10-01 to 2026-10-31/u;
+const unreadableWhenPattern = /when "whenever" does not read as a time/u;
+const noJournalIdPattern = /no journal id for entry 3/u;
+const noJournalIdsPattern = /alpha is missing journalIds/u;
+const noCasesPattern = /missing a cases object/u;
+const firstTimePattern = /first-time user/u;
+
+function entryText(date: string, title: string, body: string): string {
+  return `---\ndate: ${date}\ntitle: ${title}\n---\n\n${body}\n`;
+}
+
+/** A data root with a `people/` folder. Each person is a map of file name to text. */
+function makeRoot(people: Record<string, Record<string, string>>): string {
+  const root = mkdtempSync(join(tmpdir(), "sage-eval-people-"));
+  for (const [id, files] of Object.entries(people)) {
+    const dir = join(root, "people", id);
+    mkdirSync(dir, { recursive: true });
+    for (const [name, text] of Object.entries(files)) {
+      const path = join(dir, name);
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, text);
+    }
+  }
+  return root;
+}
+
+async function withRoot<T>(
+  root: string,
+  run: () => Promise<T> | T
+): Promise<T> {
+  const previous = process.env.SAGE_EVAL_DATA;
+  process.env.SAGE_EVAL_DATA = root;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SAGE_EVAL_DATA;
+    } else {
+      process.env.SAGE_EVAL_DATA = previous;
+    }
+    rmSync(root, { force: true, recursive: true });
+  }
+}
+
+const tinyCase = (id: string, extra = "") =>
+  `id: ${id}\nabout: A made-up person.\n${extra}`;
+
+/** A person with three entries and no answer key. */
+function threeEntries(
+  id: string,
+  extra = ""
+): Record<string, Record<string, string>> {
+  return {
+    [id]: {
+      "2026-04-12-first-run.md": entryText("2026-04-12", "First run", "Ran."),
+      "2026-05-22-shins.md": entryText("2026-05-22", "Shins", "Hurt."),
+      "2026-06-15-told-sam.md": entryText("2026-06-15", "Told Sam", "Told."),
+      "case.yaml": tinyCase(id, extra),
+    },
+  };
+}
+
+async function personWith(extra: string): Promise<LoadedPerson> {
+  const root = makeRoot(threeEntries("tmp", extra));
+  return await withRoot(root, () => loadPerson("tmp"));
+}
 
 test("parseFrontmatter reads date, title, and body", () => {
   const parsed = parseFrontmatter(
@@ -49,146 +139,402 @@ test("evalDataRoot prefers SAGE_EVAL_DATA", () => {
   }
 });
 
-test("loadAllCases finds the Sam example timeline", async () => {
-  const cases = await loadAllCases();
-  const sam = cases.find((item) => item.id === "sam-example");
-  assert.ok(sam);
-  assert.equal(sam.kind, "timeline");
-  assert.equal(sam.entries.length, 4);
-  assert.equal(sam.entries[0]?.title, "Climbing Thursday");
-  assert.equal(sam.entries[2]?.title, "Told Sam");
-  assert.ok(sam.tags.includes("example"));
-  assert.equal(sam.facts.length, 1);
-  assert.equal(sam.events.length, 1);
-  assert.equal(sam.summaries.length, 1);
-  assert.equal(sam.retrieval.length, 1);
-  assert.equal(sam.chat.length, 1);
-  assert.equal(sam.retrieval[0]?.expectEntry, 3);
-  assert.equal(
-    sam.facts[0]?.stale,
-    "Sam is the user's friend or climbing partner"
+test("loadPerson reads entries in filename order with stems and counts", async () => {
+  const root = makeRoot(threeEntries("alpha"));
+  const person = await withRoot(root, () => loadPerson("alpha"));
+  assert.equal(person.id, "alpha");
+  assert.equal(person.empty, false);
+  assert.equal(person.personCase.about, "A made-up person.");
+  assert.deepEqual(
+    person.entries.map((entry) => [entry.index, entry.stem, entry.date]),
+    [
+      [1, "2026-04-12-first-run", "2026-04-12"],
+      [2, "2026-05-22-shins", "2026-05-22"],
+      [3, "2026-06-15-told-sam", "2026-06-15"],
+    ]
   );
-  assert.equal(sam.chat[0]?.expectTool, false);
-  assert.deepEqual(tagsFor(sam, "chat").sort(), [
-    "chat",
-    "example",
-    "timeline",
+  assert.equal(person.entries[0]?.fileName, "2026-04-12-first-run.md");
+  assert.equal(person.entries[0]?.title, "First run");
+  assert.equal(person.entries[0]?.body, "Ran.");
+  assert.equal(person.entries[0]?.wordCount, 1);
+});
+
+test("a folder with only case.yaml is an empty journal", async () => {
+  const root = makeRoot({ quiet: { "case.yaml": tinyCase("quiet") } });
+  const person = await withRoot(root, () => loadPerson("quiet"));
+  assert.equal(person.empty, true);
+  assert.deepEqual(person.entries, []);
+  assert.deepEqual(validatePerson(person, TODAY), []);
+});
+
+test("chats and other files beside the entries are not entries", async () => {
+  const root = makeRoot({
+    alpha: {
+      "2026-04-12-first-run.md": entryText("2026-04-12", "First run", "Ran."),
+      "case.yaml": tinyCase("alpha"),
+      "chats/2026-05-01-first-chat.md": "User: hi\n\nSage: hello\n",
+      "notes.txt": "not an entry",
+    },
+  });
+  const person = await withRoot(root, () => loadPerson("alpha"));
+  assert.deepEqual(
+    person.entries.map((entry) => entry.stem),
+    ["2026-04-12-first-run"]
+  );
+});
+
+test("loadPeople loads every person in id order, and only limits it", async () => {
+  const root = makeRoot({
+    ...threeEntries("beta"),
+    ...threeEntries("alpha"),
+    quiet: { "case.yaml": tinyCase("quiet") },
+  });
+  const [all, some] = await withRoot(root, async () => [
+    await loadPeople(),
+    await loadPeople({ only: ["quiet", "alpha"] }),
   ]);
+  assert.deepEqual(
+    all?.map((person) => person.id),
+    ["alpha", "beta", "quiet"]
+  );
+  assert.deepEqual(
+    some?.map((person) => person.id),
+    ["alpha", "quiet"]
+  );
 });
 
-test("loadAllCases loads the round-one timelines and standalones", async () => {
-  const cases = await loadAllCases();
-  const ids = cases.map((item) => item.id).sort();
-  assert.deepEqual(ids, [
-    "breakup-reconciliation",
-    "career-burnout",
-    "financial-stress",
-    "getting-engaged",
-    "grief-after-loss",
-    "imposter-syndrome",
-    "losing-a-pet",
-    "milestone-birthday",
-    "parent-relationship",
-    "portugal-trip",
-    "running",
-    "sam-example",
-  ]);
-  const breakup = cases.find((item) => item.id === "breakup-reconciliation");
-  assert.ok(breakup);
-  assert.equal(breakup.kind, "timeline");
-  assert.equal(breakup.entries.length, 4);
-  assert.equal(breakup.facts[0]?.stale, "The user and Theo broke up");
-  assert.equal(breakup.retrieval[0]?.expectEntry, 4);
-  const running = cases.find((item) => item.id === "running");
-  assert.ok(running);
-  assert.equal(running.kind, "standalone");
-  assert.equal(running.entries.length, 2);
-  assert.equal(running.retrieval[1]?.expectEntry, 2);
-  const grief = cases.find((item) => item.id === "grief-after-loss");
-  assert.ok(grief);
-  assert.equal(grief.chat[1]?.expectTool, true);
+test("loadPeople names the people it knows when only has a stranger", async () => {
+  const root = makeRoot({ ...threeEntries("alpha"), ...threeEntries("beta") });
+  await withRoot(root, async () => {
+    await assert.rejects(
+      () => loadPeople({ only: ["nobody"] }),
+      unknownPersonPattern
+    );
+  });
 });
 
-test("loadAllCases reads when and expectWhen", async () => {
-  const cases = await loadAllCases();
-  const portugal = cases.find((item) => item.id === "portugal-trip");
-  assert.ok(portugal);
-  assert.equal(portugal.retrieval[0]?.when, undefined);
-  assert.equal(portugal.retrieval[2]?.query, "my Portugal trip");
-  assert.equal(portugal.retrieval[2]?.when, "June");
-  assert.equal(portugal.retrieval[3]?.when, "August");
-  const burnout = cases.find((item) => item.id === "career-burnout");
-  assert.ok(burnout);
-  assert.equal(burnout.chat[0]?.expectWhen, false);
-  assert.equal(burnout.chat[1]?.expectWhen, true);
+test("loadPeople returns an empty list when there is no people folder", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sage-eval-nopeople-"));
+  await withRoot(root, async () => {
+    assert.deepEqual(await loadPeople(), []);
+  });
 });
 
-test("journalIdFor maps 1-based entry indexes onto seeded ids", () => {
-  const manifest: EvalManifest = {
-    cases: { "sam-example": { journalIds: [10, 11, 12, 13] } },
-  };
-  assert.equal(journalIdFor(manifest, "sam-example", 3), 12);
+test("loadPerson rejects a missing case.yaml, a wrong id, and a path as an id", async () => {
+  const root = makeRoot({
+    ghost: {
+      "2026-04-12-first-run.md": entryText("2026-04-12", "Run", "Ran."),
+    },
+    mismatch: { "case.yaml": tinyCase("other") },
+  });
+  await withRoot(root, async () => {
+    await assert.rejects(() => loadPerson("ghost"), noCaseYamlPattern);
+    await assert.rejects(() => loadPerson("mismatch"), idMismatchPattern);
+    await assert.rejects(() => loadPerson("../alpha"), badIdPattern);
+  });
 });
 
-test("journalIdFor rejects a missing case", () => {
+test("loadPerson names the field that does not match the schema", async () => {
+  const root = makeRoot({
+    broken: { "case.yaml": tinyCase("broken", "tags: nope\nfacts: 3\n") },
+  });
+  await withRoot(root, async () => {
+    await assert.rejects(() => loadPerson("broken"), schemaPattern);
+  });
+});
+
+test("loadPerson rejects a file named only with digits", async () => {
+  const root = makeRoot({
+    nums: {
+      "007.md": entryText("2026-04-12", "Bond", "Shaken."),
+      "case.yaml": tinyCase("nums"),
+    },
+  });
+  await withRoot(root, async () => {
+    await assert.rejects(() => loadPerson("nums"), digitsStemPattern);
+  });
+});
+
+test("entry files need a real date, a title, and a body", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sage-eval-entries-"));
+  try {
+    writeFileSync(
+      join(dir, "bad-date.md"),
+      "---\ntitle: No date\n---\n\nBody.\n"
+    );
+    await assert.rejects(() => loadEntryFiles(dir), dateFormatPattern);
+    rmSync(join(dir, "bad-date.md"));
+
+    writeFileSync(
+      join(dir, "impossible.md"),
+      entryText("2026-02-30", "Never", "Body.")
+    );
+    await assert.rejects(() => loadEntryFiles(dir), impossibleDatePattern);
+    rmSync(join(dir, "impossible.md"));
+
+    writeFileSync(
+      join(dir, "no-title.md"),
+      "---\ndate: 2026-06-01\n---\n\nBody.\n"
+    );
+    await assert.rejects(() => loadEntryFiles(dir), titlePattern);
+    rmSync(join(dir, "no-title.md"));
+
+    writeFileSync(
+      join(dir, "no-body.md"),
+      entryText("2026-06-01", "Empty", "")
+    );
+    await assert.rejects(() => loadEntryFiles(dir), bodyPattern);
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("loadEntryFiles gives an empty list for a folder with no entries", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "sage-eval-noentries-"));
+  try {
+    assert.deepEqual(await loadEntryFiles(dir), []);
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("resolveEntry takes a 1-based number or a file stem", async () => {
+  const person = await personWith("");
+  assert.equal(resolveEntry(person, 1).stem, "2026-04-12-first-run");
+  assert.equal(resolveEntry(person, 3).stem, "2026-06-15-told-sam");
+  assert.equal(resolveEntry(person, "2026-05-22-shins").index, 2);
+});
+
+test("resolveEntry throws a readable error", async () => {
+  const person = await personWith("");
+  assert.throws(() => resolveEntry(person, 99), noEntry99Pattern);
+  assert.throws(() => resolveEntry(person, 0), noEntry0Pattern);
+  assert.throws(() => resolveEntry(person, "nope"), unknownStemPattern);
   assert.throws(
-    () => journalIdFor({ cases: {} }, "missing", 1),
+    () => resolveEntry(person, "2026-05-22-shins.md"),
+    leaveOffMdPattern
+  );
+  const root = makeRoot({ quiet: { "case.yaml": tinyCase("quiet") } });
+  const quiet = await withRoot(root, () => loadPerson("quiet"));
+  assert.throws(() => resolveEntry(quiet, 1), emptyJournalPattern);
+});
+
+test("validatePerson accepts a sound person", async () => {
+  const person = await personWith(
+    [
+      "events:",
+      "  - { entry: 3, reference: They started dating }",
+      "summaries:",
+      "  - { entry: 2026-04-12-first-run, reference: A run }",
+      "retrieval:",
+      "  - { query: running, when: April, expectEntry: 2026-04-12-first-run }",
+      "  - { query: running, when: May, expectEntry: 2 }",
+      "chat:",
+      "  - { question: Q, reference: R, needs: [1, 2026-06-15-told-sam] }",
+      "",
+    ].join("\n")
+  );
+  assert.deepEqual(validatePerson(person, TODAY), []);
+});
+
+test("validatePerson allows an entry dated today and flags a later one", async () => {
+  const person = await personWith("");
+  assert.deepEqual(validatePerson(person, "2026-06-15"), []);
+  assert.deepEqual(validatePerson(person, "2026-06-14"), [
+    "2026-06-15-told-sam.md is dated 2026-06-15, after 2026-06-14.",
+  ]);
+});
+
+test("validatePerson flags a today that is not a date", async () => {
+  const person = await personWith("");
+  assert.equal(validatePerson(person, "soon").length, 1);
+  assert.equal(validatePerson(person, "2026-02-30").length, 1);
+});
+
+test("validatePerson names every ref that matches no entry", async () => {
+  const person = await personWith(
+    [
+      "events:",
+      "  - { entry: 9, reference: E }",
+      "summaries:",
+      "  - { entry: missing-stem, reference: S }",
+      "retrieval:",
+      "  - { query: q, expectEntry: also-missing }",
+      "chat:",
+      "  - { question: Q, reference: R, needs: [4] }",
+      "openers:",
+      "  - { id: hello, message: hi, expect: question, needs: [nope] }",
+      "",
+    ].join("\n")
+  );
+  const problems = validatePerson(person, TODAY);
+  assert.equal(problems.length, 5);
+  assert.match(problems[0] ?? "", badEventPattern);
+  assert.match(problems[1] ?? "", badSummaryPattern);
+  assert.match(problems[2] ?? "", badRetrievalPattern);
+  assert.match(problems[3] ?? "", badChatPattern);
+  assert.match(problems[4] ?? "", badOpenerPattern);
+});
+
+test("validatePerson checks that a when window holds the expected entry", async () => {
+  const person = await personWith(
+    [
+      "retrieval:",
+      "  - { query: running, when: May, expectEntry: 1 }",
+      "  - { query: running, when: in April, expectEntry: 1 }",
+      "  - { query: told, when: June, expectEntry: 3 }",
+      "  - { query: told, when: since March, expectEntry: 3 }",
+      "  - { query: told, when: last month, expectEntry: 3 }",
+      "",
+    ].join("\n")
+  );
+  const problems = validatePerson(person, TODAY);
+  assert.equal(problems.length, 2);
+  assert.equal(
+    problems[0],
+    'retrieval[0] (query "running"): when "May" covers 2026-05-01 to 2026-05-31 on 2026-11-15, but 2026-04-12-first-run.md is dated 2026-04-12.'
+  );
+  assert.match(problems[1] ?? "", lastMonthPattern);
+});
+
+test("validatePerson reads when against the day it is given", async () => {
+  const person = await personWith(
+    "retrieval:\n  - { query: told, when: last month, expectEntry: 3 }\n"
+  );
+  assert.equal(validatePerson(person, TODAY).length, 1);
+  assert.deepEqual(validatePerson(person, "2026-07-02"), []);
+});
+
+test("validatePerson flags a when that does not read as a time", async () => {
+  const person = await personWith(
+    "retrieval:\n  - { query: q, when: whenever, expectEntry: 1 }\n"
+  );
+  const problems = validatePerson(person, TODAY);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", unreadableWhenPattern);
+});
+
+test("journalIdFor maps an entry's index onto its seeded journal id", async () => {
+  const person = await personWith("");
+  const manifest = { cases: { tmp: { journalIds: [10, 11, 12] } } };
+  assert.equal(journalIdFor(manifest, "tmp", resolveEntry(person, 3)), 12);
+  assert.equal(
+    journalIdFor(manifest, "tmp", resolveEntry(person, "2026-04-12-first-run")),
+    10
+  );
+});
+
+test("journalIdFor rejects a missing person or a missing id", async () => {
+  const person = await personWith("");
+  const entry = resolveEntry(person, 3);
+  assert.throws(
+    () => journalIdFor({ cases: {} }, "missing", entry),
     missingPattern
   );
+  assert.throws(
+    () => journalIdFor({ cases: { tmp: { journalIds: [10] } } }, "tmp", entry),
+    noJournalIdPattern
+  );
 });
 
-test("loadManifest reads journal ids from SAGE_EVAL_MANIFEST", () => {
+test("loadManifest reads a path, or SAGE_EVAL_MANIFEST by default", () => {
   const dir = mkdtempSync(join(tmpdir(), "sage-eval-manifest-"));
   const path = join(dir, "manifest.json");
   writeFileSync(
     path,
-    `${JSON.stringify({ cases: { "sam-example": { journalIds: [10, 11, 12, 13] } } })}\n`
+    `${JSON.stringify({ cases: { "sam-example": { journalIds: [10, 11] } } })}\n`
   );
   const previous = process.env.SAGE_EVAL_MANIFEST;
-  process.env.SAGE_EVAL_MANIFEST = path;
   try {
-    assert.equal(journalIdFor(loadManifest(), "sam-example", 3), 12);
-    requireSeededEntry("sam-example", 3);
-    assert.throws(() => requireSeededEntry("sam-example", 99), entry99Pattern);
+    delete process.env.SAGE_EVAL_MANIFEST;
+    assert.throws(() => loadManifest(), manifestEnvPattern);
+    assert.deepEqual(
+      loadManifest(path).cases["sam-example"].journalIds,
+      [10, 11]
+    );
+    process.env.SAGE_EVAL_MANIFEST = path;
+    assert.deepEqual(loadManifest().cases["sam-example"].journalIds, [10, 11]);
   } finally {
     if (previous === undefined) {
       delete process.env.SAGE_EVAL_MANIFEST;
     } else {
       process.env.SAGE_EVAL_MANIFEST = previous;
     }
+    rmSync(dir, { force: true, recursive: true });
   }
 });
 
-test("loadCaseDir reads expectTool and rejects a missing date", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "sage-eval-case-"));
-  writeFileSync(
-    join(dir, "case.yaml"),
-    [
-      "id: tmp-case",
-      "kind: standalone",
-      "chat:",
-      "  - question: What did I write?",
-      "    reference: The entry body",
-      "    expectTool: true",
-      "",
-    ].join("\n")
-  );
-  writeFileSync(
-    join(dir, "01-note.md"),
-    "---\ndate: 2026-06-01\ntitle: Note\n---\n\nHello.\n"
-  );
-  const loaded = await loadCaseDir(dir);
-  assert.ok(loaded);
-  assert.equal(loaded.chat[0]?.expectTool, true);
+test("loadManifest rejects a file without journal ids", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sage-eval-manifest-"));
+  try {
+    const path = join(dir, "manifest.json");
+    writeFileSync(path, JSON.stringify({ cases: { alpha: {} } }));
+    assert.throws(() => loadManifest(path), noJournalIdsPattern);
+    writeFileSync(path, "{}");
+    assert.throws(() => loadManifest(path), noCasesPattern);
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
 
-  mkdirSync(join(dir, "bad"), { recursive: true });
-  writeFileSync(
-    join(dir, "bad", "case.yaml"),
-    "id: bad-date\nkind: standalone\n"
+test("the shipped people load and validate as of the pinned day", async () => {
+  const people = await loadPeople();
+  assert.ok(people.length > 0);
+  for (const person of people) {
+    assert.deepEqual(
+      validatePerson(person, TODAY),
+      [],
+      `${person.id} has problems`
+    );
+  }
+});
+
+test("the Sam example is one person with the look-alike pair and both stale facts", async () => {
+  const sam = await loadPerson("sam-example");
+  assert.equal(sam.empty, false);
+  assert.ok(sam.personCase.tags.includes("example"));
+  assert.ok(sam.entries.length >= 18 && sam.entries.length <= 22);
+  assert.equal(sam.entries[0]?.stem, "2026-04-12-first-half-marathon");
+  assert.equal(sam.entries[1]?.stem, "2026-05-22-shin-splints");
+  assert.deepEqual(
+    sam.personCase.facts.map((fact) => [
+      fact.subject,
+      fact.stale !== undefined,
+    ]),
+    [
+      ["Sam", true],
+      ["user", true],
+    ]
   );
-  writeFileSync(
-    join(dir, "bad", "01.md"),
-    "---\ntitle: No date\n---\n\nBody.\n"
+  assert.equal(
+    resolveEntry(sam, sam.personCase.retrieval[0]?.expectEntry ?? 0).stem,
+    "2026-06-15-told-sam"
   );
-  await assert.rejects(() => loadCaseDir(join(dir, "bad")), dateFormatPattern);
+  assert.deepEqual(
+    sam.personCase.retrieval.slice(-2).map((item) => item.when),
+    ["April", "May"]
+  );
+  for (const entry of sam.entries) {
+    assert.ok(entry.date <= TODAY, `${entry.fileName} is after ${TODAY}`);
+  }
+  // The fillers stay out of the months the `when` checks read.
+  const fillers = sam.entries.filter((entry) => entry.date >= "2026-07-01");
+  assert.ok(fillers.length >= 12);
+  for (const entry of sam.entries) {
+    const month = entry.date.slice(0, 7);
+    if (month === "2026-04" || month === "2026-05") {
+      assert.ok(
+        entry.stem === "2026-04-12-first-half-marathon" ||
+          entry.stem === "2026-05-22-shin-splints",
+        `${entry.fileName} sits in a month the when checks read`
+      );
+    }
+  }
+});
+
+test("new-user is an empty journal", async () => {
+  const person = await loadPerson("new-user");
+  assert.equal(person.empty, true);
+  assert.deepEqual(person.entries, []);
+  assert.match(person.personCase.about, firstTimePattern);
 });

@@ -63,6 +63,39 @@ export function formatClockTime(iso: string): string {
   })} UTC`;
 }
 
+const dash = "—";
+
+/** A share from 0 to 1 as a percent with one decimal. It can pass 100%. */
+export function formatRate(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+/** A rubric score on the 0 to 1 scale. */
+export function formatScore(score: number | null): string {
+  return score === null ? dash : score.toFixed(2);
+}
+
+export function formatSpread(spread: number | null): string {
+  return spread === null ? dash : `±${spread.toFixed(2)}`;
+}
+
+/** Milliseconds as seconds. */
+export function formatMs(ms: number | null): string {
+  return ms === null ? dash : formatTime(ms / 1000);
+}
+
+export function formatUsd(value: number | null): string {
+  return value === null ? dash : `$${value.toFixed(2)}`;
+}
+
+export function formatHours(value: number | null): string {
+  return value === null ? dash : `${value.toFixed(1)} h`;
+}
+
+export function formatMegabytes(value: number | null): string {
+  return value === null ? dash : `${Math.round(value)} MB`;
+}
+
 export function passRate(passed: number, total: number): number {
   if (total === 0) {
     return 0;

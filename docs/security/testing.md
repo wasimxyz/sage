@@ -8,9 +8,8 @@ This page explains how the lock and encryption are tested: the unit suite, the s
 
 - The Zig tests, against an in-memory SQLite database with no window
 - The frontend unit tests in `frontend/src/lib/`
-- The agent tests: eval fixtures, scripts such as the dev auth hook, and the encrypted session storage in `agent/packages/world-encrypted-local`
+- The agent tests: eval fixtures, the eval runner in `agent/scripts/eval/` (including the order it loads settings in), scripts such as the dev auth hook, and the encrypted session storage in `agent/packages/world-encrypted-local`
 - The eval viewer unit tests in `eval-viewer/lib/reports/`
-- `scripts/eval-env.test.sh`, which checks the order `make eval` loads settings in
 - The security tests in `security-tests/`
 
 `make check` validates `app.json`, checks the pinned Native SDK CLI version, and runs the lint and type checks for the frontend, the agent, and the eval viewer.
@@ -69,7 +68,8 @@ The Zig tests cover:
 - **Dictation**: the web view never uses `getUserMedia`, `MediaRecorder`, or `AudioContext`. The dictation Zig and Swift files write no files, log no text, and open no connection. The audio ring is zeroed, and the speech library zeroes the copies it makes. The microphone text is set before the app is signed. The Sage executable loads the speech library at run time and does not link the Speech framework, which `otool -L` confirms when a build exists. It loads IOKit at run time too (`dictation-no-audio.test.ts`).
 - **Seeding**: `make seed-dev` builds its automation binary under `zig-out/seed`, names only the dev app, and reads the seed files and builds before it resets (`seed-dev-dev-only.sh`).
 - **Screenshots**: `make screenshots` keeps its journal in a fresh scratch folder, gives its app a bundle id of its own, builds only under `zig-out/screenshots-build`, and stops what its app started before it deletes the build. It never turns Touch ID or the lock off and never downloads a model. A journal in `SAGE_DATA_DIR` keeps its Touch ID key under a Keychain service of its own, and the route and appearance commands work only in automation builds (`screenshots-isolated.sh`).
-- **Evals**: `make eval` sends the token to a URL target, leaves no automation binary in `zig-out/bin/`, and opens only the throwaway `app.db` (`eval-server-token.sh`, `eval-leftover-automation.sh`, `eval-ignores-data-dir.sh`).
+- **Evals**: `make eval` sends the token to a URL target and refuses `--url` in `ARGS` (`eval-server-token.test.ts`). It leaves no automation binary in `zig-out/bin/` (`eval-leftover-automation.test.ts`), and it opens only the throwaway `app.db` (`eval-ignores-data-dir.test.ts`).
+- **Cloud judge**: the AI Gateway keys reach only the `eve eval` processes, never Sage, `eve dev`, Ollama, or the seed script (`eval-gateway-keys.test.ts`). Nothing under `agent/agent/` mentions an eval variable, the eval prompts folder, or the gateway, and the runner swaps only `instructions.md` in its copy of the app (`agent-has-no-eval-hooks.test.ts`).
 
 To run the TypeScript ones alone, use `node --test --experimental-strip-types security-tests/*.test.ts`.
 
@@ -83,7 +83,7 @@ native build -Dautomation=true
 ./zig-out/bin/Sage
 ```
 
-That replaces `zig-out/bin/Sage` with an automation build, so run `make build` afterward for a normal binary. `make eval`, `make seed-dev`, and `make screenshots` avoid this. Each installs its own automation build, under `zig-out/eval`, `zig-out/seed`, and `zig-out/screenshots-build`, as [Eval suite](../agent/evals.md#what-a-run-does) and [Scripts](../../scripts/README.md#seeding-the-dev-app) explain.
+That replaces `zig-out/bin/Sage` with an automation build, so run `make build` afterward for a normal binary. `make eval`, `make seed-dev`, and `make screenshots` avoid this. Each installs its own automation build, under `zig-out/eval-mem0` and `zig-out/eval-mem1` (one for each memory value), `zig-out/seed`, and `zig-out/screenshots-build`, as [Eval suite](../agent/evals.md#what-a-run-does) and [Scripts](../../scripts/README.md#seeding-the-dev-app) explain.
 
 `make eval` and `make screenshots` set `SAGE_DATA_DIR`. Sage then keeps the window's saved size and place in that folder too, so they never move the window of the Sage you use. It also keeps the Touch ID key under a Keychain service of its own, as [The Keychain item](keychain.md#the-keychain-item) explains. Automation builds never check for updates at launch, so no update sheet covers the window a script drives.
 

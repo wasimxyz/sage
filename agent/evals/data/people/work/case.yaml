@@ -1,0 +1,108 @@
+id: work
+tags:
+  - work
+  - birthday
+about: >-
+  Turned 30 on 2026-11-04. Lives alone in an apartment with a green couch.
+  Had about a year of building burnout: dreaded Mondays in June, missed a real
+  deadline in July, cried in the parking garage in August, then asked the
+  manager for a leave and got six weeks starting in September. Spends free time
+  with two friends, Tess and Owen. A cousin, Leila, got married in July. After
+  23 August the journal says nothing about work until the birthday entry, and
+  nothing about the leave ending. The author was back at work by the end of
+  October. Writes in a tired, dry, matter-of-fact voice. The journal never
+  states the author's gender.
+cast:
+  - name: Manager (never named)
+    relation: the author's manager at work
+    pronouns: she/her
+    alive: true
+    note: "Said 'I've been wondering when you'd bring this up' when the author asked for leave."
+  - name: Tess
+    relation: close friend
+    pronouns: she/her
+    alive: true
+  - name: Owen
+    relation: close friend
+    pronouns: he/him
+    alive: true
+  - name: Leila
+    relation: the author's cousin
+    pronouns: she/her
+    alive: true
+    note: "Married on 2026-07-18."
+timeline:
+  - date: 2026-06-09
+    what: "Dreaded every Monday, felt checked out in meetings, and told themself it was a rough patch."
+    weight: medium
+  - date: 2026-06-20
+    what: "Barbecue on the roof of Tess's building."
+    weight: small
+  - date: 2026-07-04
+    what: "Missed a real work deadline after nights of lying awake over the inbox. The manager was kind about it, which made it worse."
+    weight: medium
+  - date: 2026-07-18
+    what: "Leila's wedding."
+    weight: small
+  - date: 2026-08-03
+    what: "Broke down crying in the parking garage before going in. It was a year of feeling this way, not one bad meeting."
+    weight: big
+  - date: 2026-08-23
+    what: "Asked the manager for a leave. She was relieved, not disappointed. They agreed on six weeks starting in September."
+    weight: big
+  - date: 2026-09-14
+    what: "The six-week leave began. The journal says only 'starting next month'; this is the date the entries after it assume."
+    weight: medium
+  - date: 2026-10-26
+    what: "Back at work after the leave. The journal does not mention it."
+    weight: medium
+  - date: 2026-11-04
+    what: "Turned 30. A small dinner with friends. By evening the author felt lucky, not behind."
+    weight: medium
+facts:
+  - subject: user
+    reference: The user arranged a six-week leave from work because of burnout
+    stale: The user is tired at work or in a rough patch
+  - subject: user
+    reference: The user turned 30
+events:
+  - entry: 2026-06-09-every-monday
+    reference: The user described dreading work each Monday and feeling checked out in meetings
+  - entry: 2026-07-04-missed-a-deadline
+    reference: The user missed a real work deadline after nights of inbox insomnia
+  - entry: 2026-08-03-parking-garage
+    reference: The user had a breaking-point moment of exhaustion before work
+  - entry: 2026-08-23-asked-for-leave
+    reference: The user's manager approved a six-week leave for burnout
+  - entry: 2026-11-04-turned-30
+    reference: The user turned 30 and had a small dinner with friends
+summaries:
+  - entry: 2026-08-03-parking-garage
+    reference: The user describes reaching a breaking point with work exhaustion, crying in the parking garage before going in, and recognizing they can't keep going as things are.
+  - entry: 2026-11-04-turned-30
+    reference: The user reflects on turning 30, moving past comparison to an imagined checklist and ending the day grateful at a small dinner with friends.
+retrieval:
+  - query: when did I decide to take leave from work
+    expectEntry: 2026-08-23-asked-for-leave
+  - query: how I felt turning 30
+    expectEntry: 2026-11-04-turned-30
+chat:
+  - question: How am I doing with work lately?
+    reference: Burnout built up until the user arranged a six-week leave, not just that they seem tired
+  - question: What was I going through at work in June?
+    reference: The user dreaded every Monday at work and felt checked out in meetings
+    expectTool: true
+    expectWhen: true
+    needs:
+      - 2026-06-09-every-monday
+  - question: How did I feel on my birthday?
+    reference: Reflective and ultimately grateful at a small dinner, not only anxious about a checklist
+    expectTool: true
+    needs:
+      - 2026-11-04-turned-30
+  - question: What have I been writing about lately?
+    reference: The user turned 30 and ended the day grateful at a small dinner with friends
+    expectTool: true
+    expectWhen: true
+    needs:
+      - 2026-11-04-turned-30

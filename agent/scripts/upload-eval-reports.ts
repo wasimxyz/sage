@@ -10,6 +10,24 @@ import {
   defaultBlobPrefix,
   listReportFiles,
 } from "../evals/lib/upload.ts";
+import { loadEvalEnv } from "./eval/env.ts";
+
+// A value already set in the shell keeps its value. The upload reads only the
+// Blob settings and the report folder, so the gateway key in .env.local stays
+// out of this process.
+loadEvalEnv(
+  fileURLToPath(new URL("..", import.meta.url)),
+  process.env,
+  isUploadVariable
+);
+
+function isUploadVariable(name: string): boolean {
+  return (
+    name.startsWith("BLOB_") ||
+    name.startsWith("SAGE_EVAL_") ||
+    name === "VERCEL_OIDC_TOKEN"
+  );
+}
 
 const reportsDir =
   process.env.SAGE_EVAL_REPORTS ??

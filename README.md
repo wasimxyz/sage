@@ -45,7 +45,8 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the lint and types for the frontend, agent, and eval viewer |
 | `make test` | Run the Zig, frontend, agent, eval-viewer, and security tests |
 | `make precommit` | Run `make check`, `make test`, and `make package` |
-| `make eval` | Seed a throwaway journal, run Dream, and grade with eve eval |
+| `make eval` | Run a sweep: seed made-up people into throwaway journals, run Dream, ask Chat questions, and grade them with a cloud judge. It needs an AI Gateway key and spends money. |
+| `make eval SWEEP=smoke` | Check the runner with one person and one setup, for under $1 |
 | `make eval ARGS='--tag example'` | Run only the Sam format-template cases |
 | `make eval-upload` | Upload saved eval reports to Vercel Blob (asks first) |
 | `make eval-viewer-dev` | Start the eval report viewer in development |
@@ -62,7 +63,7 @@ The app is a Zig core built on the Vercel Native SDK, a React frontend, and a No
 - `frontend/`: the React app with the TipTap editor, built with Vite
 - `agent/`: the eve agent behind Chat, a Node.js program that talks to Ollama
 - `eval-viewer/`: the Next.js app that lists eval reports from Vercel Blob
-- `scripts/`: shell scripts that package the app and run evals
+- `scripts/`: shell scripts that package the app, upload eval reports, and reset and seed the dev app
 - `security-tests/`: tests for the token, origin, and packaging rules, run by `make test`
 - `docs/`: how Sage works, including [how to release it](docs/release.md)
 - `app.json`: app identity, window size, and bridge allowlists

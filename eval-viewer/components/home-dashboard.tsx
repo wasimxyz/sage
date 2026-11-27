@@ -1,6 +1,7 @@
 import { EmbedFilter } from "@/components/embed-filter";
 import { ModelMatrix } from "@/components/model-matrix";
 import { RecentRuns } from "@/components/recent-runs";
+import { SweepsList } from "@/components/sweeps-list";
 import {
   Empty,
   EmptyDescription,
@@ -14,16 +15,19 @@ import {
   resolveEmbedModel,
   uniqueInOrder,
 } from "@/lib/reports/matrix.ts";
+import type { SweepListItem } from "@/lib/reports/sweep-types.ts";
 import type { RunSummary } from "@/lib/reports/types.ts";
 
 export function HomeDashboard({
   embed,
   runs,
+  sweeps,
 }: {
   embed?: string;
   runs: RunSummary[];
+  sweeps: SweepListItem[];
 }) {
-  if (runs.length === 0) {
+  if (runs.length === 0 && sweeps.length === 0) {
     return (
       <Empty className="border">
         <EmptyHeader>
@@ -38,28 +42,50 @@ export function HomeDashboard({
     );
   }
 
+  return (
+    <div className="flex flex-col gap-8">
+      <div>
+        <h1 className="text-2xl font-medium tracking-tight">Overview</h1>
+        <p className="text-muted-foreground text-sm">
+          {overviewLine(runs, sweeps.length)}
+        </p>
+      </div>
+
+      {sweeps.length > 0 ? <SweepsList sweeps={sweeps} /> : null}
+      {runs.length > 0 ? <RunsOverview embed={embed} runs={runs} /> : null}
+    </div>
+  );
+}
+
+function overviewLine(runs: RunSummary[], sweepCount: number): string {
+  const parts: string[] = [];
+  if (sweepCount > 0) {
+    parts.push(`${sweepCount} ${sweepCount === 1 ? "sweep" : "sweeps"}`);
+  }
+  if (runs.length > 0) {
+    const totalTests = runs.reduce((sum, run) => sum + run.total, 0);
+    const totalPassed = runs.reduce((sum, run) => sum + run.passed, 0);
+    const totalFailed = runs.reduce((sum, run) => sum + run.failed, 0);
+    parts.push(
+      `${runs.length} ${runs.length === 1 ? "run" : "runs"}`,
+      `${totalTests} ${totalTests === 1 ? "test" : "tests"}`,
+      `${passRate(totalPassed, totalTests)}% overall pass rate`,
+      `${totalFailed} failed ${totalFailed === 1 ? "test" : "tests"}`
+    );
+  }
+  return parts.join(" · ");
+}
+
+function RunsOverview({ embed, runs }: { embed?: string; runs: RunSummary[] }) {
   const embedModel = resolveEmbedModel(runs, embed);
   const embedOptions = uniqueInOrder(runs.map((run) => run.embedModel));
   const visible = filterByEmbed(runs, embedModel);
   const lookup = latestByDreamChat(visible);
   const dreamModels = uniqueInOrder(visible.map((run) => run.dreamModel));
   const chatModels = uniqueInOrder(visible.map((run) => run.chatModel));
-  const totalTests = runs.reduce((sum, run) => sum + run.total, 0);
-  const totalPassed = runs.reduce((sum, run) => sum + run.passed, 0);
-  const totalFailed = runs.reduce((sum, run) => sum + run.failed, 0);
-  const overall = passRate(totalPassed, totalTests);
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-medium tracking-tight">Overview</h1>
-        <p className="text-muted-foreground text-sm">
-          {runs.length} {runs.length === 1 ? "run" : "runs"} · {totalTests}{" "}
-          {totalTests === 1 ? "test" : "tests"} · {overall}% overall pass rate ·{" "}
-          {totalFailed} failed {totalFailed === 1 ? "test" : "tests"}
-        </p>
-      </div>
-
+    <>
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-medium">Results by model</h2>
@@ -75,6 +101,6 @@ export function HomeDashboard({
       </section>
 
       <RecentRuns runs={runs} />
-    </div>
+    </>
   );
 }

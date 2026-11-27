@@ -21,11 +21,11 @@ These pages explain how Sage works once you are past the [README](../README.md).
 
 ## Evals
 
-- [Eval suite](agent/evals.md): grading Dream and Chat against a local dataset
-- [Eval reports](agent/evals-reports.md): reading results and fixing runner failures
+- [Eval suite](agent/evals.md): running sweeps that grade Dream and Chat on made-up people with a cloud judge
+- [Eval reports](agent/evals-reports.md): reading setup reports and the ranking, and fixing runner failures
 - [Eval suite internals](../agent/evals/README.md): the runner steps, the eval files, and the shared helpers
 - [Eval fixtures](../agent/evals/data/README.md): how to write a case
-- [Eval viewer](../eval-viewer/README.md): the Next.js app that lists uploaded reports
+- [Eval viewer](../eval-viewer/README.md): the Next.js app that ranks sweeps and opens reports
 
 ## Security
 
@@ -39,6 +39,6 @@ These pages explain how Sage works once you are past the [README](../README.md).
 
 ## Building and scripts
 
-- [Scripts](../scripts/README.md): packaging the app and running evals
+- [Scripts](../scripts/README.md): packaging the app, uploading eval reports, and resetting and seeding the dev app
 - [Releasing Sage](release.md): the update key, cutting a release, and how installed copies update
 - [AGENTS.md](../AGENTS.md): rules for coding agents in this repo

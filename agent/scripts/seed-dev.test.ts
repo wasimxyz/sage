@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,8 +10,13 @@ import { loadEntryFiles } from "../evals/lib/dataset.ts";
 import { moveToToday } from "./seed-dates.ts";
 
 const seedDir = fileURLToPath(new URL("../../scripts/seed", import.meta.url));
+const peopleDir = fileURLToPath(
+  new URL("../evals/data/people", import.meta.url)
+);
 const seedDevScript = fileURLToPath(new URL("seed-dev.ts", import.meta.url));
 const entryCountPattern = /25 seed entries/u;
+const twoEntriesPattern = /2 seed entries/u;
+const noEntriesPattern = /new-user has no markdown entries/u;
 const movePattern =
   /Dates move -?\d+ days, so the newest is \d{4}-\d{2}-\d{2}\./u;
 const badFilePattern = /02-bad\.md needs a title/u;
@@ -95,6 +100,48 @@ test("seed-dev --check accepts the seed files without a running app", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, entryCountPattern);
   assert.match(result.stdout, movePattern);
+});
+
+test("seed-dev --check seeds a person folder's entries and nothing else", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sage-seed-person-"));
+  try {
+    writeFileSync(
+      join(dir, "2026-06-01-first.md"),
+      "---\ntitle: First\ndate: 2026-06-01\n---\n\nA day.\n"
+    );
+    writeFileSync(
+      join(dir, "2026-06-08-second.md"),
+      "---\ntitle: Second\ndate: 2026-06-08\n---\n\nAnother day.\n"
+    );
+    writeFileSync(join(dir, "case.yaml"), "id: tmp-person\nabout: Made up.\n");
+    mkdirSync(join(dir, "chats"));
+    writeFileSync(join(dir, "chats", "2026-06-09-chat.md"), "User: hi\n");
+
+    const result = runCheck(dir);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, twoEntriesPattern);
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("seed-dev --check accepts the Sam example person", async () => {
+  const dir = join(peopleDir, "sam-example");
+  const { length } = await loadEntryFiles(dir);
+
+  const result = runCheck(dir);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(length > 0);
+  assert.ok(result.stdout.includes(`${length} seed entries in ${dir}`));
+});
+
+test("seed-dev --check refuses a person with an empty journal", () => {
+  const result = runCheck(join(peopleDir, "new-user"));
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, noEntriesPattern);
 });
 
 test("seed-dev --check names the file it cannot read", () => {

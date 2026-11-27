@@ -1,3 +1,5 @@
+import { basename } from "node:path";
+
 import { loadEntryFiles } from "../evals/lib/dataset.ts";
 import {
   automationAt,
@@ -11,13 +13,20 @@ import { localToday, moveToToday } from "./seed-dates.ts";
 // With --check it only reads the seed files, so the script can refuse a bad
 // file before it deletes anything. It saves the entries and stops: Dream and
 // Chat are left for you to run.
+//
+// The seed folder can be scripts/seed or a person folder such as
+// agent/evals/data/people/sam-example. Only the *.md files at the top of the
+// folder are entries. case.yaml and chats/ are left alone.
 
 async function main(): Promise<void> {
   const seedDir = requiredEnv("SAGE_SEED_DIR");
-  const { days, entries } = moveToToday(
-    await loadEntryFiles(seedDir),
-    localToday()
-  );
+  const loaded = await loadEntryFiles(seedDir);
+  if (loaded.length === 0) {
+    throw new Error(
+      `${basename(seedDir)} has no markdown entries, so there is nothing to seed.`
+    );
+  }
+  const { days, entries } = moveToToday(loaded, localToday());
   if (process.argv.includes("--check")) {
     console.log(`${entries.length} seed entries in ${seedDir}`);
     console.log(

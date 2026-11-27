@@ -5,7 +5,14 @@
     "root": ".."
   },
   "files": {
-    "includes": ["!!.eve", "!!.output", "!!evals/.cache", "!!evals/reports"]
+    "includes": [
+      "!!.eve",
+      "!!.eval-roots",
+      "!!.output",
+      "!!evals/.cache",
+      "!!evals/.runs",
+      "!!evals/reports"
+    ]
   },
   "linter": {
     "rules": {
