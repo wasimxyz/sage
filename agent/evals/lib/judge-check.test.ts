@@ -321,7 +321,7 @@ test("the dream sweep file is valid and runs only the person pass with Dream acc
   assert.deepEqual(sweep.tests, ["person", "dream-accuracy"]);
   assert.deepEqual(sweep.memory, ["off", "on"]);
   assert.deepEqual(sweep.dreamPrompts, ["baseline"]);
-  assert.equal(sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(sweep.judge.model, "deepseek/deepseek-v4.1-flash");
 });
 
 // ---------------------------------------------------------------------------

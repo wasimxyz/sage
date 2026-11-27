@@ -10,5 +10,5 @@ embedModels: [ nomic-embed-text ]
 dreamPrompts: [ baseline ]
 memory: [ off, on ]
 tests: [ person, dream-accuracy ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 spendingCapUsd: 50
