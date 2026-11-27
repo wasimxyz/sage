@@ -14,6 +14,6 @@ memory: [ on ]
 repeats: 1
 tests: [ person, facts ]
 tags: [ example ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 speedLimitSeconds: 20
 spendingCapUsd: 1

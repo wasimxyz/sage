@@ -39,7 +39,7 @@ Judge scores are tracked data, not merge blockers. Use the hard and counted chec
 
 ## The cloud judge
 
-The judge is `moonshotai/kimi-k3.1-pro`, reached through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). To use another model, set `judge: { model: <gateway model id> }` in the sweep file.
+The judge is DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), reached through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). To use another model, set `judge: { model: <gateway model id> }` in the sweep file.
 
 Set one credential in `agent/.env.local` or in your shell:
 
@@ -97,7 +97,7 @@ Every key is optional. An unknown key or a value of the wrong type stops the run
 | `repeats` | `1` | How many times each Chat question runs |
 | `tests` | `[person, facts]` | Which tests run: `person` (extraction, summaries, retrieval) and `facts` (Chat facts) |
 | `tags` | `[]` | The people to cover. A person is in when their `tags` match. With no tags, every person is in. |
-| `judge` | `{ model: moonshotai/kimi-k3.1-pro }` | The judge model |
+| `judge` | `{ model: deepseek/deepseek-v4.1-flash }` | The judge model |
 | `speedLimitSeconds` | `20` | The limit for the median first-word wait |
 | `p90LimitSeconds` | `null` | A limit for the slowest 10%. `null` sets none. |
 | `spendingCapUsd` | `50` | The most the sweep may spend on cloud calls |
@@ -192,8 +192,9 @@ The folder name is a hash of these inputs:
 - The Dream prompt text, or a marker for the built-in prompts
 - The memory value, off or on
 - The Dream source files: `src/dream.zig`, `src/ollama.zig`, `src/journal.zig`, and `src/schema/*.sql`
+- The seeding files: `agent/scripts/seed-dataset.ts`, `agent/scripts/automation.ts`, and the loader that reads each entry, `agent/evals/lib/dataset.ts`
 
-Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
+Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. A change to the loader does, for every person, because the loader reads the entries too. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
 
 ## Memory off and on
 
