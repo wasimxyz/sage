@@ -177,9 +177,10 @@ function transcript(
 function assemble(
   rows: PassRow[],
   transcripts: TranscriptRow[] = [],
-  extra: { personShare?: number } = {}
+  extra: { contentCommit?: string; personShare?: number } = {}
 ): SetupReport {
   return assembleSetupReport({
+    contentCommit: extra.contentCommit,
     gitCommit: "abc1234",
     people: ["sam"],
     personShare: extra.personShare,
@@ -192,6 +193,17 @@ function assemble(
   });
 }
 
+test("a report records the content commit when it has one, and parses either way", () => {
+  const withContent = assemble([], [], { contentCommit: "f00d123+dirty" });
+  assert.equal(withContent.contentCommit, "f00d123+dirty");
+  assert.deepEqual(
+    plain(parseSetupReport(plain(withContent))),
+    plain(withContent)
+  );
+  const without = assemble([]);
+  assert.equal("contentCommit" in without, false);
+  assert.deepEqual(plain(parseSetupReport(plain(without))), plain(without));
+});
 // ---------------------------------------------------------------------------
 
 test("an assertion is read from its metadata first, then its label", () => {

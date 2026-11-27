@@ -42,7 +42,7 @@ async function makeRepo(): Promise<{
   const base = await mkdtemp(join(tmpdir(), "sage-calibration-test-"));
   roots.push(base);
   const repoRoot = join(base, "repo");
-  const dir = join(repoRoot, "agent", "evals", "calibration");
+  const dir = join(repoRoot, "agent", "evals", "content", "calibration");
   const outside = join(base, "outside");
   await mkdir(dir, { recursive: true });
   await mkdir(outside, { recursive: true });
@@ -64,7 +64,7 @@ const now = new Date("2026-11-16T10:00:00.000Z");
 
 test("calibrationLocation uses the folder next to the viewer, or the one in the environment", () => {
   assert.deepEqual(calibrationLocation({}, "/work/sage/eval-viewer"), {
-    dir: "/work/sage/agent/evals/calibration",
+    dir: "/work/sage/agent/evals/content/calibration",
     repoRoot: "/work/sage",
   });
   assert.equal(
@@ -79,7 +79,7 @@ test("calibrationLocation uses the folder next to the viewer, or the one in the 
       { SAGE_EVAL_CALIBRATION: "  " },
       "/work/sage/eval-viewer"
     ).dir,
-    "/work/sage/agent/evals/calibration"
+    "/work/sage/agent/evals/content/calibration"
   );
   assert.equal(
     calibrationLocation(
@@ -87,6 +87,13 @@ test("calibrationLocation uses the folder next to the viewer, or the one in the 
       "/work/sage/eval-viewer"
     ).dir,
     "/work/sage/tmp/cal"
+  );
+  assert.deepEqual(
+    calibrationLocation(
+      { SAGE_EVAL_CONTENT: "../../sage-evals" },
+      "/work/sage/eval-viewer"
+    ),
+    { dir: "/work/sage-evals/calibration", repoRoot: "/work/sage-evals" }
   );
 });
 

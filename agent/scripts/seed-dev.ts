@@ -15,7 +15,7 @@ import { localToday, moveToToday } from "./seed-dates.ts";
 // Chat are left for you to run.
 //
 // The seed folder can be scripts/seed or a person folder such as
-// agent/evals/data/people/sam-example. Only the *.md files at the top of the
+// agent/evals/content/data/people/sam-example. Only the *.md files at the top of the
 // folder are entries. case.yaml and chats/ are left alone.
 
 async function main(): Promise<void> {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-
+import { skipWithoutContent } from "../../evals/lib/content.ts";
 import { loadPeople } from "../../evals/lib/dataset.ts";
 import { costUsd } from "../../evals/lib/prices.ts";
 import {
@@ -329,7 +329,9 @@ async function estimateShipped(name: string) {
   return { estimate, setups, sweep };
 }
 
-test("smoke.yaml's estimate, judge check included, fits its spending cap with room to spare", async () => {
+test("smoke.yaml's estimate, judge check included, fits its spending cap with room to spare", {
+  skip: skipWithoutContent(),
+}, async () => {
   const { estimate, sweep } = await estimateShipped("smoke");
   assert.match(estimate.lines[0] ?? "", judgeCheckLinePattern);
   assert.ok(
@@ -338,7 +340,9 @@ test("smoke.yaml's estimate, judge check included, fits its spending cap with ro
   );
 });
 
-test("screen.yaml sends no fact questions, and its estimate, judge check included, is under its cap and its hours budget", async () => {
+test("screen.yaml sends no fact questions, and its estimate, judge check included, is under its cap and its hours budget", {
+  skip: skipWithoutContent(),
+}, async () => {
   const { estimate, setups, sweep } = await estimateShipped("screen");
   assert.equal(setups.length, 18);
   assert.deepEqual(sweep.tests, ["person", "openers"]);
@@ -371,7 +375,9 @@ async function plannedShipped(
   };
 }
 
-test("long-history is left out of default, smoke, quick, and screen, and in the deep sweeps and dream", async () => {
+test("long-history is left out of default, smoke, quick, and screen, and in the deep sweeps and dream", {
+  skip: skipWithoutContent(),
+}, async () => {
   for (const name of ["default", "smoke", "quick", "screen"]) {
     // biome-ignore lint/performance/noAwaitInLoops: each sweep is planned on its own
     const { people, sweep } = await plannedShipped(name);
@@ -389,7 +395,9 @@ test("long-history is left out of default, smoke, quick, and screen, and in the 
   }
 });
 
-test("the estimate follows the exclusion: leaving long-history out saves its Dream hours and its conversation", async () => {
+test("the estimate follows the exclusion: leaving long-history out saves its Dream hours and its conversation", {
+  skip: skipWithoutContent(),
+}, async () => {
   const everyMiss = (
     plan: Awaited<ReturnType<typeof plannedShipped>>["plan"]
   ) =>
@@ -420,7 +428,9 @@ test("the estimate follows the exclusion: leaving long-history out saves its Dre
   assert.ok(included.costUsd > excluded.costUsd);
 });
 
-test("the deep sweeps' estimates, with their placeholders and the judge check, are under their spending cap", async () => {
+test("the deep sweeps' estimates, with their placeholders and the judge check, are under their spending cap", {
+  skip: skipWithoutContent(),
+}, async () => {
   for (const name of ["deep", "deep-memory-on"]) {
     // biome-ignore lint/performance/noAwaitInLoops: each sweep is estimated on its own
     const { estimate, sweep } = await estimateShipped(name);
@@ -432,7 +442,9 @@ test("the deep sweeps' estimates, with their placeholders and the judge check, a
   }
 });
 
-test("deep.yaml runs the person checks and every conversation three times, memory off, on two placeholder setups", async () => {
+test("deep.yaml runs the person checks and every conversation three times, memory off, on two placeholder setups", {
+  skip: skipWithoutContent(),
+}, async () => {
   const { setups, sweep } = await loadSweep("deep", {});
   assert.deepEqual(sweep.tests, ["person", "conversations"]);
   assert.equal(sweep.repeats, 3);
@@ -442,7 +454,9 @@ test("deep.yaml runs the person checks and every conversation three times, memor
   assert.equal(setups.length, 2);
 });
 
-test("deep-memory-on.yaml is deep.yaml with memory on, and nothing else different", async () => {
+test("deep-memory-on.yaml is deep.yaml with memory on, and nothing else different", {
+  skip: skipWithoutContent(),
+}, async () => {
   const off = await loadSweep("deep", {});
   const on = await loadSweep("deep-memory-on", {});
   assert.deepEqual(on.sweep.memory, ["on"]);

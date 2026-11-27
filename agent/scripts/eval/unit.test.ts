@@ -19,6 +19,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { cachedDreamEntry } from "../../evals/lib/cache.ts";
+import { contentRootIn } from "../../evals/lib/content.ts";
 import {
   dreamKeyId,
   expandSetups,
@@ -66,6 +67,7 @@ const envNames = [
   "FAKE_OLLAMA_LOG",
   "SAGE_EVAL_CACHE",
   "SAGE_EVAL_CACHE_DIR",
+  "SAGE_EVAL_CONTENT",
   "SAGE_EVAL_DATA",
   "SAGE_EVAL_DREAM_PROMPTS",
   "SAGE_REPO_ROOT",
@@ -271,6 +273,7 @@ async function makeRig(
     SAGE_REPO_ROOT: repo,
   });
   delete process.env.SAGE_EVAL_CACHE;
+  delete process.env.SAGE_EVAL_CONTENT;
   delete process.env.SAGE_EVAL_DREAM_PROMPTS;
   if (rigOptions.failModel === undefined) {
     delete process.env.FAKE_OLLAMA_FAIL_MODEL;
@@ -748,7 +751,7 @@ test("a Dream prompt variant reaches Sage and no other process", async (t) => {
       tests: ["person", "facts"],
     },
   });
-  const folder = join(rig.repo, "agent", "evals", "dream-prompts", "careful");
+  const folder = join(contentRootIn(rig.repo), "dream-prompts", "careful");
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, "summary.md"), "Summarize with care.\n");
   // A value in the shell that started the runner reaches nothing either.

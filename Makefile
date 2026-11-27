@@ -56,7 +56,7 @@ test:
 	sh security-tests/screenshots-isolated.sh
 	sh security-tests/agent-dev-modules.sh
 
-# Runs a sweep file from agent/evals/sweeps. SWEEP picks the file. ARGS adds
+# Runs a sweep file from agent/evals/content/sweeps. SWEEP picks the file. ARGS adds
 # runner options (--dry-run, --yes) and eve filters (--tag example).
 eval:
 	node --experimental-strip-types agent/scripts/eval/run.ts --sweep $(or $(SWEEP),default) $(ARGS)

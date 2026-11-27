@@ -59,7 +59,7 @@ If Sage cannot open the folder, or cannot read a file, it logs one line and keep
 
 Other builds compile this code out, so they never look at the variable. `src/main.zig` gates `zero://inline` with the same build flag.
 
-The eval suite sets the variable for you. A sweep lists folders from `agent/evals/dream-prompts/` in `dreamPrompts`, and the runner points the Sage it starts at each one. [Eval suite](agent/evals.md#comparing-dream-prompts) explains how to compare prompts.
+The eval suite sets the variable for you. A sweep lists folders from `agent/evals/content/dream-prompts/` in `dreamPrompts`, and the runner points the Sage it starts at each one. [Eval suite](agent/evals.md#comparing-dream-prompts) explains how to compare prompts.
 
 ## The sidebar dot
 

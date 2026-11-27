@@ -44,6 +44,14 @@ const companion = "You are Sage, a companion. The new prompt.\n";
 /** A small stand-in for agent/ with the files an overlay copies. */
 function fakeAgentDir(t: test.TestContext): string {
   const dir = tempDir(t);
+  // The prompts come from the fake folder's own content, not the shell's.
+  const content = process.env.SAGE_EVAL_CONTENT;
+  delete process.env.SAGE_EVAL_CONTENT;
+  t.after(() => {
+    if (content !== undefined) {
+      process.env.SAGE_EVAL_CONTENT = content;
+    }
+  });
   writeFileSync(
     join(dir, "package.json"),
     JSON.stringify({
@@ -55,13 +63,16 @@ function fakeAgentDir(t: test.TestContext): string {
   writeFileSync(join(dir, "tsconfig.json"), "{}\n");
   mkdirSync(join(dir, "agent", "lib"), { recursive: true });
   mkdirSync(join(dir, "agent", "tools"), { recursive: true });
-  mkdirSync(join(dir, "evals", "prompts"), { recursive: true });
+  mkdirSync(join(dir, "evals", "content", "prompts"), { recursive: true });
   writeFileSync(join(dir, "agent", "agent.ts"), "export default {};\n");
   writeFileSync(join(dir, "agent", "instructions.md"), liveInstructions);
   writeFileSync(join(dir, "agent", "lib", "x.ts"), "export const x = 1;\n");
   writeFileSync(join(dir, "agent", "tools", "search_journal.ts"), "");
   writeFileSync(join(dir, "agent", "tools", "get_chat.ts"), "");
-  writeFileSync(join(dir, "evals", "prompts", "companion-v1.md"), companion);
+  writeFileSync(
+    join(dir, "evals", "content", "prompts", "companion-v1.md"),
+    companion
+  );
   return dir;
 }
 

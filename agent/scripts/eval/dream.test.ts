@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { contentRootIn } from "../../evals/lib/content.ts";
 import {
   dreamKeyFor,
   dreamPromptProblems,
@@ -37,6 +38,7 @@ const noPromptFolderPattern =
 const envNames = [
   "SAGE_EVAL_CACHE",
   "SAGE_EVAL_CACHE_DIR",
+  "SAGE_EVAL_CONTENT",
   "SAGE_EVAL_DATA",
   "SAGE_REPO_ROOT",
 ] as const;
@@ -65,6 +67,7 @@ function withTempRepo(t: test.TestContext): {
   process.env.SAGE_EVAL_DATA = dataRoot;
   process.env.SAGE_REPO_ROOT = repo;
   delete process.env.SAGE_EVAL_CACHE;
+  delete process.env.SAGE_EVAL_CONTENT;
   t.after(() => {
     for (const name of envNames) {
       if (previous[name] === undefined) {
@@ -374,13 +377,13 @@ test("the seed script's environment never carries the Dream prompt folder", (t) 
   assert.equal(env.SAGE_EVAL_DREAM_PROMPTS, undefined);
 });
 
-/** Writes prompt files under `agent/evals/dream-prompts/<name>/` of the temp repo. */
+/** Writes prompt files under `agent/evals/content/dream-prompts/<name>/` of the temp repo. */
 function writePrompts(
   repo: string,
   name: string,
   files: Record<string, string>
 ): void {
-  const dir = join(repo, "agent", "evals", "dream-prompts", name);
+  const dir = join(contentRootIn(repo), "dream-prompts", name);
   mkdirSync(dir, { recursive: true });
   for (const [file, text] of Object.entries(files)) {
     writeFileSync(join(dir, file), text);
@@ -443,7 +446,10 @@ test("dreamPromptProblems accepts baseline and folders with real prompt files", 
     "chat-title.md": "Title it.",
     "summary.md": "Summarize.",
   });
-  assert.deepEqual(dreamPromptProblems(repo, ["baseline", "careful"]), []);
+  assert.deepEqual(
+    dreamPromptProblems(contentRootIn(repo), ["baseline", "careful"]),
+    []
+  );
 });
 
 test("dreamPromptProblems names a missing folder and the folders that exist", (t) => {
@@ -451,7 +457,7 @@ test("dreamPromptProblems names a missing folder and the folders that exist", (t
   const repo = repoOf();
   writePrompts(repo, "careful", { "summary.md": "Summarize." });
   writePrompts(repo, "terse", { "summary.md": "Tersely." });
-  const [problem, ...rest] = dreamPromptProblems(repo, ["typo"]);
+  const [problem, ...rest] = dreamPromptProblems(contentRootIn(repo), ["typo"]);
   assert.match(problem ?? "", noFolderPattern);
   assert.deepEqual(rest, []);
 });
@@ -468,12 +474,17 @@ test("dreamPromptProblems catches a variant that would quietly run the built-in 
     "extract.md": "  \n",
     "summary.md": "Summarize.",
   });
-  assert.match(dreamPromptProblems(repo, ["empty"]).join("\n"), noFilesPattern);
-  const misnamed = dreamPromptProblems(repo, ["misnamed"]).join("\n");
+  assert.match(
+    dreamPromptProblems(contentRootIn(repo), ["empty"]).join("\n"),
+    noFilesPattern
+  );
+  const misnamed = dreamPromptProblems(contentRootIn(repo), ["misnamed"]).join(
+    "\n"
+  );
   assert.match(misnamed, unknownFilePattern);
   assert.match(misnamed, noFilesPattern);
   assert.match(
-    dreamPromptProblems(repo, ["blank"]).join("\n"),
+    dreamPromptProblems(contentRootIn(repo), ["blank"]).join("\n"),
     emptyFilePattern
   );
 });
@@ -486,22 +497,23 @@ test("dreamPromptProblems rejects a prompt file of 64 KiB or more, which Sage wi
   writePrompts(repo, "big", { "summary.md": "x".repeat(64 * 1024) });
   writePrompts(repo, "huge", { "summary.md": "x".repeat(64 * 1024 + 1) });
   writePrompts(repo, "fits", { "summary.md": "x".repeat(64 * 1024 - 1) });
-  const big = dreamPromptProblems(repo, ["big"]).join("\n");
+  const big = dreamPromptProblems(contentRootIn(repo), ["big"]).join("\n");
   assert.match(big, bigFilePattern);
-  assert.match(dreamPromptProblems(repo, ["huge"]).join("\n"), bigFilePattern);
-  assert.deepEqual(dreamPromptProblems(repo, ["fits"]), []);
+  assert.match(
+    dreamPromptProblems(contentRootIn(repo), ["huge"]).join("\n"),
+    bigFilePattern
+  );
+  assert.deepEqual(dreamPromptProblems(contentRootIn(repo), ["fits"]), []);
 });
 
 test("dreamPromptProblems reports a prompt file that is a folder, and does not throw", (t) => {
   withTempRepo(t);
   const repo = repoOf();
   writePrompts(repo, "folder", { "extract.md": "Extract less." });
-  mkdirSync(
-    join(repo, "agent", "evals", "dream-prompts", "folder", "summary.md")
-  );
+  mkdirSync(join(contentRootIn(repo), "dream-prompts", "folder", "summary.md"));
   let problems: string[] = [];
   assert.doesNotThrow(() => {
-    problems = dreamPromptProblems(repo, ["folder"]);
+    problems = dreamPromptProblems(contentRootIn(repo), ["folder"]);
   });
   assert.equal(problems.length, 1);
   assert.match(problems.join("\n"), notAFilePattern);

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadYaml } from "eve/evals/loaders";
-
+import { skipWithoutContent } from "./content.ts";
 import type { Grader, JudgeCall, JudgeOutcome } from "./grader.ts";
 import {
   compareVerdict,
@@ -263,7 +263,9 @@ test("an id used in two files is an error", async () => {
 // The shipped items
 // ---------------------------------------------------------------------------
 
-test("the shipped set is 7 planted failures and 5 clean items, with unique ids", async () => {
+test("the shipped set is 7 planted failures and 5 clean items, with unique ids", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadDreamCheckItems(dreamJudgeCheckDir());
   assert.equal(items.length, 12);
   assert.equal(new Set(items.map((item) => item.id)).size, 12);
@@ -302,7 +304,9 @@ test("the shipped set is 7 planted failures and 5 clean items, with unique ids",
   }
 });
 
-test("each shipped item is shown to the judge as a source with what Dream wrote, and the truth as the fact sheet", async () => {
+test("each shipped item is shown to the judge as a source with what Dream wrote, and the truth as the fact sheet", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadDreamCheckItems();
   const mia = items.find((item) => item.id === "lost-mia-death");
   assert.ok(mia);
@@ -314,7 +318,9 @@ test("each shipped item is shown to the judge as a source with what Dream wrote,
   assert.match(prompt.item, eventMiaDiedPattern);
 });
 
-test("the dream sweep file is valid and runs only the person pass with Dream accuracy", async () => {
+test("the dream sweep file is valid and runs only the person pass with Dream accuracy", {
+  skip: skipWithoutContent(),
+}, async () => {
   const doc = await loadYaml(
     join(dreamJudgeCheckDir(), "..", "..", "sweeps", "dream.yaml")
   );
@@ -422,7 +428,9 @@ test("a false alarm names the claim the judge flagged", () => {
 // Grading and recording
 // ---------------------------------------------------------------------------
 
-test("a judge that follows the labels passes every item, with a hard gate", async () => {
+test("a judge that follows the labels passes every item, with a hard gate", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadDreamCheckItems();
   const byId = new Map(items.map((item) => [`${item.id}`, item]));
   const { grader } = graderAnswering((call) => {
@@ -454,7 +462,9 @@ test("a judge that follows the labels passes every item, with a hard gate", asyn
   }
 });
 
-test("a judge that flags nothing misses all seven planted failures and has no false alarms", async () => {
+test("a judge that flags nothing misses all seven planted failures and has no false alarms", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadDreamCheckItems();
   const { grader } = graderAnswering(() => judged([]));
   const results = await runAll(items, grader);
@@ -484,7 +494,9 @@ test("a judge that flags nothing misses all seven planted failures and has no fa
   }
 });
 
-test("a judge that flags everything as severe has a false alarm on every clean item", async () => {
+test("a judge that flags everything as severe has a false alarm on every clean item", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadDreamCheckItems();
   const { grader } = graderAnswering(() => judged([claim("severe")]));
   const results = await runAll(items, grader);
@@ -499,7 +511,9 @@ test("a judge that flags everything as severe has a false alarm on every clean i
   }
 });
 
-test("a judge error is recorded as not graded, not as a miss", async () => {
+test("a judge error is recorded as not graded, not as a miss", {
+  skip: skipWithoutContent(),
+}, async () => {
   const [item] = await loadDreamCheckItems();
   const { grader } = graderAnswering(() => ({
     ok: false,

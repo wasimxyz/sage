@@ -47,7 +47,7 @@ const ownedOptions = new Set([
 export const USAGE = `Usage: make eval [SWEEP=<name>] [ARGS='...']
 
 Options (in ARGS):
-  --sweep <name>   Sweep file in agent/evals/sweeps (default: default)
+  --sweep <name>   Sweep file in agent/evals/content/sweeps (default: default)
   --resume <id>    Go on with a sweep that stopped, under the same id. It skips
                    the steps that finished, and refuses when the sweep file
                    changed. The id is a folder name in agent/evals/.runs/.

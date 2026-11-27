@@ -6,7 +6,7 @@
  * `schema.ts` (or the small factuality schema below). Temperature is 0, output
  * is capped, and every request is tagged `sage-eval` plus the sweep id.
  *
- * Only the made-up cases under `agent/evals/data/` ever reach this file. Real
+ * Only the made-up cases under `agent/evals/content/data/` ever reach this file. Real
  * journal text must never be passed to it.
  *
  * Every call reserves its estimated cost in the sweep's ledger first, and

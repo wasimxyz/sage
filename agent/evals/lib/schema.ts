@@ -774,7 +774,7 @@ export function dreamKeyId(setup: Setup): string {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Person case (`agent/evals/data/people/<id>/case.yaml`)
+// 4. Person case (`agent/evals/content/data/people/<id>/case.yaml`)
 // ---------------------------------------------------------------------------
 
 const castMemberSchema = z.strictObject({
@@ -1671,6 +1671,8 @@ export const setupSummarySchema = z.strictObject({
 export type SetupSummary = z.infer<typeof setupSummarySchema>;
 
 export const setupReportSchema = z.strictObject({
+  /** The commit of the eval content checkout. Reports from before the content moved have none. */
+  contentCommit: text.optional(),
   gitCommit: text,
   items: z.array(reportItemSchema),
   judge: judgeSettingsSchema,

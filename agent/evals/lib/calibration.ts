@@ -5,9 +5,9 @@
  * a wider question: on replies from real sweeps, does the judge agree with you?
  *
  * 1. `agent/scripts/eval/calibration-sample.ts` picks about 40 replies from a
- *    finished sweep and writes `agent/evals/calibration/sample-<sweep id>.json`.
+ *    finished sweep and writes `agent/evals/content/calibration/sample-<sweep id>.json`.
  * 2. You grade them in the viewer. Each grade is one line of
- *    `agent/evals/calibration/grades.jsonl`.
+ *    `agent/evals/content/calibration/grades.jsonl`.
  * 3. `agent/evals/calibration/agreement.eval.ts` grades the same replies with
  *    the judge the sweep names (`judge.model`), and this file compares the two.
  *
@@ -28,7 +28,6 @@
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { defineEval } from "eve/evals";
 import { z } from "zod";
@@ -42,6 +41,7 @@ import {
   REPLY_SLIP_IDS,
   type ReplyItem,
 } from "./checks.ts";
+import { evalContentDir } from "./content.ts";
 import { replyItemForTurn } from "./conversation-checks.ts";
 import { conversationOfRow, replyBaseOf } from "./conversation-grade.ts";
 import { type LoadedPerson, loadPerson } from "./dataset.ts";
@@ -84,7 +84,7 @@ const SAMPLE_SUFFIX = ".json";
 const lineBreakPattern = /\r?\n/u;
 
 export function defaultCalibrationDir(): string {
-  return fileURLToPath(new URL("../calibration", import.meta.url));
+  return evalContentDir("calibration");
 }
 
 /** `sample-<sweep id>.json` */
@@ -811,7 +811,7 @@ type Env = Readonly<Record<string, string | undefined>>;
 export const CALIBRATION_CHECK_ID = "calibration";
 
 export interface CalibrationEvalDeps {
-  /** The folder with the samples and `grades.jsonl`. Defaults to `agent/evals/calibration`. */
+  /** The folder with the samples and `grades.jsonl`. Defaults to `agent/evals/content/calibration`. */
   dir?: string;
   env?: Env;
   grader?: Grader;
@@ -917,7 +917,7 @@ export function calibrationEvals(
             ];
       });
     },
-    "No calibration to run. Use make eval SWEEP=calibration, after you grade a sample in the viewer, so agent/evals/calibration/grades.jsonl has lines."
+    "No calibration to run. Use make eval SWEEP=calibration, after you grade a sample in the viewer, so agent/evals/content/calibration/grades.jsonl has lines."
   );
 }
 

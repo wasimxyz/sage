@@ -15,6 +15,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { evalContentRoot } from "./content.ts";
 import { evalDataRoot } from "./dataset.ts";
 import { ollamaBaseURL } from "./models.ts";
 import type { Memory } from "./schema.ts";
@@ -96,7 +97,7 @@ export interface CacheStamp {
 
 /** What `loadCacheKeyParts` needs to know about one Dream run. */
 export interface CacheKeyInput {
-  /** `baseline`, or the name of a folder under `agent/evals/dream-prompts/`. */
+  /** `baseline`, or the name of a folder under `agent/evals/content/dream-prompts/`. */
   dreamPrompt: string;
   embedModel: string;
   memory: Memory;
@@ -165,9 +166,9 @@ export function computeCacheKey(parts: CacheKeyParts): string {
   return hash.digest("hex");
 }
 
-/** `agent/evals/dream-prompts/<name>/` */
-export function dreamPromptsDir(repo: string, name: string): string {
-  return join(repo, "agent", "evals", "dream-prompts", name);
+/** `dream-prompts/<name>/` in the eval content. */
+export function dreamPromptsDir(content: string, name: string): string {
+  return join(content, "dream-prompts", name);
 }
 
 /**
@@ -175,13 +176,13 @@ export function dreamPromptsDir(repo: string, name: string): string {
  * built-in prompts. Throws when a named variant has no folder.
  */
 export function readDreamPrompts(
-  repo: string,
+  content: string,
   name: string
 ): Record<string, string> | null {
   if (name === baselineDreamPrompt) {
     return null;
   }
-  const dir = dreamPromptsDir(repo, name);
+  const dir = dreamPromptsDir(content, name);
   if (!(existsSync(dir) && statSync(dir).isDirectory())) {
     throw new Error(`No Dream prompt folder at ${dir}.`);
   }
@@ -216,7 +217,7 @@ export async function loadCacheKeyParts(
   const repo = repoRoot();
   return {
     dataRoot: evalDataRoot(),
-    dreamPrompts: readDreamPrompts(repo, input.dreamPrompt),
+    dreamPrompts: readDreamPrompts(evalContentRoot(), input.dreamPrompt),
     embedDigest,
     embedModel,
     memory: input.memory,

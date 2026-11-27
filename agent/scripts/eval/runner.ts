@@ -8,7 +8,13 @@
 // build, run, and write the reports. `--dry-run` stops after the estimate.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -18,9 +24,13 @@ import {
   evalCacheDir,
   evalCacheEnabled,
   readDreamPrompts,
-  repoRoot,
 } from "../../evals/lib/cache.ts";
 import { describeCalibration } from "../../evals/lib/calibration.ts";
+import {
+  evalContentRoot,
+  hasEvalContent,
+  missingContentMessage,
+} from "../../evals/lib/content.ts";
 import {
   describeHeadToHead,
   type HeadToHeadPlan,
@@ -218,21 +228,45 @@ class Stop extends Error {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-async function gitCommit(): Promise<string> {
+/** The short commit of a checkout, with `+dirty` when it has changes. "unknown" when it is not one. */
+async function gitCommit(cwd: string = root): Promise<string> {
   const env = withoutSecrets();
   const head = await captureCommand("git", ["rev-parse", "--short", "HEAD"], {
-    cwd: root,
+    cwd,
     env,
   });
   if (head.code !== 0) {
     return "unknown";
   }
   const status = await captureCommand("git", ["status", "--porcelain"], {
-    cwd: root,
+    cwd,
     env,
   });
   const dirty = status.code === 0 && status.stdout.trim().length > 0;
   return `${head.stdout.trim()}${dirty ? "+dirty" : ""}`;
+}
+
+/**
+ * The eval content's commit, as `gitCommit` gives it. "unknown" when the
+ * content folder is not a checkout of its own, so a copied folder inside Sage
+ * never reports Sage's commit.
+ */
+async function contentCommit(): Promise<string> {
+  const content = evalContentRoot();
+  if (!existsSync(content)) {
+    return "unknown";
+  }
+  const top = await captureCommand("git", ["rev-parse", "--show-toplevel"], {
+    cwd: content,
+    env: withoutSecrets(),
+  });
+  if (
+    top.code !== 0 ||
+    realpathSync(top.stdout.trim()) !== realpathSync(content)
+  ) {
+    return "unknown";
+  }
+  return await gitCommit(content);
 }
 
 async function ask(question: string): Promise<boolean> {
@@ -274,7 +308,7 @@ function promptShasFor(
   setup: Setup,
   overlays: ReadonlyMap<string, Overlay>
 ): SetupReport["promptShas"] {
-  const dream = readDreamPrompts(repoRoot(), setup.dreamPrompt);
+  const dream = readDreamPrompts(evalContentRoot(), setup.dreamPrompt);
   return {
     chat: overlays.get(setup.prompt)?.promptSha ?? "unknown",
     dream:
@@ -342,7 +376,10 @@ async function planSweep(
       2
     );
   }
-  const promptProblems = dreamPromptProblems(repoRoot(), sweep.dreamPrompts);
+  const promptProblems = dreamPromptProblems(
+    evalContentRoot(),
+    sweep.dreamPrompts
+  );
   if (promptProblems.length > 0) {
     throw new Stop(
       `The sweep's Dream prompts have problems:\n  ${promptProblems.join("\n  ")}`,
@@ -636,6 +673,7 @@ async function writeAllReports(
   run: RunFacts
 ): Promise<number> {
   const commit = await gitCommit();
+  const content = await contentCommit();
   const peopleIds = plan.people.map((person) => person.id);
   const reports: SetupReport[] = [];
   for (const setup of plan.setups) {
@@ -649,6 +687,7 @@ async function writeAllReports(
     }
     reports.push(
       assembleSetupReport({
+        contentCommit: content,
         gitCommit: commit,
         people: peopleIds,
         personShare: personShareOf(plan, setup),
@@ -1389,5 +1428,9 @@ export async function main(): Promise<number> {
     return 0;
   }
   loadEvalEnv(agentDir);
+  if (!hasEvalContent()) {
+    console.error(missingContentMessage());
+    return 2;
+  }
   return await runSweep(options);
 }

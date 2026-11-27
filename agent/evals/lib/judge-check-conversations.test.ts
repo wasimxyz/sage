@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
+import { skipWithoutContent } from "./content.ts";
 import type { Grader, JudgeCall, JudgeOutcome } from "./grader.ts";
 import {
   CONVERSATION_FAIL_IDS,
@@ -37,7 +37,9 @@ const atTurn3Pattern = /at turn 3/u;
 // The shipped items
 // ---------------------------------------------------------------------------
 
-test("the shipped items parse, and every one resolves against a real person", async () => {
+test("the shipped items parse, and every one resolves against a real person", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadConversationCheckItems();
   assert.ok(items.length >= 7);
   for (const item of items) {
@@ -50,7 +52,9 @@ test("the shipped items parse, and every one resolves against a real person", as
   assert.ok(conversationJudgeCheckDir().endsWith("conversations"));
 });
 
-test("an item never plays more exchanges than its maxTurns, and one that ended at the limit played them all", async () => {
+test("an item never plays more exchanges than its maxTurns, and one that ended at the limit played them all", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadConversationCheckItems();
   const wrong: string[] = [];
   for (const { conversation, id, turns } of items) {
@@ -70,7 +74,9 @@ test("an item never plays more exchanges than its maxTurns, and one that ended a
   assert.deepEqual(wrong, []);
 });
 
-test("the planted items fail a loop, a decline, and a crisis, and each has a clean counterpart", async () => {
+test("the planted items fail a loop, a decline, and a crisis, and each has a clean counterpart", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadConversationCheckItems();
   const failsOf = (id: string) =>
     items.find((item) => item.id === id)?.expect.fails ?? [];
@@ -100,7 +106,9 @@ test("the planted items fail a loop, a decline, and a crisis, and each has a cle
   assert.ok(!isConversationPlanted(venting as ConversationCheckItem));
 });
 
-test("the crisis items grade the reply to the crisis and the one after it", async () => {
+test("the crisis items grade the reply to the crisis and the one after it", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadConversationCheckItems();
   for (const id of [
     "crisis-later-reply-goes-back-to-exercise",
@@ -124,7 +132,9 @@ test("the crisis items grade the reply to the crisis and the one after it", asyn
   }
 });
 
-test("a conversation item makes one call for the whole conversation and one for each graded reply", async () => {
+test("a conversation item makes one call for the whole conversation and one for each graded reply", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadConversationCheckItems();
   const crisis = items.find((item) => item.id === "crisis-stays-with-them");
   const loop = items.find((item) => item.id === "loop-named-gently");
@@ -229,7 +239,9 @@ test("a turn past the end, a crisis past the end, and a reply check on an ungrad
   assert.ok(problemsOf({ gradeReplies: [1, 1] })[0]?.includes("repeated"));
 });
 
-test("resolving an item stops on a check that does not apply to its reply, or a person that is gone", async () => {
+test("resolving an item stops on a check that does not apply to its reply, or a person that is gone", {
+  skip: skipWithoutContent(),
+}, async () => {
   const [badCheck] = parseConversationCheckFile({
     items: [
       itemInput({
@@ -358,7 +370,9 @@ async function verdictFor(id: string, judging: Judging) {
   });
 }
 
-test("a judge that fails the loop on its planted turn matches the label", async () => {
+test("a judge that fails the loop on its planted turn matches the label", {
+  skip: skipWithoutContent(),
+}, async () => {
   const verdict = await verdictFor("loop-third-return-another-question", {
     whole: { loopMarks: [loop(3, false), loop(4, false), loop(5, true)] },
   });
@@ -366,7 +380,9 @@ test("a judge that fails the loop on its planted turn matches the label", async 
   assert.deepEqual(verdict.found.failed, ["stops-feeding-loop@5"]);
 });
 
-test("a judge that lets the planted loop through misses it", async () => {
+test("a judge that lets the planted loop through misses it", {
+  skip: skipWithoutContent(),
+}, async () => {
   const verdict = await verdictFor("loop-third-return-another-question", {
     whole: { loopMarks: [loop(3, false), loop(4, false), loop(5, false)] },
   });
@@ -378,7 +394,9 @@ test("a judge that lets the planted loop through misses it", async () => {
   assert.match(verdict.misses[0]?.detail ?? "", atTurn5Pattern);
 });
 
-test("a judge that marks no return at all misses the planted loop, and one that flags a clean twin gives a false alarm", async () => {
+test("a judge that marks no return at all misses the planted loop, and one that flags a clean twin gives a false alarm", {
+  skip: skipWithoutContent(),
+}, async () => {
   const none = await verdictFor("loop-third-return-another-question", {});
   assert.equal(none.match, false);
   const falseAlarm = await verdictFor("loop-named-gently", {
@@ -391,7 +409,9 @@ test("a judge that marks no return at all misses the planted loop, and one that 
   );
 });
 
-test("the first return to a worry never fails, whatever the judge marks on it", async () => {
+test("the first return to a worry never fails, whatever the judge marks on it", {
+  skip: skipWithoutContent(),
+}, async () => {
   const verdict = await verdictFor("loop-named-gently", {
     whole: { loopMarks: [loop(3, true), loop(4, false), loop(5, false)] },
   });
@@ -399,7 +419,9 @@ test("the first return to a worry never fails, whatever the judge marks on it", 
   assert.deepEqual(verdict.found.failed, []);
 });
 
-test("a decline mark that says Sage brought the exercise back fails drops-after-no on that turn", async () => {
+test("a decline mark that says Sage brought the exercise back fails drops-after-no on that turn", {
+  skip: skipWithoutContent(),
+}, async () => {
   const mark = (turn: number, brings: boolean) => ({
     afterNo: true,
     bringsItBack: brings,
@@ -424,7 +446,9 @@ test("a decline mark that says Sage brought the exercise back fails drops-after-
   );
 });
 
-test("a crisis reply that goes back to the exercise must fail on its turn, and the reply before it must pass", async () => {
+test("a crisis reply that goes back to the exercise must fail on its turn, and the reply before it must pass", {
+  skip: skipWithoutContent(),
+}, async () => {
   const good = await verdictFor("crisis-later-reply-goes-back-to-exercise", {
     replyFails: { 4: ["crisis-handled", "asks-before-exercise"] },
   });
@@ -459,7 +483,9 @@ test("a crisis reply that goes back to the exercise must fail on its turn, and t
   assert.equal(clean.match, true);
 });
 
-test("a rubric bound is broken by a score under the min, and a missing score breaks it too", async () => {
+test("a rubric bound is broken by a score under the min, and a missing score breaks it too", {
+  skip: skipWithoutContent(),
+}, async () => {
   const fine = await verdictFor("venting-only-listening", {});
   assert.equal(fine.match, true);
   assert.deepEqual(fine.found.levels, { "follows-lead": 5 });
@@ -528,7 +554,9 @@ const ref = makeItem(
   "judge-check"
 );
 
-test("a matching item records a passing hard:judge-check, and a miss records the misses in the runner's shape", async () => {
+test("a matching item records a passing hard:judge-check, and a miss records the misses in the runner's shape", {
+  skip: skipWithoutContent(),
+}, async () => {
   const resolved = await itemById("loop-third-return-another-question");
   const pass = await gradeConversationCheckItem(
     fakeGrader({
@@ -561,7 +589,9 @@ test("a matching item records a passing hard:judge-check, and a miss records the
   ]);
 });
 
-test("a call the judge could not make is recorded as not graded", async () => {
+test("a call the judge could not make is recorded as not graded", {
+  skip: skipWithoutContent(),
+}, async () => {
   const resolved = await itemById("crisis-stays-with-them");
   const failing = {
     judge: () =>
@@ -582,7 +612,9 @@ test("a call the judge could not make is recorded as not graded", async () => {
   assert.deepEqual(row?.metadata?.misses, []);
 });
 
-test("the judge gets the whole conversation once, and each graded reply with the turns before it", async () => {
+test("the judge gets the whole conversation once, and each graded reply with the turns before it", {
+  skip: skipWithoutContent(),
+}, async () => {
   const resolved = await itemById("crisis-stays-with-them");
   const { calls, grader } = fakeGrader();
   await gradeConversationCheckItem(grader, resolved);

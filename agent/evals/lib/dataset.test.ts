@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-
+import { skipWithoutContent } from "./content.ts";
 import {
   chatIdFor,
   countWords,
@@ -518,7 +518,9 @@ test("loadManifest rejects a file without journal ids", () => {
   }
 });
 
-test("the shipped people load and validate as of the pinned day", async () => {
+test("the shipped people load and validate as of the pinned day", {
+  skip: skipWithoutContent(),
+}, async () => {
   const people = await loadPeople();
   assert.ok(people.length > 0);
   for (const person of people) {
@@ -530,7 +532,9 @@ test("the shipped people load and validate as of the pinned day", async () => {
   }
 });
 
-test("the Sam example is one person with the look-alike pair and both stale facts", async () => {
+test("the Sam example is one person with the look-alike pair and both stale facts", {
+  skip: skipWithoutContent(),
+}, async () => {
   const sam = await loadPerson("sam-example");
   assert.equal(sam.empty, false);
   assert.ok(sam.personCase.tags.includes("example"));
@@ -573,7 +577,9 @@ test("the Sam example is one person with the look-alike pair and both stale fact
   }
 });
 
-test("new-user is an empty journal", async () => {
+test("new-user is an empty journal", {
+  skip: skipWithoutContent(),
+}, async () => {
   const person = await loadPerson("new-user");
   assert.equal(person.empty, true);
   assert.deepEqual(person.entries, []);
@@ -874,7 +880,9 @@ test("loadManifest keeps chatIds, and refuses ones that are not numbers", () => 
   }
 });
 
-test("the shipped past chats load, alternate, and are dated before the pinned day", async () => {
+test("the shipped past chats load, alternate, and are dated before the pinned day", {
+  skip: skipWithoutContent(),
+}, async () => {
   const people = await loadPeople();
   const withChats = people.filter((person) => person.chats.length > 0);
   assert.ok(withChats.length >= 9);
@@ -892,7 +900,9 @@ test("the shipped past chats load, alternate, and are dated before the pinned da
   assert.deepEqual(newUser?.chats, []);
 });
 
-test("every opener that needs a past chat names one the person has", async () => {
+test("every opener that needs a past chat names one the person has", {
+  skip: skipWithoutContent(),
+}, async () => {
   const people = await loadPeople();
   let named = 0;
   for (const person of people) {

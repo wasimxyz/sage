@@ -2,17 +2,16 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { loadEntryFiles } from "../evals/lib/dataset.ts";
+import { skipWithoutContent } from "../evals/lib/content.ts";
+import { evalDataRoot, loadEntryFiles } from "../evals/lib/dataset.ts";
 import { moveToToday } from "./seed-dates.ts";
 
 const seedDir = fileURLToPath(new URL("../../scripts/seed", import.meta.url));
-const peopleDir = fileURLToPath(
-  new URL("../evals/data/people", import.meta.url)
-);
+const peopleDir = join(evalDataRoot(), "people");
 const seedDevScript = fileURLToPath(new URL("seed-dev.ts", import.meta.url));
 const entryCountPattern = /25 seed entries/u;
 const twoEntriesPattern = /2 seed entries/u;
@@ -126,7 +125,9 @@ test("seed-dev --check seeds a person folder's entries and nothing else", () => 
   }
 });
 
-test("seed-dev --check accepts the Sam example person", async () => {
+test("seed-dev --check accepts the Sam example person", {
+  skip: skipWithoutContent(),
+}, async () => {
   const dir = join(peopleDir, "sam-example");
   const { length } = await loadEntryFiles(dir);
 
@@ -138,7 +139,11 @@ test("seed-dev --check accepts the Sam example person", async () => {
 });
 
 test("seed-dev --check refuses a person with an empty journal", () => {
-  const result = runCheck(join(peopleDir, "new-user"));
+  const dir = join(mkdtempSync(join(tmpdir(), "sage-seed-empty-")), "new-user");
+  mkdirSync(dir);
+  writeFileSync(join(dir, "case.yaml"), "id: new-user\n");
+  const result = runCheck(dir);
+  rmSync(dirname(dir), { force: true, recursive: true });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, noEntriesPattern);

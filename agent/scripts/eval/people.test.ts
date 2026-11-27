@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
+import { skipWithoutContent } from "../../evals/lib/content.ts";
 import { EVAL_TODAY } from "./eve.ts";
 import {
   countItems,
@@ -91,7 +91,9 @@ test("countItems counts what a person holds", () => {
   });
 });
 
-test("the real people load and pass the data checks as of the pinned day", async () => {
+test("the real people load and pass the data checks as of the pinned day", {
+  skip: skipWithoutContent(),
+}, async () => {
   const people = await loadAllPeople();
   assert.ok(people.length >= 1);
   assert.ok(people.some((person) => person.id === "sam-example"));
@@ -185,7 +187,9 @@ test("dataProblems flags an alsoEmpty opener with no empty-journal person, and a
   assert.match(problems[0] ?? "", hostWithEntriesPattern);
 });
 
-test("on the real people, new-user is covered by the screen sweep and its alsoEmpty openers are counted", async () => {
+test("on the real people, new-user is covered by the screen sweep and its alsoEmpty openers are counted", {
+  skip: skipWithoutContent(),
+}, async () => {
   const people = await loadAllPeople();
   const covered = selectPeople(people, ["screen"]);
   const newUser = covered.find((person) => person.id === "new-user");

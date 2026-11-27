@@ -4,7 +4,7 @@
 //
 // It reads a finished sweep (`agent/evals/reports/` and, when it is still
 // there, `agent/evals/.runs/<sweep id>/`) and writes
-// `agent/evals/calibration/sample-<sweep id>.json`: about 40 replies across the
+// `agent/evals/content/calibration/sample-<sweep id>.json`: about 40 replies across the
 // sweep's setups. The sample is stratified by kind and `expect`, so no kind of
 // message crowds out the rest. It always includes the replies where a hard or
 // counted check that the judge answers failed, and it keeps at least a quarter
@@ -473,7 +473,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     console.log(`Wrote ${path}`);
     console.log(describeSample(sample));
     console.log(
-      "Grade the replies in the viewer (make eval-viewer-dev). Each grade is a line in agent/evals/calibration/grades.jsonl."
+      "Grade the replies in the viewer (make eval-viewer-dev). Each grade is a line in agent/evals/content/calibration/grades.jsonl."
     );
     return 0;
   } catch (error) {

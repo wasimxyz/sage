@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-
+import { skipWithoutContent } from "../../evals/lib/content.ts";
 import { setupId } from "../../evals/lib/schema.ts";
 import {
   applyModelOverrides,
@@ -32,7 +32,9 @@ function sweepsIn(t: test.TestContext, files: Record<string, string>): string {
   return dir;
 }
 
-test("the sweeps that ship parse, and default runs memory off and on", async () => {
+test("the sweeps that ship parse, and default runs memory off and on", {
+  skip: skipWithoutContent(),
+}, async () => {
   const names = availableSweeps();
   assert.ok(names.includes("default"));
   assert.ok(names.includes("smoke"));
@@ -64,7 +66,9 @@ test("the sweeps that ship parse, and default runs memory off and on", async () 
   assert.equal(smoke.sweep.spendingCapUsd, 3);
 });
 
-test("only the deep and dream sweeps include long-history, and the deep sweeps run the person checks and conversations three times", async () => {
+test("only the deep and dream sweeps include long-history, and the deep sweeps run the person checks and conversations three times", {
+  skip: skipWithoutContent(),
+}, async () => {
   const dir = defaultSweepsDir();
   const names = availableSweeps();
   for (const name of ["default", "smoke", "quick", "screen"]) {
@@ -177,7 +181,9 @@ test("the resolved sweep JSON parses back into the same setups", async (t) => {
   assert.equal(new Set(loaded.setups.map(setupId)).size, 4);
 });
 
-test("the calibration and head-to-head sweeps run alone, with the judge and a cap, and no Chat", async () => {
+test("the calibration and head-to-head sweeps run alone, with the judge and a cap, and no Chat", {
+  skip: skipWithoutContent(),
+}, async () => {
   const dir = defaultSweepsDir();
   const calibration = await loadSweep("calibration", {}, dir);
   assert.deepEqual(calibration.sweep.tests, ["calibration"]);

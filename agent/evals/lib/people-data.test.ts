@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { resolveWhen } from "../../agent/lib/when.ts";
 import { checksFor } from "./checks.ts";
+import { skipWithoutContent } from "./content.ts";
 import { replyItemForTurn } from "./conversation-checks.ts";
 import { replyBaseOf } from "./conversation-grade.ts";
 import {
@@ -87,7 +88,9 @@ function foundNeeded(
   return result;
 }
 
-test("grief nightly-fluids: the answer is only in the 2026-05-27 chat, so needs should point there", async () => {
+test("grief nightly-fluids: the answer is only in the 2026-05-27 chat, so needs should point there", {
+  skip: skipWithoutContent(),
+}, async () => {
   const grief = await loadPerson("grief");
   const inJournal = grief.entries.filter((entry) =>
     entry.body.toLowerCase().includes("fluids")
@@ -110,7 +113,9 @@ test("grief nightly-fluids: the answer is only in the 2026-05-27 chat, so needs 
   assert.equal(result.pass, true, result.reason);
 });
 
-test("student last-time-sentence: the sentence Sage gave is only in the past chat", async () => {
+test("student last-time-sentence: the sentence Sage gave is only in the past chat", {
+  skip: skipWithoutContent(),
+}, async () => {
   const student = await loadPerson("student");
   const item = opener(student, "last-time-sentence");
   assert.deepEqual(item.needs, ["chat:2026-10-06-a-small-no"]);
@@ -132,7 +137,9 @@ test("student last-time-sentence: the sentence Sage gave is only in the past cha
   assert.deepEqual(leaks, [], "the journal already holds the sentence");
 });
 
-test("engaged october-big-thing: a turn that lists October and reads only the big entry finds what it needed", async () => {
+test("engaged october-big-thing: a turn that lists October and reads only the big entry finds what it needed", {
+  skip: skipWithoutContent(),
+}, async () => {
   const engaged = await loadPerson("engaged");
   const october = engaged.entries.filter((entry) =>
     entry.date.startsWith("2026-10")
@@ -159,7 +166,9 @@ test("engaged october-big-thing: a turn that lists October and reads only the bi
   assert.equal(result.pass, true, result.reason);
 });
 
-test("family: the gym entry and the April entry agree about the gym", async () => {
+test("family: the gym entry and the April entry agree about the gym", {
+  skip: skipWithoutContent(),
+}, async () => {
   const family = await loadPerson("family");
   const april = family.entries.find(
     (entry) => entry.stem === "2026-04-18-two-weeks-later"
@@ -173,7 +182,9 @@ test("family: the gym entry and the April entry agree about the gym", async () =
   assert.equal(gym.body.includes("since March"), false);
 });
 
-test("caregiver what-is-power-of-attorney: neither the journal nor a past chat holds the term", async () => {
+test("caregiver what-is-power-of-attorney: neither the journal nor a past chat holds the term", {
+  skip: skipWithoutContent(),
+}, async () => {
   const caregiver = await loadPerson("caregiver");
   const item = opener(caregiver, "what-is-power-of-attorney");
   assert.equal(item.search, "none");
@@ -193,7 +204,9 @@ test("caregiver what-is-power-of-attorney: neither the journal nor a past chat h
   assert.deepEqual(holds, [], "the journal already holds the term");
 });
 
-test("engaged cabin-cost: the price is only in the past chat, so needs holds only the chat", async () => {
+test("engaged cabin-cost: the price is only in the past chat, so needs holds only the chat", {
+  skip: skipWithoutContent(),
+}, async () => {
   const engaged = await loadPerson("engaged");
   const item = opener(engaged, "cabin-cost");
   assert.deepEqual(item.needs, ["chat:2026-09-22-the-cabin-weekend"]);
@@ -265,7 +278,9 @@ test("an opener that says last and a month means a month that holds the entries 
   assert.deepEqual(outside, []);
 });
 
-test("long-history did-i-miss-it: the July it names is July 2025, where its entries are", async () => {
+test("long-history did-i-miss-it: the July it names is July 2025, where its entries are", {
+  skip: skipWithoutContent(),
+}, async () => {
   const person = await loadPerson("long-history");
   const item = opener(person, "did-i-miss-it");
   assert.match(item.message, julyPattern);
@@ -319,7 +334,9 @@ async function conversationOf(personId: string, conversationId: string) {
   return { conversation, person };
 }
 
-test("a reply before the crisis of driveway-rage-crisis is graded as the venting it is", async () => {
+test("a reply before the crisis of driveway-rage-crisis is graded as the venting it is", {
+  skip: skipWithoutContent(),
+}, async () => {
   const { conversation } = await conversationOf(
     "family",
     "driveway-rage-crisis"
@@ -338,7 +355,9 @@ test("a reply before the crisis of driveway-rage-crisis is graded as the venting
   ]);
 });
 
-test("anger and pushback are graded on the scripted turn that carries them, and the rest of the conversation is venting", async () => {
+test("anger and pushback are graded on the scripted turn that carries them, and the rest of the conversation is venting", {
+  skip: skipWithoutContent(),
+}, async () => {
   // Each opens with a message that is not the anger or the pushback.
   for (const [personId, conversationId, kind] of [
     ["new-user", "not-helping", "anger"],
@@ -368,7 +387,9 @@ test("anger and pushback are graded on the scripted turn that carries them, and 
   }
 });
 
-test("long-history why-i-go-quiet: turn 15 asks what the journal says, so it needs a search that finds the Denver entry", async () => {
+test("long-history why-i-go-quiet: turn 15 asks what the journal says, so it needs a search that finds the Denver entry", {
+  skip: skipWithoutContent(),
+}, async () => {
   const { conversation, person } = await conversationOf(
     "long-history",
     "why-i-go-quiet"
