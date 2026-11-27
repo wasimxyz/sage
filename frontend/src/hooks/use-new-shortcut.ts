@@ -10,12 +10,12 @@ import { isNewKey, newTarget } from "@/lib/new-shortcut";
 import { hasOpenSurface } from "@/lib/open-surface";
 
 /**
- * ⌘N starts a new chat on Chat and a new entry on the other screens. It waits
- * while a dialog, popover, or menu is open, so it does not act on the page
- * behind it.
+ * ⌘N starts a new chat in the Chat tab, Memories included, and a new entry in
+ * the Journal tab. It waits while a dialog, popover, or menu is open, so it
+ * does not act on the page behind it.
  */
 export function useNewShortcut() {
-  const { startDraft } = useJournalActions();
+  const { showChat, startDraft } = useJournalActions();
   const { section } = useJournalView();
   const {
     actions: { newChat },
@@ -37,12 +37,15 @@ export function useNewShortcut() {
       }
       event.preventDefault();
       if (target === "chat") {
-        newChat();
+        // From Memories, Chat comes back first.
+        showChat()
+          .then(newChat)
+          .catch(() => undefined);
         return;
       }
       startDraft().catch(() => undefined);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editingMemory, newChat, section, startDraft]);
+  }, [editingMemory, newChat, section, showChat, startDraft]);
 }

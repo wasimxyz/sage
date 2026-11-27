@@ -12,6 +12,8 @@ A release has three files, all built from the same commit. The version in the na
 
 Builds are for Apple silicon only. They are signed ad hoc, so there is no Developer ID signature and no notarization yet. Release builds leave Memories off, because `SAGE_MEMORY` keeps its default of `false`.
 
+The app carries `Contents/Frameworks/libSageSpeech.dylib`, the speech engine for [dictation](dictation.md#the-speech-library). It is built with the macOS 26 SDK, so the release workflow runs on `macos-26`. The app itself still runs on macOS 11 and later, and dictation needs macOS 26.
+
 ## The update key
 
 The feed is signed with an Ed25519 key. The public half is in `app.json` under `updates.public_key`, and an installed Sage trusts only that key. The private half is in the `UPDATE_PRIVATE_KEY` repository secret, as base64.
@@ -58,25 +60,26 @@ To rehearse a release, push a tag such as `v0.1.1-rc.1`. An `rc` tag builds the 
 
 `.github/workflows/release.yml` runs on every pushed tag that starts with `v`. It does this, in order:
 
-1. Checks that the tag is on `main` and that its version matches `app.json`.
-2. Installs Zig, Node.js, the pinned Native SDK CLI, and the dependencies.
-3. Runs `native validate app.json`, `make check`, and `make test`.
-4. Runs `make package-archive`, which builds the `.app` with Chat, Node.js, and Ollama inside, then the DMG and the update ZIP.
-5. Signs the ZIP into `native-update.json`. The signer also checks that the ZIP holds an arm64 app with the right bundle ID and version.
-6. Creates a draft release with the three files, then publishes it. Publishing last means “latest” never points at a release that is missing its ZIP.
+1. Checks that the runner has the macOS 26 SDK, which the speech library needs.
+2. Checks that the tag is on `main` and that its version matches `app.json`.
+3. Installs Zig, Node.js, the pinned Native SDK CLI, and the dependencies.
+4. Runs `native validate app.json`, `make check`, and `make test`.
+5. Runs `make package-archive`, which builds the `.app` with Chat, Node.js, Ollama, and the speech library inside, then the DMG and the update ZIP.
+6. Signs the ZIP into `native-update.json`. The signer also checks that the ZIP holds an arm64 app with the right bundle ID and version.
+7. Creates a draft release with the three files, then publishes it. Publishing last means “latest” never points at a release that is missing its ZIP.
 
 GitHub writes the release notes. The feed’s own notes are empty, so the update dialog says only that the version is ready to install.
 
 ## If the workflow fails
 
-A failure before step 6 publishes nothing. Fix the cause, delete the tag, and push it again:
+A failure before step 7 publishes nothing. Fix the cause, delete the tag, and push it again:
 
 ```bash
 git tag -d v0.1.1
 git push origin :refs/tags/v0.1.1
 ```
 
-A failure during step 6 can leave a draft release. Delete the draft on GitHub first, since creating a release fails when one already exists for the tag.
+A failure during step 7 can leave a draft release. Delete the draft on GitHub first, since creating a release fails when one already exists for the tag.
 
 ## Install a release
 
@@ -93,5 +96,6 @@ When a newer version exists, Sage offers **Install Update**. It checks the feed 
 Some limits to know:
 
 - The folder that holds Sage must be writable. Otherwise Sage asks you to move it or update by hand.
-- Every update downloads the full app. There are no delta updates, channels, or staged rollouts. Measured with Ollama 0.40.15 in Sage 0.2.2, the installed app is 758 MB, the DMG is 326 MB, and the update ZIP is 237 MB. The bundled Ollama accounts for 494 MB of the app, 168 MB of the DMG, and 148 MB of the ZIP.
+- Every update downloads the full app. There are no delta updates, channels, or staged rollouts. Measured with Ollama 0.40.15 in Sage 0.2.2, the installed app is 758 MB, the DMG is 326 MB, and the update ZIP is 237 MB. The bundled Ollama accounts for 494 MB of the app, 168 MB of the DMG, and 148 MB of the ZIP. The speech library adds about 140 KB to each.
 - Updates run only from a packaged `.app`, not from `make dev`.
+- macOS asks for microphone access again after an update, because each build is signed ad hoc and macOS sees it as a new app. Dictation works once you allow it.

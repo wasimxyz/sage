@@ -10,3 +10,4 @@ third_party/ollama/
 agent/.eval-roots/
 agent/evals/.runs/
 agent/evals/content/
+third_party/dictation-spike/

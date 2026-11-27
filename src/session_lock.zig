@@ -9,6 +9,9 @@ const observer_class_name: [:0]const u8 = "SageSessionLockObserver";
 pub const Callbacks = struct {
     on_lock: *const fn (context: *anyopaque) void,
     idle_timeout_ms: *const fn (context: *anyopaque) i64,
+    /// Whether something is using the session right now, such as the
+    /// microphone during dictation. The idle clock waits while it is.
+    idle_held: *const fn (context: *anyopaque) bool,
 };
 
 var installed = false;
@@ -154,8 +157,10 @@ fn checkIdleImp(self: ?*anyopaque, cmd: *anyopaque, arg: ?*anyopaque) callconv(.
     const context = callback_context orelse return;
     const next = callbacks orelse return;
     const timeout_ms = next.idle_timeout_ms(context);
-    if (lock_mod.idleShouldLock(timeout_ms, last_activity_ms, nowMs())) {
-        next.on_lock(context);
+    switch (lock_mod.idleDecision(timeout_ms, last_activity_ms, nowMs(), next.idle_held(context))) {
+        .lock => next.on_lock(context),
+        .hold => recordActivity(),
+        .wait => {},
     }
     const api = objc.load() orelse return;
     if (self) |target| scheduleIdleCheck(api, target);

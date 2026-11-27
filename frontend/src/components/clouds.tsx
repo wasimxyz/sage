@@ -8,11 +8,17 @@ import {
   MAX_PIXEL_RATIO,
   readCloudPalette,
 } from "@/lib/clouds";
+import { cn } from "@/lib/utils";
 
 type CloudsProps = Pick<CloudOptions, "anchor" | "clearUntil" | "offset"> & {
   className?: string;
   /** Draws one frame and holds it, for a screen that can stay open for hours. */
   still?: boolean;
+  /**
+   * `sky` is white dots for a blue sky, as on the lock screen. `faint` is
+   * pale blue dots, inside the clouds only, for a light page behind text.
+   */
+  tone?: "faint" | "sky";
 };
 
 // Shared by every set of clouds, so a change of screen or a new clearing keeps
@@ -31,6 +37,7 @@ export function Clouds({
   clearUntil,
   offset,
   still = false,
+  tone = "sky",
 }: CloudsProps) {
   const reduceMotion = usePrefersReducedMotion();
   const animate = !(still || reduceMotion);
@@ -148,7 +155,10 @@ export function Clouds({
   );
 
   return (
-    <div aria-hidden="true" className={className}>
+    <div
+      aria-hidden="true"
+      className={cn(tone === "faint" && "clouds-faint", className)}
+    >
       <canvas className="size-full" ref={attach} />
     </div>
   );

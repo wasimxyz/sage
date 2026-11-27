@@ -33,6 +33,12 @@ const PackageTarget = enum {
 };
 
 const app_exe_name = "Sage";
+const speech_library_name = "libSageSpeech.dylib";
+
+/// The microphone prompt. A packaged app gets the same sentence from a
+/// PlistBuddy step in scripts/copy-agent-into-app.sh, because the package
+/// command writes its own text.
+const microphone_usage_text = "Sage listens only while you dictate. Audio stays on this Mac and is never saved.";
 
 pub fn build(b: *std.Build) void {
     const target = nativeSdkTarget(b);
@@ -60,6 +66,7 @@ pub fn build(b: *std.Build) void {
     const live_ollama = b.option(bool, "live-ollama", "Run tests that call a local Ollama server") orelse false;
     const js_bridge_enabled = b.option(bool, "js-bridge", "Enable optional JavaScript bridge stubs") orelse false;
     const memory_enabled = b.option(bool, "memory", "Enable Memories in Chat, Dream, and the UI") orelse false;
+    const speech_enabled = b.option(bool, "speech", "Build libSageSpeech.dylib for dictation (needs the macOS 26 SDK)") orelse true;
     const web_engine_override = b.option(WebEngineOption, "web-engine", "Override app.zon web engine: system, chromium");
     const web_layer_override = b.option(WebLayerOption, "web-layer", "Override app.zon webview_layer: auto, include, exclude");
     const cef_dir_override = b.option([]const u8, "cef-dir", "Override CEF root directory for Chromium builds");
@@ -154,6 +161,14 @@ pub fn build(b: *std.Build) void {
     linkPlatform(b, target, app_mod, exe, selected_platform, web_engine, web_layer, native_sdk_path, cef_dir, cef_auto_install);
     b.installArtifact(exe);
 
+    // Dictation's speech engine is Swift for macOS 26 and later, so it is a
+    // separate library the app loads at run time and never links. It builds
+    // with the app, not with the tests, which run on the null platform and
+    // need no Swift.
+    const speech_lib = if (speech_enabled and selected_platform == .macos) addSpeechLibrary(b, target) else null;
+    const speech_install = if (speech_lib) |lib| b.addInstallFileWithDir(lib, .lib, speech_library_name) else null;
+    if (speech_install) |install| b.getInstallStep().dependOn(&install.step);
+
     const frontend_install = b.addSystemCommand(&.{ "npm", "install", "--prefix", "frontend" });
     const frontend_install_step = b.step("frontend-install", "Install frontend dependencies");
     frontend_install_step.dependOn(&frontend_install.step);
@@ -165,6 +180,10 @@ pub fn build(b: *std.Build) void {
 
     const run = b.addRunArtifact(exe);
     run.step.dependOn(&frontend_build.step);
+    if (speech_install) |install| {
+        run.step.dependOn(&install.step);
+        run.setEnvironmentVariable("SAGE_SPEECH_LIB_PATH", b.getInstallPath(.lib, speech_library_name));
+    }
     addCefRuntimeRunFiles(b, target, run, exe, web_engine, cef_dir);
     addWebView2RuntimeRunFiles(b, target, run, web_engine, web_layer, native_sdk_path);
     const run_step = b.step("run", "Run the app");
@@ -174,6 +193,7 @@ pub fn build(b: *std.Build) void {
     dev.addFileArg(exe.getEmittedBin());
     addWebView2RuntimeRunFiles(b, target, dev, web_engine, web_layer, native_sdk_path);
     dev.step.dependOn(&exe.step);
+    if (speech_install) |install| dev.step.dependOn(&install.step);
     dev.step.dependOn(&frontend_install.step);
     const dev_step = b.step("dev", "Run the frontend dev server and native shell");
     dev_step.dependOn(&dev.step);
@@ -259,6 +279,9 @@ pub fn build(b: *std.Build) void {
         const agent_build = b.addSystemCommand(&.{ "npm", "--prefix", "agent", "run", "build" });
         agent_build.step.dependOn(&agent_install.step);
         const copy_agent = b.addSystemCommand(&.{ "sh", "scripts/copy-agent-into-app.sh", package_output });
+        // The script copies the speech library into Contents/Frameworks before
+        // it signs the bundle, and refuses to package without it.
+        if (speech_lib) |lib| copy_agent.addFileArg(lib);
         copy_agent.step.dependOn(&package.step);
         copy_agent.step.dependOn(&agent_build.step);
         package_step.dependOn(&copy_agent.step);
@@ -273,7 +296,7 @@ pub fn build(b: *std.Build) void {
     // do not link the Mac window host. The journal tests talk to an
     // in-memory database and do not open a window. Pass `-Dplatform=null`
     // for the app too, and this reuses that module.
-    const test_app_mod = if (selected_platform == .@"null") app_mod else test_app: {
+    const test_mods: TestModules = if (selected_platform == .@"null") .{ .app = app_mod, .runner = runner_mod } else test_mods: {
         const test_options_mod = appOptions(b, trace, "null", web_engine, debug_overlay, automation_enabled, live_ollama, js_bridge_enabled, web_layer, memory_enabled);
         const test_runner_mod = localModule(b, target, optimize, "src/runner.zig");
         test_runner_mod.addImport("native_sdk", native_sdk_mod);
@@ -286,12 +309,21 @@ pub fn build(b: *std.Build) void {
         test_mod.addImport("runner", test_runner_mod);
         test_mod.addImport("agent_instructions", agent_instructions_mod);
         if (app_config.sqlite_capability) addSqliteEngine(b, test_mod, native_sdk_path);
-        break :test_app test_mod;
+        break :test_mods .{ .app = test_mod, .runner = test_runner_mod };
     };
-    const tests = b.addTest(.{ .root_module = test_app_mod });
+    const tests = b.addTest(.{ .root_module = test_mods.app });
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    // src/runner.zig is a module of its own, so the app's test build never
+    // sees its tests. They get a build of their own.
+    const runner_tests = b.addTest(.{ .root_module = test_mods.runner });
+    test_step.dependOn(&b.addRunArtifact(runner_tests).step);
 }
+
+const TestModules = struct {
+    app: *std.Build.Module,
+    runner: *std.Build.Module,
+};
 
 // Zig 0.16.0's self-hosted x86_64 backend miscompiles the SysV C
 // calling convention for long mixed int/pointer/double signatures
@@ -303,6 +335,42 @@ pub fn build(b: *std.Build) void {
 // so this only changes Debug builds.
 fn useLlvmWorkaround(target: std.Build.ResolvedTarget) ?bool {
     return if (target.result.cpu.arch == .x86_64) true else null;
+}
+
+/// Compile `src/speech/SageSpeech.swift` into a dynamic library for macOS 26.
+/// The deployment target is 26.0 because SpeechAnalyzer starts there. An older
+/// macOS refuses to load the library, which is how Sage learns to hide the mic.
+/// Returns null off macOS. Needs a macOS 26 SDK; pass -Dspeech=false without one.
+/// The `speech` job in .github/workflows/ci.yml compiles the library with the
+/// same flags. Keep the two in step.
+fn addSpeechLibrary(b: *std.Build, target: std.Build.ResolvedTarget) ?std.Build.LazyPath {
+    if (target.result.os.tag != .macos or b.graph.host.result.os.tag != .macos) return null;
+    const arch = switch (target.result.cpu.arch) {
+        .aarch64 => "arm64",
+        .x86_64 => "x86_64",
+        else => return null,
+    };
+    const swiftc = b.addSystemCommand(&.{
+        "xcrun",
+        "swiftc",
+        "-O",
+        "-swift-version",
+        "5",
+        "-parse-as-library",
+        "-emit-library",
+        "-module-name",
+        "SageSpeech",
+        "-target",
+        b.fmt("{s}-apple-macos26.0", .{arch}),
+        "-Xlinker",
+        "-install_name",
+        "-Xlinker",
+        "@rpath/" ++ speech_library_name,
+        "-o",
+    });
+    const output = swiftc.addOutputFileArg(speech_library_name);
+    swiftc.addFileArg(b.path("src/speech/SageSpeech.swift"));
+    return output;
 }
 
 /// Bare Mach-O dev executables have no bundle Info.plist. Embed launch
@@ -318,7 +386,7 @@ fn addMacosInfoPlist(b: *std.Build, app_mod: *std.Build.Module, target: std.Buil
     else
         "";
     const microphone = if (config.microphone_permission)
-        "  <key>NSMicrophoneUsageDescription</key>\\n  <string>This app captures microphone audio when you start recording.</string>\\n"
+        "  <key>NSMicrophoneUsageDescription</key>\\n  <string>" ++ microphone_usage_text ++ "</string>\\n"
     else
         "";
     const system_audio = if (config.system_audio_permission)

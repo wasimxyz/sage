@@ -4,10 +4,10 @@
     "name": "Sage",
     "display_name": "Sage",
     "description": "An AI-native journal that uses local LLMs so that your private thoughts never leave your machine.",
-    "version": "0.3.1",
+    "version": "0.5.0",
     "icons": ["assets/icon.svg"],
     "platforms": ["macos"],
-    "permissions": [],
+    "permissions": ["microphone"],
     "capabilities": ["webview", "js_bridge", "sqlite"],
     "frontend": {
         "dist": "frontend/dist",
@@ -81,12 +81,17 @@
             { "name": "ollama.pullCancel", "origins": ["zero://app"] },
             { "name": "ollama.delete", "origins": ["zero://app"] },
             { "name": "system.hardware", "origins": ["zero://app"] },
-            { "name": "system.calendar", "origins": ["zero://app"] },
             { "name": "onboarding.status", "origins": ["zero://app"] },
             { "name": "onboarding.save", "origins": ["zero://app"] },
             { "name": "onboarding.reminderShown", "origins": ["zero://app"] },
             { "name": "onboarding.remindersOff", "origins": ["zero://app"] },
-            { "name": "ollama.setupStatus", "origins": ["zero://app"] }
+            { "name": "ollama.setupStatus", "origins": ["zero://app"] },
+            { "name": "dictation.status", "origins": ["zero://app"] },
+            { "name": "dictation.start", "origins": ["zero://app"] },
+            { "name": "dictation.stop", "origins": ["zero://app"] },
+            { "name": "dictation.openSettings", "origins": ["zero://app"] },
+            { "name": "dictation.downloadModel", "origins": ["zero://app"] },
+            { "name": "journal.tidy", "origins": ["zero://app"] }
         ]
     },
     "security": {

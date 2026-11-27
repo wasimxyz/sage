@@ -21,6 +21,7 @@ var appearance_target: ?*anyopaque = null;
 var appearance_observer_installed = false;
 var frame_observer_installed = false;
 var applying_alignment = false;
+var alignment_received = false;
 var measured_pitch: ?f64 = null;
 const default_button_pitch: f64 = 20;
 
@@ -323,10 +324,34 @@ fn titlebarFrameChangedImp(self: ?*anyopaque, cmd: *anyopaque, notification: ?*a
 }
 
 
+pub const Appearance = enum { light, dark };
+
+/// Automation builds only: hold Sage in light or dark whatever the system
+/// uses, so `make screenshots` can capture both. The web view follows, and so
+/// does the page's `prefers-color-scheme`. AppKit redraws the title bar, so
+/// the traffic lights move back to the inset the page last sent.
+pub fn setAppearance(appearance: Appearance) void {
+    if (builtin.os.tag != .macos) return;
+    const api = objc.load() orelse return;
+    const appearance_class = api.get_class("NSAppearance") orelse return;
+    const name = objc.nsString(api, switch (appearance) {
+        .light => "NSAppearanceNameAqua",
+        .dark => "NSAppearanceNameDarkAqua",
+    }) orelse return;
+    const value = objc.msg1(api, appearance_class, objc.sel(api, "appearanceNamed:"), name) orelse return;
+    const ns_app_class = api.get_class("NSApplication") orelse return;
+    const app = objc.msg(api, ns_app_class, objc.sel(api, "sharedApplication")) orelse return;
+    _ = objc.msg1(api, app, objc.sel(api, "setAppearance:"), value);
+    if (!alignment_received) return;
+    applyLastAlignment();
+    scheduleDelayedReapply();
+}
+
 pub fn alignTitlebar(payload: []const u8, output: []u8) ![]const u8 {
     if (builtin.os.tag == .macos) {
         last_height = jsonF64(payload, "height") orelse 36;
         last_leading = jsonF64(payload, "leading");
+        alignment_received = true;
         applyLastAlignment();
         watchAppearanceChanges();
         scheduleDelayedReapply();

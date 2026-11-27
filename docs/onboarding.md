@@ -8,18 +8,18 @@ Setup fills the whole window, with no sidebar. It helps you download the models 
 
 Sage reads the `onboarding.state` row once per launch, after any unlock:
 
-1. If the row is `done` or `skipped`, Sage opens Home.
+1. If the row is `done` or `skipped`, Sage opens the app.
 2. If the row is `active`, setup was left half done, so it opens at the saved step.
-3. If the row is missing and the journal has an entry or a chat, Sage writes `done` and opens Home. This keeps existing users out of setup.
+3. If the row is missing and the journal has an entry or a chat, Sage writes `done` and opens the app. This keeps existing users out of setup.
 4. If the row is missing and the journal has neither, Sage shows setup and writes `active`.
 
 A new journal is empty. Earlier versions put three sample entries in every new journal, which would have made rule 4 impossible. Migration 17 deletes the samples that nobody edited, with their embeddings, summaries, memories, and Dream state. It finds them by id and by the epoch `updated_at` that migration 4 gave them, so it works on encrypted journals too. An entry you edited stays.
 
-The core makes the decision in `onboarding.status`. If the row cannot be read, Sage opens Home instead of trapping you outside it.
+The core makes the decision in `onboarding.status`. If the row cannot be read, Sage opens the app instead of trapping you outside it. At launch, the app opens on a new chat, as [The journal](journal.md) explains.
 
 ## The steps
 
-The header on every screen except All set shows the Sage logo, “Step N of 3” when there is a step number, and **Skip setup**. Skip setup writes `onboarding.state = skipped` and opens Home. Model downloads that already started keep running.
+The header on every screen except All set shows the Sage logo, “Step N of 3” when there is a step number, and **Skip setup**. Skip setup writes `onboarding.state = skipped` and opens the app. Model downloads that already started keep running.
 
 ### Welcome
 
@@ -47,7 +47,7 @@ The screen shows the chip and memory from `system.hardware` and one row per mode
 
 Downloads follow the rules in [Models](models.md#downloading-and-deleting): one at a time, through `ollama.pull`, `ollama.pulls`, and `ollama.pullCancel`. Setup downloads the embedding model first.
 
-The queue lives in `ModelDownloadsProvider`, above both setup and Home, so downloads keep going after setup ends or is skipped. The provider saves the queued names in `onboarding.downloads`:
+The queue lives in `ModelDownloadsProvider`, above both setup and the app, so downloads keep going after setup ends or is skipped. The provider saves the queued names in `onboarding.downloads`:
 
 - A restart, a refresh, or an unlock picks the queue up again until each model is ready or you cancel it.
 - The provider starts a model only while the server runs. While the server is down, the queue waits and looks again every 4s.
@@ -85,7 +85,7 @@ A banner names what is on, such as “Lock and encryption are on.” It is hidde
 
 ### All set
 
-All set writes `onboarding.state = done`. Its rows show the real state: whether the lock and encryption are on, and each model as ready or as a live progress bar. A tip names the idle time you chose. **Write your first entry** opens a new entry in the editor, and **Go to Home** opens Home.
+All set writes `onboarding.state = done`. Its rows show the real state: whether the lock and encryption are on, and each model as ready or as a live progress bar. A tip names the idle time you chose. **Write your first entry** opens a new entry in the Journal tab, and **Go to Chat** opens a new chat.
 
 ## Testing setup
 
@@ -132,12 +132,12 @@ A reminder shows only when all of these are true:
 
 If the last reminder's time is in the future, the clock moved back, and Sage counts that as enough time.
 
-The dialog shows on Home after Home loads, and never over the editor or Chat. Sage calls `onboarding.reminderShown` when the dialog appears, so quitting with it open still counts. The core refuses a second call in the same launch and a fourth call ever.
+The dialog shows on a new chat, such as the one Sage opens on, once the chat list loads. It never shows over a saved chat or an entry. Sage calls `onboarding.reminderShown` when the dialog appears, so quitting with it open still counts. The core refuses a second call in the same launch and a fourth call ever.
 
 - **1st and 2nd reminder**: “Protect your journal”, with **Not now**, **Set up now**, and a line that says how many more times Sage will ask
 - **3rd reminder**: “Last reminder: protect your journal”, with **Don't ask again** and **Set up now**. **Don't ask again** calls `onboarding.remindersOff`
 
-**Set up now** opens the Protect screens on their own, with Cancel in the header and no step count. It leaves the setup rows alone. If a lock already exists, Sage skips the unlock choice, asks for your password or a fresh Touch ID prompt, and goes straight to encryption. Finishing returns to Home.
+**Set up now** opens the Protect screens on their own, with Cancel in the header and no step count. It leaves the setup rows alone. If a lock already exists, Sage skips the unlock choice, asks for your password or a fresh Touch ID prompt, and goes straight to encryption. Finishing returns to the new chat.
 
 ## Bridge commands
 
