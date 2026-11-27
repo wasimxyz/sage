@@ -27,13 +27,12 @@ import { cn } from "@/lib/utils";
 
 export const toolHeaderClassName = "h-8 w-full justify-start";
 
-// A card opens its entry in the expanded editor, not beside the list.
-function useOpenEntryExpanded(id: number) {
-  const { select, setExpanded } = useJournalActions();
+// A card opens its entry in the Journal tab.
+function useOpenEntry(id: number) {
+  const { select } = useJournalActions();
   return useCallback(async () => {
     await select(id);
-    setExpanded(true);
-  }, [id, select, setExpanded]);
+  }, [id, select]);
 }
 
 function entriesLabel(count: number): string {
@@ -71,7 +70,7 @@ export function JournalToolNote({ children }: { children: ReactNode }) {
 }
 
 function JournalEntryRow({ date, id, title }: JournalToolEntry) {
-  const openEntry = useOpenEntryExpanded(id);
+  const openEntry = useOpenEntry(id);
   const name = title.trim() || "Untitled";
 
   return (

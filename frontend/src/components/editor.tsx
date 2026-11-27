@@ -12,6 +12,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { EditorBubbleMenu } from "@/components/editor-bubble-menu";
+import { EditorDictation } from "@/components/editor-dictation";
 import { EditorSkeleton } from "@/components/editor-skeleton";
 import { EntryDateLine } from "@/components/entry-date-line";
 import {
@@ -19,7 +20,7 @@ import {
   useEntryActions,
   useEntryLoading,
 } from "@/components/journal-context";
-import { SplitView, useSplitView } from "@/components/split-view";
+import { PaneHeader } from "@/components/pane-header";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,6 +32,8 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useEntryDictation } from "@/hooks/use-entry-dictation";
+import { Dictation } from "@/lib/dictation-plugin";
 import {
   emptyDoc,
   loadBlankContent,
@@ -49,6 +52,7 @@ const extensions = [
   }),
   LegacyUnderline,
   Markdown,
+  Dictation,
 ];
 
 function EditorFrame({ children }: { children: ReactNode }) {
@@ -79,6 +83,8 @@ function EditorFrame({ children }: { children: ReactNode }) {
     extensions,
     shouldRerenderOnTransaction: false,
   });
+  // Opening another entry ends any dictation, as leaving it did already.
+  const abortDictation = useEntryDictation(editor);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) {
@@ -93,12 +99,14 @@ function EditorFrame({ children }: { children: ReactNode }) {
         if (editor.isDestroyed) {
           return;
         }
+        abortDictation();
         loadEntryContent(editor, entry);
       },
       resetDraft: () => {
         if (editor.isDestroyed) {
           return;
         }
+        abortDictation();
         loadBlankContent(editor);
         editor.commands.focus("end");
       },
@@ -111,7 +119,7 @@ function EditorFrame({ children }: { children: ReactNode }) {
       }
       registerEditor(null);
     };
-  }, [editor, registerEditor, scheduleSave]);
+  }, [abortDictation, editor, registerEditor, scheduleSave]);
 
   if (!editor || editor.isDestroyed) {
     return <EditorSkeleton />;
@@ -119,20 +127,19 @@ function EditorFrame({ children }: { children: ReactNode }) {
 
   return (
     <Tiptap editor={editor}>
-      <div className="flex h-full min-h-0 flex-col">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </Tiptap>
   );
 }
 
 function EditorHeader() {
   return (
-    <SplitView.DetailHeader>
-      <SplitView.PanelControls
-        backLabel="Back to journal"
-        closeLabel="Close entry"
-      />
-      <EntryMenu />
-    </SplitView.DetailHeader>
+    <PaneHeader>
+      <div className="ml-auto flex items-center gap-1">
+        <EditorDictation />
+        <EntryMenu />
+      </div>
+    </PaneHeader>
   );
 }
 
@@ -142,12 +149,7 @@ function EntryMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button
-            aria-label="Entry actions"
-            className="ml-auto"
-            size="icon-sm"
-            variant="ghost"
-          />
+          <Button aria-label="Entry actions" size="icon-sm" variant="ghost" />
         }
       >
         <MoreHorizontalIcon />
@@ -339,16 +341,14 @@ function useSaveShortcut() {
   }, [flush]);
 }
 
+/** The Journal tab's pane: the open entry, or a new one. */
 export default function EditorPane() {
-  const {
-    state: { expanded },
-  } = useSplitView();
   useSaveShortcut();
   return (
     <Editor.Frame>
       <Editor.Header />
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn("flex min-h-full flex-col", expanded && "py-8.5")}>
+        <div className="flex min-h-full flex-col">
           <Editor.Title />
           <Editor.Body />
         </div>

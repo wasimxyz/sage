@@ -5,8 +5,9 @@ These pages explain how Sage works once you are past the [README](../README.md).
 ## The app
 
 - [Architecture](architecture.md): the Zig core, the web view, the bridge, SQLite, threads, Ollama, and the eve agent
-- [The journal](journal.md): writing, saving, importing, exporting, and searching entries, and the Home screen
+- [The journal](journal.md): the sidebar and the Journal tab, and writing, saving, importing, exporting, and searching entries
 - [Dream](dream.md): the job that summarizes entries and chats, titles chats, and extracts memories
+- [Dictation](dictation.md): speaking into an entry or a Chat message, the speech engine, the microphone permission, and Tidy
 - [Models](models.md): Settings > Models, recommended models, and the Ollama server Sage runs
 - [First-launch setup](onboarding.md): the setup screens, the rows they save, and the reminders to protect your journal
 
@@ -14,7 +15,7 @@ These pages explain how Sage works once you are past the [README](../README.md).
 
 - [Chat at a glance](agent/README.md): the three processes and how a question gets an answer
 - [The eve app](agent/eve-app.md): the agent’s files, model selection, tools, and configuration
-- [The Chat frontend](agent/frontend.md): how the React screen streams, saves, and reopens conversations
+- [The Chat frontend](agent/frontend.md): the Chat tab, and how the React screen streams, saves, and reopens conversations
 - [Chat storage](agent/storage.md): the chat tables, the save protocol, export, and deleting data
 - [Memories](agent/memories.md): the optional memory build, Facts and Events, and how your edits stay after Dream
 
@@ -28,8 +29,8 @@ These pages explain how Sage works once you are past the [README](../README.md).
 
 ## Security
 
-- [Security at a glance](security/README.md): what Sage protects, what stays readable, and where the code lives
-- [The app lock](security/lock.md): the password, Touch ID, wrong guesses, and automatic locking
+- [Security at a glance](security/README.md): what Sage protects, what stays readable, what leaves this Mac, and where the code lives
+- [The app lock](security/lock.md): the password, Touch ID, wrong guesses, automatic locking, and how dictation fits
 - [Encryption at rest](security/encryption.md): the data key, the key slots, the field format, and Chat workflow files
 - [The Touch ID Keychain mirror](security/keychain.md): the Keychain copy of the data key
 - [Recovery](security/recovery.md): the recovery key and what to do when something breaks

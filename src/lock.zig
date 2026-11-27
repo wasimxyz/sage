@@ -617,6 +617,26 @@ pub fn idleShouldLock(timeout_ms: i64, last_activity_ms: i64, now_ms: i64) bool 
     return now_ms - last_activity_ms >= timeout_ms;
 }
 
+/// What the idle check does on each pass.
+pub const IdleAction = enum {
+    /// Not idle long enough. Check again later.
+    wait,
+    /// Idle for the whole timeout. Lock the session.
+    lock,
+    /// Something is using the session, such as the microphone during dictation.
+    /// Count this pass as activity so the full timeout runs from when it ends.
+    hold,
+};
+
+/// The idle check, as a pure decision. `held` wins over a timeout that has run
+/// out, because the person is still there, speaking. A timeout of Never has
+/// nothing to hold back.
+pub fn idleDecision(timeout_ms: i64, last_activity_ms: i64, now_ms: i64, held: bool) IdleAction {
+    if (timeout_ms <= 0) return .wait;
+    if (held) return .hold;
+    return if (idleShouldLock(timeout_ms, last_activity_ms, now_ms)) .lock else .wait;
+}
+
 fn isIdleTimeoutAllowed(timeout_ms: i64) bool {
     for (idle_timeout_options) |option| {
         if (option == timeout_ms) return true;
@@ -696,6 +716,22 @@ test "lockSession only changes an enabled unlocked session" {
     try std.testing.expect(lock.lockSession());
     try std.testing.expect(!lock.unlocked);
     try std.testing.expect(!lock.lockSession());
+}
+
+test "idleDecision holds while dictating, even past the timeout" {
+    // Idle past the timeout and not held: lock.
+    try std.testing.expectEqual(IdleAction.lock, idleDecision(300_000, 1_000, 301_000, false));
+    // The same moment with the microphone on: hold, and the caller records activity.
+    try std.testing.expectEqual(IdleAction.hold, idleDecision(300_000, 1_000, 301_000, true));
+    // Held before the timeout runs out reads the same.
+    try std.testing.expectEqual(IdleAction.hold, idleDecision(300_000, 1_000, 2_000, true));
+    // Not held and not idle long enough: wait.
+    try std.testing.expectEqual(IdleAction.wait, idleDecision(300_000, 1_000, 2_000, false));
+    // Never has nothing to hold back, held or not.
+    try std.testing.expectEqual(IdleAction.wait, idleDecision(0, 1_000, 999_999_999, false));
+    try std.testing.expectEqual(IdleAction.wait, idleDecision(0, 1_000, 999_999_999, true));
+    // A clock that went backwards never locks.
+    try std.testing.expectEqual(IdleAction.wait, idleDecision(300_000, 5_000, 1_000, false));
 }
 
 test "idleShouldLock honors Never and the exact timeout boundary" {

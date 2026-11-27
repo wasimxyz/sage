@@ -46,3 +46,34 @@ jobs:
       - run: make check
       - run: make test
       - run: make fe-build
+
+  speech:
+    name: Build the speech library
+    # Dictation's speech engine is Swift for macOS 26, so it needs the macOS 26
+    # SDK. `macos-26` is arm64 with Xcode 26. The `ci` job above does not build
+    # it, and only the release workflow did, so a Swift error first showed on a
+    # release tag. A pinned label keeps the SDK from moving under this check.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the macOS 26 SDK
+        run: |
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk"
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            echo "Dictation's speech library needs the macOS 26 SDK, found $sdk." >&2
+            exit 1
+          fi
+      - name: Compile libSageSpeech.dylib
+        # The same command as `addSpeechLibrary` in build.zig, with the library
+        # alone: no Zig, no Native SDK, and no package.
+        run: |
+          out="$RUNNER_TEMP/libSageSpeech.dylib"
+          xcrun swiftc -O -swift-version 5 -parse-as-library -emit-library \
+            -module-name SageSpeech -target "$(uname -m)-apple-macos26.0" \
+            -Xlinker -install_name -Xlinker @rpath/libSageSpeech.dylib \
+            -o "$out" src/speech/SageSpeech.swift
+          # Sage loads these eight functions by name, so each must be exported.
+          count="$(nm -gU "$out" | grep -c ' _sage_speech_')"
+          echo "exported sage_speech functions: $count"
+          [ "$count" -eq 8 ]

@@ -119,7 +119,8 @@ export function formatEntryDate(
   });
 }
 
-export function formatHomeHeadingDate(now = new Date()): string {
+/** Today's date over the new chat's greeting, such as "Monday, November 23". */
+export function formatTodayHeading(now = new Date()): string {
   return intlFormat(
     now,
     {
@@ -131,39 +132,33 @@ export function formatHomeHeadingDate(now = new Date()): string {
   );
 }
 
-export function formatJournalListDate(value: string, now = new Date()): string {
+/**
+ * The date on a sidebar row. Recent days read Today, Yesterday, 3 days ago, or
+ * 1 week ago. Older days, and days ahead, read short, such as "Nov 8", with
+ * the year when it is not the year of `now`.
+ */
+export function formatSidebarDate(value: string, now = new Date()): string {
   const date = parseCalendarDate(value);
   if (!date) {
     return value;
   }
   const diffDays = differenceInCalendarDays(now, date);
-  if (diffDays < 0) {
-    return formatEntryDate(value);
-  }
   if (diffDays === 0) {
     return "Today";
   }
   if (diffDays === 1) {
     return "Yesterday";
   }
-  if (diffDays < 7) {
+  if (diffDays > 1 && diffDays < 7) {
     return `${diffDays} days ago`;
   }
-  if (diffDays < 14) {
+  if (diffDays >= 7 && diffDays < 14) {
     return "1 week ago";
-  }
-  if (isSameYear(date, now)) {
-    return intlFormat(date, {
-      day: "numeric",
-      month: "short",
-      weekday: "long",
-    });
   }
   return intlFormat(date, {
     day: "numeric",
     month: "short",
-    weekday: "long",
-    year: "numeric",
+    year: isSameYear(date, now) ? undefined : "numeric",
   });
 }
 
