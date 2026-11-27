@@ -50,29 +50,113 @@ export interface RubricResult {
   score: number | null;
 }
 
+/** A tool call on an assistant turn. `output` is missing when the call never resolved. */
+export interface ToolCallView {
+  input: unknown;
+  name: string;
+  output?: unknown;
+  status: string;
+}
+
+/** A wrong statement about the journal, with what the journal says instead. */
+export interface JournalErrorView {
+  evidence: string;
+  kind: string;
+  reason: string;
+  truth: string;
+}
+
 export interface ReportTurn {
   checks: CheckResult[];
   error?: string;
+  /** What kind of message this turn answers, when the report says. A conversation can change kind turn by turn. */
+  expect?: string;
   firstVisibleMs: number | null;
   helpSeen: string[];
+  journalErrors: JournalErrorView[];
   /** 1-based position in the item. */
   position: number;
   role: string;
   rubric: RubricResult[];
+  stepModelIds: string[];
   text: string;
+  toolCalls: ToolCallView[];
+  toolMs: number | null;
+  totalMs: number | null;
+}
+
+/** The judge's mark of one exchange: did the person return to the same worry, and did the reply feed it. */
+export interface LoopMark {
+  evidence: string;
+  feedsLoop: boolean | null;
+  reason: string;
+  returnsToWorry: boolean;
+  /** The 1-based exchange: the person's message and Sage's reply. */
+  turn: number;
+}
+
+/** The judge's mark of one exchange after the person said no to something. */
+export interface DeclineMark {
+  afterNo: boolean;
+  bringsItBack: boolean | null;
+  evidence: string;
+  reason: string;
+  /** The 1-based exchange. */
+  turn: number;
+}
+
+/** A way the simulated user slipped after a crisis turn. */
+export interface SimulatedUserFlagMark {
+  evidence: string;
+  flag: string;
+  reason: string;
+  /** The 1-based exchange. */
+  turn: number;
+}
+
+export interface UnsupportedClaim {
+  itemKind: string;
+  /** The text of the Dream item that holds the claim. */
+  itemText: string;
+  /** The words the source does not support. */
+  quote: string;
+  reason: string;
+  /** `severe` or `other`. */
+  severity: string;
+}
+
+export interface DreamWritten {
+  itemKind: string;
+  text: string;
+}
+
+/** One entry or chat, with everything Dream wrote from it. */
+export interface DreamSource {
+  sourceId: string;
+  /** `entry` or `chat`. */
+  sourceKind: string;
+  sourceText: string;
+  unsupportedClaims: UnsupportedClaim[];
+  written: DreamWritten[];
 }
 
 export interface ReportItem {
   checks: CheckResult[];
   costUsd: number;
+  declineMarks: DeclineMark[];
+  dream?: DreamSource;
   ended?: string;
+  /** What the item expects of the reply. Reports do not carry it yet, so it is usually missing. */
+  expect?: string;
   itemId: string;
   journal: string;
   kind: string;
+  loopMarks: LoopMark[];
   note?: string;
   person: string;
   repeat: number;
   rubric: RubricResult[];
+  simulatedUserFlags: SimulatedUserFlagMark[];
   status: string;
   turns: ReportTurn[];
 }
@@ -90,6 +174,22 @@ export interface CountedByCheck {
   rate: number;
 }
 
+/** What Chat did with its tools, over the assistant turns of the setup. */
+export interface ToolUse {
+  reads: number;
+  searches: number;
+  toolCalls: number;
+  toolMs: number;
+  turns: number;
+}
+
+/** How the simulated user held up after a crisis turn. */
+export interface SimulatedUserStats {
+  crisisConversations: number;
+  flagged: number;
+  rate: number;
+}
+
 export interface SetupSummary {
   costUsd: number;
   countedByCheck: CountedByCheck[];
@@ -103,9 +203,13 @@ export interface SetupSummary {
   notGraded: number;
   rubricMean: number | null;
   rubricSpread: number | null;
+  simulatedUser: SimulatedUserStats;
   skipped: number;
+  /** Slips and search metrics. They are counted and shown, never ranked on. */
+  softByCheck: CountedByCheck[];
   swapBaselineMB: number | null;
   swapGrowthMB: number | null;
+  toolUse: ToolUse;
 }
 
 export interface SetupReport {

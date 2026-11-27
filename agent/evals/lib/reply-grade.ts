@@ -403,14 +403,17 @@ export function recordReplyGrade(
   result: ReplyGradeResult
 ): void {
   const applied = checksFor(item);
+  // The turn's own kind of message goes with each check, so the report can
+  // say what a turn of a conversation answered.
   const judged = result.ok
     ? {
+        expect: item.expect,
         judgeCallId: result.callId,
         judgeCostUsd: result.costUsd,
         judgeModel: result.model,
         rubric: result.rubric,
       }
-    : { judgeModel: result.model, rubric: result.rubric };
+    : { expect: item.expect, judgeModel: result.model, rubric: result.rubric };
   const unavailable = result.ok ? undefined : result.reason;
   const record = (check: CheckRecord): void => {
     recordCheck(t, ref, {
@@ -659,6 +662,7 @@ function replyEval(
   }
   const ref = makeItem(
     {
+      expect: target.item.expect,
       itemId: row.itemId,
       kind: row.kind === "opener" ? "opener" : "chat",
       person: row.person,

@@ -13,12 +13,12 @@ import { loadAllPeople, selectPeople } from "./people.ts";
 import {
   buildPlan,
   CONVERSATIONS_EVAL,
-  DEFERRED_TESTS,
   describePlan,
   distinct,
   needsChat,
   resolveTests,
   runsConversations,
+  standaloneTest,
 } from "./plan.ts";
 import { defaultSweepsDir, loadSweep } from "./sweep.ts";
 import { conversation, makePerson, opener, tempDir } from "./test-fixtures.ts";
@@ -167,10 +167,7 @@ test("resolveTests keeps eval ids that have files and reports the rest", (t) => 
   writeFileSync(join(evals, "person", "retrieval.eval.ts"), "");
   writeFileSync(join(evals, "chat", "facts.eval.ts"), "");
   writeFileSync(join(evals, "grade", "replies.eval.ts"), "");
-  const resolved = resolveTests(
-    ["person", "facts", "openers", "head-to-head"],
-    evals
-  );
+  const resolved = resolveTests(["person", "facts", "openers"], evals);
   assert.deepEqual(resolved.prefixes.person, [
     "person/extraction",
     "person/retrieval",
@@ -181,7 +178,6 @@ test("resolveTests keeps eval ids that have files and reports the rest", (t) => 
     "chat/openers",
     "person/summaries",
   ]);
-  assert.deepEqual(resolved.deferred, ["head-to-head"]);
 });
 
 test("facts and openers share one grade eval, so each reply is graded once", (t) => {
@@ -225,8 +221,27 @@ test("a folder counts as an eval prefix", (t) => {
   assert.deepEqual(resolved.prefixes.chat, ["chat/facts"]);
 });
 
-test("calibration and head-to-head wait for later passes", () => {
-  assert.deepEqual([...DEFERRED_TESTS].sort(), ["calibration", "head-to-head"]);
+test("calibration and head-to-head each run one grade eval, and only the shipped files exist for them", () => {
+  const calibration = resolveTests(["calibration"], evalsDir);
+  assert.deepEqual(calibration.missing, []);
+  assert.deepEqual(calibration.prefixes, {
+    chat: [],
+    grade: ["calibration/agreement"],
+    person: [],
+  });
+  const headToHead = resolveTests(["head-to-head"], evalsDir);
+  assert.deepEqual(headToHead.missing, []);
+  assert.deepEqual(headToHead.prefixes, {
+    chat: [],
+    grade: ["grade/head-to-head"],
+    person: [],
+  });
+});
+
+test("the standalone tests are the ones that run alone", () => {
+  assert.equal(standaloneTest(["calibration"]), "calibration");
+  assert.equal(standaloneTest(["head-to-head"]), "head-to-head");
+  assert.equal(standaloneTest(["person", "facts"]), null);
 });
 
 test("a plan with no Chat has Sage starts and person passes, and nothing else", () => {
@@ -286,7 +301,6 @@ test("the dream sweep runs the person pass and Dream accuracy for each memory va
   assert.deepEqual(loaded.sweep.tests, ["person", "dream-accuracy"]);
   const resolved = resolveTests(loaded.sweep.tests, evalsDir);
   assert.deepEqual(resolved.missing, []);
-  assert.deepEqual(resolved.deferred, []);
   assert.deepEqual(resolved.prefixes, {
     chat: [],
     grade: [],

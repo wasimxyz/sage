@@ -27,6 +27,8 @@ import {
   type CheckTier,
   declineMarkSchema,
   dreamSourceSchema,
+  EXPECTS,
+  type Expect,
   HARD_CHECK_IDS,
   type HardCheckId,
   type ItemStatus,
@@ -262,6 +264,7 @@ function itemKeyOf(itemId: string, repeat: number): string {
 }
 
 interface ItemRef {
+  expect?: Expect;
   itemId: string;
   kind: ReportItemKind;
   person: string;
@@ -291,6 +294,12 @@ function inferKind(
   );
 }
 
+/** A kind of message in some metadata, or undefined when it holds none we know. */
+function expectOf(meta: Meta): Expect | undefined {
+  const declared = text(meta, "expect");
+  return EXPECTS.find((expect) => expect === declared);
+}
+
 function refOf(
   row: RecordedEvalResult,
   transcripts: ReadonlyMap<string, TranscriptRow>
@@ -304,7 +313,9 @@ function refOf(
     parseItemId(itemId)?.person ??
     itemId.split("/")[0] ??
     "unknown";
+  const expect = expectOf(row.metadata);
   return {
+    ...(expect === undefined ? {} : { expect }),
     itemId,
     kind: inferKind(row.metadata, itemId, transcript),
     person,
@@ -467,6 +478,7 @@ function addAssertion(
     );
   }
   if (turn !== undefined) {
+    turn.expect ??= expectOf(assertion.metadata);
     turn.journalErrors.push(...journalErrorsOf(assertion.metadata));
     for (const kind of helpSeenOf(assertion.metadata)) {
       if (!turn.helpSeen.includes(kind)) {
@@ -616,6 +628,7 @@ export function buildItems(
       build = newItem(ref, byKey.get(key), personShare);
       builds.set(key, build);
     }
+    build.item.expect ??= ref.expect;
     addRow(build, entry);
   }
   // A transcript with no rows at all was generated but never recorded.

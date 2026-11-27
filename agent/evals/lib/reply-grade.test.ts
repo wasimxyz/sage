@@ -883,6 +883,7 @@ test("one eval for each reply, graded once, with the item's metadata and tags", 
     evals.map((definition) => definition.metadata),
     [
       {
+        expect: "venting",
         itemId: "sam/opener/rent-panic",
         kind: "opener",
         person: "sam",
@@ -890,6 +891,7 @@ test("one eval for each reply, graded once, with the item's metadata and tags", 
         setupId: SETUP_ID,
       },
       {
+        expect: "question",
         itemId: "sam/chat/1",
         kind: "chat",
         person: "sam",
@@ -897,6 +899,7 @@ test("one eval for each reply, graded once, with the item's metadata and tags", 
         setupId: SETUP_ID,
       },
       {
+        expect: "venting",
         itemId: "sam/opener/rent-panic",
         kind: "opener",
         person: "sam",

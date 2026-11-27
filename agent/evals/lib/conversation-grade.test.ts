@@ -473,6 +473,7 @@ test("one eval for each conversation, with the item's metadata, tags, and the co
   const { evals } = await gradeRows([rowOf(), rowOf({ repeat: 2 })]);
   assert.equal(evals.length, 2);
   assert.deepEqual(evals[0]?.metadata, {
+    expect: "venting",
     itemId: "sam/conversation/rent-talk",
     kind: "conversation",
     person: "sam",

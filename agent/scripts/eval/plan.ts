@@ -46,31 +46,39 @@ export type PassName = (typeof PASS_NAMES)[number];
 export const TEST_EVALS: Readonly<
   Record<TestKind, Partial<Record<PassName, readonly string[]>>>
 > = {
-  calibration: {},
+  calibration: { grade: ["calibration/agreement"] },
   conversations: {
     chat: [CONVERSATIONS_EVAL],
     grade: ["grade/conversations"],
   },
   "dream-accuracy": { person: [DREAM_ACCURACY_EVAL] },
   facts: { chat: ["chat/facts"], grade: ["grade/replies"] },
-  "head-to-head": {},
+  "head-to-head": { grade: ["grade/head-to-head"] },
   openers: { chat: ["chat/openers"], grade: ["grade/replies"] },
   person: {
     person: ["person/extraction", "person/summaries", "person/retrieval"],
   },
 };
 
-/** Test kinds the runner does not start yet. They arrive with their own passes. */
-export const DEFERRED_TESTS: readonly TestKind[] = [
-  "calibration",
-  "head-to-head",
-];
+/**
+ * `calibration` and `head-to-head` run alone, with no Sage and no setups of
+ * their own: each is one grade pass against the stub target. The sweep file
+ * schema refuses to mix them with other tests (`STANDALONE_TESTS`).
+ */
+export function standaloneTest(
+  tests: readonly TestKind[]
+): "calibration" | "head-to-head" | null {
+  for (const test of tests) {
+    if (test === "calibration" || test === "head-to-head") {
+      return test;
+    }
+  }
+  return null;
+}
 
 export type PassPrefixes = Record<PassName, string[]>;
 
 export interface ResolvedTests {
-  /** Test kinds the runner does not run yet. */
-  deferred: TestKind[];
   /** Eval ids a test asked for that have no file. */
   missing: string[];
   prefixes: PassPrefixes;
@@ -93,12 +101,7 @@ export function resolveTests(
 ): ResolvedTests {
   const prefixes: PassPrefixes = { chat: [], grade: [], person: [] };
   const missing: string[] = [];
-  const deferred: TestKind[] = [];
   for (const test of tests) {
-    if (DEFERRED_TESTS.includes(test)) {
-      deferred.push(test);
-      continue;
-    }
     for (const pass of PASS_NAMES) {
       for (const id of TEST_EVALS[test][pass] ?? []) {
         if (!evalExists(evalsDir, id)) {
@@ -109,7 +112,7 @@ export function resolveTests(
       }
     }
   }
-  return { deferred, missing, prefixes };
+  return { missing, prefixes };
 }
 
 export interface PlanPerson {

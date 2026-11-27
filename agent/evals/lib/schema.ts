@@ -119,6 +119,14 @@ const promptName = text.regex(
 
 const modelName = text;
 
+const sweepIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/u;
+
+/** A sweep id such as `2026-11-10T031500Z-screen`. It names files, so no path characters. */
+const sweepIdText = text.regex(
+  sweepIdPattern,
+  "Use a sweep id such as 2026-11-10T031500Z-screen."
+);
+
 /** A single string counts as a list of one. */
 const textList = z.preprocess(
   (value) => (typeof value === "string" ? [value] : value),
@@ -542,35 +550,81 @@ const defaultThinking = (): Thinking[] => ["off"];
 const defaultTests = (): TestKind[] => ["person", "facts"];
 const defaultReplyWords = (): [number, number] => [20, 180];
 
-export const sweepFileSchema = z.strictObject({
-  chatModels: uniqueList(modelName).default(() => [DEFAULT_CHAT_MODEL]),
-  contextLengths: uniqueList(z.number().int().positive()).default(() => [
-    32_768,
-  ]),
-  dreamPrompts: uniqueList(promptName).default(() => [BASELINE_PROMPT]),
-  embedModels: uniqueList(modelName).default(() => [DEFAULT_EMBED_MODEL]),
-  /**
-   * People left out of the sweep: any person whose `tags` hold one of these.
-   * `long-history` is tagged `long`, because its first Dream run takes hours,
-   * so every sweep but `deep` and `dream` lists `long` here.
-   */
-  excludeTags: z.array(text).default(() => []),
-  judge: judgeSettingsSchema.prefault({}),
-  maxSwapGrowthMB: z.number().min(0).default(512),
-  maxToolCallsPerTurn: z.number().int().min(1).default(6),
-  memory: uniqueList(memorySchema).default(defaultMemory),
-  p90LimitSeconds: z.number().positive().nullable().default(null),
-  prompts: uniqueList(promptName).default(() => [BASELINE_PROMPT]),
-  repeats: z.number().int().min(1).default(1),
-  replyWords: replyWordsSchema.default(defaultReplyWords),
-  simulatedUser: simulatedUserSettingsSchema.prefault({}),
-  speedLimitSeconds: z.number().positive().default(20),
-  spendingCapUsd: z.number().min(0).default(50),
-  summaryModels: uniqueList(modelName).default(() => [DEFAULT_SUMMARY_MODEL]),
-  tags: z.array(text).default(() => []),
-  tests: uniqueList(testKindSchema).default(defaultTests),
-  thinking: uniqueList(thinkingSchema).default(defaultThinking),
-});
+/** Tests that run alone: they use no Sage and no setups of their own. */
+export const STANDALONE_TESTS = ["calibration", "head-to-head"] as const;
+
+/** Most setups head-to-head compares, and the fewest. */
+export const HEAD_TO_HEAD_MAX_SETUPS = 3;
+export const HEAD_TO_HEAD_MIN_SETUPS = 2;
+
+function addTestIssues(
+  sweep: { compare?: string | undefined; tests: readonly TestKind[] },
+  ctx: z.RefinementCtx
+): void {
+  const standalone = sweep.tests.filter((test) =>
+    (STANDALONE_TESTS as readonly string[]).includes(test)
+  );
+  if (standalone.length > 0 && sweep.tests.length > 1) {
+    ctx.addIssue({
+      code: "custom",
+      message: `${standalone.join(" and ")} run${standalone.length === 1 ? "s" : ""} alone. Put the other tests in another sweep file.`,
+      path: ["tests"],
+    });
+  }
+  if (sweep.compare !== undefined && standalone.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "compare names a finished sweep, and only head-to-head and calibration read it.",
+      path: ["compare"],
+    });
+  }
+}
+
+export const sweepFileSchema = z
+  .strictObject({
+    chatModels: uniqueList(modelName).default(() => [DEFAULT_CHAT_MODEL]),
+    /**
+     * The id of a finished sweep (`2026-11-10T031500Z-screen`). `head-to-head`
+     * compares that sweep's top setups, and `calibration` reads the sample made
+     * from it. `--compare` in ARGS sets it too, and wins over the file.
+     */
+    compare: sweepIdText.optional(),
+    /** How many of the top setups `head-to-head` compares: 2 or 3. */
+    compareTop: z
+      .number()
+      .int()
+      .min(HEAD_TO_HEAD_MIN_SETUPS)
+      .max(HEAD_TO_HEAD_MAX_SETUPS)
+      .default(HEAD_TO_HEAD_MAX_SETUPS),
+    contextLengths: uniqueList(z.number().int().positive()).default(() => [
+      32_768,
+    ]),
+    dreamPrompts: uniqueList(promptName).default(() => [BASELINE_PROMPT]),
+    embedModels: uniqueList(modelName).default(() => [DEFAULT_EMBED_MODEL]),
+    /**
+     * People left out of the sweep: any person whose `tags` hold one of these.
+     * `long-history` is tagged `long`, because its first Dream run takes hours,
+     * so every sweep but `deep` and `dream` lists `long` here.
+     */
+    excludeTags: z.array(text).default(() => []),
+    judge: judgeSettingsSchema.prefault({}),
+    maxSwapGrowthMB: z.number().min(0).default(512),
+    maxToolCallsPerTurn: z.number().int().min(1).default(6),
+    memory: uniqueList(memorySchema).default(defaultMemory),
+    p90LimitSeconds: z.number().positive().nullable().default(null),
+    prompts: uniqueList(promptName).default(() => [BASELINE_PROMPT]),
+    repeats: z.number().int().min(1).default(1),
+    replyWords: replyWordsSchema.default(defaultReplyWords),
+    simulatedUser: simulatedUserSettingsSchema.prefault({}),
+    speedLimitSeconds: z.number().positive().default(20),
+    spendingCapUsd: z.number().min(0).default(50),
+    summaryModels: uniqueList(modelName).default(() => [DEFAULT_SUMMARY_MODEL]),
+    tags: z.array(text).default(() => []),
+    tests: uniqueList(testKindSchema).default(defaultTests),
+    thinking: uniqueList(thinkingSchema).default(defaultThinking),
+  })
+  .superRefine(addTestIssues);
 export type SweepFile = z.infer<typeof sweepFileSchema>;
 export type SweepFileInput = z.input<typeof sweepFileSchema>;
 
@@ -1473,6 +1527,12 @@ export type ReportRubric = z.infer<typeof reportRubricSchema>;
 
 export const reportTurnSchema = turnSchema.extend({
   checks: z.array(reportCheckSchema).default(() => []),
+  /**
+   * The kind of message this turn answers. A conversation turn has its own:
+   * a scripted turn can be `pushback`, and from the crisis turn on it is
+   * `crisis`. Missing when no grade recorded it.
+   */
+  expect: expectSchema.optional(),
   helpSeen: z.array(kindOfHelpSchema).default(() => []),
   journalErrors: z.array(journalErrorSchema).default(() => []),
   rubric: z.array(reportRubricSchema).default(() => []),
@@ -1499,6 +1559,8 @@ export const reportItemSchema = z.strictObject({
   declineMarks: z.array(declineMarkSchema).default(() => []),
   dream: dreamSourceSchema.optional(),
   ended: endedSchema.optional(),
+  /** What the item is about: an opener's `expect`, `question` for a fact question, a conversation's own `expect`. Missing for Dream and person-pass items. */
+  expect: expectSchema.optional(),
   itemId: text,
   journal: journalSchema,
   kind: vocabulary("report item kind", REPORT_ITEM_KINDS),
@@ -1663,6 +1725,87 @@ export const rankingEntrySchema = z.strictObject({
 });
 export type RankingEntry = z.infer<typeof rankingEntrySchema>;
 
+const setupIdText = text.regex(
+  setupIdPattern,
+  "Use the 10-character setup id."
+);
+
+/**
+ * One order of a head-to-head comparison. The judge sees two replies as "A" and
+ * "B". Each item is judged twice, once with each setup first, so the position
+ * of a reply cannot decide the result. `winner` is named by setup: `a` and `b`
+ * are the pair's setups, not the places the replies were shown.
+ */
+export const headToHeadOrderSchema = z.strictObject({
+  /** The setup whose reply was shown first, as "A". */
+  first: vocabulary("setup", ["a", "b"]),
+  reason: z.string(),
+  winner: vocabulary("winner", HEAD_TO_HEAD_WINNERS),
+});
+export type HeadToHeadOrder = z.infer<typeof headToHeadOrderSchema>;
+
+export const headToHeadItemSchema = z.strictObject({
+  itemId: text,
+  kind: vocabulary("transcript kind", TRANSCRIPT_KINDS),
+  /** Both orders, in the order they ran. */
+  orders: z.array(headToHeadOrderSchema),
+  person: slug,
+  repeat: z.number().int().min(1),
+  /** True when the two orders picked different setups, or one picked a tie. The item is then a tie. */
+  split: z.boolean(),
+  /** A setup wins only when it wins in both orders. Otherwise the item is a tie. */
+  winner: vocabulary("winner", HEAD_TO_HEAD_WINNERS),
+});
+export type HeadToHeadItem = z.infer<typeof headToHeadItemSchema>;
+
+export const headToHeadPairSchema = z.strictObject({
+  /** The better-ranked setup of the pair. */
+  a: setupIdText,
+  aWinRate: z.number().min(0).max(1),
+  aWins: z.number().int().min(0),
+  b: setupIdText,
+  bWinRate: z.number().min(0).max(1),
+  bWins: z.number().int().min(0),
+  /** Items with a winner or a tie. Win rates are over these. */
+  graded: z.number().int().min(0),
+  items: z.array(headToHeadItemSchema),
+  /** Items a judge error or the spending cap left out. */
+  notGraded: z.number().int().min(0),
+  /** Items where the two orders disagreed. They count as ties. */
+  splits: z.number().int().min(0),
+  tieRate: z.number().min(0).max(1),
+  ties: z.number().int().min(0),
+});
+export type HeadToHeadPair = z.infer<typeof headToHeadPairSchema>;
+
+export const headToHeadStandingSchema = z.strictObject({
+  graded: z.number().int().min(0),
+  losses: z.number().int().min(0),
+  setupId: setupIdText,
+  ties: z.number().int().min(0),
+  /** `wins / graded` over every pair the setup is in. */
+  winRate: z.number().min(0).max(1),
+  wins: z.number().int().min(0),
+});
+export type HeadToHeadStanding = z.infer<typeof headToHeadStandingSchema>;
+
+/** The head-to-head result for the top setups of one sweep. It is added to that sweep's summary. */
+export const headToHeadSummarySchema = z.strictObject({
+  costUsd: z.number().min(0),
+  generatedAt: z.string(),
+  judge: judgeSettingsSchema,
+  pairs: z.array(headToHeadPairSchema),
+  /** The judge rubric hash of the comparison. */
+  rubric: text.optional(),
+  /** The compared setups, best-ranked first. */
+  setups: z.array(setupIdText),
+  /** Each setup's record across its pairs, most wins first. */
+  standings: z.array(headToHeadStandingSchema),
+  /** The id of the run that did the comparison. */
+  sweepId: text,
+});
+export type HeadToHeadSummary = z.infer<typeof headToHeadSummarySchema>;
+
 export const sweepSummarySchema = z.strictObject({
   actual: z.strictObject({
     costUsd: z.number().min(0).nullable(),
@@ -1672,6 +1815,8 @@ export const sweepSummarySchema = z.strictObject({
     costUsd: z.number().min(0),
     hours: z.number().min(0),
   }),
+  /** Set when a head-to-head run compared this sweep's top setups. */
+  headToHead: headToHeadSummarySchema.optional(),
   judgeCheck: z.strictObject({
     misses: z.array(judgeCheckMissSchema),
     passed: z.boolean(),

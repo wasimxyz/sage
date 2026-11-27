@@ -10,6 +10,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
@@ -24,12 +25,18 @@ import {
   parseSweepFile,
   setupId as setupIdOf,
 } from "../../evals/lib/schema.ts";
-import { collectSetupData } from "./collect.ts";
+import {
+  collectSetupData,
+  personPassFiles,
+  readTranscripts,
+  setupPassFiles,
+} from "./collect.ts";
 import { readMemoryReadings, readSwapReading } from "./memory-pressure.ts";
 import { OLLAMA_HOST } from "./ollama.ts";
 import { JobPool } from "./passes.ts";
 import { buildPlan } from "./plan.ts";
 import { assembleSetupReport } from "./report.ts";
+import { isDone, markerPath, savedManifestPath } from "./resume.ts";
 import {
   fakeEve,
   makePerson,
@@ -197,6 +204,11 @@ interface RigOptions {
   /** The eval ids each pass runs. */
   prefixes?: RunContext["prefixes"];
   sweep?: Record<string, unknown>;
+}
+
+/** Forgets what the run finished, so the next unit does its steps again instead of skipping them. */
+function forgetProgress(rig: Rig): void {
+  rmSync(join(rig.runDir, "done"), { force: true, recursive: true });
 }
 
 /** Memory probes that see nothing, so a test never runs `sysctl`. */
@@ -547,6 +559,7 @@ test("a second unit with the same inputs restores the Dream snapshot instead of 
   await runPersonUnit(rig.ctx, rig.group, "sam");
   await rig.ctx.pool.drain();
   assert.equal(rig.seeded.count, 1);
+  forgetProgress(rig);
   await runPersonUnit(rig.ctx, rig.group, "sam");
   await rig.ctx.pool.drain();
   assert.deepEqual(rig.ctx.failures, []);
@@ -658,6 +671,7 @@ test("a Dream-only unit runs Dream accuracy in the person pass with the key, the
 test("a second Dream-only unit finds the same snapshot folder for its grades", async (t) => {
   const rig = await makeRig(t, dreamOnly);
   await runPersonUnit(rig.ctx, rig.group, "sam");
+  forgetProgress(rig);
   await runPersonUnit(rig.ctx, rig.group, "sam");
   assert.deepEqual(rig.ctx.failures, []);
   assert.equal(rig.seeded.count, 1);
@@ -902,6 +916,7 @@ test("a cached Dream snapshot skips both stages and the rewrite", async (t) => {
   await runPersonUnit(rig.ctx, rig.group, "sam");
   await rig.ctx.pool.drain();
   assert.equal(events.length, 3);
+  forgetProgress(rig);
   await runPersonUnit(rig.ctx, rig.group, "sam");
   await rig.ctx.pool.drain();
   assert.deepEqual(rig.ctx.failures, []);
@@ -982,4 +997,231 @@ test("a model that will not load still has its memory reading, because the load 
     readCalls(rig.calls).filter((call) => call.pass === "grade").length,
     0
   );
+});
+
+// ---------------------------------------------------------------------------
+// Resuming
+// ---------------------------------------------------------------------------
+
+function evalCalls(rig: Rig, pass: string): Call[] {
+  return readCalls(rig.calls).filter(
+    (call) =>
+      call.kind === "eval" &&
+      call.pass === pass &&
+      !(call.prefixes as string[]).includes("--list")
+  );
+}
+
+function sageStarts(rig: Rig): number {
+  return readCalls(rig.calls).filter((call) => call.kind === "sage").length;
+}
+
+/** The setup of the rig's one unit, and where its passes leave their files. */
+function filesOf(rig: Rig, pass: "chat" | "grade") {
+  const [setup] = expandSetups(rig.ctx.sweep);
+  assert.ok(setup);
+  return setupPassFiles(rig.runDir, setupIdOf(setup), "sam", pass);
+}
+
+const STALE_ROW = `${JSON.stringify({
+  ended: "done",
+  itemId: "sam/chat/1",
+  journal: "own",
+  kind: "chat",
+  person: "sam",
+  repeat: 1,
+  setupId: "0000000000",
+  turns: [
+    { role: "user", text: "How was my week?" },
+    { role: "assistant", text: "From a pass that was killed." },
+  ],
+})}\n`;
+
+test("a unit that finished in an earlier run is skipped when the sweep is resumed, with no Sage and no pass", async (t) => {
+  const rig = await makeRig(t);
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.deepEqual(rig.ctx.failures, []);
+  const before = readCalls(rig.calls).length;
+  assert.equal(sageStarts(rig), 1);
+
+  // A resumed run has a new context and the same run folder.
+  rig.ctx.listCache = new Map();
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const after = readCalls(rig.calls);
+  assert.equal(sageStarts(rig), 1, "no second Sage");
+  assert.deepEqual(
+    after
+      .slice(before)
+      .filter(
+        (call) =>
+          call.pass !== undefined &&
+          !(call.prefixes as string[]).includes("--list")
+      ),
+    [],
+    "no pass ran again"
+  );
+  assert.equal(rig.seeded.count, 1);
+});
+
+test("replies that were saved but not graded are only graded again, without starting Sage", async (t) => {
+  const rig = await makeRig(t);
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const grade = filesOf(rig, "grade");
+  const chat = filesOf(rig, "chat");
+  const transcripts = readFileSync(chat.transcripts, "utf8");
+  // The run was stopped while it graded: no marker, and half the rows.
+  rmSync(
+    markerPath(rig.runDir, {
+      kind: "grade",
+      person: "sam",
+      setupId: setupIdOf(expandSetups(rig.ctx.sweep)[0] as never),
+    })
+  );
+  writeFileSync(grade.results, "stopped halfway\n");
+  rig.ctx.listCache = new Map();
+  const sages = sageStarts(rig);
+  const chats = evalCalls(rig, "chat").length;
+  const grades = evalCalls(rig, "grade").length;
+
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(sageStarts(rig), sages, "grading needs no Sage");
+  assert.equal(
+    evalCalls(rig, "chat").length,
+    chats,
+    "no reply was generated again"
+  );
+  assert.equal(evalCalls(rig, "grade").length, grades + 1);
+  assert.equal(readFileSync(chat.transcripts, "utf8"), transcripts);
+  const rows = readFileSync(grade.results, "utf8").trim().split("\n");
+  assert.equal(
+    rows.length,
+    1,
+    "the grades of the first try are gone, so nothing is counted twice"
+  );
+  assert.ok(JSON.parse(rows[0] ?? "{}").assertions);
+  // The grade pass read the manifest the first run saved, since Sage is not running.
+  const [lastGrade] = evalCalls(rig, "grade").slice(-1);
+  assert.equal(
+    lastGrade?.manifest,
+    savedManifestPath(rig.runDir, rig.group.dreamKeyId, "sam")
+  );
+  assert.ok(existsSync(String(lastGrade?.manifest)));
+});
+
+test("a chat pass with no done marker starts from scratch, so a row from a killed pass is never graded or counted twice", async (t) => {
+  const rig = await makeRig(t);
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const [setup] = expandSetups(rig.ctx.sweep);
+  assert.ok(setup);
+  const id = setupIdOf(setup);
+  const chat = filesOf(rig, "chat");
+  // The pass was killed after it wrote a row: no marker for it or for grading.
+  rmSync(markerPath(rig.runDir, { kind: "chat", person: "sam", setupId: id }));
+  rmSync(markerPath(rig.runDir, { kind: "grade", person: "sam", setupId: id }));
+  writeFileSync(chat.transcripts, STALE_ROW, { flag: "a" });
+  rig.ctx.listCache = new Map();
+  const chats = evalCalls(rig, "chat").length;
+
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(evalCalls(rig, "chat").length, chats + 1, "it generated again");
+  assert.equal(sageStarts(rig), 2, "generating needs Sage");
+  const rows = readTranscripts(chat.transcripts);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.turns[1]?.text, "You wrote about the market.");
+  // The fake grade pass fails journal-right when it sees more than one row.
+  const graded = readFileSync(filesOf(rig, "grade").results, "utf8");
+  assert.equal(graded.trim().split("\n").length, 1);
+  assert.ok(JSON.parse(graded).assertions[0].passed);
+  assert.equal(
+    isDone(rig.runDir, { kind: "chat", person: "sam", setupId: id }),
+    true
+  );
+  assert.equal(
+    isDone(rig.runDir, { kind: "grade", person: "sam", setupId: id }),
+    true
+  );
+});
+
+test("a chat pass that crashes is not marked done, and its replies are not graded", async (t) => {
+  const rig = await makeRig(t);
+  fakeEve(
+    rig.ctx.agentDir,
+    fakeEveScript.replace(
+      '} else if (pass === "chat") {',
+      '} else if (pass === "chat") { process.exit(3);'
+    )
+  );
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const [setup] = expandSetups(rig.ctx.sweep);
+  assert.ok(setup);
+  const id = setupIdOf(setup);
+  assert.equal(rig.ctx.failures.length, 1);
+  assert.equal(
+    isDone(rig.runDir, { kind: "chat", person: "sam", setupId: id }),
+    false
+  );
+  assert.equal(
+    isDone(rig.runDir, { kind: "grade", person: "sam", setupId: id }),
+    false
+  );
+  assert.equal(evalCalls(rig, "grade").length, 0);
+  // The person pass finished, so a resume does not run it again.
+  assert.equal(
+    isDone(rig.runDir, {
+      dreamKeyId: rig.group.dreamKeyId,
+      kind: "person",
+      person: "sam",
+    }),
+    true
+  );
+});
+
+test("a run that was stopped does not mark its passes done", async (t) => {
+  const rig = await makeRig(t);
+  rig.ctx.abort.aborted = true;
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  assert.equal(existsSync(join(rig.runDir, "done", "chat")), false);
+  assert.equal(existsSync(join(rig.runDir, "done", "grade")), false);
+});
+
+test("a person pass that was not finished runs again from scratch, and the chat pass that finished is not run again", async (t) => {
+  const rig = await makeRig(t);
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+  const person = personPassFiles(rig.runDir, rig.group.dreamKeyId, "sam");
+  rmSync(
+    markerPath(rig.runDir, {
+      dreamKeyId: rig.group.dreamKeyId,
+      kind: "person",
+      person: "sam",
+    })
+  );
+  writeFileSync(person.results, "stopped halfway\n");
+  rig.ctx.listCache = new Map();
+  const chats = evalCalls(rig, "chat").length;
+  const people = evalCalls(rig, "person").length;
+
+  await runPersonUnit(rig.ctx, rig.group, "sam");
+  await rig.ctx.pool.drain();
+
+  assert.deepEqual(rig.ctx.failures, []);
+  assert.equal(evalCalls(rig, "person").length, people + 1);
+  assert.equal(evalCalls(rig, "chat").length, chats, "the replies were kept");
+  assert.equal(
+    readFileSync(person.results, "utf8").trim().split("\n").length,
+    1
+  );
+  assert.equal(rig.seeded.count, 1, "the Dream cache answered");
 });

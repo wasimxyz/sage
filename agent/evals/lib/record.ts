@@ -20,7 +20,12 @@
 import type { EveEvalContext } from "eve/evals";
 
 import type { Graded } from "./grader.ts";
-import type { CheckTier, JournalError, ReportItemKind } from "./schema.ts";
+import type {
+  CheckTier,
+  Expect,
+  JournalError,
+  ReportItemKind,
+} from "./schema.ts";
 
 /** The check tiers, plus `soft` for scores that have no tier of their own. */
 export type ResultTier = CheckTier | "soft";
@@ -29,6 +34,8 @@ export type ResultTier = CheckTier | "soft";
 export type ScoreHost = Pick<EveEvalContext, "score">;
 
 export interface ItemRef {
+  /** What the item is about, for the reports. The grade evals set it. */
+  expect?: Expect;
   /** `person/<kind>/<n-or-id>`. */
   itemId: string;
   kind: ReportItemKind;
@@ -56,6 +63,7 @@ export function personItemId(
 /** The metadata every eval carries. */
 export function itemMetadata(item: ItemRef): Record<string, unknown> {
   return {
+    ...(item.expect === undefined ? {} : { expect: item.expect }),
     itemId: item.itemId,
     kind: item.kind,
     person: item.person,

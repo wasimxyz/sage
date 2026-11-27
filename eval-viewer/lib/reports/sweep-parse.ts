@@ -1,10 +1,14 @@
 import {
   type CheckResult,
   type CountedByCheck,
+  type DeclineMark,
   type DimensionKey,
+  type DreamSource,
   dimensionKeys,
   type HardFailure,
+  type JournalErrorView,
   type JudgeCheckMiss,
+  type LoopMark,
   type ParseOutcome,
   type RankingEntry,
   type ReportItem,
@@ -13,9 +17,14 @@ import {
   type SetupDimensions,
   type SetupReport,
   type SetupSummary,
+  type SimulatedUserFlagMark,
+  type SimulatedUserStats,
   type SweepAxes,
   type SweepSummary,
   supportedSchemaVersion,
+  type ToolCallView,
+  type ToolUse,
+  type UnsupportedClaim,
 } from "./sweep-types.ts";
 
 // A tolerant reader for the JSON that agent/evals/lib/schema.ts describes.
@@ -129,9 +138,35 @@ function readSetupSummary(summary: Obj): SetupSummary {
     notGraded: numberOr(summary, "notGraded", 0, at),
     rubricMean: nullableNumber(summary, "rubricMean", at),
     rubricSpread: nullableNumber(summary, "rubricSpread", at),
+    simulatedUser: readSimulatedUser(
+      summary.simulatedUser,
+      `${at}.simulatedUser`
+    ),
     skipped: numberOr(summary, "skipped", 0, at),
+    softByCheck: list(summary, "softByCheck", readCountedByCheck, at),
     swapBaselineMB: nullableNumber(summary, "swapBaselineMB", at),
     swapGrowthMB: nullableNumber(summary, "swapGrowthMB", at),
+    toolUse: readToolUse(summary.toolUse, `${at}.toolUse`),
+  };
+}
+
+function readToolUse(value: unknown, path: string): ToolUse {
+  const use = object(value ?? {}, path);
+  return {
+    reads: numberOr(use, "reads", 0, path),
+    searches: numberOr(use, "searches", 0, path),
+    toolCalls: numberOr(use, "toolCalls", 0, path),
+    toolMs: numberOr(use, "toolMs", 0, path),
+    turns: numberOr(use, "turns", 0, path),
+  };
+}
+
+function readSimulatedUser(value: unknown, path: string): SimulatedUserStats {
+  const stats = object(value ?? {}, path);
+  return {
+    crisisConversations: numberOr(stats, "crisisConversations", 0, path),
+    flagged: numberOr(stats, "flagged", 0, path),
+    rate: numberOr(stats, "rate", 0, path),
   };
 }
 
@@ -159,16 +194,102 @@ function readItem(value: unknown, path: string): ReportItem {
   return {
     checks: list(item, "checks", readCheck, path),
     costUsd: numberOr(item, "costUsd", 0, path),
+    declineMarks: list(item, "declineMarks", readDeclineMark, path),
+    dream:
+      item.dream === undefined || item.dream === null
+        ? undefined
+        : readDreamSource(item.dream, `${join(path, "dream")}`),
     ended: optionalText(item, "ended", path),
+    expect: optionalText(item, "expect", path),
     itemId: requiredText(item, "itemId", path),
     journal: textOr(item, "journal", "own", path),
     kind: textOr(item, "kind", "", path),
+    loopMarks: list(item, "loopMarks", readLoopMark, path),
     note: optionalText(item, "note", path),
     person: textOr(item, "person", "", path),
     repeat: numberOr(item, "repeat", 1, path),
     rubric: list(item, "rubric", readRubric, path),
+    simulatedUserFlags: list(
+      item,
+      "simulatedUserFlags",
+      readSimulatedUserFlag,
+      path
+    ),
     status: textOr(item, "status", "graded", path),
     turns: list(item, "turns", readTurn, path),
+  };
+}
+
+function readLoopMark(value: unknown, path: string): LoopMark {
+  const mark = object(value, path);
+  return {
+    evidence: textOr(mark, "evidence", "", path),
+    feedsLoop: nullableBoolean(mark, "feedsLoop", path),
+    reason: textOr(mark, "reason", "", path),
+    returnsToWorry: booleanOr(mark, "returnsToWorry", false, path),
+    turn: requiredNumber(mark, "turn", path),
+  };
+}
+
+function readDeclineMark(value: unknown, path: string): DeclineMark {
+  const mark = object(value, path);
+  return {
+    afterNo: booleanOr(mark, "afterNo", false, path),
+    bringsItBack: nullableBoolean(mark, "bringsItBack", path),
+    evidence: textOr(mark, "evidence", "", path),
+    reason: textOr(mark, "reason", "", path),
+    turn: requiredNumber(mark, "turn", path),
+  };
+}
+
+function readSimulatedUserFlag(
+  value: unknown,
+  path: string
+): SimulatedUserFlagMark {
+  const mark = object(value, path);
+  return {
+    evidence: textOr(mark, "evidence", "", path),
+    flag: requiredText(mark, "flag", path),
+    reason: textOr(mark, "reason", "", path),
+    turn: requiredNumber(mark, "turn", path),
+  };
+}
+
+function readDreamSource(value: unknown, path: string): DreamSource {
+  const source = object(value, path);
+  return {
+    sourceId: requiredText(source, "sourceId", path),
+    sourceKind: textOr(source, "sourceKind", "entry", path),
+    sourceText: textOr(source, "sourceText", "", path),
+    unsupportedClaims: list(
+      source,
+      "unsupportedClaims",
+      readUnsupportedClaim,
+      path
+    ),
+    written: list(
+      source,
+      "written",
+      (written, writtenPath) => {
+        const row = object(written, writtenPath);
+        return {
+          itemKind: textOr(row, "itemKind", "", writtenPath),
+          text: textOr(row, "text", "", writtenPath),
+        };
+      },
+      path
+    ),
+  };
+}
+
+function readUnsupportedClaim(value: unknown, path: string): UnsupportedClaim {
+  const claim = object(value, path);
+  return {
+    itemKind: textOr(claim, "itemKind", "", path),
+    itemText: textOr(claim, "itemText", "", path),
+    quote: textOr(claim, "quote", "", path),
+    reason: textOr(claim, "reason", "", path),
+    severity: textOr(claim, "severity", "other", path),
   };
 }
 
@@ -178,12 +299,38 @@ function readTurn(value: unknown, path: string, index: number): ReportTurn {
   return {
     checks: list(turn, "checks", readCheck, path),
     error: optionalText(turn, "error", path),
+    expect: optionalText(turn, "expect", path),
     firstVisibleMs: nullableNumber(timing, "firstVisibleMs", `${path}.timing`),
     helpSeen: textList(turn, "helpSeen", path),
+    journalErrors: list(turn, "journalErrors", readJournalError, path),
     position: index + 1,
     role: textOr(turn, "role", "assistant", path),
     rubric: list(turn, "rubric", readRubric, path),
+    stepModelIds: textList(turn, "stepModelIds", path),
     text: textOr(turn, "text", "", path),
+    toolCalls: list(turn, "toolCalls", readToolCall, path),
+    toolMs: nullableNumber(timing, "toolMs", `${path}.timing`),
+    totalMs: nullableNumber(timing, "totalMs", `${path}.timing`),
+  };
+}
+
+function readToolCall(value: unknown, path: string): ToolCallView {
+  const call = object(value, path);
+  return {
+    input: call.input,
+    name: requiredText(call, "name", path),
+    output: call.output,
+    status: textOr(call, "status", "completed", path),
+  };
+}
+
+function readJournalError(value: unknown, path: string): JournalErrorView {
+  const error = object(value, path);
+  return {
+    evidence: textOr(error, "evidence", "", path),
+    kind: textOr(error, "kind", "", path),
+    reason: textOr(error, "reason", "", path),
+    truth: textOr(error, "truth", "", path),
   };
 }
 
@@ -358,6 +505,18 @@ function requiredBoolean(source: Obj, key: string, path: string): boolean {
     return fail(join(path, key), "true or false");
   }
   return value;
+}
+
+function nullableBoolean(
+  source: Obj,
+  key: string,
+  path: string
+): boolean | null {
+  const value = source[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return requiredBoolean(source, key, path);
 }
 
 function booleanOr(
