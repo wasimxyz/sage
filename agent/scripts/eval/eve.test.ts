@@ -28,6 +28,7 @@ test("the server environment carries the discovery file, today, and the Ollama a
     base: { PATH: "/usr/bin" },
     discoveryFile: "/tmp/x/agent-server.json",
     ollamaBaseUrl: "http://127.0.0.1:11436/api",
+    today: EVAL_TODAY,
     withWorkflowGuard: false,
   });
   assert.equal(env.SAGE_DISCOVERY_FILE, "/tmp/x/agent-server.json");
@@ -54,6 +55,16 @@ test("the workflow guard loads ahead of the server, after any options already se
     join(agentDir, "agent", "lib", "workflow-guard-preload.ts")
   );
   assert.equal(env.SAGE_DISCOVERY_FILE, undefined);
+});
+
+test("without today, the server reads the clock, even when the shell pins a day", () => {
+  const env = eveDevEnv({
+    agentDir,
+    base: { PATH: "/usr/bin", SAGE_TODAY: "2026-01-01" },
+    ollamaBaseUrl: "http://127.0.0.1:11436/api",
+    withWorkflowGuard: false,
+  });
+  assert.equal(env.SAGE_TODAY, undefined);
 });
 
 test("the server never gets the Dream prompt folder, even when the shell has one", () => {
@@ -138,6 +149,7 @@ test("startEveServer runs eve dev from the root, waits for health, and stops it"
     ollamaBaseUrl: "http://127.0.0.1:11436/api",
     root,
     startTimeoutMs: 20_000,
+    today: EVAL_TODAY,
     withWorkflowGuard: true,
   });
   try {

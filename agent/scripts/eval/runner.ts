@@ -969,6 +969,7 @@ async function sweepBody(
     logFile: join(runDir, "logs", "grade-target.log"),
     ollamaBaseUrl: ollamaApiBase(OLLAMA_HOST),
     root: targetRoot,
+    today: EVAL_TODAY,
     withWorkflowGuard: false,
   });
   cleanup.eveStub = eveStub;
@@ -1109,6 +1110,7 @@ async function startStandalone(
     logFile: join(runDir, "logs", "grade-target.log"),
     ollamaBaseUrl: ollamaApiBase(OLLAMA_HOST),
     root: targetRoot,
+    today: EVAL_TODAY,
     withWorkflowGuard: false,
   });
   cleanup.eveStub = eveStub;

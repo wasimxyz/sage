@@ -48,6 +48,26 @@ launch_line=$(grep -n 'NATIVE_SDK_MODE=dev' "$runner" | head -n 1 | cut -d: -f1)
 [ "$reset_line" -lt "$launch_line" ] ||
   fail "scripts/seed-dev.sh starts Sage before it resets the dev app."
 
+# With CHATS=1, the chats file and the models are checked before the reset
+# too, and the Chat agent gets the dev app's own agent-server.json. Without
+# it, the agent falls back to the packaged app's file and reads your journal.
+models_line=$(grep -n 'manifests/registry.ollama.ai/library' "$runner" | head -n 1 | cut -d: -f1)
+[ -n "$models_line" ] && [ "$models_line" -lt "$reset_line" ] ||
+  fail "scripts/seed-dev.sh does not check the models before it resets the dev app."
+grep -Fq 'SAGE_SEED_CHATS="$chats" SAGE_SEED_DIR="$seed_dir" node --experimental-strip-types "$agent/scripts/seed-dev.ts" --check' "$runner" ||
+  fail "scripts/seed-dev.sh does not check chats.yaml with the seed files."
+grep -Fq 'SAGE_DISCOVERY_FILE="$data_dir/agent-server.json"' "$runner" ||
+  fail "scripts/seed-dev.sh does not name the dev app's agent-server.json for the Chat agent."
+
+# The chats stay on this Mac: the seed's chat code reaches no cloud model.
+chats_code="$root/agent/scripts/seed-dev-chats.ts"
+[ -f "$chats_code" ] || fail "missing agent/scripts/seed-dev-chats.ts"
+for name in simulated-user grader prices gateway AI_GATEWAY openai anthropic; do
+  if grep -Fiq "$name" "$chats_code"; then
+    fail "agent/scripts/seed-dev-chats.ts mentions $name. Seeded chats use only the local Ollama."
+  fi
+done
+
 # The automation build lives under its own prefix and is deleted on the way out.
 grep -Fq 'seed_prefix="$root/zig-out/seed"' "$runner" ||
   fail "scripts/seed-dev.sh does not install the automation build under zig-out/seed."
