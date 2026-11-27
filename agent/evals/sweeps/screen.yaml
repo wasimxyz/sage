@@ -1,0 +1,44 @@
+# The screen night: the shipped Chat prompt against companion-v1, on the nine
+# chat models pulled for this Mac. It sends the openers tagged `screen`, once
+# each, with memory off like a shipped build. It leaves out the fact questions,
+# which `default` runs and `deep` runs later, so the night fits in eight hours
+# and under its cap. Dream stays fixed (one summary model, one Dream prompt),
+# so the night compares Chat only. The judge check runs first, as in every
+# sweep.
+#
+# `tags: [screen]` covers every person who has a `screen` opener, and sends only
+# those openers. new-user is covered too, because the openers marked alsoEmpty
+# run on its empty journal.
+summaryModels: [ qwen3.5:9b ]
+embedModels: [ nomic-embed-text ]
+dreamPrompts: [ baseline ]
+chatModels:
+  [
+    qwen3.5:9b,
+    qwen3.5:9b-mlx,
+    qwen3:8b,
+    qwen3:14b,
+    gemma3:12b,
+    mistral-nemo:12b,
+    phi4:14b,
+    lfm2.5:8b,
+    gpt-oss:20b,
+  ]
+prompts: [ baseline, companion-v1 ]
+thinking: [ off ]
+contextLengths: [ 32768 ]
+memory: [ off ]
+repeats: 1
+tests: [ person, openers ]
+tags: [ screen ]
+judge: { model: deepseek/deepseek-v4.1-flash }
+simulatedUser:
+  model: deepseek/deepseek-v4.1-flash
+  providers: [ morph, deepinfra, runinfra, relace ]
+  maxOutputPricePerM: 0.5
+speedLimitSeconds: 20
+p90LimitSeconds: null
+maxSwapGrowthMB: 512
+maxToolCallsPerTurn: 6
+replyWords: [ 20, 180 ]
+spendingCapUsd: 50

@@ -18,6 +18,10 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  loadDreamCheckItems,
+  loadReplyCheckItems,
+} from "../../evals/lib/judge-check.ts";
+import {
   loadRecordedResults,
   type RecordedEvalResult,
 } from "../../evals/lib/recorder.ts";
@@ -49,6 +53,18 @@ export function judgeCheckFiles(runDir: string): JudgeCheckFiles {
     log: join(dir, "judge-check.log"),
     results: join(dir, "judge-check.results.jsonl"),
   };
+}
+
+/** How many items the check has, for the estimate. Throws a readable error when an item file is broken. */
+export async function judgeCheckSize(): Promise<{
+  dreamItems: number;
+  replyItems: number;
+}> {
+  const [dream, replies] = await Promise.all([
+    loadDreamCheckItems(),
+    loadReplyCheckItems(),
+  ]);
+  return { dreamItems: dream.length, replyItems: replies.length };
 }
 
 /** True for a row the judge check recorded. Setup reports leave these out. */

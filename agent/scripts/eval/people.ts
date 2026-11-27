@@ -8,6 +8,12 @@ import {
   loadPeople,
   validatePerson,
 } from "../../evals/lib/dataset.ts";
+import {
+  alsoEmptyOpeners,
+  EMPTY_JOURNAL_PERSON,
+  needsEmptyJournal,
+  itemMatchesTags as tagsMatch,
+} from "../../evals/lib/openers.ts";
 
 export type { LoadedEntry, LoadedPerson } from "../../evals/lib/dataset.ts";
 
@@ -26,9 +32,26 @@ export function dataProblems(
   people: readonly LoadedPerson[],
   today: string
 ): string[] {
-  return people.flatMap((person) =>
+  const problems = people.flatMap((person) =>
     validatePerson(person, today).map((problem) => `${person.id}: ${problem}`)
   );
+  const host = people.find((person) => person.id === EMPTY_JOURNAL_PERSON);
+  if (host !== undefined && !host.empty) {
+    problems.push(
+      `${host.id}: this person stands for the empty journal, so it must have no entries.`
+    );
+  }
+  if (host === undefined) {
+    for (const person of people) {
+      const wanting = alsoEmptyOpeners(person, []);
+      if (wanting.length > 0) {
+        problems.push(
+          `${person.id}: opener ${wanting.map((opener) => opener.id).join(", ")} is marked alsoEmpty, but there is no ${EMPTY_JOURNAL_PERSON} person with an empty journal to run it against.`
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,13 +71,7 @@ export function itemMatchesTags(
   itemTags: readonly string[],
   sweepTags: readonly string[]
 ): boolean {
-  if (sweepTags.length === 0) {
-    return true;
-  }
-  return (
-    intersects(person.personCase.tags, sweepTags) ||
-    intersects(itemTags, sweepTags)
-  );
+  return tagsMatch(person.personCase.tags, itemTags, sweepTags);
 }
 
 /**
@@ -78,11 +95,31 @@ export function personInSweep(
   );
 }
 
+/**
+ * The people a sweep covers. Openers marked `alsoEmpty` run against the
+ * empty-journal person's Sage (`new-user`). So when the sweep sends openers
+ * and a covered person has such an opener the tags pick, that person is
+ * covered too, even if nothing of their own matches. Pass `openers: false`
+ * for a sweep that sends none.
+ */
 export function selectPeople(
   people: readonly LoadedPerson[],
-  sweepTags: readonly string[]
+  sweepTags: readonly string[],
+  options: { openers?: boolean } = {}
 ): LoadedPerson[] {
-  return people.filter((person) => personInSweep(person, sweepTags));
+  const chosen = people.filter((person) => personInSweep(person, sweepTags));
+  const host = people.find(
+    (person) => person.id === EMPTY_JOURNAL_PERSON && person.empty
+  );
+  if (
+    options.openers === false ||
+    host === undefined ||
+    chosen.includes(host) ||
+    !needsEmptyJournal(chosen, sweepTags)
+  ) {
+    return chosen;
+  }
+  return people.filter((person) => person === host || chosen.includes(person));
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +134,7 @@ export interface ItemCounts {
   entries: number;
   /** Fact, event, and summary references, which the judge scores. */
   judgedRefs: number;
+  /** Openers to send. The empty-journal person's include other people's `alsoEmpty` ones. */
   openers: number;
   /** Fact, event, summary, and retrieval references. */
   personChecks: number;
@@ -104,9 +142,27 @@ export interface ItemCounts {
   summaryRefs: number;
 }
 
+/**
+ * How many openers other people send on the empty journal, for the person
+ * whose Sage has it. Zero for anyone else.
+ */
+export function emptyJournalOpenerCount(
+  person: LoadedPerson,
+  covered: readonly LoadedPerson[],
+  sweepTags: readonly string[]
+): number {
+  if (person.id !== EMPTY_JOURNAL_PERSON || !person.empty) {
+    return 0;
+  }
+  return covered
+    .filter((other) => other.id !== person.id)
+    .reduce((sum, other) => sum + alsoEmptyOpeners(other, sweepTags).length, 0);
+}
+
 export function countItems(
   person: LoadedPerson,
-  sweepTags: readonly string[]
+  sweepTags: readonly string[],
+  emptyJournalOpeners = 0
 ): ItemCounts {
   const { chat, conversations, events, facts, openers, retrieval, summaries } =
     person.personCase;
@@ -122,9 +178,10 @@ export function countItems(
     ),
     entries: person.entries.length,
     judgedRefs: facts.length + events.length + summaries.length,
-    openers: openers.filter((opener) =>
-      itemMatchesTags(person, opener.tags, sweepTags)
-    ).length,
+    openers:
+      openers.filter((opener) =>
+        itemMatchesTags(person, opener.tags, sweepTags)
+      ).length + emptyJournalOpeners,
     personChecks:
       facts.length + events.length + summaries.length + retrieval.length,
     summaryRefs: summaries.length,

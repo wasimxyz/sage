@@ -89,6 +89,7 @@ function graderAnswering(
 ): { calls: JudgeCall<never>[]; grader: Grader } {
   const calls: JudgeCall<never>[] = [];
   const grader = {
+    dreamRubric: "0123456789",
     judge: (call: JudgeCall<never>) => {
       calls.push(call);
       return Promise.resolve(answer(call));

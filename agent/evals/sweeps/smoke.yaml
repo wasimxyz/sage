@@ -1,4 +1,8 @@
-# A check of the runner itself: one setup, and one person. Tiny, and under $1.
+# A check of the runner itself: one setup, and one person. Tiny, but the judge
+# check that starts every sweep grades all its items, and that is most of the
+# cost. The runner's estimate for the whole run is about $0.20, with no discount
+# for cached input. The $2 cap leaves room for that, so the check never stops
+# the sweep for money.
 #
 # `tags` picks people whose own tags (or whose openers' tags) match, so
 # sam-example, the format template, is the only one. Memory is on so the
@@ -12,8 +16,8 @@ thinking: [ off ]
 contextLengths: [ 32768 ]
 memory: [ on ]
 repeats: 1
-tests: [ person, facts ]
+tests: [ person, facts, openers ]
 tags: [ example ]
 judge: { model: deepseek/deepseek-v4.1-flash }
 speedLimitSeconds: 20
-spendingCapUsd: 1
+spendingCapUsd: 2

@@ -314,7 +314,7 @@ async function makeRig(
     pool: new JobPool(2),
     prefixes: rigOptions.prefixes ?? {
       chat: ["chat/facts"],
-      grade: ["grade/facts"],
+      grade: ["grade/replies"],
       person: ["person/retrieval"],
     },
     reportsDir,

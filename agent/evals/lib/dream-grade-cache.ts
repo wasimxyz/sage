@@ -3,7 +3,9 @@
  *
  * A Dream snapshot never changes, so the judge grades each of its sources
  * once, however many Chat setups use the snapshot. The grades sit beside the
- * snapshot, in a file named for the judge model and the rubric hash:
+ * snapshot, in a file named for the judge model and the Dream-source rubric
+ * hash (`dreamSourceRubricHash`, not the hash of the whole rubric, so a change
+ * to the reply rubric keeps these grades):
  *
  *   agent/evals/.cache/dream/<snapshot key>/grades-<model>-<rubric>.jsonl
  *

@@ -58,7 +58,7 @@ import {
   loadTimingHistory,
 } from "./estimate.ts";
 import { EVAL_TODAY, type EveServer, startEveServer } from "./eve.ts";
-import { runJudgeCheck } from "./judge-check.ts";
+import { judgeCheckSize, runJudgeCheck } from "./judge-check.ts";
 import {
   checkModels,
   fetchPinnedOllama,
@@ -255,7 +255,11 @@ async function planSweep(options: CliOptions): Promise<Planned> {
   if (problems.length > 0) {
     throw new Stop(`The eval data has problems:\n  ${problems.join("\n  ")}`);
   }
-  const selected = selectPeople(everyone, sweep.tags);
+  // Openers marked alsoEmpty run on the empty journal, which is new-user's Sage,
+  // so a sweep that sends openers covers new-user when it needs to.
+  const selected = selectPeople(everyone, sweep.tags, {
+    openers: sweep.tests.includes("openers"),
+  });
   if (selected.length === 0) {
     throw new Stop(
       `No person matches the sweep's tags (${sweep.tags.join(", ")}).`,
@@ -418,6 +422,7 @@ async function printEstimate(
   const estimate = estimateRun({
     dreamMisses: await dreamMissesFor(plan, planned.peopleById, digests),
     history: loadTimingHistory(join(agentDir, "evals", "reports")),
+    judgeCheck: await judgeCheckSize(),
     plan,
     prices: {
       judge: book.prices[sweep.judge.model] ?? DEFAULT_PRICE,

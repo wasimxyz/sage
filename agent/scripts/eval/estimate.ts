@@ -3,7 +3,7 @@
 // Hours come from the last report's timings for each chat model, else from
 // the defaults below, plus the Dream runs the cache cannot answer. Dollars
 // come from the judge's and the simulated user's token counts at the
-// gateway's prices. These are rough: the point is to catch a sweep that would
+// gateway's prices, and include the judge check that every sweep runs first. These are rough: the point is to catch a sweep that would
 // take three nights or blow the spending cap, not to predict the minute.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -29,6 +29,8 @@ export const ESTIMATE_DEFAULTS = {
   dreamSecondsPerEntry: { off: 30, on: 60 },
   eveStartSeconds: 25,
   gradeTailMinutes: 3,
+  // About 20 seconds a call, two at a time. The check runs before any local work.
+  judgeCheckSecondsPerItem: 10,
   modelLoadSeconds: 30,
   personCheckSeconds: 4,
   replySeconds: { off: 25, on: 60 },
@@ -109,6 +111,12 @@ export interface EstimateInput {
   /** `dreamMissKey` of each group and person whose Dream the cache cannot answer. */
   dreamMisses: ReadonlySet<string>;
   history: TimingHistory;
+  /**
+   * The items of the judge check, which every sweep runs first. A Dream item
+   * costs one source grade and a reply item one reply grade. Leave it out for
+   * a plan that has no check.
+   */
+  judgeCheck?: { dreamItems: number; replyItems: number };
   plan: RunPlan;
   prices: { judge: ModelPrice; simulatedUser: ModelPrice };
   sweep: SweepFile;
@@ -218,6 +226,14 @@ export function estimateRun(input: EstimateInput): Estimate {
     personSecs: 0,
     simUsd: 0,
   };
+  const check = input.judgeCheck ?? { dreamItems: 0, replyItems: 0 };
+  const checkUsd =
+    check.dreamItems *
+      costUsd(input.prices.judge, ESTIMATE_TOKENS.dreamSourceJudge) +
+    check.replyItems * costUsd(input.prices.judge, ESTIMATE_TOKENS.replyJudge);
+  const checkSecs =
+    (check.dreamItems + check.replyItems) * defaults.judgeCheckSecondsPerItem;
+  sums.judgeUsd += checkUsd;
   for (const group of plan.groups) {
     for (const person of plan.people) {
       addPersonPass(sums, input, group, person);
@@ -237,8 +253,14 @@ export function estimateRun(input: EstimateInput): Estimate {
     stats.modelLoads * defaults.modelLoadSeconds +
     defaults.gradeTailMinutes * 60;
   const totalSecs =
-    fixedSecs + sums.dreamSecs + sums.personSecs + sums.chatSecs;
+    fixedSecs + checkSecs + sums.dreamSecs + sums.personSecs + sums.chatSecs;
+  const checkItems = check.dreamItems + check.replyItems;
   const lines = [
+    ...(checkItems === 0
+      ? []
+      : [
+          `Judge check: ${checkItems} item${checkItems === 1 ? "" : "s"}, about ${(checkSecs / 60).toFixed(0)} min and $${checkUsd.toFixed(2)}`,
+        ]),
     `Dream: ${sums.missCount} run${sums.missCount === 1 ? "" : "s"} the cache cannot answer, about ${(sums.dreamSecs / 3600).toFixed(1)} h`,
     `Person checks: about ${(sums.personSecs / 3600).toFixed(2)} h`,
     `Chat: about ${(sums.chatSecs / 3600).toFixed(1)} h of replies`,

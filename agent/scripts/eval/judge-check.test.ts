@@ -8,10 +8,25 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
+import { MockLanguageModelV4 } from "ai/test";
+
+import type { ReplyItem } from "../../evals/lib/checks.ts";
+import { loadPerson } from "../../evals/lib/dataset.ts";
+import { createGrader } from "../../evals/lib/grader.ts";
+import {
+  gradeCheckItem,
+  gradeReplyCheckItem,
+  loadDreamCheckItems,
+  loadReplyCheckItems,
+  resolveReplyCheckItem,
+} from "../../evals/lib/judge-check.ts";
+import { formatJournalContext } from "../../evals/lib/judge-context.ts";
+import { totals } from "../../evals/lib/ledger.ts";
 import type {
   RecordedAssertion,
   RecordedEvalResult,
 } from "../../evals/lib/recorder.ts";
+import { gradeReply } from "../../evals/lib/reply-grade.ts";
 import {
   EVAL_ENV,
   JUDGE_CHECK_PERSON,
@@ -23,11 +38,13 @@ import {
   JUDGE_CHECK_EVAL,
   judgeCheckFiles,
   judgeCheckResult,
+  judgeCheckSize,
   readJudgeCheck,
   runJudgeCheck,
 } from "./judge-check.ts";
-import { ENV_DREAM_KEY, ENV_SWEEP_ID } from "./passes.ts";
+import { ENV_DREAM_KEY, ENV_SWEEP_ID, PASS_CONCURRENCY } from "./passes.ts";
 import { assembleSweepSummary } from "./report.ts";
+import { loadSweep } from "./sweep.ts";
 import { fakeEve, tempDir } from "./test-fixtures.ts";
 
 const missedPattern =
@@ -457,4 +474,277 @@ test("rows from another person in the check's file are not read as its items", a
   const result = await runJudgeCheck(rig.run);
   assert.equal(result.ok, true);
   assert.equal(result.checked, 1);
+});
+
+// ---------------------------------------------------------------------------
+// The check under smoke's spending cap
+// ---------------------------------------------------------------------------
+
+/**
+ * The judge's price in the plan: Kimi K3.1 Pro at $2 in and $10 out per
+ * million tokens. The mock judge below bills every prompt token at the full
+ * input price, with no cached-input discount, so these totals are an upper
+ * bound for what the gateway bills.
+ */
+const KIMI_PRICE = { inputPerM: 2, outputPerM: 10 };
+const DREAM_ANSWER_TOKENS = 600;
+
+type Prompt = readonly { content: unknown }[];
+
+function promptText(prompt: Prompt): string {
+  return prompt
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : (message.content as readonly { text?: string }[])
+            .map((part) => part.text ?? "")
+            .join("")
+    )
+    .join("");
+}
+
+function idsAfter(text: string, label: string): string[] {
+  const line = text.split("\n").find((row) => row.startsWith(`${label}: `));
+  return line === undefined
+    ? []
+    : line
+        .slice(label.length + 2)
+        .split(", ")
+        .filter(Boolean);
+}
+
+/** A clean answer for whatever the prompt asks: every check passes, every score is 4. */
+function cleanAnswerFor(text: string): string {
+  if (!text.includes("Checks to answer:")) {
+    return JSON.stringify({ unsupportedClaims: [] });
+  }
+  const block = text.slice(text.lastIndexOf("Checks to answer:"));
+  const passing = (askId: string) => ({
+    evidence: "",
+    id: askId,
+    pass: true,
+    reason: "",
+  });
+  const na = block.includes("N/A, answer with level null")
+    ? block.slice(block.indexOf("N/A, answer with level null"))
+    : "";
+  return JSON.stringify({
+    counted: idsAfter(block, "counted").map(passing),
+    hard: idsAfter(block, "hard").map(passing),
+    helpSeen: ["listen"],
+    journalErrors: [],
+    rubric: idsAfter(block, "rubric").map((id) => ({
+      evidence: "",
+      id,
+      level: na.includes(`${id} (`) ? null : 4,
+      reason: "",
+    })),
+    slips: [],
+  });
+}
+
+/** A judge that answers after a short wait and bills the prompt's tokens plus `replyTokens` for a reply grade. */
+function mockJudge(replyTokens: number): MockLanguageModelV4 {
+  return new MockLanguageModelV4({
+    doGenerate: async (options) => {
+      const text = promptText(options.prompt);
+      const output = text.includes("Checks to answer:")
+        ? replyTokens
+        : DREAM_ANSWER_TOKENS;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const input = Math.round(text.length / 4);
+      return {
+        content: [{ text: cleanAnswerFor(text), type: "text" as const }],
+        finishReason: { raw: undefined, unified: "stop" as const },
+        usage: {
+          inputTokens: {
+            cacheRead: undefined,
+            cacheWrite: undefined,
+            noCache: input,
+            total: input,
+          },
+          outputTokens: { reasoning: undefined, text: output, total: output },
+        },
+        warnings: [],
+      };
+    },
+  });
+}
+
+/** Runs tasks with at most `limit` in flight, like `eve eval --max-concurrency`. */
+async function pool<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const index = next;
+      next += 1;
+      // biome-ignore lint/performance/noAwaitInLoops: a worker runs its tasks one at a time, like one eve slot
+      results[index] = await (tasks[index] as () => Promise<T>)();
+    }
+  };
+  await Promise.all(Array.from({ length: limit }, worker));
+  return results;
+}
+
+interface Outcome {
+  id: string;
+  ok: boolean;
+  reason?: string;
+}
+
+function outcomeOf(
+  id: string,
+  result: { ok: true } | { ok: false; reason: string }
+): Outcome {
+  return result.ok
+    ? { id, ok: true }
+    : { id, ok: false, reason: result.reason };
+}
+
+/** Every item of the judge check, Dream half then reply half, through one grader. */
+async function judgeCheckTasks(
+  grader: ReturnType<typeof createGrader>
+): Promise<(() => Promise<Outcome>)[]> {
+  const dream = await loadDreamCheckItems();
+  const replies = await Promise.all(
+    (await loadReplyCheckItems()).map((item) =>
+      resolveReplyCheckItem(item, { today: "2026-11-15" })
+    )
+  );
+  return [
+    ...dream.map(
+      (item) => async () =>
+        outcomeOf(item.id, await gradeCheckItem(grader, item))
+    ),
+    ...replies.map(
+      (resolved) => async () =>
+        outcomeOf(resolved.item.id, await gradeReplyCheckItem(grader, resolved))
+    ),
+  ];
+}
+
+/** smoke.yaml's own replies: sam-example's openers and fact questions, as the grade pass sends them. */
+async function smokeReplyTasks(
+  grader: ReturnType<typeof createGrader>
+): Promise<(() => Promise<Outcome>)[]> {
+  const person = await loadPerson("sam-example");
+  const context = formatJournalContext(person, { today: "2026-11-15" });
+  const items: { id: string; item: ReplyItem; message: string }[] = [
+    ...person.personCase.openers.map((opener) => ({
+      id: opener.id,
+      item: {
+        avoid: opener.avoid,
+        expect: opener.expect,
+        fits: opener.fits,
+        journalEmpty: false,
+        kind: "opener" as const,
+        tags: opener.tags,
+      },
+      message: opener.message,
+    })),
+    ...person.personCase.chat.map((chat, index) => ({
+      id: `chat-${index + 1}`,
+      item: {
+        avoid: [],
+        expect: "question" as const,
+        fits: [],
+        journalEmpty: false,
+        kind: "chat" as const,
+        reference: chat.reference,
+        tags: [],
+      },
+      message: chat.question,
+    })),
+  ];
+  return items.map(
+    ({ id, item, message }) =>
+      async () =>
+        outcomeOf(
+          id,
+          await gradeReply(grader, {
+            context,
+            item,
+            label: `reply ${id}`,
+            message,
+            reply:
+              "That sounds like a lot to carry. What feels heaviest right now?",
+            toolCalls: [],
+          })
+        )
+  );
+}
+
+async function smokeGrader(t: test.TestContext, replyTokens: number) {
+  const { sweep } = await loadSweep("smoke", {});
+  const runDir = join(tempDir(t, "sage-smoke-cap-"), "run");
+  const grader = createGrader({
+    capUsd: sweep.spendingCapUsd,
+    model: mockJudge(replyTokens),
+    modelId: sweep.judge.model,
+    price: KIMI_PRICE,
+    runDir,
+    sweepId: "smoke-cap",
+  });
+  return { grader, runDir, sweep };
+}
+
+test("smoke.yaml's spending cap leaves room for the whole judge check", async (t) => {
+  const { grader, runDir, sweep } = await smokeGrader(t, 1500);
+  const results = await pool(
+    await judgeCheckTasks(grader),
+    PASS_CONCURRENCY.grade
+  );
+  const refused = results.filter((result) => !result.ok);
+  // Any item left unchecked stops the sweep before it builds anything.
+  assert.deepEqual(
+    refused.map((result) => `${result.id}: ${result.reason}`),
+    [],
+    `${refused.length} of ${results.length} judge-check items were not graded under smoke's $${sweep.spendingCapUsd} cap (spent $${totals(runDir).spentUsd.toFixed(2)})`
+  );
+  assert.ok(totals(runDir).spentUsd < sweep.spendingCapUsd * 0.75);
+});
+
+test("smoke.yaml's spending cap also covers smoke's own reply grades, at 1000 or 1500 output tokens a reply", async (t) => {
+  for (const replyTokens of [1000, 1500]) {
+    // biome-ignore lint/performance/noAwaitInLoops: each size is its own run with its own ledger
+    const { grader, runDir, sweep } = await smokeGrader(t, replyTokens);
+    const check = await pool(
+      await judgeCheckTasks(grader),
+      PASS_CONCURRENCY.grade
+    );
+    const replies = await pool(
+      await smokeReplyTasks(grader),
+      PASS_CONCURRENCY.grade
+    );
+    const refused = [...check, ...replies].filter((result) => !result.ok);
+    assert.deepEqual(
+      refused.map((result) => `${result.id}: ${result.reason}`),
+      [],
+      `${replyTokens} tokens: spent $${totals(runDir).spentUsd.toFixed(2)} of $${sweep.spendingCapUsd}`
+    );
+    assert.ok(replies.length > 0);
+  }
+});
+
+test("a reply grade reserves about what it expects to spend, not the output cap", async (t) => {
+  const { grader, runDir } = await smokeGrader(t, 1500);
+  const [first] = await smokeReplyTasks(grader);
+  assert.ok(first);
+  const outcome = await first();
+  assert.equal(outcome.ok, true);
+  const { reservedUsd, spentUsd } = totals(runDir);
+  // Settled, so nothing stays reserved, and the call cost a few cents.
+  assert.equal(reservedUsd, 0);
+  assert.ok(spentUsd > 0 && spentUsd < 0.1, `$${spentUsd}`);
+});
+
+test("judgeCheckSize counts the Dream and reply items the check grades", async () => {
+  const size = await judgeCheckSize();
+  assert.equal(size.dreamItems, (await loadDreamCheckItems()).length);
+  assert.equal(size.replyItems, (await loadReplyCheckItems()).length);
+  assert.ok(size.dreamItems > 0 && size.replyItems > 0);
 });

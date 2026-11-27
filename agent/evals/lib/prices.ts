@@ -360,16 +360,20 @@ export function costUsd(price: ModelPrice, usage: TokenUsage): number {
 }
 
 /**
- * The most a call can cost: the prompt at about four characters a token, all
- * at the full input price, plus every output token the cap allows.
+ * What a call is expected to cost: the prompt at about four characters a
+ * token, all at the full input price, plus the output tokens the answer is
+ * expected to take. The caller passes its own estimate of the answer, not the
+ * output cap, because a ledger that reserves the cap for every call refuses
+ * work long before the money is spent. The real cost replaces the estimate
+ * when the call settles.
  */
 export function estimateUsd(
   price: ModelPrice,
-  call: { maxOutputTokens: number; promptChars: number }
+  call: { outputTokens: number; promptChars: number }
 ): number {
   return (
     ((call.promptChars / CHARS_PER_TOKEN) * price.inputPerM +
-      call.maxOutputTokens * price.outputPerM) /
+      call.outputTokens * price.outputPerM) /
     PER_MILLION
   );
 }
