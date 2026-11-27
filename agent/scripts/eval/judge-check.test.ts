@@ -492,12 +492,12 @@ test("rows from another person in the check's file are not read as its items", a
 // ---------------------------------------------------------------------------
 
 /**
- * The judge's price in the plan: Kimi K3.1 Pro at $2 in and $10 out per
- * million tokens. The mock judge below bills every prompt token at the full
- * input price, with no cached-input discount, so these totals are an upper
- * bound for what the gateway bills.
+ * The judge's price: DeepSeek V4.1 Flash's AI Gateway list price on 2026-11-26,
+ * $0.30 in and $1.20 out per million tokens. The mock judge below bills every
+ * prompt token at the full input price, with no cached-input discount, so these
+ * totals are an upper bound for what the gateway bills.
  */
-const KIMI_PRICE = { inputPerM: 2, outputPerM: 10 };
+const JUDGE_PRICE = { inputPerM: 0.3, outputPerM: 1.2 };
 const DREAM_ANSWER_TOKENS = 600;
 /** A whole-conversation grade: three scores and a few marks, with room for thinking. */
 const CONVERSATION_ANSWER_TOKENS = 1500;
@@ -787,7 +787,7 @@ async function smokeGrader(t: test.TestContext, replyTokens: number) {
     capUsd: sweep.spendingCapUsd,
     model: mockJudge(replyTokens),
     modelId: sweep.judge.model,
-    price: KIMI_PRICE,
+    price: JUDGE_PRICE,
     runDir,
     sweepId: "smoke-cap",
   });

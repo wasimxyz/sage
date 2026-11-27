@@ -24,7 +24,7 @@
 #
 # The estimate prints before anything starts. By the default timings, with the
 # placeholders below (one chat model, two prompts, memory off, so two setups),
-# it is about 11 hours and $62 with Dream cached, and about 15 hours from a cold
+# it is about 11 hours and $9 with Dream cached, and about 15 hours from a cold
 # Dream cache. Grading every reply of every conversation, three times, is most
 # of the cost. A conversation counts at its maxTurns and most end sooner, and
 # the screen night's reports give real reply times, so the estimate runs high
@@ -42,7 +42,7 @@ contextLengths: [ 32768 ]
 memory: [ off ]
 repeats: 3
 tests: [ person, conversations ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 simulatedUser:
   model: deepseek/deepseek-v4.1-flash
   providers: [ morph, deepinfra, runinfra, relace ]
