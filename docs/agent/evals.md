@@ -326,7 +326,7 @@ The folder name is a hash of these inputs:
 - The Dream prompt text, or a marker for the built-in prompts
 - The memory value, off or on
 - The Dream source files: `src/dream.zig`, `src/ollama.zig`, `src/journal.zig`, and `src/schema/*.sql`
-- The seeding files: `agent/scripts/seed-dataset.ts`, `agent/scripts/automation.ts`, and the loader that reads each entry, `agent/evals/lib/dataset.ts`
+- The seeding files: `agent/scripts/seed-dataset.ts`, `agent/scripts/automation.ts`, `agent/scripts/seed-chats.ts`, `agent/scripts/eval/chat-times.ts`, and the loader that reads each entry and chat, `agent/evals/lib/dataset.ts`
 
 Chat settings and the judge do not affect the cache, and neither does `case.yaml`, so editing a check does not run Dream again. A change to the loader does, for every person, because the loader reads the entries too. To skip the cache for one run, use `SAGE_EVAL_CACHE=0 make eval`. To delete it, run `rm -rf agent/evals/.cache`.
 
