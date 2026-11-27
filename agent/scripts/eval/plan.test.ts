@@ -361,7 +361,7 @@ test("the screen sweep sends only the screen openers on nine models and two prom
     "gpt-oss:20b",
   ]);
   assert.equal(sweep.repeats, 1);
-  assert.equal(sweep.judge.model, "moonshotai/kimi-k3.1-pro");
+  assert.equal(sweep.judge.model, "deepseek/deepseek-v4.1-flash");
   assert.equal(sweep.simulatedUser.model, "deepseek/deepseek-v4.1-flash");
   assert.deepEqual(sweep.simulatedUser.providers, [
     "morph",

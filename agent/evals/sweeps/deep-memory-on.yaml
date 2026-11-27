@@ -3,7 +3,7 @@
 # whether memory helps. Fill in chatModels and prompts the same way, with the
 # top 2 setups from the screen night.
 #
-# By the default timings it is about 11 hours and $63 with Dream cached, and
+# By the default timings it is about 11 hours and $9 with Dream cached, and
 # about 20 hours from a cold Dream cache, because Dream takes twice as long with
 # memory on. Run the dream sweep first (make eval SWEEP=dream), which fills the
 # cache for memory off and on, and this night pays only for the conversations.
@@ -19,7 +19,7 @@ contextLengths: [ 32768 ]
 memory: [ on ]
 repeats: 3
 tests: [ person, conversations ]
-judge: { model: moonshotai/kimi-k3.1-pro }
+judge: { model: deepseek/deepseek-v4.1-flash }
 simulatedUser:
   model: deepseek/deepseek-v4.1-flash
   providers: [ morph, deepinfra, runinfra, relace ]

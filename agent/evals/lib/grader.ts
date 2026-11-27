@@ -349,7 +349,7 @@ export interface GraderOptions {
   maxOutputTokens?: number;
   /** A language model to use in place of the gateway. For tests. */
   model?: LanguageModel;
-  /** The gateway model id, such as `moonshotai/kimi-k3.1-pro`. */
+  /** The gateway model id, such as `deepseek/deepseek-v4.1-flash`. */
   modelId: string;
   /** This model's price, in place of the gateway catalog. For tests. */
   price?: ModelPrice;

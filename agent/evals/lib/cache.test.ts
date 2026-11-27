@@ -4,10 +4,11 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
@@ -16,11 +17,13 @@ import {
   cachedDreamEntry,
   computeCacheKey,
   dreamPromptsDir,
+  dreamSourceFiles,
   evalCacheDir,
   evalCacheEnabled,
   loadCacheKeyParts,
   readDreamPrompts,
   restoreDreamCache,
+  seedSourceFiles,
   snapshotDreamCache,
   snapshotDreamRun,
 } from "./cache.ts";
@@ -156,6 +159,21 @@ test("computeCacheKey changes when dream source changes", () => {
   const before = computeCacheKey(fixture.parts);
   writeFileSync(join(fixture.repoRoot, "src", "dream.zig"), "changed dream\n");
   assert.notEqual(computeCacheKey(fixture.parts), before);
+});
+
+test("computeCacheKey changes when a seeding file changes", () => {
+  for (const rel of seedSourceFiles) {
+    const fixture = makeFixture();
+    const before = computeCacheKey(fixture.parts);
+    writeFileSync(join(fixture.repoRoot, rel), "changed seeding\n");
+    assert.notEqual(computeCacheKey(fixture.parts), before, rel);
+  }
+});
+
+test("computeCacheKey throws when a seeding file is missing", () => {
+  const fixture = makeFixture();
+  rmSync(join(fixture.repoRoot, seedSourceFiles[0]));
+  assert.throws(() => computeCacheKey(fixture.parts), missingPattern);
 });
 
 test("computeCacheKey changes when the schema changes", () => {
@@ -451,9 +469,7 @@ function makeFixture(): {
   const personDir = join(dataRoot, "people", "sam");
   mkdirSync(join(repoRoot, "src", "schema"), { recursive: true });
   mkdirSync(personDir, { recursive: true });
-  writeFileSync(join(repoRoot, "src", "dream.zig"), "dream\n");
-  writeFileSync(join(repoRoot, "src", "ollama.zig"), "ollama\n");
-  writeFileSync(join(repoRoot, "src", "journal.zig"), "journal\n");
+  writeKeyFiles(repoRoot);
   writeFileSync(
     join(repoRoot, "src", "schema", "0001.sql"),
     "CREATE TABLE t (id INTEGER);\n"
@@ -476,6 +492,14 @@ function makeFixture(): {
     personDir,
     repoRoot,
   };
+}
+
+/** Writes each source and seeding file the key reads, with its path as its text. */
+function writeKeyFiles(repo: string): void {
+  for (const rel of [...dreamSourceFiles, ...seedSourceFiles]) {
+    mkdirSync(dirname(join(repo, rel)), { recursive: true });
+    writeFileSync(join(repo, rel), `${rel}\n`);
+  }
 }
 
 function restoreEnv(key: string, value: string | undefined): void {

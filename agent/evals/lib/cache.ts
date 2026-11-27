@@ -34,6 +34,22 @@ export const dreamSourceFiles = [
   "src/journal.zig",
 ] as const;
 
+/**
+ * Files that decide what is seeded into the throwaway journal before Dream runs:
+ * the seeding script, the bridge calls it makes, the loader that reads each
+ * entry and chat, the past-chat seeding, and the rewrite that moves each past
+ * chat to its own day. A change to any of them changes what Dream reads. The
+ * loader also reads `case.yaml`, so a change to it runs Dream again even when
+ * only a check moved.
+ */
+export const seedSourceFiles = [
+  "agent/scripts/seed-dataset.ts",
+  "agent/scripts/automation.ts",
+  "agent/evals/lib/dataset.ts",
+  "agent/scripts/seed-chats.ts",
+  "agent/scripts/eval/chat-times.ts",
+] as const;
+
 /** The files a Dream prompt folder can hold. A missing file keeps the built-in prompt. */
 export const dreamPromptFiles = [
   "summary.md",
@@ -144,6 +160,7 @@ export function computeCacheKey(parts: CacheKeyParts): string {
   hashDreamPrompts(hash, parts.dreamPrompts);
   hashPerson(hash, join(parts.dataRoot, "people", parts.person), parts.person);
   hashListedFiles(hash, parts.repoRoot, dreamSourceFiles, "source");
+  hashListedFiles(hash, parts.repoRoot, seedSourceFiles, "seed");
   hashSchemaSql(hash, parts.repoRoot);
   return hash.digest("hex");
 }

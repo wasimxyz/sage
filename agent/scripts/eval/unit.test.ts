@@ -37,7 +37,12 @@ import { JobPool } from "./passes.ts";
 import { buildPlan } from "./plan.ts";
 import { assembleSetupReport } from "./report.ts";
 import { isDone, markerPath, savedManifestPath } from "./resume.ts";
-import { fakeEve, makePerson, tempDir } from "./test-fixtures.ts";
+import {
+  fakeEve,
+  makePerson,
+  tempDir,
+  writeCacheKeyFiles,
+} from "./test-fixtures.ts";
 import { type RunContext, runPersonUnit } from "./unit.ts";
 
 const pattern1 = /Chat 32 is not in the database/u;
@@ -231,9 +236,7 @@ async function makeRig(
 
   // The cache key reads the Dream source files and the person's entries.
   mkdirSync(join(repo, "src", "schema"), { recursive: true });
-  for (const file of ["dream.zig", "ollama.zig", "journal.zig"]) {
-    writeFileSync(join(repo, "src", file), file);
-  }
+  writeCacheKeyFiles(repo);
   writeFileSync(
     join(repo, "src", "schema", "0001.sql"),
     "CREATE TABLE t (id INTEGER);\n"
