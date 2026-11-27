@@ -6,10 +6,11 @@ import type { SettingsTab } from "@/lib/route";
 const emptyMeta = {};
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<SettingsTab>("agent");
 
-  const state = useMemo(() => ({ tab }), [tab]);
-  const actions = useMemo(() => ({ setTab }), []);
+  const state = useMemo(() => ({ open, tab }), [open, tab]);
+  const actions = useMemo(() => ({ setOpen, setTab }), []);
   const value = useMemo(
     () => ({ actions, meta: emptyMeta, state }),
     [actions, state]

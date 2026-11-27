@@ -238,7 +238,7 @@ pub const Onboarding = struct {
 
         if (next_state) |state| {
             // Finishing or skipping setup is what makes this the launch that
-            // ran it, so no reminder shows on top of the first Home.
+            // ran it, so no reminder shows on top of the new chat that follows.
             if (state != .active) self.ran_setup_this_launch = true;
             self.state = state;
         }

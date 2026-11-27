@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -20,7 +19,6 @@ import {
   type UnlockMethod,
   waitForNativeBridge,
 } from "@/bridge";
-import { useJournalActions } from "@/components/journal-context";
 import { launchScreen } from "@/lib/onboarding";
 import { replaceRoute } from "@/lib/route";
 
@@ -30,7 +28,7 @@ import { replaceRoute } from "@/lib/route";
  * Both cover the whole window, with no sidebar.
  */
 export type OnboardingMode =
-  | { kind: "home" }
+  | { kind: "app" }
   | { kind: "loading" }
   | { kind: "protect" }
   | { kind: "setup"; step: OnboardingStep };
@@ -42,14 +40,14 @@ interface OnboardingState {
 }
 
 interface OnboardingActions {
-  /** Leave the Protect screens that Set up now opened, back to Home. */
+  /** Leave the Protect screens that Set up now opened, back to the app. */
   closeProtect: () => void;
   /** Mark setup done. The All set screen does this when it shows. */
   finishSetup: () => void;
   goTo: (step: OnboardingStep) => void;
-  /** Leave setup for Home. */
+  /** Leave setup for a new chat. */
   leaveSetup: () => void;
-  /** Leave setup for a new entry in the editor. */
+  /** Leave setup for a new entry in the Journal tab. */
   leaveSetupToDraft: () => void;
   /** Open the Protect screens from the reminder. */
   openProtect: () => void;
@@ -79,16 +77,14 @@ export function useOnboarding(): OnboardingContextValue {
 }
 
 /**
- * Decides at launch whether to show setup or Home, and keeps setup's progress.
- * It mounts under the lock, so it runs after any unlock, and a refresh or an
- * unlock picks setup up at the step the person left. The core stores the rows
- * and decides who counts as an existing user.
+ * Decides at launch whether to show setup or the app, and keeps setup's
+ * progress. It mounts under the lock, so it runs after any unlock, and a
+ * refresh or an unlock picks setup up at the step the person left. The core
+ * stores the rows and decides who counts as an existing user.
  */
 export function OnboardingProvider({ children }: { children: ReactNode }) {
-  const { startDraft } = useJournalActions();
   const [mode, setMode] = useState<OnboardingMode>({ kind: "loading" });
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
-  const draftAfterHome = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,25 +96,15 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        // A status that cannot be read never traps someone outside Home.
+        // A status that cannot be read never traps someone outside the app.
         if (!cancelled) {
-          setMode({ kind: "home" });
+          setMode({ kind: "app" });
         }
       });
     return () => {
       cancelled = true;
     };
   }, []);
-
-  // A new entry starts after Home has mounted and read the URL, or route sync
-  // would put the person back on Home.
-  useEffect(() => {
-    if (mode.kind !== "home" || !draftAfterHome.current) {
-      return;
-    }
-    draftAfterHome.current = false;
-    startDraft().catch(() => undefined);
-  }, [mode.kind, startDraft]);
 
   const goTo = useCallback((step: OnboardingStep) => {
     setMode({ kind: "setup", step });
@@ -134,7 +120,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const skipSetup = useCallback(async () => {
     await saveOnboarding({ state: "skipped" }).catch(() => undefined);
     markEnded("skipped");
-    setMode({ kind: "home" });
+    setMode({ kind: "app" });
   }, [markEnded]);
 
   const finishSetup = useCallback(() => {
@@ -142,16 +128,20 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     markEnded("done");
   }, [markEnded]);
 
-  const leaveSetup = useCallback(() => setMode({ kind: "home" }), []);
+  // The app reads the route when it mounts, so setting it first opens the
+  // right screen: a new chat, or a new entry.
+  const leaveSetup = useCallback(() => {
+    replaceRoute({ chat: "new", section: "chat" });
+    setMode({ kind: "app" });
+  }, []);
 
   const leaveSetupToDraft = useCallback(() => {
-    draftAfterHome.current = true;
-    replaceRoute({ section: "home" });
-    setMode({ kind: "home" });
+    replaceRoute({ entryId: null, section: "journal" });
+    setMode({ kind: "app" });
   }, []);
 
   const openProtect = useCallback(() => setMode({ kind: "protect" }), []);
-  const closeProtect = useCallback(() => setMode({ kind: "home" }), []);
+  const closeProtect = useCallback(() => setMode({ kind: "app" }), []);
 
   const rememberChoice = useCallback(
     (choice: { encrypt: boolean; method: UnlockMethod }) => {
@@ -225,12 +215,12 @@ async function readLaunch(): Promise<{
 }> {
   const ready = (await waitForNativeBridge()) && hasNativeBridge();
   if (!ready) {
-    return { mode: { kind: "home" }, status: null };
+    return { mode: { kind: "app" }, status: null };
   }
   const next = await getOnboardingStatus();
   const screen = launchScreen(next);
-  if (screen.kind === "home") {
-    return { mode: { kind: "home" }, status: next };
+  if (screen.kind === "app") {
+    return { mode: { kind: "app" }, status: next };
   }
   // Setup starts here for a new person. Saving it now means an import in setup
   // is never mistaken for an existing user's journal.

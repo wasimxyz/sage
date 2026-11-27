@@ -34,20 +34,15 @@ test("command and another key does not", () => {
   assert.equal(isNewKey({ ...plain, code: "KeyM", metaKey: true }), false);
 });
 
-test("Chat starts a chat", () => {
+test("Chat and Memories, in the Chat tab, start a chat", () => {
   assert.equal(newTarget("chat", false), "chat");
+  assert.equal(newTarget("memories", false), "chat");
 });
 
-test("Home, Journal, and Memories start an entry", () => {
-  assert.equal(newTarget("home", false), "entry");
+test("Journal starts an entry", () => {
   assert.equal(newTarget("journal", false), "entry");
-  assert.equal(newTarget("memories", false), "entry");
 });
 
 test("Memories starts nothing while a memory is open for editing", () => {
   assert.equal(newTarget("memories", true), null);
-});
-
-test("Settings starts nothing", () => {
-  assert.equal(newTarget("settings", false), null);
 });

@@ -21,8 +21,8 @@ const LazyChatLayout = lazy(() =>
 );
 
 /**
- * Opens Chat. A module that is already here, as after a hover on the Chat row,
- * renders at once. Going through Suspense would still hold its spinner for
+ * Opens Chat. A module that is already here, as after the preload at launch
+ * or a hover on the Chat tab, renders at once. Going through Suspense would still hold its spinner for
  * about 300 ms. Only a cold open takes the lazy path. This is decided once per
  * mount, so a load that finishes later never swaps the element and remounts
  * Chat.
