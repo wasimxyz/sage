@@ -202,7 +202,7 @@ export function priceCacheFile(runDir: string): string {
 
 /**
  * Prices in USD per million tokens, keyed by gateway model id such as
- * `moonshotai/kimi-k3.1-pro`.
+ * `deepseek/deepseek-v4.1-flash`.
  *
  * With `cacheFile`, prices are saved there and reused for an hour, so the
  * eval processes of one sweep share one read. If the catalog cannot be read

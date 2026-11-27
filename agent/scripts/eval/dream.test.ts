@@ -14,7 +14,7 @@ import {
   snapshotDigests,
   snapshotDream,
 } from "./dream.ts";
-import { makePerson, tempDir } from "./test-fixtures.ts";
+import { makePerson, tempDir, writeCacheKeyFiles } from "./test-fixtures.ts";
 
 const pattern1 = /^[a-f0-9]{64}$/u;
 const noFolderPattern =
@@ -47,9 +47,7 @@ function withTempRepo(t: test.TestContext): {
   const dataRoot = join(root, "data");
   const cacheDir = join(root, "cache");
   mkdirSync(join(repo, "src", "schema"), { recursive: true });
-  for (const file of ["dream.zig", "ollama.zig", "journal.zig"]) {
-    writeFileSync(join(repo, "src", file), file);
-  }
+  writeCacheKeyFiles(repo);
   writeFileSync(
     join(repo, "src", "schema", "0001.sql"),
     "CREATE TABLE t (id INTEGER);\n"
