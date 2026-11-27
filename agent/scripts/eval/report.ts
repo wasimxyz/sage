@@ -76,6 +76,8 @@ export interface SwapReading {
 }
 
 export interface AssembleInput {
+  /** The commit of the eval content checkout, as `gitCommit` gives it. */
+  contentCommit?: string;
   gitCommit: string;
   /** Persons the setup covered, even those with no rows. */
   people: readonly string[];
@@ -1053,6 +1055,9 @@ export function assembleSetupReport(input: AssembleInput): SetupReport {
   ].sort();
   const rubric = rubricVersionOf(rows);
   const report: SetupReport = {
+    ...(input.contentCommit === undefined
+      ? {}
+      : { contentCommit: input.contentCommit }),
     gitCommit: input.gitCommit,
     items,
     judge: input.sweep.judge,

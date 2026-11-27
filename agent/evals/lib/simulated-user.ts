@@ -3,7 +3,7 @@
  *
  * It runs through the Vercel AI Gateway, with the model and providers the sweep
  * file names (`simulatedUser`). Only the made-up cases under
- * `agent/evals/data/` ever reach it.
+ * `agent/evals/content/data/` ever reach it.
  *
  * What it sees, and nothing else:
  *

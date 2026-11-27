@@ -29,7 +29,7 @@ export function CalibrationPage({ sample }: { sample?: string }) {
         <p className="text-muted-foreground text-sm">
           Grade a sample of replies yourself. The judge check and the agreement
           check compare the judge with these grades. Each answer saves as you
-          go, to agent/evals/calibration/grades.jsonl.
+          go, to agent/evals/content/calibration/grades.jsonl.
         </p>
       </div>
       {process.env.NODE_ENV === "development" ? (
@@ -57,7 +57,7 @@ async function Grading({ sample }: { sample?: string }) {
           <EmptyTitle>No calibration sample yet</EmptyTitle>
           <EmptyDescription>
             Write one with calibration-sample.ts in agent/scripts/eval. It saves
-            sample-*.json in agent/evals/calibration.
+            sample-*.json in agent/evals/content/calibration.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

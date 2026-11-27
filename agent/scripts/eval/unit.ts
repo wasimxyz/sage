@@ -16,6 +16,7 @@ import {
   evalCacheEnabled,
   repoRoot,
 } from "../../evals/lib/cache.ts";
+import { evalContentRoot } from "../../evals/lib/content.ts";
 import { evalDataRoot } from "../../evals/lib/dataset.ts";
 import {
   type Memory,
@@ -548,7 +549,7 @@ function startUnitSage(unit: Unit, binary: string): Promise<SageRun> {
     dreamPromptsDir:
       group.dreamPrompt === baselineDreamPrompt
         ? undefined
-        : dreamPromptsDir(repoRoot(), group.dreamPrompt),
+        : dreamPromptsDir(evalContentRoot(), group.dreamPrompt),
     embedModel: group.embedModel,
     ollamaBin: ctx.ollama.bin,
     summaryModel: group.summaryModel,

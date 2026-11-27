@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-
+import { skipWithoutContent } from "../../evals/lib/content.ts";
 import {
   dreamKeyId,
   expandSetups,
@@ -296,7 +296,9 @@ test("a sweep needs the simulated user only when it plays conversations", () => 
   }
 });
 
-test("the dream sweep runs the person pass and Dream accuracy for each memory value, with no Chat", async () => {
+test("the dream sweep runs the person pass and Dream accuracy for each memory value, with no Chat", {
+  skip: skipWithoutContent(),
+}, async () => {
   const loaded = await loadSweep("dream", {}, defaultSweepsDir());
   assert.deepEqual(loaded.sweep.tests, ["person", "dream-accuracy"]);
   const resolved = resolveTests(loaded.sweep.tests, evalsDir);
@@ -329,7 +331,9 @@ test("the dream sweep runs the person pass and Dream accuracy for each memory va
   assert.match(lines.at(-1) ?? "", noChatPattern);
 });
 
-test("the default sweep adds Dream accuracy to the person pass and sends Chat's fact questions and the openers", async () => {
+test("the default sweep adds Dream accuracy to the person pass and sends Chat's fact questions and the openers", {
+  skip: skipWithoutContent(),
+}, async () => {
   const loaded = await loadSweep("default", {}, defaultSweepsDir());
   const resolved = resolveTests(loaded.sweep.tests, evalsDir);
   assert.deepEqual(resolved.missing, []);
@@ -339,7 +343,9 @@ test("the default sweep adds Dream accuracy to the person pass and sends Chat's 
   assert.equal(needsChat(resolved.prefixes), true);
 });
 
-test("the screen sweep sends only the screen openers on nine models and two prompts, with memory off", async () => {
+test("the screen sweep sends only the screen openers on nine models and two prompts, with memory off", {
+  skip: skipWithoutContent(),
+}, async () => {
   const loaded = await loadSweep("screen", {}, defaultSweepsDir());
   const { sweep } = loaded;
   assert.deepEqual(sweep.tags, ["screen"]);
@@ -376,7 +382,9 @@ test("the screen sweep sends only the screen openers on nine models and two prom
   assert.deepEqual(resolved.prefixes.chat, ["chat/openers"]);
 });
 
-test("the quick sweep sends only the quick openers, on the default model with the shipped prompt and memory off", async () => {
+test("the quick sweep sends only the quick openers, on the default model with the shipped prompt and memory off", {
+  skip: skipWithoutContent(),
+}, async () => {
   const loaded = await loadSweep("quick", {}, defaultSweepsDir());
   const { sweep } = loaded;
   assert.deepEqual(sweep.tags, ["quick"]);
@@ -396,7 +404,9 @@ test("the quick sweep sends only the quick openers, on the default model with th
   assert.deepEqual(resolved.prefixes.person, []);
 });
 
-test("the quick sweep covers each person with a quick opener, and every item it sends is tagged quick", async () => {
+test("the quick sweep covers each person with a quick opener, and every item it sends is tagged quick", {
+  skip: skipWithoutContent(),
+}, async () => {
   const { sweep, setups } = await loadSweep("quick", {}, defaultSweepsDir());
   const everyone = await loadAllPeople();
   const selected = selectPeople(everyone, sweep.tags, { openers: true });

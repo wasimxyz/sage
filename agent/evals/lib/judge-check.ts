@@ -8,11 +8,11 @@
  * verdicts we expect: is there a severe unsupported claim, and is there any
  * other unsupported claim. Some items are written to fail one check. The rest
  * are clean entries that a good summary handles. Files live in
- * `agent/evals/judge-check/dream/*.yaml`.
+ * `agent/evals/content/judge-check/dream/*.yaml`.
  *
  * Reply half (see "Chat replies" below). Each item is a Chat reply to a real
  * opener of a real person, and the checks the judge must fail on it. Files
- * live in `agent/evals/judge-check/replies/*.yaml`.
+ * live in `agent/evals/content/judge-check/replies/*.yaml`.
  *
  * An item passes only when the judge's verdicts match the labels. A planted
  * failure it lets through is a miss. A clean item it flags is a false alarm.
@@ -20,7 +20,6 @@
  */
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { loadYaml } from "eve/evals/loaders";
 import { z } from "zod";
@@ -34,6 +33,7 @@ import {
   REPLY_HARD_CHECK_IDS,
   type ReplyItem,
 } from "./checks.ts";
+import { evalContentDir } from "./content.ts";
 import { type LoadedPerson, loadPerson } from "./dataset.ts";
 import {
   type DreamGradeResult,
@@ -68,15 +68,12 @@ export const SEVERE_CHECK = "no-severe-unsupported";
 /** The check the other verdict belongs to. */
 export const OTHER_CHECK = "dream-supported";
 
-const bundledDreamDir = fileURLToPath(
-  new URL("../judge-check/dream", import.meta.url)
-);
 const yamlFilePattern = /\.ya?ml$/u;
 const slugPattern = /^[a-z0-9][a-z0-9-]*$/u;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/u;
 
 export function dreamJudgeCheckDir(): string {
-  return bundledDreamDir;
+  return join(evalContentDir("judge-check"), "dream");
 }
 
 // ---------------------------------------------------------------------------
@@ -423,12 +420,8 @@ export function recordJudgeCheck(
 // pass. A rubric bound says how a clean reply must score, such as a
 // listening-only reply that must get at least 4 for the right kind of help.
 
-const bundledRepliesDir = fileURLToPath(
-  new URL("../judge-check/replies", import.meta.url)
-);
-
 export function replyJudgeCheckDir(): string {
-  return bundledRepliesDir;
+  return join(evalContentDir("judge-check"), "replies");
 }
 
 /** The checks a label can say the judge must fail. */

@@ -1,11 +1,11 @@
 import { type Dirent, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { loadYaml } from "eve/evals/loaders";
 
 import { resolveWhen } from "../../agent/lib/when.ts";
+import { evalContentDir } from "./content.ts";
 import { chatNeedStem, type PersonCase, parsePersonCase } from "./schema.ts";
 
 const leadingBomPattern = /^﻿/u;
@@ -18,18 +18,14 @@ const whitespacePattern = /\s+/u;
 const markdownSuffixPattern = /\.md$/u;
 const onlyDigitsPattern = /^\d+$/u;
 const personIdPattern = /^[a-z0-9][a-z0-9-]*$/u;
-const bundledDataRoot = fileURLToPath(new URL("../data", import.meta.url));
 
+/** `SAGE_EVAL_DATA` when it is set, else the content's `data` folder. */
 export function evalDataRoot(): string {
   const fromEnv = process.env.SAGE_EVAL_DATA;
   if (fromEnv !== undefined && fromEnv.length > 0) {
     return fromEnv;
   }
-  const repo = process.env.SAGE_REPO_ROOT;
-  if (repo !== undefined && repo.length > 0) {
-    return join(repo, "agent", "evals", "data");
-  }
-  return bundledDataRoot;
+  return evalContentDir("data");
 }
 
 export interface LoadedEntry {

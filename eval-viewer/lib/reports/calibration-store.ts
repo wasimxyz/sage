@@ -29,22 +29,38 @@ import {
 import type { ParseOutcome } from "./sweep-types.ts";
 
 // The files behind the grading form: the samples to read, and grades.jsonl to
-// write. Saving is allowed only under `next dev`, and only inside the repo.
+// write. Saving is allowed only under `next dev`, and only inside the repo, or
+// inside the eval content folder when `SAGE_EVAL_CONTENT` puts it elsewhere.
 
 export const calibrationEnv = "SAGE_EVAL_CALIBRATION";
+export const contentEnv = "SAGE_EVAL_CONTENT";
 
-/** `agent/evals/calibration` next to the viewer, or the folder in `SAGE_EVAL_CALIBRATION`. */
+function isSet(value: string | undefined): value is string {
+  return value !== undefined && value.trim().length > 0;
+}
+
+/**
+ * The calibration folder of the eval content: `agent/evals/content/calibration`
+ * next to the viewer, or `calibration` in the folder `SAGE_EVAL_CONTENT` names,
+ * or the folder in `SAGE_EVAL_CALIBRATION`. `repoRoot` is the folder the grades
+ * file must stay inside: the content folder when `SAGE_EVAL_CONTENT` names one,
+ * else the repo.
+ */
 export function calibrationLocation(
   env: Readonly<Record<string, string | undefined>>,
   cwd: string
 ): { dir: string; repoRoot: string } {
-  const repoRoot = resolve(cwd, "..");
+  const repo = resolve(cwd, "..");
+  const content = env[contentEnv];
+  const root = isSet(content) ? resolve(cwd, content) : repo;
+  const contentDir = isSet(content)
+    ? resolve(cwd, content)
+    : join(repo, "agent", "evals", "content");
   const override = env[calibrationEnv];
-  const dir =
-    override === undefined || override.trim().length === 0
-      ? join(repoRoot, "agent", "evals", "calibration")
-      : resolve(cwd, override);
-  return { dir, repoRoot };
+  const dir = isSet(override)
+    ? resolve(cwd, override)
+    : join(contentDir, "calibration");
+  return { dir, repoRoot: root };
 }
 
 function isInside(root: string, target: string): boolean {

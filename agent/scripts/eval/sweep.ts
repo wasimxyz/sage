@@ -1,4 +1,4 @@
-// Sweep files: `agent/evals/sweeps/<name>.yaml`.
+// Sweep files: `agent/evals/content/sweeps/<name>.yaml`.
 //
 // `loadSweep` reads one, applies the model-list overrides from the
 // environment, and refuses settings the agent cannot honor yet. The result is
@@ -7,10 +7,10 @@
 
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { loadYaml } from "eve/evals/loaders";
 
+import { evalContentDir } from "../../evals/lib/content.ts";
 import {
   expandSetups,
   parseSweepFile,
@@ -30,7 +30,7 @@ export const MODEL_OVERRIDES = [
 ] as const;
 
 export function defaultSweepsDir(): string {
-  return fileURLToPath(new URL("../../evals/sweeps", import.meta.url));
+  return evalContentDir("sweeps");
 }
 
 export function availableSweeps(dir = defaultSweepsDir()): string[] {

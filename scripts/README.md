@@ -63,7 +63,7 @@ When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change t
 
 `make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` opens Home with entries. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand.
 
-The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format. A person folder under `agent/evals/data/people/` works too: only its top-level `.md` files count, and the script refuses a person with no entries.
+The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format. A person folder under `agent/evals/content/data/people/` works too: only its top-level `.md` files count, and the script refuses a person with no entries.
 
 ### Seed dates
 

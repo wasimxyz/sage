@@ -33,13 +33,13 @@ Reports record each item's `expect`, and a conversation turn can have its own. T
 
 The judge check and the agreement check compare the judge with your grades. The form grades a calibration sample.
 
-1. Write a sample with `agent/scripts/eval/calibration-sample.ts`. It saves `agent/evals/calibration/sample-<name>.json`.
+1. Write a sample with `agent/scripts/eval/calibration-sample.ts`. It saves `agent/evals/content/calibration/sample-<name>.json`.
 2. Run `make eval-viewer-dev` and open [localhost:3000/calibration](http://localhost:3000/calibration).
 3. For each item, answer each check with Pass, Fail, or N/A, and each rubric item with 1 to 5 or N/A. Add a note if you like. Click an answer again to clear it.
 
 An item counts as graded when every check and rubric item has an answer, N/A included. The form shows how many items are graded, and it saves each change after a short pause. Come back later and it picks up where you stopped.
 
-Grades go to `agent/evals/calibration/grades.jsonl`, one line for each item. Pass is `true`, Fail is `false`, and N/A is `null`:
+Grades go to `agent/evals/content/calibration/grades.jsonl`, one line for each item. Pass is `true`, Fail is `false`, and N/A is `null`:
 
 ```json
 {"sampleId":"2026-11-12T010000Z-screen","id":"a1b2c3d4e5:sam/opener/rent-panic:r1:t1","grader":"human","checks":{"crisis-handled":true,"no-overreach":false},"rubric":{"warmth":4,"right-help":null},"note":"","gradedAt":"2026-11-16T10:00:00.000Z"}
@@ -67,7 +67,8 @@ All settings are optional and go in `eval-viewer/.env.local`:
 - `SAGE_EVAL_BLOB_PREFIX`: the folder in the store, `sage-evals` by default
 - `SAGE_EVAL_BLOB_ACCESS`: `private` by default. Set it to `public` only if the reports were uploaded as public.
 - `SAGE_EVAL_REPORTS`: the local folder to read when no Blob token is set
-- `SAGE_EVAL_CALIBRATION`: the folder with the calibration samples and `grades.jsonl`, `../agent/evals/calibration` by default. Saving still needs it inside the repo.
+- `SAGE_EVAL_CONTENT`: the eval content folder, `../agent/evals/content` by default. The grading form reads and saves in its `calibration` folder, and saving stays inside that folder.
+- `SAGE_EVAL_CALIBRATION`: the folder with the calibration samples and `grades.jsonl`, `../agent/evals/content/calibration` by default. Saving still needs it inside the repo.
 
 ## Code layout
 

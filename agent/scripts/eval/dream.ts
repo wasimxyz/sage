@@ -145,7 +145,7 @@ function promptFileProblem(path: string): string | null {
  * a regular file, or 64 KiB or more are problems.
  */
 export function dreamPromptProblems(
-  repo: string,
+  content: string,
   names: readonly string[]
 ): string[] {
   const problems: string[] = [];
@@ -154,7 +154,7 @@ export function dreamPromptProblems(
     if (name === baselineDreamPrompt) {
       continue;
     }
-    const dir = dreamPromptsDir(repo, name);
+    const dir = dreamPromptsDir(content, name);
     const where = `Dream prompt "${name}" (${dir})`;
     if (!isFolder(dir)) {
       const known = isFolder(dirname(dir))

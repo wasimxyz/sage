@@ -23,7 +23,7 @@ These pages explain how Sage works once you are past the [README](../README.md).
 - [Eval suite](agent/evals.md): running sweeps that grade Dream and Chat on made-up people with a cloud judge
 - [Eval reports](agent/evals-reports.md): reading setup reports and the ranking, and fixing runner failures
 - [Eval suite internals](../agent/evals/README.md): the runner steps, the eval files, and the shared helpers
-- [Eval fixtures](../agent/evals/data/README.md): how to write a case
+- Eval fixtures: how to write a case, in `data/README.md` of the eval content, the private sage-evals repo
 - [Eval viewer](../eval-viewer/README.md): the Next.js app that ranks sweeps and opens reports
 
 ## Security

@@ -11,6 +11,7 @@ import test from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { ReplyItem } from "../../evals/lib/checks.ts";
+import { skipWithoutContent } from "../../evals/lib/content.ts";
 import { replyItemForTurn } from "../../evals/lib/conversation-checks.ts";
 import {
   gradeConversation,
@@ -794,7 +795,9 @@ async function smokeGrader(t: test.TestContext, replyTokens: number) {
   return { grader, runDir, sweep };
 }
 
-test("smoke.yaml's spending cap leaves room for the whole judge check", async (t) => {
+test("smoke.yaml's spending cap leaves room for the whole judge check", {
+  skip: skipWithoutContent(),
+}, async (t) => {
   const { grader, runDir, sweep } = await smokeGrader(t, 1500);
   const results = await pool(
     await judgeCheckTasks(grader),
@@ -810,7 +813,9 @@ test("smoke.yaml's spending cap leaves room for the whole judge check", async (t
   assert.ok(totals(runDir).spentUsd < sweep.spendingCapUsd * 0.75);
 });
 
-test("smoke.yaml's spending cap also covers smoke's own reply grades, at 1000 or 1500 output tokens a reply", async (t) => {
+test("smoke.yaml's spending cap also covers smoke's own reply grades, at 1000 or 1500 output tokens a reply", {
+  skip: skipWithoutContent(),
+}, async (t) => {
   for (const replyTokens of [1000, 1500]) {
     // biome-ignore lint/performance/noAwaitInLoops: each size is its own run with its own ledger
     const { grader, runDir, sweep } = await smokeGrader(t, replyTokens);
@@ -832,7 +837,9 @@ test("smoke.yaml's spending cap also covers smoke's own reply grades, at 1000 or
   }
 });
 
-test("a reply grade reserves about what it expects to spend, not the output cap", async (t) => {
+test("a reply grade reserves about what it expects to spend, not the output cap", {
+  skip: skipWithoutContent(),
+}, async (t) => {
   const { grader, runDir } = await smokeGrader(t, 1500);
   const [first] = await smokeReplyTasks(grader);
   assert.ok(first);
@@ -844,7 +851,9 @@ test("a reply grade reserves about what it expects to spend, not the output cap"
   assert.ok(spentUsd > 0 && spentUsd < 0.1, `$${spentUsd}`);
 });
 
-test("judgeCheckSize counts the Dream, reply, and conversation items the check grades", async () => {
+test("judgeCheckSize counts the Dream, reply, and conversation items the check grades", {
+  skip: skipWithoutContent(),
+}, async () => {
   const size = await judgeCheckSize();
   const conversations = await loadConversationCheckItems();
   assert.equal(size.dreamItems, (await loadDreamCheckItems()).length);

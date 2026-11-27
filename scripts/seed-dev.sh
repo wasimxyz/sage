@@ -1,7 +1,7 @@
 #!/bin/sh
 # Reset the dev app and fill its journal with the entries in scripts/seed,
 # moved by whole weeks so the newest is in the last 7 days. SEED names another
-# folder of entries, such as an eval person: SEED=agent/evals/data/people/<id>.
+# folder of entries, such as an eval person: SEED=agent/evals/content/data/people/<id>.
 # Only its top-level .md files are entries. Only the dev app: the packaged app's
 # data is never touched. Ollama and its models stay. Dream does not run, and no
 # chats are made.

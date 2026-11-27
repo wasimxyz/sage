@@ -2,12 +2,12 @@
  * The judge check, conversation half.
  *
  * Each item is a short conversation about a real person from
- * `agent/evals/data/people/`, written turn by turn, and the checks the judge
+ * `agent/evals/content/data/people/`, written turn by turn, and the checks the judge
  * must fail on it. The person supplies the fact sheet and the whole journal,
  * and the judge reads the item the way it reads a conversation from a setup:
  * the whole conversation in one call, and the replies named in `gradeReplies`
  * one by one as replies, with the turns before them in front. Files live in
- * `agent/evals/judge-check/conversations/*.yaml`.
+ * `agent/evals/content/judge-check/conversations/*.yaml`.
  *
  * What an item can plant:
  *
@@ -34,7 +34,8 @@
  * `gradeReplies` get a reply grade. The whole-conversation call is made once
  * for each item.
  */
-import { fileURLToPath } from "node:url";
+
+import { join } from "node:path";
 
 import { z } from "zod";
 
@@ -44,6 +45,7 @@ import {
   judgedCheckIds,
   type ReplyItem,
 } from "./checks.ts";
+import { evalContentDir } from "./content.ts";
 import {
   type ConversationReplyBase,
   declineVerdicts,
@@ -99,13 +101,10 @@ import {
   WANTS,
 } from "./schema.ts";
 
-const bundledConversationsDir = fileURLToPath(
-  new URL("../judge-check/conversations", import.meta.url)
-);
 const slugPattern = /^[a-z0-9][a-z0-9-]*$/u;
 
 export function conversationJudgeCheckDir(): string {
-  return bundledConversationsDir;
+  return join(evalContentDir("judge-check"), "conversations");
 }
 
 // ---------------------------------------------------------------------------

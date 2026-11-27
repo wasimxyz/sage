@@ -29,6 +29,7 @@ function filesUnder(dir: string): string[] {
 const forbidden: [string, RegExp][] = [
   ["an eval variable (SAGE_EVAL_)", /SAGE_EVAL_/u],
   ["the eval prompts folder (evals/prompts)", /evals\/prompts/u],
+  ["the eval content folder (evals/content)", /evals\/content/u],
   ["the AI Gateway provider (@ai-sdk/gateway)", /@ai-sdk\/gateway/u],
   ["the AI Gateway client (createGateway)", /createGateway/u],
   ["an eval root (.eval-roots)", /\.eval-roots/u],

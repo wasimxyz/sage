@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ReplyItem } from "./checks.ts";
+import { skipWithoutContent } from "./content.ts";
 import type { LoadedPerson } from "./dataset.ts";
 import type { Grader, JudgeCall, JudgeOutcome } from "./grader.ts";
 import {
@@ -644,7 +645,9 @@ test("a judge that could not answer is recorded as not graded, never as a miss",
 // The items that ship
 // ---------------------------------------------------------------------------
 
-test("the folder loads, repeats no id, and holds about twenty items", async () => {
+test("the folder loads, repeats no id, and holds about twenty items", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadReplyCheckItems();
   assert.ok(items.length >= 20 && items.length <= 25, `${items.length} items`);
   assert.equal(new Set(items.map((entry) => entry.id)).size, items.length);
@@ -676,7 +679,9 @@ const PLANTED_KINDS: Record<string, string[]> = {
   "no-severe-unsupported": ["severe-unsupported-mia-died"],
 };
 
-test("the shipped items plant every failure the plan lists, one reply each", async () => {
+test("the shipped items plant every failure the plan lists, one reply each", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadReplyCheckItems();
   const byId = new Map(items.map((entry) => [entry.id, entry]));
   for (const [check, ids] of Object.entries(PLANTED_KINDS)) {
@@ -702,7 +707,9 @@ test("the shipped items plant every failure the plan lists, one reply each", asy
   }
 });
 
-test("the shipped clean items include a listening-only reply that must score right-help 4 or more, and an exercise offered as a question", async () => {
+test("the shipped clean items include a listening-only reply that must score right-help 4 or more, and an exercise offered as a question", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadReplyCheckItems();
   const listening = items.find((entry) => entry.id === "clean-listening-only");
   assert.deepEqual(listening?.expect, {
@@ -722,7 +729,9 @@ test("the shipped clean items include a listening-only reply that must score rig
   assert.ok(clean >= 10, `${clean} clean`);
 });
 
-test("every shipped item matches a real opener of a real person, and its labels apply to that opener", async () => {
+test("every shipped item matches a real opener of a real person, and its labels apply to that opener", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadReplyCheckItems();
   const all = await Promise.all(
     items.map(async (entry) => ({
@@ -743,7 +752,9 @@ test("every shipped item matches a real opener of a real person, and its labels 
   }
 });
 
-test("the injection item carries the note in a tool result, and the tag that turns the check on", async () => {
+test("the injection item carries the note in a tool result, and the tag that turns the check on", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadReplyCheckItems();
   const injected = items.find(
     (entry) => entry.id === "followed-injected-instruction"
@@ -757,7 +768,9 @@ test("the injection item carries the note in a tool result, and the tag that tur
   assert.ok(resolved.replyItem.tags.includes("injection"));
 });
 
-test("a clean reply on the empty journal uses the empty-journal fact sheet", async () => {
+test("a clean reply on the empty journal uses the empty-journal fact sheet", {
+  skip: skipWithoutContent(),
+}, async () => {
   const items = await loadReplyCheckItems();
   const empty = items.find((entry) => entry.journal === "empty");
   assert.ok(empty);

@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+import { evalContentRootForAgent } from "../../evals/lib/content.ts";
 import { BASELINE_PROMPT } from "../../evals/lib/schema.ts";
 import { withoutSecrets } from "./env.ts";
 import { eveBin } from "./eve.ts";
@@ -42,8 +43,9 @@ export function overlayRoot(agentDir: string, name: string): string {
   return join(overlayRootsDir(agentDir), name);
 }
 
+/** The Chat prompts folder in the eval content. */
 export function promptsDir(agentDir: string): string {
-  return join(agentDir, "evals", "prompts");
+  return join(evalContentRootForAgent(agentDir), "prompts");
 }
 
 export function liveInstructionsPath(agentDir: string): string {

@@ -1,5 +1,5 @@
 // What the runner needs to know about the people in
-// `agent/evals/data/people/`: which ones a sweep covers, and how much each one
+// `agent/evals/content/data/people/`: which ones a sweep covers, and how much each one
 // holds. The loader itself is `agent/evals/lib/dataset.ts`.
 
 import {
