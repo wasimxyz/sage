@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import {
-  defaultMessageReducer,
-  type EveAgentReducerEvent,
-  type MessageStreamEvent,
-} from "eve/client";
+import { conversationOf, type SessionStreamEvent } from "eve/client";
 
+import {
+  type ChatEventTurn,
+  chatSessionEvents,
+} from "../evals/lib/chat-events.ts";
 import { screenshotChatEvents } from "./screenshot-chat.ts";
 import type { BridgeCall } from "./seed-chats.ts";
 import {
@@ -43,52 +43,22 @@ const repeatedPattern = /more than one chat party/u;
 // Fakes
 // ---------------------------------------------------------------------------
 
-/** The events of one turn: optional searches, then the reply. */
-function turnEvents(
-  turn: number,
-  reply: string,
-  tools: readonly string[] = []
-): MessageStreamEvent[] {
-  const turnId = `turn_${turn}`;
-  const bodies: { data: Record<string, unknown>; type: string }[] = [
-    { data: { turnId }, type: "turn.started" },
-    { data: { message: `message ${turn}`, turnId }, type: "message.received" },
-    {
-      data: { modelId: CHAT_MODEL, stepIndex: 0, turnId },
-      type: "step.started",
-    },
-  ];
-  for (const [index, toolName] of tools.entries()) {
-    const callId = `call_${turn}_${index}`;
-    bodies.push(
-      {
-        data: {
-          actions: [{ callId, input: {}, kind: "tool-call", toolName }],
-          turnId,
-        },
-        type: "actions.requested",
-      },
-      {
-        data: {
-          result: { callId, kind: "tool-result", output: [], toolName },
-          status: "completed",
-          turnId,
-        },
-        type: "action.result",
-      }
-    );
-  }
-  bodies.push(
-    {
-      data: { finishReason: "stop", message: reply, turnId },
-      type: "message.completed",
-    },
-    { data: { turnId }, type: "turn.completed" }
-  );
-  return bodies.map((body, index) => ({
-    ...body,
-    meta: { at: "2026-11-27T12:00:00.000Z", id: `evt_${turn}_${index}` },
-  })) as unknown as MessageStreamEvent[];
+/** One of the fake's turns as eve 1.0 events: an optional search, then the reply. */
+function eventTurn(
+  message: string,
+  fake: FakeTurn,
+  turn: number
+): ChatEventTurn {
+  const [name] = fake.tools ?? [];
+  return {
+    question: message,
+    ...(fake.reply.length > 0 ? { reply: fake.reply } : {}),
+    ...(name === undefined
+      ? {}
+      : {
+          tool: { callId: `call_${turn}`, input: {}, name, output: [] },
+        }),
+  };
 }
 
 interface FakeTurn {
@@ -99,7 +69,7 @@ interface FakeTurn {
 
 /**
  * Chats that answer from one queue of turns, so a chat that runs again takes
- * the next turns. Each chat's stream is the events of the turns it sent.
+ * the next turns. Each chat's stream is one eve session of the turns it sent.
  */
 function fakeSage(queue: FakeTurn[]): {
   sent: string[];
@@ -110,7 +80,8 @@ function fakeSage(queue: FakeTurn[]): {
   const startChat = (): SageChat => {
     sessions += 1;
     const sessionId = `wrun_${sessions}`;
-    const stream: MessageStreamEvent[] = [];
+    const turns: ChatEventTurn[] = [];
+    let stream: SessionStreamEvent[] = [];
     return {
       events: (): Promise<SessionEvents> =>
         Promise.resolve({
@@ -124,12 +95,17 @@ function fakeSage(queue: FakeTurn[]): {
         if (next === undefined) {
           return Promise.reject(new Error("no more turns"));
         }
-        const events = turnEvents(sent.length, next.reply, next.tools);
-        stream.push(...events);
+        turns.push(eventTurn(message, next, sent.length));
+        const before = stream.length;
+        stream = chatSessionEvents(turns, {
+          at: "2026-11-27T12:00:00.000Z",
+          modelId: CHAT_MODEL,
+          prefix: sessionId,
+        }) as unknown as SessionStreamEvent[];
         return Promise.resolve({
-          events,
-          inputRequests: 0,
+          events: stream.slice(before),
           message: next.reply,
+          parkedOnInput: false,
           status: next.status ?? "waiting",
         });
       },
@@ -373,10 +349,13 @@ test("a failed turn keeps the turns before it, with no session to resume", async
   assert.equal(saved.eveSessionId, null);
   assert.equal(saved.streamIndex, 0);
   assert.equal(
-    saved.events.filter((event) => event.type === "message.received").length,
+    saved.events.filter((event) => event.type === "delivery.consumed").length,
     1
   );
   assert.ok(saved.events.length < stream.events.length);
+  // The cut falls between turns, before the next message is admitted.
+  assert.equal(saved.events.at(-1)?.type, "delivery.settled");
+  assert.equal(stream.events[saved.events.length]?.type, "delivery.admitted");
 });
 
 test("a chat where no turn worked is not saved", async () => {
@@ -427,12 +406,12 @@ test("a saved chat carries its session and picker, then gets indexed", async () 
   });
 });
 
-test("the saved stream replays through eve's reducer as the Chat screen shows it", async () => {
+test("the saved stream reads through eve's conversationOf as the Chat screen shows it", async () => {
   // The screenshot chat is a real turn's shape: a question, a search, an answer.
   const stream = screenshotChatEvents(
     [{ date: "2026-10-11", id: 13, title: "Sunday" }],
     new Date("2026-11-27T12:00:00Z")
-  ) as MessageStreamEvent[];
+  ) as SessionStreamEvent[];
   const held = await holdChat(
     { beats: [], name: "sundays", opening: "How have my Sundays changed?" },
     deps(
@@ -446,8 +425,8 @@ test("the saved stream replays through eve's reducer as the Chat screen shows it
         send: () =>
           Promise.resolve({
             events: stream,
-            inputRequests: 0,
             message: "They changed.",
+            parkedOnInput: false,
             status: "waiting",
           }),
       }),
@@ -462,19 +441,12 @@ test("the saved stream replays through eve's reducer as the Chat screen shows it
     .filter((entry) => entry.command === "chat.save")
     .map((entry) => String(entry.payload.chunk))
     .join("");
-  const reducer = defaultMessageReducer();
-  let data = reducer.initial();
-  for (const event of JSON.parse(json) as EveAgentReducerEvent[]) {
-    data = reducer.reduce(data, event);
-  }
-  const [user, assistant] = data.messages;
+  const { messages } = conversationOf(JSON.parse(json) as SessionStreamEvent[]);
+  const [user, assistant] = messages;
   assert.equal(user?.role, "user");
   assert.equal(assistant?.role, "assistant");
-  const tool = assistant?.parts.find((part) => part.type === "dynamic-tool");
-  assert.equal(
-    tool?.type === "dynamic-tool" ? tool.toolName : null,
-    "search_journal"
-  );
+  const tool = assistant?.parts.find((part) => part.type === "tool");
+  assert.equal(tool?.type === "tool" ? tool.name : null, "search_journal");
   assert.deepEqual(toolUses(stream), [
     { name: "search_journal", status: "completed" },
   ]);

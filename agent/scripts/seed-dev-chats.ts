@@ -4,8 +4,8 @@
 //
 // Sage's side is the real Chat agent: an `eve dev` server started from
 // `agent/`, on qwen3.5:9b with Thinking on, calling the real tools against the
-// running Sage. Its session files land in `agent/.eve/.workflow-data`, where
-// `make dev` resumes them.
+// running Sage. Its sessions land in `agent/.eve/.workflow-data/world.db`,
+// where `make dev` resumes them.
 //
 // Ben's side comes from `chats.yaml` in the seed folder. His first message in
 // each chat is written there. Each later one is written by the same local
@@ -27,8 +27,7 @@ import { join } from "node:path";
 import {
   Client,
   type ClientSession,
-  type MessageResponse,
-  type MessageStreamEvent,
+  type SessionStreamEvent,
 } from "eve/client";
 import { loadYaml } from "eve/evals/loaders";
 import { z } from "zod";
@@ -269,16 +268,29 @@ export function ollamaBen(
 
 /** What a turn reported, as the checks read it. */
 export interface SentTurn {
-  events: readonly MessageStreamEvent[];
-  inputRequests: number;
+  /** The events this turn added to the session's stream. */
+  events: readonly SessionStreamEvent[];
   message: string;
+  /** The turn stopped to wait for a person, which no Sage tool asks for. */
+  parkedOnInput: boolean;
   status: "completed" | "failed" | "waiting";
 }
 
 export interface SessionEvents {
-  events: readonly MessageStreamEvent[];
+  events: readonly SessionStreamEvent[];
   sessionId: string;
   streamIndex: number;
+}
+
+/** How eve says a delivery ended. */
+type DeliveryStatus = "awaiting-input" | "cancelled" | "completed" | "failed";
+
+/** A turn's status as the checks read it. A stopped turn did not work. */
+export function sentStatus(status: DeliveryStatus): SentTurn["status"] {
+  if (status === "completed") {
+    return "completed";
+  }
+  return status === "awaiting-input" ? "waiting" : "failed";
 }
 
 /** One conversation with the Chat agent. A test answers for it. */
@@ -306,12 +318,14 @@ export function chatHeaders(): Record<string, string> {
 export function eveChats(url: string, token: string): StartSageChat {
   const client = new Client({
     auth: { bearer: token },
+    baseUrl: url,
     headers: chatHeaders(),
-    host: url,
     redirect: "error",
   });
   return () => {
     let session: ClientSession | null = null;
+    // How much of the stream the turns before this one covered.
+    let seen = 0;
     return {
       async events() {
         if (session === null) {
@@ -326,21 +340,26 @@ export function eveChats(url: string, token: string): StartSageChat {
       },
       async send(message) {
         const signal = AbortSignal.timeout(TURN_TIMEOUT_MS);
-        let response: MessageResponse;
-        if (session === null) {
-          ({ response, session } = await client.sessions.create({
-            message,
-            signal,
-          }));
-        } else {
-          response = await session.send(message, { signal });
-        }
-        const result = await response.result();
+        const current = session;
+        const started =
+          current === null
+            ? await client.sessions.create({ message, signal })
+            : {
+                delivery: await current.send(message, { signal }),
+                session: current,
+              };
+        ({ session } = started);
+        const result = await started.delivery.result({ signal });
+        // A delivery's result holds no events, so the turn's come from the
+        // stream, after the turns before it.
+        const { events } = await started.session.snapshot({ signal });
+        const added = events.slice(seen);
+        seen = events.length;
         return {
-          events: result.events,
-          inputRequests: result.inputRequests.length,
-          message: result.message ?? "",
-          status: result.status,
+          events: added,
+          message: result.reply ?? "",
+          parkedOnInput: result.status === "awaiting-input",
+          status: sentStatus(result.status),
         };
       },
     };
@@ -356,58 +375,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Remembers the tool each call asked for, from an `actions.requested` event. */
-function noteRequestedTools(
-  data: Record<string, unknown>,
-  names: Map<string, string>
-): void {
-  if (!Array.isArray(data.actions)) {
-    return;
-  }
-  for (const action of data.actions) {
-    if (
-      isRecord(action) &&
-      typeof action.callId === "string" &&
-      typeof action.toolName === "string"
-    ) {
-      names.set(action.callId, action.toolName);
-    }
-  }
+/** The tool a `call.requested` event names. */
+function requestedTool(data: Record<string, unknown>): string | undefined {
+  const { capability } = data;
+  return isRecord(capability) && typeof capability.name === "string"
+    ? capability.name
+    : undefined;
 }
 
-/** The tool and how it ended, from an `action.result` event. */
-function resultTool(
-  data: Record<string, unknown>,
-  names: ReadonlyMap<string, string>
-): ToolUse | null {
-  if (!isRecord(data.result)) {
-    return null;
-  }
-  const { callId, toolName } = data.result;
-  const requested = typeof callId === "string" ? names.get(callId) : undefined;
-  return {
-    name:
-      typeof toolName === "string" ? toolName : (requested ?? "unknown tool"),
-    status: typeof data.status === "string" ? data.status : "unknown",
-  };
-}
-
-/** The tools a turn ran, in order, with how each ended. */
-export function toolUses(events: readonly MessageStreamEvent[]): ToolUse[] {
+/**
+ * The tools a turn ran, in order, with how each ended: each `call.settled`,
+ * named by the `call.requested` before it.
+ */
+export function toolUses(events: readonly SessionStreamEvent[]): ToolUse[] {
   const names = new Map<string, string>();
   const uses: ToolUse[] = [];
   for (const event of events) {
     const data: unknown = event.data;
-    if (!isRecord(data)) {
+    if (!isRecord(data) || typeof data.callId !== "string") {
       continue;
     }
-    if (event.type === "actions.requested") {
-      noteRequestedTools(data, names);
-    } else if (event.type === "action.result") {
-      const use = resultTool(data, names);
-      if (use !== null) {
-        uses.push(use);
+    if (event.type === "call.requested") {
+      const name = requestedTool(data);
+      if (name !== undefined) {
+        names.set(data.callId, name);
       }
+    } else if (event.type === "call.settled") {
+      uses.push({
+        name: names.get(data.callId) ?? "unknown tool",
+        status: typeof data.outcome === "string" ? data.outcome : "unknown",
+      });
     }
   }
   return uses;
@@ -496,7 +493,7 @@ async function attemptChat(chat: SeedChat, deps: ChatDeps): Promise<Attempt> {
     }
     const works = checkTurnWorks({
       chatModel: CHAT_MODEL,
-      parkedOnInput: sent.inputRequests > 0,
+      parkedOnInput: sent.parkedOnInput,
       replyText: sent.message,
       status: sent.status,
       stepModelIds: measureTurn(sent.events).stepModelIds,
@@ -549,7 +546,7 @@ export function eventsToSave(
   stream: SessionEvents,
   attempt: Attempt
 ): {
-  events: readonly MessageStreamEvent[];
+  events: readonly SessionStreamEvent[];
   eveSessionId: string | null;
   streamIndex: number;
 } {
@@ -561,19 +558,45 @@ export function eventsToSave(
       streamIndex: stream.streamIndex,
     };
   }
-  let received = 0;
-  const cut = stream.events.findIndex((event) => {
-    if (event.type !== "message.received") {
-      return false;
-    }
-    received += 1;
-    return received > keep;
-  });
+  const cut = turnStart(stream.events, keep);
   return {
     events: cut === -1 ? stream.events : stream.events.slice(0, cut),
     eveSessionId: null,
     streamIndex: 0,
   };
+}
+
+function deliveryIdOf(event: SessionStreamEvent): unknown {
+  const data: unknown = event.data;
+  return isRecord(data) ? data.deliveryId : undefined;
+}
+
+/**
+ * Where the turn after the first `count` starts: the `delivery.admitted` of
+ * the message that turn took in, or -1 when there is no such turn. Each of
+ * Ben's messages is one delivery, which eve admits before the turn starts.
+ */
+function turnStart(
+  events: readonly SessionStreamEvent[],
+  count: number
+): number {
+  let consumed = 0;
+  for (const [index, event] of events.entries()) {
+    if (event.type !== "delivery.consumed") {
+      continue;
+    }
+    consumed += 1;
+    if (consumed > count) {
+      const deliveryId = deliveryIdOf(event);
+      const admitted = events.findIndex(
+        (candidate) =>
+          candidate.type === "delivery.admitted" &&
+          deliveryIdOf(candidate) === deliveryId
+      );
+      return admitted === -1 ? index : admitted;
+    }
+  }
+  return -1;
 }
 
 /** Saves a held chat and indexes its messages. Returns its id, or null when no turn worked. */
