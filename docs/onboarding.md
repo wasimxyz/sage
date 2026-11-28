@@ -93,7 +93,7 @@ To see setup as a new user does, quit the dev app and run `make reset-dev`, then
 
 Models stay in `~/.ollama/models`, so if the server is running and has both, the Local AI step goes straight to Protect.
 
-To start with sample entries instead, run `make seed-dev`. It resets the dev app and saves the entries in `scripts/seed/`, with dates moved so the newest is in the last week. It does not run Dream. The journal is no longer empty, so the next `make dev` skips setup. [Scripts](../scripts/README.md#seeding-the-dev-app) has the steps.
+To start with sample entries instead, run `make seed-dev`. It resets the dev app and saves the entries in `scripts/seed/`, with dates moved so the newest is in the last week. It does not run Dream, unless `make seed-dev CHATS=1` also seeds chats. The journal is no longer empty, so the next `make dev` skips setup. [Scripts](../scripts/README.md#seeding-the-dev-app) has the steps.
 
 ## Resuming setup
 

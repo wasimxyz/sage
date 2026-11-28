@@ -6,6 +6,10 @@
 # data is never touched. Ollama and its models stay. Dream does not run, and no
 # chats are made.
 #
+# CHATS=1 also holds the chats in the folder's chats.yaml with the real Chat
+# agent on qwen3.5:9b, Dream before and after. Ben's side is played by the same
+# local model. It takes 15 to 35 minutes.
+#
 # The entries go in through the app's own bridge, because only the app opens
 # the database. So this builds a throwaway automation binary, starts it as the
 # dev app from a scratch folder with a blank page, and drives it the way
@@ -38,12 +42,29 @@ for cmd in curl native node; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing $cmd."
 done
 
+case ${CHATS:-} in
+  "" | 0) chats=0 ;;
+  1) chats=1 ;;
+  *) fail "CHATS is ${CHATS}. Use CHATS=1, or leave it out." ;;
+esac
+
+# The chats need both of Sage's models. The dev app's Ollama reads the same
+# models folder, OLLAMA_MODELS when it is set.
+if [ "$chats" = 1 ]; then
+  library="${OLLAMA_MODELS:-$HOME/.ollama/models}/manifests/registry.ollama.ai/library"
+  [ -f "$library/qwen3.5/9b" ] ||
+    fail "CHATS=1 needs qwen3.5:9b. Download it in Sage under Settings > Models, then run make seed-dev again. Nothing was deleted."
+  case $(ls "$library/nomic-embed-text" 2>/dev/null) in
+    "") fail "CHATS=1 needs nomic-embed-text. Download it in Sage under Settings > Models, then run make seed-dev again. Nothing was deleted." ;;
+  esac
+fi
+
 # Read the seed files before anything is built or deleted, so a bad file never
 # leaves a wiped dev app. The parser lives in the agent's node_modules.
 if [ ! -d "$agent/node_modules" ]; then
   npm --prefix "$agent" install
 fi
-SAGE_SEED_DIR="$seed_dir" node --experimental-strip-types "$agent/scripts/seed-dev.ts" --check ||
+SAGE_SEED_CHATS="$chats" SAGE_SEED_DIR="$seed_dir" node --experimental-strip-types "$agent/scripts/seed-dev.ts" --check ||
   fail "Fix the seed files, then run make seed-dev again. Nothing was deleted."
 
 work=""
@@ -131,7 +152,14 @@ while [ "$i" -lt 300 ]; do
 done
 [ -d "$work/.zig-cache/native-sdk-automation" ] || fail "Sage did not create its automation folder."
 
-SAGE_AUTOMATION_CWD="$work" SAGE_SEED_DIR="$seed_dir" \
+# The Chat agent reads the token in the dev app's own agent-server.json. Named
+# here, it never falls back to the packaged app's.
+SAGE_AUTOMATION_CWD="$work" SAGE_SEED_DIR="$seed_dir" SAGE_SEED_CHATS="$chats" \
+  SAGE_DISCOVERY_FILE="$data_dir/agent-server.json" \
   node --experimental-strip-types "$agent/scripts/seed-dev.ts"
 
-echo "Seeded the dev app. Run make dev to open it, then start Dream from the sidebar."
+if [ "$chats" = 1 ]; then
+  echo "Seeded the dev app with entries, Dream, and chats. Run make dev to open it."
+else
+  echo "Seeded the dev app. Run make dev to open it, then start Dream from the sidebar."
+fi

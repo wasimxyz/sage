@@ -1,0 +1,101 @@
+# The chats `make seed-dev CHATS=1` holds with Sage, after Dream has read the
+# entries in this folder. Sage's side is the real Chat agent on qwen3.5:9b.
+# Ben's first message in each chat is written here, word for word. Each later
+# message is written by the local model playing Ben: it reads `person`, the
+# chat's next beat, and the messages so far, and replies to Sage's last one.
+#
+# A beat says what Ben gets to or admits in that message, not the words he
+# uses. A chat has one message from Ben, plus one per beat. `expect` names a
+# tool Sage must call somewhere in the chat, or the chat runs again once.
+#
+# The chats run in order, so a chat can point back to an earlier one. Keep
+# weekday names out of the messages: the seed moves the entries' dates, so
+# "today" falls on a different weekday each run.
+
+person: |
+  You are Ben. You are a senior product designer. About three months ago you
+  moved from Chicago to Seattle for a job on the onboarding team at a big app
+  company. Your manager is Priya, and your project is the sign-up flow, whose
+  launch slipped after a bug on older phones.
+
+  A year ago Marissa ended your five-year relationship. She said she'd felt
+  like your roommate for a long time, and she was right: you'd put off every
+  talk about the future with "after this project." She is seeing Nate now.
+  On the anniversary she texted you, and after a week of dreading it you sent
+  four sentences back and felt lighter. She kept the table you built.
+
+  The people in your life: Jason, your best friend in Chicago, who calls every
+  Sunday and is marrying Leah. You are his best man and owe him a toast. Your
+  mom in Milwaukee. Dev and Sam, the friends you made here through a pottery
+  class and trivia. Walt, the pottery teacher who calls everyone "chief."
+  Kat and Omar, from the old trivia team in Chicago.
+
+  Your pattern, which Jason named out loud: when things go badly you go quiet,
+  answer everything with "doing okay, man," and disappear. You also get
+  nervous when things go well, as if the floor is about to drop out.
+
+  Still open: whether to fly to Chicago for Jason and Leah's engagement party,
+  where Marissa and Nate will be. Your mom says if you fly in, you have to come
+  up to Milwaukee too.
+
+  How you write to Sage: plain full sentences, honest, a little wry, two to
+  four sentences. No lists, headings, or emoji. You don't thank Sage at length
+  or repeat back what it said. If its question lands, you answer it. If it
+  doesn't, you say what's actually on your mind.
+
+chats:
+  - name: party
+    opening: >-
+      Jason and Leah's engagement party is in a month and I still can't decide
+      if I'm going. Marissa and Nate will be there. I keep changing my mind
+      every time I think about it.
+    expect: search_journal
+    beats:
+      - >-
+        He admits it isn't really seeing Marissa that scares him. It's walking
+        into a room of their old friends as the guy who ran off to Seattle,
+        with everyone watching how he handles seeing her with Nate.
+      - >-
+        He leans toward going, for Jason. What he's still afraid of is doing
+        the jokey "doing okay, man" thing all night, there without really
+        being there. He doesn't ask Sage to decide for him.
+
+  - name: quiet
+    opening: >-
+      I skipped pottery this week and I haven't answered Dev in days. I think
+      I'm doing the thing again, the going quiet thing.
+    expect: search_journal
+    beats:
+      - >-
+        He admits that canceling felt like relief, and that Dev being so nice
+        about it made him feel worse. He asks, half joking, how people
+        actually break a habit like this.
+
+  - name: toast
+    opening: >-
+      Jason's counting on me for the toast at his wedding, and I have nothing.
+      Can you help me figure out what I actually want to say about him?
+    expect: search_journal
+    beats:
+      - >-
+        He remembers what Jason did when Ben went quiet, after Marissa and
+        again this fall: he kept texting, and when Ben finally called he said
+        "You don't have to have good news to call me." He wonders if that's the
+        toast, but it feels like it's about Ben.
+      - >-
+        He wants to thank Jason without the toast turning into a story about
+        his own bad year. He's looking for one line about who Jason is. He
+        also says there will be no slideshow, whatever Jason thinks.
+
+  - name: long-day
+    opening: >-
+      The launch finally went out today. Nobody really said anything. I don't
+      even know what I wanted them to say.
+    beats: []
+
+  - name: booked
+    opening: >-
+      I booked the flight for Jason's engagement party. Before I lose my nerve,
+      what did I say I was most afraid of when we talked about it?
+    expect: search_chats
+    beats: []
