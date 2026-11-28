@@ -3821,6 +3821,21 @@ fn expectFailedResponse(response: []const u8, name: []const u8) !void {
     try std.testing.expect(std.mem.indexOf(u8, response, needle) != null);
 }
 
+/// The app id the test rig runs as, which also names the Keychain item that
+/// holds its Touch ID key. The app tests run in several processes at once
+/// (see src/test_runner.zig), so each shard gets its own id and two tests
+/// never share one Keychain item.
+fn testRigAppId() [:0]const u8 {
+    const base = "com.wasimxyz.sage-test";
+    const shard = std.testing.environ.getPosix("SAGE_TEST_SHARD") orelse return base;
+    // The test runner has already checked that the value is i/n.
+    const slash = std.mem.indexOfScalar(u8, shard, '/') orelse return base;
+    const Static = struct {
+        var buf: [base.len + 12]u8 = undefined;
+    };
+    return std.fmt.bufPrintZ(&Static.buf, base ++ "-{s}", .{shard[0..slash]}) catch base;
+}
+
 const EmbedTestRig = struct {
     app: App,
     /// `App.env_map` points here: handlers read PATH from it.
@@ -3862,7 +3877,7 @@ const EmbedTestRig = struct {
             .app = .{
                 .env_map = undefined,
                 .io = std.testing.io,
-                .app_id = "com.wasimxyz.sage-test",
+                .app_id = testRigAppId(),
                 .store = journal.Store.init(std.testing.allocator, db),
                 .lock = undefined,
                 .vault = undefined,

@@ -16,6 +16,8 @@ This page explains how the lock and encryption are tested: the unit suite, the s
 
 ## The Zig suite
 
+The Zig tests run in several processes at once. Each process keeps the test rig’s Touch ID key under its own Keychain service, so two tests never share one Keychain item.
+
 The Zig tests cover:
 
 - Wrapping and unwrapping the data key

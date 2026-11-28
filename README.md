@@ -43,7 +43,9 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | `make seed-dev` | Reset the dev app and fill its journal with the entries in `scripts/seed`, dated up to this week. `CHATS=1` also runs Dream and holds five real chats on `qwen3.5:9b` |
 | `make build` | Build the frontend and the release binary in `zig-out/bin/` |
 | `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the lint and types for the frontend, agent, and eval viewer |
-| `make test` | Run the Zig, frontend, agent, eval-viewer, and security tests |
+| `make test` | Run the Zig, frontend, agent, eval-viewer, script, and security tests, all at once |
+| `make test-zig` | Run only the Zig tests |
+| `make test-js` | Run every test but the Zig tests |
 | `make precommit` | Run `make check`, `make test`, and `make package` |
 | `make eval` | Run a sweep: seed made-up people into throwaway journals, run Dream, ask Chat questions, and grade them with a cloud judge. It needs an AI Gateway key and spends money. |
 | `make eval SWEEP=smoke` | Check the runner with one person and one setup, for under $1 |

@@ -41,4 +41,4 @@ A bug in the `make screenshots` cleanup once sent SIGTERM to every process the u
 ## Rules
 
 - `security-tests/` greps several of these scripts. Run `make test` after you reword one.
-- A new `*.test.sh` runs only after you add it to the `test` target in the `Makefile`.
+- A new `*.test.sh` runs only after you add it to the `test-scripts` target in the `Makefile`.

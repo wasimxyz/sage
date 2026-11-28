@@ -14,14 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Check and test
-    runs-on: macos-latest
+  checks:
+    name: Checks and JS tests
+    # The lint and type checks, the JS and script tests, and the frontend
+    # build need no macOS, so they run on Linux. The release workflow still
+    # runs every test on macOS before each release.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: vercel-labs/setup-zig@v1
-        with:
-          version: 0.16.0
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -44,14 +44,45 @@ jobs:
           npm --prefix eval-viewer ci
       - run: native validate app.json
       - run: make check
-      - run: make test
+      - run: make test-js
       - run: make fe-build
 
+  zig-tests:
+    name: Zig tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vercel-labs/setup-zig@v1
+        with:
+          version: 0.16.0
+      - name: Restore the Zig build cache
+        # setup-zig only installs Zig. This keeps the build runner, the C
+        # objects, and compiler_rt between runs, while the test binary still
+        # builds every time. The key names the Zig version above, so change
+        # both together. With no restore keys, a new key starts cold instead
+        # of adding to an old cache. release.yml never uses this cache.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/zig
+            .zig-cache
+            !.zig-cache/tmp
+          key: zig-0.16.0-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('build.zig', 'build.zig.zon', '.native-sdk-version') }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install the pinned Native SDK CLI
+        # Skips install scripts for the reason the checks job gives. The Zig
+        # build runs Node only for the migrations step, from the CLI's own
+        # files, so this job installs no npm dependencies.
+        run: npm install -g --ignore-scripts "@native-sdk/cli@$(cat .native-sdk-version)"
+      - run: make test-zig
+
   speech:
-    name: Build the speech library
+    name: Speech library
     # Dictation's speech engine is Swift for macOS 26, so it needs the macOS 26
-    # SDK. `macos-26` is arm64 with Xcode 26. The `ci` job above does not build
-    # it, and only the release workflow did, so a Swift error first showed on a
+    # SDK. `macos-26` is arm64 with Xcode 26. The other jobs do not build it,
+    # and only the release workflow did, so a Swift error first showed on a
     # release tag. A pinned label keeps the SDK from moving under this check.
     runs-on: macos-26
     steps:

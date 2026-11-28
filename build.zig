@@ -311,9 +311,23 @@ pub fn build(b: *std.Build) void {
         if (app_config.sqlite_capability) addSqliteEngine(b, test_mod, native_sdk_path);
         break :test_mods .{ .app = test_mod, .runner = test_runner_mod };
     };
-    const tests = b.addTest(.{ .root_module = test_mods.app });
+    // The app tests build once and run in several processes at once. Each
+    // run gets SAGE_TEST_SHARD=i/n, and src/test_runner.zig runs every nth
+    // test, starting at i. Pass -Dtest-shards=1 for one process.
+    const default_test_shards: u32 = @intCast(@min(std.Thread.getCpuCount() catch 1, 8));
+    const test_shards = b.option(u32, "test-shards", "Run the app tests in this many processes at once (default: the CPU count, up to 8)") orelse default_test_shards;
+    if (test_shards == 0) std.debug.panic("-Dtest-shards must be at least 1", .{});
+    const tests = b.addTest(.{
+        .root_module = test_mods.app,
+        .test_runner = .{ .path = b.path("src/test_runner.zig"), .mode = .server },
+    });
     const test_step = b.step("test", "Run tests");
-    test_step.dependOn(&b.addRunArtifact(tests).step);
+    for (0..test_shards) |shard| {
+        const run_tests = b.addRunArtifact(tests);
+        run_tests.setName(b.fmt("run test shard {d}/{d}", .{ shard, test_shards }));
+        run_tests.setEnvironmentVariable("SAGE_TEST_SHARD", b.fmt("{d}/{d}", .{ shard, test_shards }));
+        test_step.dependOn(&run_tests.step);
+    }
     // src/runner.zig is a module of its own, so the app's test build never
     // sees its tests. They get a build of their own.
     const runner_tests = b.addTest(.{ .root_module = test_mods.runner });

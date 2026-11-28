@@ -1,4 +1,4 @@
-.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev screenshots eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive precommit
+.PHONY: setup check check-native-sdk-version test test-js test-zig test-frontend test-agent test-eval-viewer test-scripts test-security fe-build build dev reset-dev seed-dev screenshots eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive precommit
 
 # `native build` / `native test` drive this repo's ejected build.zig.
 # Pass the global CLI only when it is actually installed; otherwise
@@ -42,19 +42,46 @@ check: check-native-sdk-version
 	npm --prefix eval-viewer run check
 	npm --prefix eval-viewer run typecheck
 
+# `make test` runs every test group at once. scripts/held-output.sh holds each
+# command's output and prints it in one piece when the command ends, because
+# make 3.81 on macOS has no --output-sync. Run one group, such as
+# `make test-zig`, to see its output as it comes.
+TEST_JS_GROUPS := test-frontend test-agent test-eval-viewer test-scripts test-security
+HOLD_OUTPUT := HOLD="sh scripts/held-output.sh"
+
 test:
-	native test $(NATIVE_SDK_FLAG) $(MEMORY_FLAG)
-	npm --prefix frontend run test
-	npm --prefix agent run test:evals
-	npm --prefix agent run test:scripts
-	npm --prefix agent run test:world
-	npm --prefix eval-viewer test
-	sh scripts/release-version.test.sh
-	sh scripts/reset-dev.test.sh
-	node --test --experimental-strip-types security-tests/*.test.ts
-	sh security-tests/seed-dev-dev-only.sh
-	sh security-tests/screenshots-isolated.sh
-	sh security-tests/agent-dev-modules.sh
+	@$(MAKE) --no-print-directory -k -j $(HOLD_OUTPUT) test-zig $(TEST_JS_GROUPS)
+
+# Every group but the Zig tests. CI runs this on Linux.
+test-js:
+	@$(MAKE) --no-print-directory -k -j $(HOLD_OUTPUT) $(TEST_JS_GROUPS)
+
+# The app tests run in several processes at once. Pass
+# NATIVE_TEST_FLAGS=-Dtest-shards=1 for one process.
+test-zig:
+	$(HOLD) native test $(NATIVE_SDK_FLAG) $(MEMORY_FLAG) $(NATIVE_TEST_FLAGS)
+
+test-frontend:
+	$(HOLD) npm --prefix frontend run test
+
+test-agent:
+	$(HOLD) npm --prefix agent run test:evals
+	$(HOLD) npm --prefix agent run test:scripts
+	$(HOLD) npm --prefix agent run test:world
+
+test-eval-viewer:
+	$(HOLD) npm --prefix eval-viewer test
+
+test-scripts:
+	$(HOLD) sh scripts/release-version.test.sh
+	$(HOLD) sh scripts/reset-dev.test.sh
+	$(HOLD) sh scripts/held-output.test.sh
+
+test-security:
+	$(HOLD) node --test --experimental-strip-types security-tests/*.test.ts
+	$(HOLD) sh security-tests/seed-dev-dev-only.sh
+	$(HOLD) sh security-tests/screenshots-isolated.sh
+	$(HOLD) sh security-tests/agent-dev-modules.sh
 
 # Runs a sweep file from agent/evals/content/sweeps. SWEEP picks the file. ARGS adds
 # runner options (--dry-run, --yes) and eve filters (--tag example).

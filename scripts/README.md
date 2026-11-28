@@ -40,6 +40,12 @@ Building the speech library needs the macOS 26 SDK. The release workflow, `.gith
 
 `make test` runs `release-version.test.sh`, which checks the script against a copy of those files.
 
+## Test output
+
+`make test` runs its test groups at once, each command through `held-output.sh`. The script holds a command’s output until the command ends. Then it prints a `==>` line with the command, its exit code, and its run time, followed by the output.
+
+It exits with the command’s own exit code, so a failing test still fails `make test`. `make test` runs `held-output.test.sh`, which checks that.
+
 ## Eval
 
 `make eval` is not a shell script. It runs the TypeScript runner, `agent/scripts/eval/run.ts`, with a sweep file. The runner gets the pinned Ollama from `fetch-ollama.sh`, and it stops if port 11436 is in use, which `make dev` also uses. Only you run it: in an agent’s shell it exits with code 2 before doing anything. It grades Dream and Chat with a cloud judge, writes reports under `agent/evals/reports/`, and then runs `eval-upload.sh` to ask whether to upload them. [Eval suite](../docs/agent/evals.md) has the options, and [Eval suite internals](../agent/evals/README.md) has the sequence.
