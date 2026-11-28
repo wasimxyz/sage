@@ -10,7 +10,7 @@ The eval runner is TypeScript, and it lives in `agent/scripts/eval/`. The seedin
 
 `copy-agent-into-app.sh` copies the built Chat agent into `Sage.app`, along with the pinned Node.js and Ollama and the speech library. Before it finishes, it sets the microphone text, checks that the copied Chat channel still allows `zero://app` (the address the packaged app uses to call Chat), and signs the app again so the copy still opens. The scripts it runs first are:
 
-1. `refuse-packaged-dev-modules.sh` stops the copy when `typescript`, `@types`, or `@vercel/blob` is still installed in the copied agent.
+1. `refuse-packaged-dev-modules.sh` stops the copy when `typescript`, `@types`, `@biomejs`, `ultracite`, or `@vercel/blob` is still installed in the copied agent.
 2. `fetch-node.sh` downloads Node.js 24.22.2 once into `third_party/node/`, checks that the download is the expected file, and copies the `node` program into the app.
 3. `fetch-ollama.sh` downloads Ollama 0.40.15 once into `third_party/ollama/`, checks the archive and its LICENSE against pinned SHA-256 values, keeps only the arm64 code, and copies the tree into `Contents/Resources/ollama/`.
 
