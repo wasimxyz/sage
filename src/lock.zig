@@ -260,12 +260,13 @@ pub const Lock = struct {
                 else => return err,
             };
         }
-        // ~50-100 ms on the loop thread at OWASP interactive parameters;
-        // acceptable for a settings action and a lock screen.
+        // ~50-100 ms on the loop thread at the shipping settings (OWASP's,
+        // see `vault_mod.shipping_kdf_params`); acceptable for a settings
+        // action and a lock screen.
         var hash_buf: [256]u8 = undefined;
         const phc = try std.crypto.pwhash.argon2.strHash(next, .{
             .allocator = self.allocator,
-            .params = .owasp_2id,
+            .params = vault_mod.kdf_params,
             .mode = .argon2id,
         }, &hash_buf, self.io);
 
@@ -848,13 +849,15 @@ test "a password set before the minimum was raised still unlocks" {
     defer db.deinit();
     var output: [256]u8 = undefined;
     // The rows an older Sage left behind: a hash of "1234", written without
-    // going through `setPassword`.
+    // going through `setPassword`, at the settings a shipping Sage uses. So
+    // this also checks that a hash unlocks with the settings it stores.
     var hash_buf: [256]u8 = undefined;
     const phc = try std.crypto.pwhash.argon2.strHash("1234", .{
         .allocator = std.testing.allocator,
-        .params = .owasp_2id,
+        .params = vault_mod.shipping_kdf_params,
         .mode = .argon2id,
     }, &hash_buf, std.testing.io);
+    try std.testing.expect(std.mem.indexOf(u8, phc, "m=19456,t=2,p=1") != null);
     const written = db.exec(&.{.{
         .sql = upsert_sql,
         .params = &.{ .{ .text = password_hash_key }, .{ .text = phc } },

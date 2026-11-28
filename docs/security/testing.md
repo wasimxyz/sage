@@ -18,6 +18,8 @@ This page explains how the lock and encryption are tested: the unit suite, the s
 
 The Zig tests run in several processes at once. Each process keeps the test rig’s Touch ID key under its own Keychain service, so two tests never share one Keychain item.
 
+The tests wrap keys and hash passwords with the cheapest Argon2id settings, so they stay fast. Sage itself always uses OWASP’s settings, which a Zig test pins. Slots and hashes written with those settings still unlock in the tests, because each one stores the settings it was made with.
+
 The Zig tests cover:
 
 - Wrapping and unwrapping the data key
@@ -65,6 +67,7 @@ The Zig tests cover:
 - **Chat readiness**: a program on port 2001 that answers health cannot make Chat ready unless Sage started its own server (`chat-standin-health.test.ts`).
 - **Local models**: the Chat agent pins Ollama to `127.0.0.1` and to the port Sage sets, packaged Chat does not copy Sage’s environment, and the bundled Ollama server gets only its own `OLLAMA_*` settings (`ollama-env.test.ts`, `sidecar-env-passthrough.test.ts`).
 - **Context length**: a request cannot raise the context length above the picker maximum (`context-length-uncapped.test.ts`).
+- **Argon2 settings**: only a test build picks the cheap Argon2id settings. Sage wraps every new slot and hashes every new password with OWASP’s (`argon2-shipping-settings.test.ts`).
 - **Web view**: the page allows no inline script, and export writes only to the folder you picked (`csp.test.ts`, `export-dest.test.ts`).
 - **Packaging**: the copy targets `Sage.app`, and the bundle ships no dev modules (`copy-agent-target.test.ts`, `agent-dev-modules.sh`).
 - **Dictation**: the web view never uses `getUserMedia`, `MediaRecorder`, or `AudioContext`. The dictation Zig and Swift files write no files, log no text, and open no connection. The audio ring is zeroed, and the speech library zeroes the copies it makes. The microphone text is set before the app is signed. The Sage executable loads the speech library at run time and does not link the Speech framework, which `otool -L` confirms when a build exists. It loads IOKit at run time too (`dictation-no-audio.test.ts`).

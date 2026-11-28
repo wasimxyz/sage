@@ -29,6 +29,7 @@ A removed command gets a test that says it is gone.
 - The app tests run in several processes at once, one per CPU up to 8. `src/test_runner.zig` gives each process every nth test from `SAGE_TEST_SHARD`. Pass `-Dtest-shards=1` to `native test`, or `NATIVE_TEST_FLAGS=-Dtest-shards=1` to `make test-zig`, for one process.
 - Because other tests run at the same time, a test never uses a fixed Keychain name, port, or path. The test rig takes its app id, which names its Keychain item, from `testRigAppId`.
 - `src/test_runner.zig` is a copy of Zig 0.16's default test runner. Copy it again when you bump Zig.
+- A new Argon2 run uses `vault.kdf_params`. It is OWASP's settings, except in a test build, where it is the cheapest settings so the tests stay fast. `security-tests/argon2-shipping-settings.test.ts` checks that only `vault.zig` names `owasp_2id` or the test settings.
 - Memory (Facts and Events) is off in release builds. When you touch journal, Dream, chat, or memory code, also run `SAGE_MEMORY=true make test`.
 - Automation-only commands and env vars sit behind `build_options.automation`, with a test that a shipping build ignores them.
 - Background work stops when Sage locks. Every child process stops on quit, Ctrl-C, and crash, and frees its port.

@@ -1,6 +1,22 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const native_sdk = @import("native_sdk");
 const journal = @import("journal.zig");
+
+/// The Argon2id settings Sage ships with, for each new slot wrap and for the
+/// lock's password hash: OWASP's recommendation, 19 MiB of memory and 2
+/// passes. Each wrap and hash stores the settings it was made with, so
+/// unlocking always uses those, never this constant.
+pub const shipping_kdf_params: std.crypto.pwhash.argon2.Params = .owasp_2id;
+
+/// The cheapest settings Argon2 accepts. A Debug test build takes about a
+/// second per Argon2 run at the shipping settings, and the tests make
+/// hundreds of runs.
+pub const test_kdf_params: std.crypto.pwhash.argon2.Params = .{ .t = 1, .m = 8, .p = 1 };
+
+/// What a new wrap or hash uses: the test settings only inside a test build,
+/// the shipping settings in every build of the app.
+pub const kdf_params: std.crypto.pwhash.argon2.Params = if (builtin.is_test) test_kdf_params else shipping_kdf_params;
 
 /// Field-level encryption for journal data at rest (#48). A random 32-byte
 /// data key encrypts `journal_entry.title`/`body`,
@@ -501,7 +517,18 @@ pub const Vault = struct {
     }
 
     fn wrapWithSecret(self: *const Vault, secret: []const u8, aad: []const u8, data_key: *const [data_key_len]u8) !WrapBundle {
-        const params = std.crypto.pwhash.argon2.Params.owasp_2id;
+        return self.wrapWithSecretParams(secret, aad, data_key, kdf_params);
+    }
+
+    /// Tests call this with `shipping_kdf_params` to write a slot the way
+    /// a shipping Sage does.
+    fn wrapWithSecretParams(
+        self: *const Vault,
+        secret: []const u8,
+        aad: []const u8,
+        data_key: *const [data_key_len]u8,
+        params: std.crypto.pwhash.argon2.Params,
+    ) !WrapBundle {
         var salt: [salt_len]u8 = undefined;
         try std.Io.randomSecure(self.io, &salt);
 
@@ -790,6 +817,41 @@ test "the wrong password cannot unwrap the data key" {
     defer vault.deinit();
     try std.testing.expectError(error.KeyUnwrapFailed, vault.unlockWithPassword("wrong"));
     try std.testing.expect(vault.dataKey() == null);
+}
+
+test "Sage ships with OWASP's Argon2id settings: 19 MiB, 2 passes, 1 lane" {
+    try std.testing.expectEqual(@as(u32, 19 * 1024), shipping_kdf_params.m);
+    try std.testing.expectEqual(@as(u32, 2), shipping_kdf_params.t);
+    try std.testing.expectEqual(@as(u24, 1), shipping_kdf_params.p);
+}
+
+test "a slot wrapped with the shipping settings unlocks with the settings it stores" {
+    var db = try testDb();
+    defer db.deinit();
+    var first_key: [data_key_len]u8 = undefined;
+    {
+        var vault = try Vault.init(std.testing.allocator, std.testing.io, &db);
+        defer vault.deinit();
+        try vault.enable("correct horse");
+        // A test build wraps with the test settings and stores them.
+        try std.testing.expect(std.mem.indexOf(u8, vault.kdf_json, "\"m\":8,\"t\":1,\"p\":1,") != null);
+        first_key = vault.dataKey().?;
+        // Replace the password slot with one written the way a shipping Sage
+        // writes it, as every journal on a Mac has.
+        var bundle = try vault.wrapWithSecretParams("correct horse", aad_wrapped_key, &first_key, shipping_kdf_params);
+        defer bundle.deinit(std.testing.allocator);
+        try std.testing.expect(std.mem.indexOf(u8, bundle.kdf_json, "\"m\":19456,\"t\":2,\"p\":1,") != null);
+        const outcome = db.exec(&.{
+            .{ .sql = upsert_sql, .params = &.{ .{ .text = kdf_key }, .{ .text = bundle.kdf_json } } },
+            .{ .sql = upsert_sql, .params = &.{ .{ .text = wrapped_key_key }, .{ .text = bundle.wrapped_key } } },
+        });
+        try std.testing.expect(outcome == .ok);
+    }
+    var vault = try Vault.init(std.testing.allocator, std.testing.io, &db);
+    defer vault.deinit();
+    try std.testing.expectError(error.KeyUnwrapFailed, vault.unlockWithPassword("wrong horse"));
+    try vault.unlockWithPassword("correct horse");
+    try std.testing.expectEqualSlices(u8, &first_key, &vault.dataKey().?);
 }
 
 test "field encryption round-trips and carries the prefix" {
