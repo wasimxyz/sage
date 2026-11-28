@@ -1,6 +1,6 @@
 "use client";
 
-import type { EveDynamicToolPart } from "eve/react";
+import type { EveToolPart } from "eve/react";
 import {
   CheckCircleIcon,
   CheckIcon,
@@ -37,45 +37,51 @@ export const Tool = ({ className, ...props }: ToolProps) => (
 export type ToolHeaderProps = ComponentProps<typeof CollapsibleTrigger> & {
   isError?: boolean;
   showChevron?: boolean;
-  state: EveDynamicToolPart["state"];
+  state: ToolState;
   title?: string;
   toolName: string;
 };
 
-const statusLabels: Record<EveDynamicToolPart["state"], string> = {
-  "approval-requested": "Awaiting Approval",
-  "approval-responded": "Responded",
-  "input-available": "Running",
-  "input-streaming": "Pending",
-  "output-available": "Completed",
-  "output-denied": "Denied",
-  "output-error": "Error",
+export type ToolState = EveToolPart["state"];
+
+const statusLabels: Record<ToolState, string> = {
+  approval: "Awaiting Approval",
+  blocked: "Waiting",
+  cancelled: "Stopped",
+  completed: "Completed",
+  failed: "Error",
+  rejected: "Denied",
+  requested: "Pending",
+  running: "Running",
+  streaming: "Pending",
 };
 
-const statusIcons: Record<EveDynamicToolPart["state"], ReactNode> = {
-  "approval-requested": <ClockIcon className="size-4 text-yellow-600" />,
-  "approval-responded": <CheckCircleIcon className="size-4 text-blue-600" />,
-  "input-available": null,
-  "input-streaming": null,
-  "output-available": <CheckCircleIcon className="size-4 text-green-600" />,
-  "output-denied": <X className="text-dragon size-3.5" />,
-  "output-error": <X className="text-dragon size-3.5" />,
+const statusIcons: Record<ToolState, ReactNode> = {
+  approval: <ClockIcon className="size-4 text-yellow-600" />,
+  blocked: <ClockIcon className="size-4 text-yellow-600" />,
+  cancelled: <X className="text-muted-foreground size-3.5" />,
+  completed: <CheckCircleIcon className="size-4 text-green-600" />,
+  failed: <X className="text-dragon size-3.5" />,
+  rejected: <X className="text-dragon size-3.5" />,
+  requested: null,
+  running: null,
+  streaming: null,
 };
 
-export const getStatusBadge = (
-  status: EveDynamicToolPart["state"],
-  isError?: boolean
-) => {
-  const effective: EveDynamicToolPart["state"] = isError
-    ? "output-error"
-    : status;
-  if (effective === "output-available") {
+/** A call that has started and not ended, which the header shimmers. */
+export function toolStateInProgress(state: ToolState): boolean {
+  return state === "streaming" || state === "requested" || state === "running";
+}
+
+export const getStatusBadge = (status: ToolState, isError?: boolean) => {
+  const effective: ToolState = isError ? "failed" : status;
+  if (effective === "completed") {
     return null;
   }
-  if (effective === "input-streaming" || effective === "input-available") {
+  if (toolStateInProgress(effective)) {
     return null;
   }
-  if (effective === "output-error") {
+  if (effective === "failed") {
     return (
       <span className="text-dragon inline-flex items-center">
         {statusIcons[effective]}
@@ -102,8 +108,7 @@ export const ToolHeader = ({
   ...props
 }: ToolHeaderProps) => {
   const label = title ?? toolName;
-  const isInProgress =
-    (state === "input-streaming" || state === "input-available") && !isError;
+  const isInProgress = toolStateInProgress(state) && !isError;
 
   return (
     <CollapsibleTrigger
@@ -266,7 +271,7 @@ const ToolCodePanel = ({
 );
 
 export type ToolInputProps = ComponentProps<"div"> & {
-  input: EveDynamicToolPart["input"];
+  input: unknown;
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
@@ -287,8 +292,8 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
 };
 
 export type ToolOutputProps = ComponentProps<"div"> & {
-  errorText: EveDynamicToolPart["errorText"];
-  output: EveDynamicToolPart["output"];
+  errorText: string | undefined;
+  output: unknown;
 };
 
 export const ToolOutput = ({

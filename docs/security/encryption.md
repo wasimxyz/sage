@@ -54,7 +54,7 @@ The lock’s password hash never wraps anything. That hash is stored in the same
 Each field is encrypted with AES-256-GCM. Three properties protect the result:
 
 - **A fresh random nonce per field**: the same words encrypt differently every time.
-- **A label naming the table and column**: a ciphertext moved to another field, such as from `journal_entry:body` to `journal_entry:title`, fails to open. Chat event labels also name the conversation and the event’s position, so a row moved within `chat_event` fails too.
+- **A label naming the table and column**: a ciphertext moved to another field, such as from `journal_entry:body` to `journal_entry:title`, fails to open. Chat event labels also name the conversation and the event’s position, so a row moved within `chat_event` fails too. A chat conversion encrypts its rows for their place in `chat_event` and holds them in `chat_event_convert` until it swaps them in. That table is empty between conversions, so the encryption passes have nothing there to rewrite.
 - **A 16-byte authentication tag**: any changed byte fails to open.
 
 The stored form is base64 text with a `sage:v1:` prefix. The prefix names the format, but Sage checks the authentication tag before it treats a field as ciphertext.
@@ -144,19 +144,21 @@ If Sage quits during the walk, the next unlock finishes the disable. A field tha
 
 ## Chat workflow files
 
-A packaged app stores eve session state as files under `~/Library/Application Support/com.wasimxyz.sage/eve/.eve/.workflow-data`. The agent uses `@sage/world-encrypted-local`, a thin wrapper around Workflow’s local storage.
+A packaged app stores eve session state under `~/Library/Application Support/com.wasimxyz.sage/eve/.eve/.workflow-data`. Since eve 1.0, Workflow’s local store keeps it in one SQLite file there, `world.db`. The agent uses `@sage/world-encrypted-local`, a thin wrapper around Workflow’s local storage.
 
 When encryption is on, Sage derives a separate 32-byte world key from the data key and passes it to the packaged Chat server:
 
 - The key comes from HKDF-SHA256 with the label `sage/eve-world/v1`, a standard way to make a separate key from another key.
 - Sage writes it only into the pipe the Chat server reads at start, never into the process environment.
-- The Workflow runtime encrypts message and tool payloads with it before they reach disk. Run ids, event types, and timestamps stay readable.
+- The Workflow runtime encrypts message and tool payloads with it before they reach disk, including the session’s event stream. Run ids, event types, step names, and timestamps stay readable.
 
-`eve dev`, including `make dev`, never receives the world key, so files under `agent/.eve/` stay plaintext even when journal encryption is on.
+`eve dev`, including `make dev`, never receives the world key, so `world.db` under `agent/.eve/` stays plaintext even when journal encryption is on.
 
 Packaged Chat does not run while Sage is locked, with or without encryption. A session lock stops the packaged Chat server and clears the world key from the Node.js process. Turning encryption on or off deletes the session files, so plaintext and ciphertext never mix, but the SQLite chat transcripts stay.
 
-eve also writes a `$eve.title` session attribute next to those files. That title is not a Workflow payload, so it stays plaintext even when encryption is on. Sage does not use it, because the Chat screen reads the encrypted `chat_conversation.title` from SQLite.
+eve also writes a `$eve.title` session attribute on each run. That title is not a Workflow payload, so it stays plaintext even when encryption is on, and it stays after the session ends. eve would take it from the start of the first message, so Sage’s Chat channel names every session “Sage chat” instead. The Chat screen reads the encrypted `chat_conversation.title` from SQLite.
+
+When a session ends, the store deletes its payloads, as [Chat storage](../agent/storage.md#eves-session-files) explains.
 
 ## What stays readable
 

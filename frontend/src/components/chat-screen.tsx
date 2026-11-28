@@ -1,9 +1,5 @@
 import type { ChatStatus } from "ai";
-import type {
-  ClientSessionState,
-  EveAgentReducerEvent,
-  MessageStreamEvent,
-} from "eve/client";
+import type { ClientSessionState, SessionStreamEvent } from "eve/client";
 import { type EveMessage, useEveAgent } from "eve/react";
 import { ArrowDownIcon, CornerDownLeftIcon } from "lucide-react";
 import { m } from "motion/react";
@@ -18,6 +14,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -94,6 +91,16 @@ import {
   formatChatSendError,
 } from "@/lib/chat/chat-errors";
 import {
+  eventsToSaveAfterResume,
+  focusMessageId,
+  historyMessages,
+  splitChatLog,
+} from "@/lib/chat/chat-log";
+import {
+  legacyEventFormat,
+  storedChatsPassDone,
+} from "@/lib/chat/convert-stored-chats";
+import {
   agentDownMessage,
   eveHost,
   withChatAuthorization,
@@ -111,8 +118,6 @@ import {
 import {
   historyClientContext,
   isEndedSessionError,
-  projectedMessageIdAtSeq,
-  sessionNamespacingReducer,
 } from "@/lib/chat/session-recovery";
 import { formatTodayHeading } from "@/lib/format-date";
 import { greetingFor } from "@/lib/greeting";
@@ -120,16 +125,18 @@ import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface PersistPatch {
-  events?: EveAgentReducerEvent[];
+  events?: SessionStreamEvent[];
   eveSessionId?: string | null;
   streamIndex?: number;
   title?: string;
 }
 
+// loadConversation converts a chat saved before eve 1.0, so a loaded chat
+// holds eve's current events.
 function eventsFromConversation(
   conversation: ChatConversation | null
-): EveAgentReducerEvent[] {
-  return (conversation?.events ?? []) as EveAgentReducerEvent[];
+): SessionStreamEvent[] {
+  return [...(conversation?.events ?? [])] as SessionStreamEvent[];
 }
 
 function commonPrefixLength(
@@ -172,6 +179,9 @@ const titleLimit = 60;
 
 const expiredSessionRestoredMessage =
   "The previous session expired. History was restored into a fresh session.";
+
+const unconvertedChatMessage =
+  "Sage could not update this chat from an older version. You can read it but not reply. Sage tries again the next time you open it.";
 
 /**
  * Loads a pane has already read. A running pane keeps its own copy of the
@@ -291,10 +301,10 @@ function ChatTurn({
   const { setText } = useChatDraftActions();
   const idRef = useRef<number | null>(conversation?.id ?? null);
   const titleRef = useRef(conversation?.title ?? "");
-  const eventsRef = useRef<EveAgentReducerEvent[]>(
+  const eventsRef = useRef<SessionStreamEvent[]>(
     eventsFromConversation(conversation)
   );
-  const persistedEventsRef = useRef<EveAgentReducerEvent[]>(
+  const persistedEventsRef = useRef<SessionStreamEvent[]>(
     eventsFromConversation(conversation)
   );
   const sessionRef = useRef<ClientSessionState | undefined>(
@@ -440,6 +450,9 @@ function ChatTurn({
       key={recoveryCount}
       persist={persist}
       persistLater={persistLater}
+      // A chat that failed to convert opens converted in memory only.
+      // Saving would mix the two formats, so it can't be continued.
+      readOnly={conversation?.eventFormat === legacyEventFormat}
       recoverDeadSession={recoverDeadSession}
       refs={turnRefs}
       setText={setText}
@@ -469,6 +482,7 @@ function ChatTurnSession({
   initialSession,
   persist,
   persistLater,
+  readOnly,
   recoverDeadSession,
   refs,
   setText,
@@ -476,10 +490,11 @@ function ChatTurnSession({
   agentToken: string | null;
   downCopy: string;
   focus?: ChatFocus;
-  initialEvents: EveAgentReducerEvent[];
+  initialEvents: SessionStreamEvent[];
   initialSession: ClientSessionState | undefined;
   persist: (next: PersistPatch) => Promise<void>;
   persistLater: (next: PersistPatch) => void;
+  readOnly: boolean;
   recoverDeadSession: () => boolean;
   refs: TurnRefs;
   setText: (text: string) => void;
@@ -506,17 +521,21 @@ function ChatTurnSession({
     state: { running: dreaming },
   } = useDream();
   const { leave: leaveDictation } = useDictationActions();
-  // Capture once. Later saves replace eventsRef with the new session, and
-  // clientContext lasts only for the current turn, so later sends in this
-  // remount still need the old transcript.
+  // eve resumes only the chat's last session. The sessions before it, and
+  // every session once the last one can no longer run, show as they were
+  // saved, above the live session's messages.
+  const resumable = initialSession !== undefined;
+  const [log] = useState(() => splitChatLog(initialEvents, initialSession));
+  const [pastMessages] = useState(() => historyMessages(log.history));
+  // eve never saves clientContext in the session, so every send in this
+  // pane carries what was said in the history sessions, even once a live
+  // session holds turns of its own.
   const [historyContext] = useState(() =>
-    initialSession === undefined
-      ? historyClientContext(initialEvents)
-      : undefined
+    log.history.length > 0 ? historyClientContext(log.history) : undefined
   );
-  // One reducer per mounted session: it suffixes reused turn ids so a
-  // recovered session's turns never overwrite the restored history.
-  const [messageReducer] = useState(() => sessionNamespacingReducer());
+  // How many of the live session's events are saved. Null until the first
+  // render, which holds the events the chat opened with.
+  const savedLiveCountRef = useRef<number | null>(null);
 
   const handleAgentError = useCallback(
     (error: unknown) => {
@@ -547,6 +566,7 @@ function ChatTurnSession({
   );
 
   const agent = useEveAgent({
+    baseUrl: eveHost(),
     headers: (): Record<string, string> => {
       const headers: Record<string, string> = {
         "x-sage-context-length": String(contextLengthRef.current),
@@ -562,15 +582,15 @@ function ChatTurnSession({
       }
       return withChatAuthorization(headers, agentTokenRef.current);
     },
-    host: eveHost(),
-    initialEvents: initialEvents as MessageStreamEvent[],
+    initialEvents: log.live,
     initialSession,
     onError: (error) => {
       handleAgentError(error);
     },
     onFinish: (snapshot) => {
+      savedLiveCountRef.current = snapshot.events.length;
       persistLater({
-        events: [...snapshot.events],
+        events: [...log.history, ...snapshot.events],
         eveSessionId: recoveringRef.current
           ? null
           : (snapshot.session?.sessionId ?? null),
@@ -583,7 +603,11 @@ function ChatTurnSession({
       if (recoveringRef.current) {
         return;
       }
-      if (sameSession(sessionRef.current, session)) {
+      // eve moves the cursor on every line it stores. Only a new session id
+      // is saved here; onFinish saves the cursor with the turn's events.
+      if (
+        (sessionRef.current?.sessionId ?? null) === (session?.sessionId ?? null)
+      ) {
         return;
       }
       persistLater({
@@ -598,13 +622,36 @@ function ChatTurnSession({
             input.clientContext === undefined
               ? { ...input, clientContext: historyContext }
               : input,
-    reducer: messageReducer,
-    resume: initialSession !== undefined,
+    resume: resumable,
   });
 
   const handleAgentErrorRef = useRef(handleAgentError);
   handleAgentErrorRef.current = handleAgentError;
   const sendTurn = agent.send;
+
+  // A turn that settled while no pane was open comes back when the chat
+  // resumes, with no onFinish. Once the session is idle, save it.
+  const { events: liveEvents, session: liveSession, status } = agent;
+  useEffect(() => {
+    if (savedLiveCountRef.current === null) {
+      savedLiveCountRef.current = liveEvents.length;
+      return;
+    }
+    const events = eventsToSaveAfterResume(
+      log,
+      liveEvents,
+      savedLiveCountRef.current
+    );
+    if (status !== "idle" || recoveringRef.current || events === null) {
+      return;
+    }
+    savedLiveCountRef.current = liveEvents.length;
+    persistLater({
+      events,
+      eveSessionId: liveSession?.sessionId ?? null,
+      streamIndex: liveSession?.streamIndex ?? 0,
+    });
+  }, [liveEvents, liveSession, log, persistLater, recoveringRef, status]);
 
   useEffect(() => {
     recoveringRef.current = false;
@@ -643,16 +690,29 @@ function ChatTurnSession({
     sendTurn,
   ]);
 
-  const busy = agent.status === "submitted" || agent.status === "streaming";
+  const busy = agent.status === "busy";
+  const messages = useMemo(
+    () =>
+      pastMessages.length === 0
+        ? agent.messages
+        : [...pastMessages, ...agent.messages],
+    [agent.messages, pastMessages]
+  );
   // Messages already here when this pane opens do not animate, even if the
   // chat is still streaming. Only ones that arrive after do.
   const [openingMessageIds] = useState(
-    () => new Set(agent.data.messages.map((item) => item.id))
+    () => new Set(messages.map((item) => item.id))
   );
+  const pending = shouldShowAssistantPending(messages, agent.status);
   // eve reports "resuming" while a reattached session catches up; submission
   // would fail against the open resume stream, so block it until ready.
   const resuming = agent.status === "resuming";
-  const submitStatus: ChatStatus = resuming ? "submitted" : agent.status;
+  let submitStatus: ChatStatus = "ready";
+  if (resuming || pending) {
+    submitStatus = "submitted";
+  } else if (busy) {
+    submitStatus = "streaming";
+  }
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
@@ -662,6 +722,7 @@ function ChatTurnSession({
         agentTokenRef.current === null ||
         busy ||
         resuming ||
+        readOnly ||
         isChatComposerLocked({ agent: chatAgent, dreaming, models })
       ) {
         return;
@@ -674,6 +735,8 @@ function ChatTurnSession({
       leaveDictation("chat");
       setText("");
       const send = async () => {
+        // A turn could read chats the launch pass is still renumbering.
+        await storedChatsPassDone();
         if (idRef.current === null) {
           await persist({ events: [], title: clipTitle(next) });
         }
@@ -697,17 +760,22 @@ function ChatTurnSession({
       models,
       pendingActionRef,
       persist,
+      readOnly,
       resuming,
       setText,
     ]
   );
 
+  useEffect(() => {
+    if (readOnly) {
+      showError(unconvertedChatMessage);
+    }
+  }, [readOnly, showError]);
+
   const stopTurn = useCallback(() => {
     agent.cancel().catch(() => undefined);
   }, [agent]);
 
-  const { messages } = agent.data;
-  const pending = shouldShowAssistantPending(messages, agent.status);
   // A new chat greets you, with the message box in the middle. The first
   // message moves the box to the bottom. The box stays the same element, so
   // it keeps focus through the move.
@@ -724,6 +792,7 @@ function ChatTurnSession({
               events={initialEvents}
               focus={focus}
               messages={messages}
+              session={initialSession}
             />
           }
         >
@@ -757,7 +826,7 @@ function ChatTurnSession({
           dictation
           onStop={stopTurn}
           onSubmit={handleSubmit}
-          submitBlocked={agentToken === null || resuming}
+          submitBlocked={agentToken === null || resuming || readOnly}
           submitStatus={submitStatus}
         />
       </ChatComposerBar>
@@ -838,14 +907,18 @@ function SearchMessageFocus({
   events,
   focus,
   messages,
+  session,
 }: {
-  events: readonly EveAgentReducerEvent[];
+  events: readonly SessionStreamEvent[];
   focus?: ChatFocus;
   messages: readonly EveMessage[];
+  session: ClientSessionState | undefined;
 }) {
   const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const targetId =
-    focus === undefined ? null : projectedMessageIdAtSeq(events, focus.seq);
+    focus === undefined
+      ? null
+      : focusMessageId(events, session, focus, messages);
   const hasTarget =
     targetId !== null && messages.some((message) => message.id === targetId);
 
@@ -1242,8 +1315,8 @@ async function applyPersistPatch(
     | "sessionRef"
     | "thinkingEnabledRef"
   > & {
-    eventsRef: RefObject<EveAgentReducerEvent[]>;
-    persistedEventsRef: RefObject<EveAgentReducerEvent[]>;
+    eventsRef: RefObject<SessionStreamEvent[]>;
+    persistedEventsRef: RefObject<SessionStreamEvent[]>;
     recordCreated: (id: number, title: string) => void;
     refreshList: () => Promise<void>;
     titleRef: RefObject<string>;

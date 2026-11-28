@@ -1,6 +1,6 @@
 "use client";
 
-import type { EveDynamicToolPart, EveMessage, EveMessagePart } from "eve/react";
+import type { EveMessage, EveMessagePart, EveToolPart } from "eve/react";
 import { memo, type ReactNode } from "react";
 
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -97,7 +97,7 @@ function AssistantMessage({ message }: { message: EveMessage }) {
         </Reasoning>
       );
     } else if (run.kind === "reads") {
-      const key = `${message.id}-reads-${run.parts[0].toolCallId}`;
+      const key = `${message.id}-reads-${run.parts[0].callId}`;
       nodes.push(
         run.toolName === readChatToolName ? (
           <ChatReadToolCard key={key} parts={run.parts} />
@@ -154,15 +154,15 @@ function renderAssistantPart(
       </MessageResponse>
     );
   }
-  if (part.type === "dynamic-tool") {
+  if (part.type === "tool" && part.hidden !== true) {
     return (
-      <ToolCallBlock key={`${messageId}-tool-${part.toolCallId}`} part={part} />
+      <ToolCallBlock key={`${messageId}-tool-${part.callId}`} part={part} />
     );
   }
   return null;
 }
 
-function ToolCallBlock({ part }: { part: EveDynamicToolPart }) {
+function ToolCallBlock({ part }: { part: EveToolPart }) {
   const name = toolPartName(part);
   if (name === searchJournalToolName || name === searchChatsToolName) {
     const card =
@@ -186,16 +186,16 @@ function ToolCallBlock({ part }: { part: EveDynamicToolPart }) {
         isError={isError}
         state={part.state}
         title={title}
-        toolName={part.toolName}
+        toolName={part.name}
       />
       <ToolContent>
         <div className="flex flex-col gap-4">
           <ToolInput input={part.input} />
           <ToolOutput
             errorText={
-              part.state === "output-error" ? part.errorText : undefined
+              part.state === "failed" ? part.error?.message : undefined
             }
-            output={part.state === "output-available" ? part.output : undefined}
+            output={part.state === "completed" ? part.output : undefined}
           />
         </div>
       </ToolContent>
@@ -213,17 +213,17 @@ function userText(message: EveMessage): string {
   return chunks.join("");
 }
 
-function toolLabel(part: EveDynamicToolPart): string {
+function toolLabel(part: EveToolPart): string {
   const name = toolPartName(part);
   if (name === "facts__search_memories") {
-    return part.state === "output-error"
+    return part.state === "failed"
       ? "Memory search failed"
       : "Searched memories";
   }
-  if (part.state === "output-error") {
+  if (part.state === "failed") {
     return `${name} failed`;
   }
-  if (part.state === "output-available") {
+  if (part.state === "completed") {
     return `Used ${name}`;
   }
   return `Using ${name}`;

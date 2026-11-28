@@ -1,11 +1,7 @@
-import {
-  type AuthFn,
-  extractBearerToken,
-  withAuthChallenges,
-} from "eve/channels/auth";
-import { eveChannel } from "eve/channels/eve";
+import { extractBearerToken, withAuthChallenges } from "eve/channels/auth";
+import { defaultEveAuth, type EveAuthFn, eveChannel } from "eve/channels/eve";
 import { bearerMatches } from "../lib/bearer";
-import { expectedChatToken, sageChatReady } from "../lib/sage";
+import { expectedChatToken, packagedChat, sageChatReady } from "../lib/sage";
 
 const savedChatId = /^[1-9]\d{0,15}$/u;
 
@@ -25,7 +21,7 @@ function sageHeaders(request: Request): Record<string, string> {
   };
 }
 
-function sageDesktop(): AuthFn<Request> {
+function sageDesktop(): EveAuthFn {
   return withAuthChallenges(
     async (request) => {
       const expected = await expectedChatToken();
@@ -41,6 +37,11 @@ function sageDesktop(): AuthFn<Request> {
         return null;
       }
       return {
+        // `eve eval` and the `eve dev` terminal read /eve/v1/info, which eve
+        // serves only to operators. Outside a packaged app, the caller with
+        // Sage's token is the eval runner or the terminal. Packaged Chat never
+        // reads it, so a packaged agent keeps it closed.
+        allowAgentInfo: !packagedChat(),
         attributes: sageHeaders(request),
         authenticator: "sage-desktop",
         principalId: "local",
@@ -56,8 +57,13 @@ export default eveChannel({
   cors: {
     // Echo Access-Control-Request-Headers. WKWebView may add Cache-Control
     // on the stream fetch; a fixed list that omits it fails with "Load failed".
-    allowedHeaders: "*",
+    allowHeaders: "*",
     methods: ["GET", "POST"],
     origin: "zero://app",
   },
+  // eve stores a session title in the Workflow run's attributes, which the
+  // world key does not encrypt and ending the session does not delete. It
+  // would default to the start of the first message, so every session gets
+  // the same title instead. The Chat screen reads its own encrypted title.
+  onMessage: (ctx) => ({ auth: defaultEveAuth(ctx), title: "Sage chat" }),
 });

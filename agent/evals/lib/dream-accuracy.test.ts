@@ -366,6 +366,40 @@ test("chatMessageOf reads User and Sage messages only", () => {
   assert.equal(chatMessageOf("not json message.received"), null);
 });
 
+test("chatMessageOf reads eve 1.0 User and Sage messages", () => {
+  const event = (type: string, data: Record<string, unknown>) =>
+    JSON.stringify({ data, type });
+  assert.deepEqual(
+    chatMessageOf(
+      event("delivery.consumed", {
+        parts: [
+          { kind: "file", mediaType: "image/png" },
+          { kind: "text", text: " hi " },
+        ],
+      })
+    ),
+    { role: "user", text: "hi" }
+  );
+  assert.deepEqual(
+    chatMessageOf(
+      event("content.completed", {
+        kind: "text",
+        phase: "reply",
+        value: "hello",
+      })
+    ),
+    { role: "assistant", text: "hello" }
+  );
+  assert.equal(
+    chatMessageOf(
+      event("content.completed", { kind: "reasoning", value: "hm" })
+    ),
+    null
+  );
+  assert.equal(chatMessageOf(event("delivery.consumed", { parts: [] })), null);
+  assert.equal(chatMessageOf(event("call.settled", { output: {} })), null);
+});
+
 test("everything Dream wrote is grouped under its source", () => {
   const rows = readDreamRows(tempDb(), { memory: true });
   const sources = groupDreamSources(rows, [

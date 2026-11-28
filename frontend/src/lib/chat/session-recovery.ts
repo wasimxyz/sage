@@ -1,10 +1,10 @@
 import {
   ClientError,
-  defaultMessageReducer,
-  type EveAgentReducer,
-  type EveAgentReducerEvent,
-  type EveMessageData,
+  SessionNotActiveError,
+  type SessionStreamEvent,
 } from "eve/client";
+
+import { historyTranscript } from "./chat-log.ts";
 
 const historyContextPreamble =
   "The earlier conversation was restored after a session restart. Use it as context and do not quote it back wholesale.";
@@ -21,15 +21,20 @@ const endedSessionCodes = new Set([
   "session_not_active",
   "session_stranded",
 ]);
+const notFoundMessages = new Set(["Session not found", "Session not found."]);
 
 export function isEndedSessionError(error: unknown): boolean {
-  if (error instanceof ClientError) {
+  // eve asks for a retry with session_not_ready. That session still runs.
+  if (SessionNotActiveError.is(error)) {
+    return error.code === "session_not_active";
+  }
+  if (ClientError.is(error)) {
     if (error.status === 404) {
-      return error.message === "Session not found.";
+      return notFoundMessages.has(error.message);
     }
     return (
       (error.status === 409 || error.status === 410) &&
-      ((error.code !== undefined && endedSessionCodes.has(error.code)) ||
+      (endedSessionCodes.has(error.code) ||
         error.message === "The session is no longer active.")
     );
   }
@@ -39,21 +44,21 @@ export function isEndedSessionError(error: unknown): boolean {
   );
 }
 
+/**
+ * What you and Sage said in the saved sessions, as Markdown turns, newest
+ * kept when it runs past the limit. eve's transcript leaves out reasoning,
+ * tool calls, and text Sage wrote on the way to a tool call.
+ */
 export function buildHistoryTranscript(
-  events: readonly EveAgentReducerEvent[]
+  events: readonly SessionStreamEvent[]
 ): string {
-  const turns: string[] = [];
-  for (const event of events) {
-    const user = eventMessage(event, "message.received");
-    if (user !== null) {
-      turns.push(`**User**\n${user}`);
-      continue;
+  const turns = historyTranscript(events).flatMap((message) => {
+    const text = message.text.trim();
+    if (text.length === 0) {
+      return [];
     }
-    const assistant = eventMessage(event, "message.completed");
-    if (assistant !== null) {
-      turns.push(`**Assistant**\n${assistant}`);
-    }
-  }
+    return [`**${message.role === "user" ? "User" : "Assistant"}**\n${text}`];
+  });
   if (turns.length === 0) {
     return "";
   }
@@ -65,31 +70,13 @@ export function buildHistoryTranscript(
 }
 
 export function historyClientContext(
-  events: readonly EveAgentReducerEvent[]
+  events: readonly SessionStreamEvent[]
 ): string | undefined {
   const transcript = buildHistoryTranscript(events);
   if (transcript.length === 0) {
     return undefined;
   }
   return `${historyContextPreamble}\n\n${transcript}`;
-}
-
-function eventMessage(
-  event: EveAgentReducerEvent,
-  type: string
-): string | null {
-  if (event.type !== type || !("data" in event)) {
-    return null;
-  }
-  const { data } = event;
-  if (typeof data !== "object" || data === null || !("message" in data)) {
-    return null;
-  }
-  const { message } = data;
-  if (typeof message !== "string" || message.length === 0) {
-    return null;
-  }
-  return message;
 }
 
 function trimTranscriptToLimit(turns: readonly string[]): string {
@@ -112,193 +99,4 @@ function trimTranscriptToLimit(turns: readonly string[]): string {
 
 function utf8ByteLength(text: string): number {
   return encoder.encode(text).byteLength;
-}
-
-/**
- * eve keys projected assistant messages by turn id (`turn_0:assistant`, …)
- * and user messages by `meta.id` (`${meta.id}:user`). A fresh session starts
- * turn ids again at `turn_0`. A recovered conversation holds two sessions'
- * events in one saved log, so without disambiguation the fresh session's
- * first turn overwrites the restored history's first turn in the projection —
- * the new user message lands on top of the old one and the assistant replies
- * merge into one bubble.
- *
- * This wrapper suffixes the instance of each reused turn id: within one
- * session a turn id is used once, so a turn id that reappears after its turn
- * completed, failed, or was cancelled belongs to a later session. Keying on
- * reuse (rather than on `session.started` position) stays correct when the
- * store moves a `message.received` ahead of its `session.started`, which is
- * what the optimistic-submit replacement does on the first turn of a recovered
- * session. Only the projection sees the suffix; the stored event log keeps the
- * original events untouched.
- *
- * Saved chats from eve 0.59 may omit `meta` on `message.received`. The 0.66
- * reducer reads `meta.id` without a fallback, so this wrapper fills that id
- * from the turn id (and sequence, when present) before reducing.
- */
-export function sessionNamespacingReducer(): EveAgentReducer<EveMessageData> {
-  const inner = defaultMessageReducer();
-  let tracking = freshTurnTracking();
-  return {
-    initial: () => {
-      // The store reprojects the whole log from initial() whenever it rewrites
-      // an event (e.g. optimistic submit -> received), so turn tracking must
-      // restart with each fresh projection.
-      tracking = freshTurnTracking();
-      return inner.initial();
-    },
-    reduce: (data, event) =>
-      inner.reduce(
-        data,
-        ensureReceivedMessageMeta(namespaceReusedTurn(event, tracking))
-      ),
-  };
-}
-
-export function projectedMessageIdAtSeq(
-  events: readonly EveAgentReducerEvent[],
-  seq: number
-): string | null {
-  if (seq < 0 || seq >= events.length) {
-    return null;
-  }
-  const reducer = sessionNamespacingReducer();
-  let data = reducer.initial();
-  for (let index = 0; index <= seq; index += 1) {
-    const event = events[index];
-    if (!event) {
-      return null;
-    }
-    data = reducer.reduce(data, event);
-  }
-  const event = events[seq];
-  if (!event) {
-    return null;
-  }
-  let role: "assistant" | "user" | null = null;
-  if (event.type === "message.received") {
-    role = "user";
-  } else if (event.type === "message.completed") {
-    role = "assistant";
-  }
-  if (role === null) {
-    return null;
-  }
-  for (let index = data.messages.length - 1; index >= 0; index -= 1) {
-    const message = data.messages[index];
-    if (message?.role === role) {
-      return message.id;
-    }
-  }
-  return null;
-}
-
-interface TurnTracking {
-  completedTurns: Set<string>;
-  turnInstance: Map<string, number>;
-}
-
-function freshTurnTracking(): TurnTracking {
-  return { completedTurns: new Set(), turnInstance: new Map() };
-}
-
-function readTurnId(event: EveAgentReducerEvent): string | null {
-  if (!("data" in event)) {
-    return null;
-  }
-  const data: unknown = event.data;
-  if (typeof data !== "object" || data === null || !("turnId" in data)) {
-    return null;
-  }
-  const { turnId } = data;
-  return typeof turnId === "string" ? turnId : null;
-}
-
-function namespaceReusedTurn(
-  event: EveAgentReducerEvent,
-  tracking: TurnTracking
-): EveAgentReducerEvent {
-  const turnId = readTurnId(event);
-  if (turnId === null) {
-    return event;
-  }
-  if (
-    event.type === "turn.completed" ||
-    event.type === "turn.failed" ||
-    event.type === "turn.cancelled"
-  ) {
-    const instance = tracking.turnInstance.get(turnId) ?? 0;
-    tracking.completedTurns.add(turnId);
-    return withTurnInstance(event, turnId, instance);
-  }
-  let instance = tracking.turnInstance.get(turnId) ?? 0;
-  if (tracking.completedTurns.has(turnId)) {
-    instance += 1;
-    tracking.completedTurns.delete(turnId);
-  }
-  tracking.turnInstance.set(turnId, instance);
-  return withTurnInstance(event, turnId, instance);
-}
-
-function withTurnInstance(
-  event: EveAgentReducerEvent,
-  turnId: string,
-  instance: number
-): EveAgentReducerEvent {
-  if (instance === 0 || !("data" in event)) {
-    return event;
-  }
-  return {
-    ...event,
-    data: { ...event.data, turnId: `${turnId}#${instance}` },
-  } as EveAgentReducerEvent;
-}
-
-function hasMetaId(event: EveAgentReducerEvent): boolean {
-  if (!("meta" in event)) {
-    return false;
-  }
-  const { meta } = event;
-  // biome-ignore lint/suspicious/noUnnecessaryConditions: restored events may not match their types
-  if (typeof meta !== "object" || meta === null || !("id" in meta)) {
-    return false;
-  }
-  return typeof meta.id === "string" && meta.id.length > 0;
-}
-
-function fallbackReceivedMessageId(event: EveAgentReducerEvent): string {
-  const turnId = readTurnId(event);
-  if (turnId === null) {
-    return "message";
-  }
-  if (!("data" in event)) {
-    return turnId;
-  }
-  const { data } = event;
-  if (typeof data !== "object" || data === null || !("sequence" in data)) {
-    return turnId;
-  }
-  const { sequence } = data;
-  return typeof sequence === "number" ? `${turnId}:${sequence}` : turnId;
-}
-
-function ensureReceivedMessageMeta(
-  event: EveAgentReducerEvent
-): EveAgentReducerEvent {
-  if (event.type !== "message.received" || hasMetaId(event)) {
-    return event;
-  }
-  const previous =
-    // biome-ignore lint/suspicious/noUnnecessaryConditions: restored events may not match their types
-    "meta" in event && typeof event.meta === "object" && event.meta !== null
-      ? event.meta
-      : {};
-  const at =
-    "at" in previous && typeof previous.at === "string"
-      ? previous.at
-      : "1970-01-01T00:00:00.000Z";
-  return {
-    ...event,
-    meta: { ...previous, at, id: fallbackReceivedMessageId(event) },
-  } as EveAgentReducerEvent;
 }

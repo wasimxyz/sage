@@ -14,7 +14,7 @@
     }
   },
   "dependencies": {
-    "@workflow/world": "5.1.0",
-    "@workflow/world-local": "5.2.1"
+    "@workflow/world": "5.4.0",
+    "@workflow/world-local": "5.6.0"
   }
 }

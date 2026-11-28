@@ -36,7 +36,7 @@ New chat opens an empty conversation, and so does ⌘N in the Chat tab.
 Right-click a saved chat for Rename and Delete. With a chat focused, Return renames it and ⌘⌫ deletes it:
 
 - **Rename** opens a dialog and calls `chat.rename`. The row stays where it is, and later Dream runs keep that title.
-- **Delete** hides the chat and shows a toast with its title and Undo for 5 seconds. When the toast closes, Sage calls `chat.delete`. If Sage locks or quits first, it saves the delete and runs it after the next unlock. That removes the SQLite rows, the memories Dream took from the chat, and the chat’s eve session files.
+- **Delete** hides the chat and shows a toast with its title and Undo for 5 seconds. When the toast closes, Sage calls `chat.delete`. If Sage locks or quits first, it saves the delete and runs it after the next unlock. That removes the SQLite rows and the memories Dream took from the chat, and ends the chat’s eve session, so eve deletes what it stored for it, as [Chat storage](storage.md#eves-session-files) explains.
 
 Deleting the open chat shows a new chat at once. Undo brings the chat back and reopens it. Deleting chats from Settings clears the open chat the same way.
 
@@ -101,13 +101,13 @@ Choosing a hit opens it:
 `useEveAgent` manages the session with the eve server. The screen passes it:
 
 - A `headers` callback that sends the agent-server token as `Authorization: Bearer`, plus the headers described in [The eve app](eve-app.md#choosing-the-model-for-each-request)
-- The saved events and session, when you reopen a conversation
+- The saved events and session of the conversation's last eve session, when you reopen it
 - Lifecycle callbacks that save the turn
-- A `host`: empty during `make dev` so `/eve` goes through the Vite proxy, or `http://127.0.0.1:2001` in a packaged app
+- A `baseUrl`: empty during `make dev` so `/eve` goes through the Vite proxy, or `http://127.0.0.1:2001` in a packaged app
 
 Once a chat has saved, each request also sends `x-sage-chat-id`, so `search_chats` leaves that chat out.
 
-A reopened conversation waits for the token before it resumes the stream. After you send, Chat shows a pulsing leaf where the reply will start. The first text, thinking, or tool row replaces it.
+A reopened conversation waits for the token before it resumes the stream. After you send, Chat shows a pulsing leaf where the reply will start. The first text, thinking, or tool row replaces it. The Send button shows a spinner while the leaf shows, and a Stop button while the reply streams.
 
 ## Tool rows
 
@@ -115,22 +115,23 @@ When the model searches the journal or past chats, or reads an entry or a chat, 
 
 A search row opens to a card. The first line says what the model searched for: the words in quotes, the days when it searched by time, or both. Each entry it found follows, with its title and a short date such as “Sun, Sep 27”. A search with no matches says “No matching entries”. The note the model reads about its results stays out of the card.
 
-Reads that come one after the other share one row, such as “Read 3 entries”. Thinking or text between two reads starts a new row. An entry the model reads twice shows once. Click an entry to open it in the Journal tab.
+Reads that come one after the other share one row, such as “Read 3 entries”. Thinking or text between two reads starts a new row. An entry the model reads twice shows once. Click an entry to open it in the Journal tab. Thinking from one model step shares a row, and each step's thinking gets its own.
 
 A search of past chats works the same way. Its row says “Searched past chats”, and each chat it found shows its title and the date of its best match. Reads of chats share a row such as “Read 2 past chats”, apart from reads of entries. Click a chat to open it, scrolled to the message the model found. A search with no matches says “No matching chats”.
 
-A failed step shows its error as one sentence inside the row. A failed read in a group shows as “Could not read 1 entry”. Other tools, such as `facts__search_memories`, show their parameters and result as plain text.
+A failed step shows its error as one sentence inside the row. A failed read in a group shows as “Could not read 1 entry”. A read you stopped is not a failure: it leaves the group, and a group of stopped reads shows “Stopped”. Other tools, such as `facts__search_memories`, show their parameters and result as plain text.
 
 `frontend/src/lib/chat/assistant-runs.ts` decides which parts share a row. `frontend/src/components/chat/journal-tool-cards.tsx` and `chat-tool-cards.tsx` draw the cards.
 
 ## When the screen saves
 
-Saving happens in the lifecycle callbacks, never in the middle of a stream:
+Saving happens at these points, never in the middle of a stream:
 
-1. `onSessionChange` saves the eve session id and stream index when eve assigns them.
-2. `onFinish` saves the events added since the last successful save, when a turn completes.
-3. The first save of a new conversation also sets the title from the first message, cut to 60 characters.
-4. After a save that adds events, the screen calls `embeddings.generate` with the chat’s id until Sage has indexed every new message for `search_chats`. It does not wait, so the next save is not held up. [Chat storage](storage.md#the-message-index) covers what happens when that fails.
+1. `onSessionChange` saves a new eve session id, at stream index 0, before any of its events. eve moves the cursor on every line it stores, so a cursor move alone saves nothing.
+2. `onFinish` saves the events added since the last successful save, with the stream index, when a turn completes.
+3. When a reopened chat has resumed and the session is idle, the screen saves any events the resume brought in. eve calls `onFinish` only for a turn it sees finish, so a reply that finished while the chat was closed, or after the app quit, is saved here.
+4. The first save of a new conversation also sets the title from the first message, cut to 60 characters.
+5. After a save that adds events, the screen calls `embeddings.generate` with the chat’s id until Sage has indexed every new message for `search_chats`. It does not wait, so the next save is not held up. [Chat storage](storage.md#the-message-index) covers what happens when that fails.
 
 Later saves leave the title alone. [Dream](../dream.md) may replace it with a generated title unless you renamed the chat. The chat list reloads when Dream finishes.
 
@@ -138,7 +139,12 @@ The same callbacks run when a reopened conversation resumes. The screen skips th
 
 ## Reopening a conversation
 
-Opening a row reads it with `chat.get` and remounts `ChatTurn` with the stored events and session. The hook shows the stored transcript and resumes the session, so the next message continues where the last one ended. [Chat storage](storage.md#resuming-a-conversation) covers the storage side.
+Opening a row reads it with `chat.get` and remounts `ChatTurn` with the stored events and session. A saved chat can hold several eve sessions, as [Recovering a session that ended](#recovering-a-session-that-ended) explains, and eve resumes only the last one:
+
+- **History**: the sessions before the last one. Chat draws them with eve's `conversationOf`, as they were saved. Each message id names its session, such as `history-0:turn_0:assistant`, because eve's ids repeat from one session to the next.
+- **The live session**: the last session, when the row has a session id. Its events go to `useEveAgent`, which shows them and resumes the session, so the next message continues where the last one ended.
+
+A row with no session id is all history, and the next message starts a new session. So is a row whose stream index is 0: its session id was saved before any of that session’s events, so eve replays the session from its start. eve never saves `clientContext` in the session, so while a pane shows history, every message it sends carries the history’s transcript, even once the live session has turns of its own. `frontend/src/lib/chat/chat-log.ts` splits the log. A chat saved before eve 1.0 is converted first, as [Chat storage](storage.md#chats-saved-before-eve-10) explains. [Chat storage](storage.md#resuming-a-conversation) covers the storage side.
 
 ## Recovering a session that ended
 
@@ -155,9 +161,9 @@ Chat recovers once per open conversation:
 2. It remounts without resuming. If you were sending a message, it sends it again.
 3. Each message in the new session includes the saved transcript as eve `clientContext`, so the model can read the earlier conversation.
 
-Moving to eve 0.80 ended every saved session at once: the new workflow storage deletes files that older versions wrote. Migration 18 clears every stored session id, so reopened conversations start fresh without that 38-second wait.
+Moving to eve 0.80 ended every saved session at once: the new workflow storage deletes files that older versions wrote. Migration 18 clears every stored session id, so reopened conversations start fresh without that 38-second wait. Moving to eve 1.0 did the same, because eve runs no session that an older eve built, and migration 24 clears the ids again.
 
-The saved log then holds two sessions, and both number their turns from `turn_0`. Chat renames repeated turn ids on screen (`turn_0#1`) so new turns do not replace old ones, while the stored events keep their original ids. `frontend/src/lib/chat/session-recovery.ts` has the details.
+The saved log then holds two sessions, each from its `session.started`. Chat draws the earlier one as history above the new one, as [Reopening a conversation](#reopening-a-conversation) explains. The transcript sent as context is eve's `transcriptOf` for each saved session: what you sent and Sage's replies, without thinking, tool calls, or the text before a tool call. `frontend/src/lib/chat/session-recovery.ts` has the details.
 
 ## The model picker
 
@@ -173,7 +179,7 @@ Each saved conversation keeps its own model, Thinking setting, and context lengt
 
 - Changing the model or Thinking on a saved chat writes it through `chat.savePrefs` and does not move the row in the list.
 - The context length is set before the first message and never changes after that.
-- Older rows with no stored model use the last `step.started` event’s `modelId`, without eve’s `ollama/` prefix.
+- Older rows with no stored model use the last `model.started` event’s `modelId`, without eve’s `ollama/` prefix. eve’s converter names the model `unknown` for an old step that named none, and Chat skips those.
 - Older rows with no Thinking setting use the last choice for new chats, and older rows with no context length use `32768`.
 
 ## When Ollama is down

@@ -67,30 +67,34 @@ export default defineAgent({
   defaultTools: false,
   experimental: {
     workflow: {
+      // Sage keeps every transcript in SQLite. When a session ends, as when
+      // you delete its chat, the Workflow store deletes the run's inputs,
+      // outputs, and events. eve does this for private sessions outside
+      // development anyway; 0 makes `eve dev` do the same.
+      retention: 0,
       world: "@sage/world-encrypted-local",
     },
   },
-  model: defineDynamic({
-    events: {
-      "step.started": async (_event, ctx) => {
-        const tokens = contextLengthFromContext(ctx);
-        const modelId = modelIdFromContext(ctx);
-        // The header is the untrusted side: refuse a cloud or unpulled model
-        // before any prompt leaves the agent.
-        await assertLocalModel(baseURL, modelId);
-        return {
-          model: ollamaChatModel(modelId),
-          modelContextWindowTokens: tokens,
-          modelOptions: {
-            providerOptions: {
-              ollama: {
-                options: { num_ctx: tokens },
-                think: thinkingFromContext(ctx),
-              },
-            },
+  // eve runs this before every model call. The model check stays outside
+  // ctx.memo on purpose: a model removed or swapped for a cloud one between
+  // calls is refused on the next call.
+  model: defineDynamic(async (ctx) => {
+    const tokens = contextLengthFromContext(ctx);
+    const modelId = modelIdFromContext(ctx);
+    // The header is the untrusted side: refuse a cloud or unpulled model
+    // before any prompt leaves the agent.
+    await assertLocalModel(baseURL, modelId);
+    return {
+      model: ollamaChatModel(modelId),
+      modelContextWindowTokens: tokens,
+      modelOptions: {
+        providerOptions: {
+          ollama: {
+            options: { num_ctx: tokens },
+            think: thinkingFromContext(ctx),
           },
-        };
+        },
       },
-    },
+    };
   }),
 });

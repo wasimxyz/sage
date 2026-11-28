@@ -1,6 +1,6 @@
 "use client";
 
-import type { EveDynamicToolPart } from "eve/client";
+import type { EveToolPart } from "eve/client";
 import { Fragment, type ReactNode, useCallback } from "react";
 
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
@@ -98,14 +98,15 @@ function entryRows(entries: JournalToolEntry[]): ListRow[] {
 }
 
 // A step that has not finished has nothing to open yet, so it is a shimmering
-// label with no chevron.
+// label with no chevron. A step you stopped is the same label, still, with
+// its "Stopped" badge.
 export function JournalRunningRow({
   label,
   state,
   toolName,
 }: {
   label: string;
-  state: EveDynamicToolPart["state"];
+  state: EveToolPart["state"];
   toolName: string;
 }) {
   return (
@@ -129,7 +130,7 @@ export function JournalFailedRow({
   toolName,
 }: {
   messages: string[];
-  state: EveDynamicToolPart["state"];
+  state: EveToolPart["state"];
   title: string;
   toolName: string;
 }) {
@@ -157,9 +158,7 @@ export function JournalFailedRow({
  * Null when the result is not one this card knows, so the caller can show the
  * raw call instead. It is a function and not a component for that reason.
  */
-export function renderJournalSearchCard(
-  part: EveDynamicToolPart
-): ReactNode | null {
+export function renderJournalSearchCard(part: EveToolPart): ReactNode | null {
   if (toolPartRunning(part)) {
     return (
       <JournalRunningRow
@@ -179,7 +178,7 @@ export function renderJournalSearchCard(
       />
     );
   }
-  if (part.state !== "output-available") {
+  if (part.state !== "completed") {
     return null;
   }
   const hits = journalSearchHits(part.output);
@@ -234,16 +233,12 @@ export function renderJournalSearchCard(
  * Reads of journal entries that came one after the other, as one row. An entry
  * read twice shows once.
  */
-export function JournalReadToolCard({
-  parts,
-}: {
-  parts: EveDynamicToolPart[];
-}) {
+export function JournalReadToolCard({ parts }: { parts: EveToolPart[] }) {
   if (parts.some(toolPartRunning)) {
     return (
       <JournalRunningRow
         label={`Reading ${entriesLabel(parts.length)}…`}
-        state="input-available"
+        state="running"
         toolName={readEntryToolName}
       />
     );
@@ -253,8 +248,12 @@ export function JournalReadToolCard({
   const errors = new Set<string>();
   let failed = 0;
   for (const part of parts) {
+    // Stop ended the read before it came back. That is not a failure.
+    if (part.state === "cancelled") {
+      continue;
+    }
     const entry =
-      !toolPartFailed(part) && part.state === "output-available"
+      !toolPartFailed(part) && part.state === "completed"
         ? journalEntryOutput(part.output)
         : null;
     if (entry === null) {
@@ -265,11 +264,20 @@ export function JournalReadToolCard({
     }
   }
 
+  if (entries.size === 0 && failed === 0) {
+    return (
+      <JournalRunningRow
+        label={`Reading ${entriesLabel(parts.length)}`}
+        state="cancelled"
+        toolName={readEntryToolName}
+      />
+    );
+  }
   if (entries.size === 0) {
     return (
       <JournalFailedRow
         messages={[...errors]}
-        state="output-error"
+        state="failed"
         title={
           failed === 1
             ? "Could not read that entry"
@@ -290,10 +298,10 @@ export function JournalReadToolCard({
     });
   }
   return (
-    <Tool data-tool-name={readEntryToolName} data-tool-state="output-available">
+    <Tool data-tool-name={readEntryToolName} data-tool-state="completed">
       <ToolHeader
         className={toolHeaderClassName}
-        state="output-available"
+        state="completed"
         title={`Read ${entriesLabel(entries.size)}`}
         toolName={readEntryToolName}
       />

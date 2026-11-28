@@ -317,31 +317,31 @@ test("a person with entries does not load the other people", async () => {
 function turnOf(message: string): EveEvalTurn {
   const events: TimedEvent[] = [
     {
-      data: {},
+      data: { parts: [{ kind: "text", text: "Hi" }] },
       meta: { at: "2026-11-09T10:00:00.000Z" },
-      type: "message.received",
+      type: "delivery.consumed",
     },
     {
       data: { modelId: "qwen3:8b" },
       meta: { at: "2026-11-09T10:00:00.010Z" },
-      type: "step.started",
+      type: "model.started",
     },
     {
-      data: { messageDelta: message },
+      data: { kind: "text", value: message },
       meta: { at: "2026-11-09T10:00:00.400Z" },
-      type: "message.appended",
+      type: "content.completed",
     },
     {
       data: {},
       meta: { at: "2026-11-09T10:00:00.900Z" },
-      type: "turn.completed",
+      type: "turn.settled",
     },
   ];
   return {
     events,
-    inputRequests: [],
-    message,
-    status: "waiting",
+    interactions: [],
+    reply: message,
+    status: "completed",
     toolCalls: [],
   } as unknown as EveEvalTurn;
 }

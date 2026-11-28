@@ -159,20 +159,21 @@ function errorCode(error: unknown): string | null {
   return null;
 }
 
-export function isMissingRowError(error: unknown): boolean {
+/** True when the core failed with the error named `code`. */
+export function hasErrorCode(error: unknown, code: string): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 4; depth += 1) {
     if (current === null || current === undefined) {
       break;
     }
-    if (errorCode(current) === missingRowCode) {
+    if (errorCode(current) === code) {
       return true;
     }
     if (current instanceof Error) {
       if (
-        current.message === missingRowCode ||
-        current.message.startsWith(`${missingRowCode}:`) ||
-        current.message.endsWith(`: ${missingRowCode}`)
+        current.message === code ||
+        current.message.startsWith(`${code}:`) ||
+        current.message.endsWith(`: ${code}`)
       ) {
         return true;
       }
@@ -182,6 +183,10 @@ export function isMissingRowError(error: unknown): boolean {
     break;
   }
   return false;
+}
+
+export function isMissingRowError(error: unknown): boolean {
+  return hasErrorCode(error, missingRowCode);
 }
 
 async function invoke(
@@ -1200,6 +1205,11 @@ export interface ChatConversationMeta {
 export interface ChatConversation extends ChatConversationMeta {
   contextLength: number | null;
   createdAt: string;
+  /**
+   * The eve stream version the saved events use: 26 for a chat saved before
+   * eve 1.0 that Chat has not converted yet, 27 otherwise.
+   */
+  eventFormat: number;
   events: unknown[];
   eveSessionId: string | null;
   model: string;
@@ -1223,6 +1233,15 @@ export async function chatList(): Promise<ChatConversationMeta[]> {
   });
 }
 
+/** Chats saved before eve 1.0 whose events Chat has not converted yet. */
+export async function chatUnconvertedIds(): Promise<number[]> {
+  const { unconverted } = asRecord(await invoke("chat.list", {}));
+  if (!Array.isArray(unconverted)) {
+    throw new Error("Unexpected bridge response.");
+  }
+  return unconverted.map(asNumber);
+}
+
 export async function chatGet(id: number): Promise<ChatConversation> {
   let offset = 0;
   const events: unknown[] = [];
@@ -1234,6 +1253,7 @@ export async function chatGet(id: number): Promise<ChatConversation> {
       meta = {
         contextLength: asNumberOrNull(response.contextLength),
         createdAt: asString(response.createdAt),
+        eventFormat: asNumber(response.eventFormat),
         eveSessionId:
           response.eveSessionId === null
             ? null
@@ -1258,20 +1278,26 @@ export async function chatGet(id: number): Promise<ChatConversation> {
   return { ...meta, events };
 }
 
-export async function chatSave(input: {
-  baseSeq: number;
-  contextLength: number;
-  eveSessionId: string | null;
-  events: string;
-  id: number | null;
-  model: string;
-  streamIndex: number;
-  thinking: boolean;
-  title: string;
-}): Promise<number> {
+/**
+ * The core keeps one chunked chat save at a time, so a save waits for the one
+ * before it to finish. A conversion and a reply's save never mix chunks.
+ */
+let chatSaveQueue: Promise<unknown> = Promise.resolve();
+
+function queueChatSave<T>(run: () => Promise<T>): Promise<T> {
+  const next = chatSaveQueue.catch(() => undefined).then(run);
+  chatSaveQueue = next;
+  return next;
+}
+
+async function sendChatSaveChunks(
+  events: string,
+  id: number | null,
+  fields: Record<string, NativeSdkJson>
+): Promise<number> {
   let offset = 0;
-  let savedId = input.id;
-  const eventBytes = encoder.encode(input.events);
+  let savedId = id;
+  const eventBytes = encoder.encode(events);
   const totalBytes = eventBytes.byteLength;
   for (;;) {
     const chunk = sliceUtf8Bytes(eventBytes, offset, chunkBytes);
@@ -1280,17 +1306,11 @@ export async function chatSave(input: {
     try {
       // biome-ignore lint/performance/noAwaitInLoops: chunked writes are sequential — each chunk's offset depends on the prior chunk's bytes written
       result = await invoke("chat.save", {
-        baseSeq: input.baseSeq,
+        ...fields,
         chunk: chunk.text,
-        contextLength: input.contextLength,
         done,
-        eveSessionId: input.eveSessionId,
         id: savedId,
-        model: input.model,
         offset,
-        streamIndex: input.streamIndex,
-        thinking: input.thinking,
-        title: input.title,
       });
     } catch (error) {
       if (
@@ -1316,6 +1336,41 @@ export async function chatSave(input: {
     }
     offset += chunk.byteLength;
   }
+}
+
+export function chatSave(input: {
+  baseSeq: number;
+  contextLength: number;
+  eveSessionId: string | null;
+  events: string;
+  id: number | null;
+  model: string;
+  streamIndex: number;
+  thinking: boolean;
+  title: string;
+}): Promise<number> {
+  return queueChatSave(() =>
+    sendChatSaveChunks(input.events, input.id, {
+      baseSeq: input.baseSeq,
+      contextLength: input.contextLength,
+      eveSessionId: input.eveSessionId,
+      model: input.model,
+      streamIndex: input.streamIndex,
+      thinking: input.thinking,
+      title: input.title,
+    })
+  );
+}
+
+/**
+ * Replaces a saved chat's events with the same transcript in eve 1.0's event
+ * format. The core keeps the chat's place in the list and each event's time,
+ * and indexes its messages again.
+ */
+export async function chatConvert(id: number, events: string): Promise<void> {
+  await queueChatSave(() =>
+    sendChatSaveChunks(events, id, { baseSeq: 0, convert: true })
+  );
 }
 
 export async function chatSavePrefs(input: {

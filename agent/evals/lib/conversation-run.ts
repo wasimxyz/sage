@@ -41,7 +41,12 @@ import type {
 } from "./schema.ts";
 import { setupHeaders } from "./setup.ts";
 import type { SimulatedUser, VisibleMessage } from "./simulated-user.ts";
-import { sendTurn, type TimedTurn, type TurnSender } from "./turn.ts";
+import {
+  sendTurn,
+  type TimedTurn,
+  type TurnSender,
+  turnWorksStatus,
+} from "./turn.ts";
 
 /** The most time a conversation of up to 12 turns gets. */
 export const CONVERSATION_TIMEOUT_MS = 30 * 60 * 1000;
@@ -193,9 +198,9 @@ export async function runConversation(
     state.turns.push(assistantTurnOf(sent, failure));
     state.messages.push(
       { role: "user", text: next.message },
-      { role: "assistant", text: sent?.turn.message ?? "" }
+      { role: "assistant", text: sent?.turn.reply ?? "" }
     );
-    if (sent === undefined || sent.turn.status === "failed") {
+    if (sent === undefined || turnWorksStatus(sent.turn.status) === "failed") {
       state.ended = "error";
       break;
     }

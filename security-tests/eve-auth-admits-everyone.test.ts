@@ -42,7 +42,7 @@ test("Chat must require the agent-server token on eve routes", () => {
   );
   assert.match(
     channel,
-    /allowedHeaders:\s*"\*"/,
+    /allowHeaders:\s*"\*"/,
     "desired: CORS echoes request headers so Authorization reaches packaged Chat."
   );
 });

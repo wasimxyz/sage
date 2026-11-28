@@ -20,6 +20,9 @@ Later migrations add to `chat_conversation`:
 - `0020_chat_time_bounds.sql`: adds `unstamped_until`, and an index on `chat_event` by `conversation_id` and `saved_at`, so a search or listing by time can place events from before `0019`
 - `0021_chat_id_counter.sql`: adds `chat_id_counter`, so a chat id is never used twice
 - `0022_chat_index_no_role.sql`: drops `role` from `chat_embedding`, so the index does not say who sent a message
+- `0024_eve_v27_events.sql`: forgets every eve session id, as `0018` did, and adds `event_format`, as [Chats saved before eve 1.0](#chats-saved-before-eve-10) explains
+- `0025_chat_event_convert.sql`: adds `chat_event_convert`, where a conversion writes a chat’s events before it swaps them in
+- `0026_chat_session_end.sql`: adds `chat_session_end`, the eve sessions of deleted chats that the agent has not ended yet
 
 Each conversation row has:
 
@@ -33,6 +36,7 @@ Each conversation row has:
 - `context_length`: the context length chosen before the first message. A later save fills in a missing value once and then leaves it.
 - `events`: unused. It held the transcript before `0007`, and Sage leaves it empty, as [Older conversations](#older-conversations) explains.
 - `created_at` and `updated_at`: readable timestamps. The sidebar sorts by `updated_at`, which changes only when the transcript changes.
+- `event_format`: the eve stream version of the chat’s events. `26` marks a chat saved before eve 1.0 that Chat has not converted yet, and `27` every other chat.
 - `unstamped_until`: the last moment an event with no `saved_at` could have been saved. `0020` sets it to the chat’s `updated_at` when the chat has such events, or to the earliest `saved_at` if a later save has already moved `updated_at`. It stays empty for a chat with none.
 
 Reopening a chat, renaming it, a Dream title, and saving only the session or the model all leave `updated_at` alone.
@@ -40,7 +44,7 @@ Reopening a chat, renaming it, a Dream title, and saving only the session or the
 Each event row has:
 
 - `conversation_id` and `seq`: the conversation and the event’s position in the transcript
-- `event`: the eve stream event, encrypted per row
+- `event`: the eve stream event, encrypted per row. Since eve 1.0 it is a stream version 27 event, with its place in eve’s stream in `meta.position`.
 - `saved_at`: when a save added the event. Events from before `0019` have none. A search by time places them between the chat’s `created_at` and `unstamped_until`, so a chat that started before `0019` and went on later does not match the months between.
 
 One event can be at most 128 KiB. Reads fetch rows in 256 KiB pages, so a save with a larger event fails instead of storing a row that reads cannot return.
@@ -63,6 +67,10 @@ The other fields in the payload follow these rules:
 - The context length is stored when the row is created. A later save writes it only if the stored value is missing.
 - A save for a conversation that no longer exists returns `NotFound`.
 
+A save with `convert: true` replaces every event of a chat with the same transcript in eve 1.0’s format. It needs `baseSeq` 0 and a chat whose `event_format` is 26, takes no title, and changes no other column, as [Chats saved before eve 1.0](#chats-saved-before-eve-10) explains.
+
+The core keeps one chunked save at a time, so `bridge.ts` sends each save after the one before it ends. A reply’s save and a conversion never mix chunks.
+
 ## Opening a conversation
 
 `chat.get` reads by event position, not by bytes:
@@ -77,8 +85,8 @@ Each row is small, so the core does not slice columns or keep a decrypted copy o
 
 Reopening a conversation restores the transcript, the eve session, and the picker:
 
-1. The frontend reads the events with `chat.get`.
-2. Those events become `initialEvents` on the `useEveAgent` hook, which shows the transcript as it was.
+1. The frontend reads the events with `chat.get`, and converts a chat saved before eve 1.0 first.
+2. The events of the chat’s last eve session become `initialEvents` on the `useEveAgent` hook, which shows them as they were. eve takes the events of one session only, so earlier sessions show as history above them.
 3. The session id and stream index become `initialSession`, and the hook resumes that session for the next turn.
 4. The model, Thinking, and context length columns set the picker.
 
@@ -86,7 +94,7 @@ Reopening a conversation restores the transcript, the eve session, and the picke
 
 ## Searching transcripts
 
-`chat.search` looks through conversation titles and the user and assistant text in `message.received` and `message.completed` events. It skips tool payloads, streaming deltas, and empty messages. Hits are newest first, with at most 3 message hits per conversation and 25 overall.
+`chat.search` looks through conversation titles and the User and Sage text of each chat. What you sent is the first text part of a `delivery.consumed` event, and Sage’s text is each `content.completed` event with `kind` `text`, for both the reply and the text before a tool call. In a chat not converted yet, the same text is in `message.received` and `message.completed`. Search skips reasoning, tool payloads, streaming deltas, and empty messages. Hits are newest first, with at most 3 message hits per conversation and 25 overall.
 
 Each message hit includes the conversation id and the event `seq`, so the Chat screen can open the transcript and scroll to the matching message.
 
@@ -134,26 +142,61 @@ The `.md` file is a transcript with `**User:**` and `**Assistant:**` turns, with
 
 The core reads 32 events at a time and writes both files as it goes, so a long chat never sits in memory whole. Exporting again on the same day rewrites the same folder and leaves other files in it alone. Conversations from before `0007` export without events.
 
+## Chats saved before eve 1.0
+
+eve 1.0 changed its event format from stream version 26 to 27, and eve 1.0 reads only 27. Migration `0024` marks every chat that has events with `event_format` 26. Chat converts each one once, with eve’s own converter, and saves the result in place:
+
+1. When ChatProvider has loaded the chat list, it reads the ids in `chat.list`’s `unconverted` list.
+2. For each chat, one at a time, it reads the events with `chat.get` and converts them, one eve session at a time.
+3. It sends them back with a `chat.save` that sets `convert: true`.
+
+Opening a chat that is still waiting converts it first. Both ways share one conversion per chat. A chat that fails keeps its events, and the next launch, or opening it, tries again. Until then it opens converted in memory only: you can read it, but not reply, since a save would mix the two formats. `frontend/src/lib/chat/legacy-events.ts` and `convert-stored-chats.ts` hold the code.
+
+A message you send while the pass at launch is still running waits for it. Conversion gives a chat new event numbers, and `search_chats` and `get_chat` name messages by them, so a turn must not read a chat between its search and its read while the numbers move. A search hit you open later still finds its message: Chat looks for the hit’s text when the message at its number does not hold it.
+
+Before eve converts a session, Chat fixes two shapes eve would draw badly. A turn the app quit during, with no turn end saved, ends as stopped. A step that started and showed nothing before its turn moved on is left out, so it doesn’t show as an empty Sage message. An event with no time takes the time of the event before it, or of the session’s first event with one.
+
+eve’s converter needs each session to start with `session.started`, and it leaves out a reply with no step event around it. Chats from early eve releases can lack both. When eve cannot convert a session as saved, or its result holds fewer of your messages or fewer of Sage’s than the session, Chat keeps what you and Sage said and converts that instead. Tool calls and thinking from that session are left out. Each reply keeps the model its step named.
+
+A long chat takes several writes, so the conversion save writes the new rows to `chat_event_convert` first. One last write then swaps them in. A conversion that fails or stops partway leaves the chat’s events and `event_format` as they were, and the next pass tries again. Sage clears any rows left in `chat_event_convert` at launch. The last write:
+
+- It replaces the chat’s events and sets `event_format` to 27.
+- It keeps `updated_at`, so the chat keeps its place in the list and Dream does not read it again.
+- Each row’s `saved_at` is the time eve recorded on the event, `meta.at`. An event eve recorded no time for gets none, and a search by time uses `unstamped_until` for it, as for events from before `0019`.
+- Event numbers change, so the chat’s message index rows and `chat_index_state` are deleted, and Chat queues the chat to be indexed again right away. A batch of embeddings read before the conversion is dropped: each batch keeps the chat’s `event_format`, and a chat converts only once. A batch for another chat is kept.
+
+The core refuses a conversion with `ChatConverted` once a chat is at 27, so a second conversion can never replace turns saved since. Chat treats that as done.
+
+Until a chat is converted, Sage’s core reads both formats, so search, Dream, `get_chat`, and export work on it.
+
 ## Older conversations
 
 `0007` only created `chat_event`, and Sage does not read or convert the old `events` column. A conversation saved before `0007` opens empty in Chat. Search, Dream, the encryption passes, and export all skip it.
 
 ## eve’s session files
 
-eve keeps its own session files outside SQLite:
+eve keeps its own copy of each session outside Sage’s SQLite file. Since eve 1.0, Workflow’s local store keeps it in one SQLite file of its own, `world.db`:
 
-- **`make dev`**: under `agent/.eve/`, always plaintext
+- **`make dev`**: under `agent/.eve/.workflow-data/`, always plaintext
 - **Packaged app**: under `.eve/.workflow-data` in `~/Library/Application Support/com.wasimxyz.sage/eve/`, encrypted when journal encryption is on
 
-[Encryption at rest](../security/encryption.md#chat-workflow-files) covers how those files are encrypted. The SQLite rows are the record Sage encrypts and shows in the Chat screen.
+[Encryption at rest](../security/encryption.md#chat-workflow-files) covers how that file is encrypted. The SQLite rows in Sage’s own file are the record Sage encrypts and shows in the Chat screen.
 
-Deleting a chat also deletes its session files, found by its `eve_session_id`. Sage does this when the undo toast closes, not when you choose Delete. It takes these steps:
+The agent sets `experimental.workflow.retention` to `0`. When a session ends, the store deletes its run’s inputs, outputs, events, and stream. It keeps a record of the run: its id, times, status, step names, model, token counts, and its title. Every session’s title is “Sage chat”, set in `agent/channels/eve.ts`, so the record holds nothing you wrote. A session ends when you delete its chat, or after 30 idle days. When eve compacts a long session, it moves the session to a new run, but the session’s stream stays with its first run, which keeps running until the session ends. So nothing is deleted while the chat can still resume, and ending the session deletes both runs’ data.
+
+Deleting a chat also ends its eve session, found by its `eve_session_id`. Sage does this when the undo toast closes, not when you choose Delete. It takes these steps:
 
 - The id is a workflow run id (`wrun_…`). Sage ignores an id that does not have that shape, so a stored value cannot reach outside the workflow folder.
-- If the agent is running, Sage first asks it to cancel the current turn. That request can finish after the files are gone, so the agent may still write.
+- In a packaged app, the same write that deletes the chat adds the session id to `chat_session_end`.
+- It deletes the session’s files from eve releases before 1.0, which kept a folder of files per session.
+- A worker asks the agent to cancel the current turn, then to end the session. Each request can wait up to a second, so the window never waits on them.
+- The session leaves `chat_session_end` once the agent answers that it ended it, or that the session is already gone (`404`, `409`, or `410`).
+- If the agent is down or refuses, as right after unlock when a delete held over a lock runs before the agent listens, the session stays. Sage tries again after the next delete, or on Chat’s next health check at least 10 seconds after the last try.
 - Deleting still succeeds if the files are already gone or the agent is down.
 
-On launch, Sage deletes run folders in `.eve/.workflow-data` that no saved chat points to and that are more than an hour old. That catches files left by a late cancel or by [session recovery](frontend.md#recovering-a-session-that-ended). `src/eve_sidecar.zig` lists every kind of file it removes.
+`make dev` starts the agent on its own, so Sage does not end a session there when you delete its chat.
+
+On launch, Sage deletes run folders in `.eve/.workflow-data` that no saved chat points to and that are more than an hour old. Since eve 1.0, the only folders are the ones earlier releases left. `src/eve_sidecar.zig` lists every kind of file it removes.
 
 ## Deleting data
 

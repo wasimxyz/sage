@@ -16,6 +16,8 @@ An eve agent is a directory of files, and `agent/agent/` follows that layout:
 - `memory/`: `facts.ts` and `episodic.ts`, which recall facts and dated events in a memory build. They only read. Dream and the Memories screen write.
 - `channels/eve.ts`: the HTTP channel the frontend talks to, with its token check
 
+eve runs each `defineDynamic` file before every model call, so a turn with three tool calls runs it four times. The instruction files keep their answer with `ctx.memo`: `user.ts`, `profile.ts`, and `memory.ts` ask Sage once per session, and `today.ts` reads the date once per turn.
+
 Shared code lives in `agent/agent/lib/`:
 
 - `sage.ts`: the client every tool uses to reach Sage’s agent server
@@ -41,7 +43,7 @@ The Chat screen sends these headers with each request:
 Three pieces pass the first three to Ollama:
 
 1. `channels/eve.ts` reads the headers during the token check and stores them as session attributes named `model`, `think`, `contextLength`, and `chatId`.
-2. `agent.ts` picks the model with `defineDynamic` on `step.started`, reading those attributes.
+2. `agent.ts` picks the model with `defineDynamic`, which eve runs before every model call, reading those attributes.
 3. The handler returns the Ollama model and sets `modelContextWindowTokens` from the context length, because Ollama models are not in the AI Gateway catalog. It passes `think` and `options.num_ctx` through `providerOptions.ollama`, so Ollama turns thinking on or off and allocates the picked window.
 
 When a header is missing or invalid, the agent falls back:

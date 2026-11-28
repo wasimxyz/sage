@@ -350,8 +350,8 @@ function harness(reply: string) {
   };
   const turn = {
     events: [],
-    inputRequests: [],
-    message: reply,
+    interactions: [],
+    reply,
     session,
     status: "completed",
     toolCalls: [],

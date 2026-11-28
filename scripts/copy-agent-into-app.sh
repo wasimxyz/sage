@@ -73,7 +73,7 @@ plist="$app/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string $mic_text" "$plist"
 
 channel="$dest/agent/channels/eve.ts"
-if ! grep -q 'origin: "zero://app"' "$channel" || ! grep -q 'allowedHeaders: "*"' "$channel"; then
+if ! grep -q 'origin: "zero://app"' "$channel" || ! grep -q 'allowHeaders: "*"' "$channel"; then
   echo "copy-agent-into-app: packaged Chat CORS is missing the zero://app policy" >&2
   exit 1
 fi

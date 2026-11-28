@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { conversationOf, type SessionStreamEvent } from "eve/client";
 import type { LoadedChat } from "../evals/lib/dataset.ts";
 import { chatMessageOf } from "../evals/lib/dream-accuracy.ts";
 import {
@@ -9,6 +10,7 @@ import {
   CHAT_CHUNK_BYTES,
   chatEvents,
   chatEventsJson,
+  chatTurns,
   indexChat,
   pendingChatIds,
   saveChat,
@@ -86,8 +88,12 @@ function fakeSage(
       const chatId = nextId;
       nextId += 1;
       saved.set(chatId, building);
+      // Sage indexes the User and Sage messages, not every event.
       const events = JSON.parse(building.events) as unknown[];
-      left.set(chatId, events.length);
+      const messages = events.filter(
+        (event) => chatMessageOf(JSON.stringify(event)) !== null
+      );
+      left.set(chatId, messages.length);
       return { id, ok: true, result: { id: chatId } };
     }
     if (command === "embeddings.generate") {
@@ -116,33 +122,58 @@ function fakeSage(
   return { call, calls, saved };
 }
 
-test("a chat's events are what the Chat screen saves: a received message and a completed reply", () => {
-  const events = chatEvents(SHORT).map((text) => JSON.parse(text));
-  assert.deepEqual(events[0], {
-    data: {
-      message: "I went to the group on Thursday.",
-      parts: [{ text: "I went to the group on Thursday.", type: "text" }],
-      turnId: "turn_0",
-    },
-    type: "message.received",
-  });
-  assert.deepEqual(events[1], {
-    data: { finishReason: "stop", message: "How did it go?" },
-    type: "message.completed",
-  });
-  assert.equal(events[2].data.turnId, "turn_1");
-  assert.equal(events.length, 4);
+test("a chat's events are one eve session with a turn for each exchange", () => {
+  const events = chatEvents(SHORT).map(
+    (text) => JSON.parse(text) as SessionStreamEvent
+  );
+  assert.equal(events[0]?.type, "session.started");
+  assert.equal(events[0]?.meta.at, "2026-09-12T12:00:00.000Z");
+  assert.deepEqual(
+    conversationOf(events).messages.map((message) => [
+      message.role,
+      ...message.parts.map((part) => (part.type === "text" ? part.text : "")),
+    ]),
+    [
+      ["user", "I went to the group on Thursday."],
+      ["assistant", "How did it go?"],
+      ["user", "Fine. A cookie, too."],
+      ["assistant", "A cookie helps."],
+    ]
+  );
+  assert.equal(
+    events.filter((event) => event.type === "turn.started").length,
+    2
+  );
 });
 
 test("Dream accuracy and Sage's index read these events as the same messages", () => {
-  const read = chatEvents(SHORT).map((text) => chatMessageOf(text));
+  const read = chatEvents(SHORT).flatMap((text) => chatMessageOf(text) ?? []);
   assert.deepEqual(read, [
     { role: "user", text: "I went to the group on Thursday." },
     { role: "assistant", text: "How did it go?" },
     { role: "user", text: "Fine. A cookie, too." },
     { role: "assistant", text: "A cookie helps." },
   ]);
-  assert.deepEqual(JSON.parse(chatEventsJson(SHORT)).length, 4);
+  assert.equal(
+    JSON.parse(chatEventsJson(SHORT)).length,
+    chatEvents(SHORT).length
+  );
+});
+
+test("a chat that starts with Sage, or ends on a question, keeps every message", () => {
+  const turns = chatTurns(
+    chatOf(4, [
+      { role: "assistant", text: "Welcome back." },
+      { role: "user", text: "Thanks." },
+      { role: "assistant", text: "How was it?" },
+      { role: "user", text: "Good." },
+    ])
+  );
+  assert.deepEqual(turns, [
+    { reply: "Welcome back." },
+    { question: "Thanks.", reply: "How was it?" },
+    { question: "Good." },
+  ]);
 });
 
 test("saveChat sends the title, no id, and the events in one chunk, and returns Sage's id", () => {
@@ -199,7 +230,14 @@ test("a long chat goes in chunks, each with its byte offset, the same id after t
   });
   // The pieces put back together are the whole array, with no character split.
   assert.equal(sage.saved.get(10)?.events, chatEventsJson(long));
-  assert.equal(JSON.parse(sage.saved.get(10)?.events ?? "[]").length, 40);
+  const savedEvents = JSON.parse(
+    sage.saved.get(10)?.events ?? "[]"
+  ) as unknown[];
+  assert.equal(
+    savedEvents.filter((event) => chatMessageOf(JSON.stringify(event)) !== null)
+      .length,
+    40
+  );
 });
 
 test("a failed save is an error, and a save that returns no id is an error", () => {

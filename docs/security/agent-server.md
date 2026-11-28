@@ -58,12 +58,14 @@ Because health is public, a healthy answer does not prove the process on port 20
 
 Each Chat caller gets the token its own way:
 
-- **The Chat screen** reads it through `chat.agentToken`, which refuses while Sage is locked. Deleting a chat sends the same token when Sage cancels the turn.
+- **The Chat screen** reads it through `chat.agentToken`, which refuses while Sage is locked. Deleting a chat sends the same token when Sage cancels the turn and ends the session, from a worker thread that zeroes its copy when it is done.
 - **The agent in `make dev` and `make eval`** reads `token` from `agent-server.json` on each check. Until that file exists, requests return 401.
 - **The `eve dev` terminal** gets it from `agent/scripts/dev-auth-hook.ts`, which the `dev` script loads ahead of eve. On each loopback `/eve/v1/…` request, the hook reads the token from `agent-server.json` and replaces the bearer eve built. It leaves Ollama requests alone, because they use other paths.
 - **The `make eval` client** gets the token through `EVE_EVAL_AUTH_TOKEN`, in its Chat pass only, as [Eval suite](../agent/evals.md#the-eval-server-and-its-token) explains. The person and grade passes send no Chat messages and carry no token. The AI Gateway keys for the cloud judge go to those client processes and never to this server or the agent.
 
 The hook reads the file on every request because Sage writes it after the `eve dev` terminal is already up. The terminal’s first `/eve/v1/info` request fails with 401 and the prompt still opens, and later requests carry the token. Health stays public, so `make dev` can wait on it before Sage starts.
+
+`GET /eve/v1/info` returns the agent’s instructions and server paths, so eve serves it only to callers the channel allows. `make eval` reads it before any eval runs, and the `eve dev` terminal reads it too. The Chat channel allows it for a caller with the token in `make dev` and `make eval`. A packaged agent, which Sage starts with `SAGE_AGENT_SOCKET`, allows it to no caller, so it returns 403 even with the token. The Chat screen never reads it.
 
 ## The workflow routes
 
