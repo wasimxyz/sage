@@ -8,7 +8,6 @@ import {
   type MessageStreamEvent,
 } from "eve/client";
 
-import { screenshotChatEvents } from "./screenshot-chat.ts";
 import type { BridgeCall } from "./seed-chats.ts";
 import {
   BEN_MAX_CHARS,
@@ -427,12 +426,78 @@ test("a saved chat carries its session and picker, then gets indexed", async () 
   });
 });
 
+/** A real turn's shape: a question, one journal search, and an answer. */
+function searchTurnEvents(): MessageStreamEvent[] {
+  const turnId = "turn_0";
+  const callId = "call_search";
+  const bodies: { data: Record<string, unknown>; type: string }[] = [
+    { data: { turnId }, type: "turn.started" },
+    {
+      data: { message: "How have my Sundays changed?", turnId },
+      type: "message.received",
+    },
+    { data: { stepIndex: 0, turnId }, type: "step.started" },
+    {
+      data: {
+        actions: [
+          {
+            callId,
+            input: { query: "Sundays" },
+            kind: "tool-call",
+            toolName: "search_journal",
+          },
+        ],
+        stepIndex: 0,
+        turnId,
+      },
+      type: "actions.requested",
+    },
+    {
+      data: {
+        result: {
+          callId,
+          kind: "tool-result",
+          output: [{ date: "2026-10-11", id: "entry-13", title: "Sunday" }],
+          toolName: "search_journal",
+        },
+        status: "completed",
+        stepIndex: 0,
+        turnId,
+      },
+      type: "action.result",
+    },
+    {
+      data: { finishReason: "tool-calls", stepIndex: 0, turnId },
+      type: "step.completed",
+    },
+    { data: { stepIndex: 1, turnId }, type: "step.started" },
+    {
+      data: {
+        finishReason: "stop",
+        message: "They changed.",
+        stepIndex: 1,
+        turnId,
+      },
+      type: "message.completed",
+    },
+    {
+      data: { finishReason: "stop", stepIndex: 1, turnId },
+      type: "step.completed",
+    },
+    { data: { turnId }, type: "turn.completed" },
+  ];
+  return bodies.map((body, sequence) => ({
+    data: { ...body.data, sequence },
+    meta: {
+      at: "2026-11-27T12:00:00.000Z",
+      id: `evt_${String(sequence).padStart(3, "0")}`,
+    },
+    type: body.type,
+  })) as unknown as MessageStreamEvent[];
+}
+
 test("the saved stream replays through eve's reducer as the Chat screen shows it", async () => {
-  // The screenshot chat is a real turn's shape: a question, a search, an answer.
-  const stream = screenshotChatEvents(
-    [{ date: "2026-10-11", id: 13, title: "Sunday" }],
-    new Date("2026-11-27T12:00:00Z")
-  ) as MessageStreamEvent[];
+  const stream = searchTurnEvents();
   const held = await holdChat(
     { beats: [], name: "sundays", opening: "How have my Sundays changed?" },
     deps(

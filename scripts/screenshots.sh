@@ -1,12 +1,13 @@
 #!/bin/sh
 # Capture the packaged app's screens, in light and dark, for the website and
 # the docs. Builds a throwaway Sage.app with automation on, starts it on a
-# scratch journal, fills it with scripts/seed and a written chat, and saves
-# one PNG per screen and appearance in zig-out/screenshots (or OUT).
+# copy of the dev journal that make seed-dev fills, and saves one PNG per
+# screen and appearance in zig-out/screenshots (or OUT). Each entry and each
+# chat in that journal gets a shot.
 #
 # Your own journal is never opened: the app always gets a SAGE_DATA_DIR inside
 # a fresh scratch folder, and a bundle id of its own, so its web storage is
-# apart too. Ollama and its models in ~/.ollama are shared, as they are for
+# apart too. The dev journal is only read, and the run changes only its copy. Ollama and its models in ~/.ollama are shared, as they are for
 # every Sage. The run stops when a model Sage needs is missing, so it never
 # starts a download.
 set -eu
@@ -15,7 +16,9 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 agent="$root/agent"
 build="$root/zig-out/screenshots-build"
 out="${OUT:-$root/zig-out/screenshots}"
-seed_dir="$root/scripts/seed"
+# The dev app's journal, which make seed-dev fills. Read here, never written.
+dev_data_dir="$HOME/Library/Application Support/com.wasimxyz.sage-dev"
+dev_db="$dev_data_dir/app.db"
 shots_bundle_id="com.wasimxyz.sage.screenshots"
 optimize="${NATIVE_OPTIMIZE:-ReleaseSafe}"
 
@@ -25,7 +28,7 @@ fail() {
 }
 
 [ "$(uname -s)" = Darwin ] || fail "make screenshots runs on macOS only."
-for cmd in lsof native node npm swiftc; do
+for cmd in lsof native node npm sqlite3 swiftc; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing $cmd."
 done
 [ -x /usr/sbin/screencapture ] || fail "Missing /usr/sbin/screencapture."
@@ -157,12 +160,12 @@ fi
 swiftc -O -o "$work/window" "$root/scripts/screenshots/window.swift"
 "$work/window" preflight
 
-# Read the seed files before the long build, so a bad file stops early.
+# Check for the dev journal before the long build.
+[ -f "$dev_db" ] ||
+  fail "There is no dev journal to capture. Run make seed-dev CHATS=1, then run make screenshots again."
 if [ ! -d "$agent/node_modules" ]; then
   npm --prefix "$agent" install
 fi
-SAGE_SEED_DIR="$seed_dir" node --experimental-strip-types "$agent/scripts/seed-dev.ts" --check ||
-  fail "Fix the seed files, then run make screenshots again."
 
 # The `make package` steps, with automation on and everything under
 # zig-out/screenshots-build, so zig-out/bin and zig-out/package stay as they
@@ -185,9 +188,25 @@ agent_pruned=""
 
 clear_copy_storage
 mkdir -p "$data_dir" "$work/logs" "$out"
+# A copy of the dev journal, so nothing the run does reaches it. A backup reads
+# one consistent state, even while the dev app is open. The memory marker
+# comes too, or Sage would treat the copy as a journal that just turned
+# memory off.
+sqlite3 -readonly "$dev_db" ".backup '$data_dir/app.db'"
+# A chat with a session resumes it when it opens, and the copy's Chat agent
+# has none of the dev app's sessions. Without one, a chat opens as its saved
+# transcript. Only the copy changes.
+sqlite3 "$data_dir/app.db" "UPDATE chat_conversation SET eve_session_id = NULL;"
+# Sage skips setup for a journal with entries, and once setup is done it
+# can't be reopened. So the copy starts as a setup left half done at Welcome,
+# the rows onboarding.save writes, and the shots can step through it.
+sqlite3 "$data_dir/app.db" "INSERT INTO app_setting (key, value) VALUES ('onboarding.state', 'active'), ('onboarding.step', 'welcome') ON CONFLICT(key) DO UPDATE SET value = excluded.value;"
+if [ -f "$dev_data_dir/.memory-feature-mode" ]; then
+  cp "$dev_data_dir/.memory-feature-mode" "$data_dir/.memory-feature-mode"
+fi
 # Sage opens at its saved window frame, which lives in the scratch journal.
 node --experimental-strip-types "$agent/scripts/screenshots.ts" --window-state "$data_dir/State/windows.zon"
-echo "Starting Sage on a scratch journal. Keep your hands off the keyboard and the pointer off the window until it finishes."
+echo "Starting Sage on a copy of the dev journal. Keep your hands off the keyboard and the pointer off the window until it finishes."
 (
   cd "$work"
   exec env -u NATIVE_SDK_MODE -u NATIVE_SDK_FRONTEND_URL -u SAGE_OLLAMA_PATH \
@@ -211,6 +230,6 @@ while [ "$i" -lt 300 ]; do
 done
 [ -d "$work/.zig-cache/native-sdk-automation" ] || fail "Sage did not create its automation folder."
 
-SAGE_AUTOMATION_CWD="$work" SAGE_SEED_DIR="$seed_dir" SAGE_SCREENSHOTS_OUT="$out" \
+SAGE_AUTOMATION_CWD="$work" SAGE_SCREENSHOTS_OUT="$out" \
   SAGE_SCREENSHOTS_HELPER="$work/window" SAGE_PID="$sage_pid" \
   node --experimental-strip-types "$agent/scripts/screenshots.ts"
