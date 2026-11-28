@@ -214,6 +214,12 @@ pub fn msgVoidBool(api: Api, object: ?*anyopaque, selector: *anyopaque, value: b
     send(object, selector, value);
 }
 
+/// setPageZoom: — object, selector, then (CGFloat).
+pub fn msgVoidF64(api: Api, object: ?*anyopaque, selector: *anyopaque, value: f64) void {
+    const send: *const fn (?*anyopaque, *anyopaque, f64) callconv(.c) void = @ptrCast(api.msg_send);
+    send(object, selector, value);
+}
+
 /// cancelPreviousPerformRequestsWithTarget:selector:object: — (id, SEL, id).
 pub fn msgVoidIdSelId(
     api: Api,

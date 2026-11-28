@@ -55,11 +55,39 @@ sign_line=$(grep -n 'copy-agent-into-app.sh" "$app"' "$runner" | head -n 1 | cut
 [ "$plist_line" -lt "$sign_line" ] ||
   fail "scripts/screenshots.sh changes the bundle id after the app is signed, which breaks the seal."
 
-# The script clears the copy's web storage and caches. Every folder it deletes
-# under ~/Library must carry the copy's bundle id, never your app's.
-if code_lines "$runner" | grep -F 'Library/' | grep -Fv '$shots_bundle_id' | grep -q .; then
-  fail "scripts/screenshots.sh names a ~/Library folder that is not the copy's."
+# The script clears the copy's web storage and caches. Every folder it names
+# under ~/Library must carry the copy's bundle id, never your app's, except
+# the dev app's folder, which it only reads.
+dev_folder_line='dev_data_dir="$HOME/Library/Application Support/com.wasimxyz.sage-dev"'
+grep -Fqx "$dev_folder_line" "$runner" ||
+  fail "scripts/screenshots.sh does not read the dev journal from the dev app's folder."
+if code_lines "$runner" | grep -F 'Library/' | grep -Fv '$shots_bundle_id' |
+  grep -Fxv "$dev_folder_line" | grep -q .; then
+  fail "scripts/screenshots.sh names a ~/Library folder that is not the copy's or the dev app's."
 fi
+# Your own journal lives in com.wasimxyz.sage. The script never names it.
+if code_lines "$runner" | grep -Eq 'com\.wasimxyz\.sage["/]'; then
+  fail "scripts/screenshots.sh names your app's folder."
+fi
+# The dev journal is only read: a read-only backup of app.db and a copy of the
+# memory marker, both into the scratch journal. No other line touches it.
+if code_lines "$runner" | grep -E '\$(dev_data_dir|dev_db)' | sed 's/^[[:space:]]*//' |
+  grep -Fxv 'dev_db="$dev_data_dir/app.db"' |
+  grep -Fxv '[ -f "$dev_db" ] ||' |
+  grep -Fxv "sqlite3 -readonly \"\$dev_db\" \".backup '\$data_dir/app.db'\"" |
+  grep -Fxv 'if [ -f "$dev_data_dir/.memory-feature-mode" ]; then' |
+  grep -Fxv 'cp "$dev_data_dir/.memory-feature-mode" "$data_dir/.memory-feature-mode"' |
+  grep -q .; then
+  fail "scripts/screenshots.sh does more with the dev journal than read it."
+fi
+# Every other sqlite3 call writes only the copy.
+if code_lines "$runner" | grep -F 'sqlite3 ' | grep -Fv 'sqlite3 -readonly "$dev_db"' |
+  grep -Fv 'sqlite3 "$data_dir/app.db"' | grep -Fv 'for cmd in' | grep -q .; then
+  fail "scripts/screenshots.sh runs sqlite3 on a database that is not the copy."
+fi
+backup_line=$(grep -n 'sqlite3 -readonly "$dev_db"' "$runner" | head -n 1 | cut -d: -f1)
+[ -n "$backup_line" ] && [ "$backup_line" -lt "$(grep -n 'SAGE_DATA_DIR="$data_dir"' "$runner" | head -n 1 | cut -d: -f1)" ] ||
+  fail "scripts/screenshots.sh does not copy the dev journal before Sage starts."
 # Everything it deletes is the copy's storage, the scratch folder, or the build.
 if code_lines "$runner" | grep -F 'rm -rf' |
   grep -Fv '$shots_bundle_id' | grep -Fv '"$work"' | grep -Fv '"$build"' | grep -q .; then
@@ -88,9 +116,9 @@ build_rm_line=$(grep -n '^  rm -rf "$build"$' "$runner" | head -n 1 | cut -d: -f
   fail "scripts/screenshots.sh does not stop what the copy started before it deletes the build."
 
 # Turning Touch ID or the lock off deletes a Keychain item, and a pull fills
-# the ~/.ollama your own Sage uses. Nothing in the driver may do either, or
-# delete data.
-for forbidden in lock.disable lock.removePassword encryption. data.delete ollama.pull ollama.delete; do
+# the ~/.ollama your own Sage uses. Nothing in the driver may do either, save
+# or delete an entry or a chat, or delete data.
+for forbidden in journal.save journal.delete chat.save chat.delete lock.disable lock.removePassword encryption. data.delete ollama.pull ollama.delete; do
   if grep -Fq "\"$forbidden" "$driver"; then
     fail "agent/scripts/screenshots.ts names $forbidden."
   fi
@@ -104,7 +132,7 @@ fi
 grep -Fq 'dataDirKeychainService(std.heap.page_allocator, init.environ_map, app_id)' "$main_zig" ||
   fail "src/main.zig does not give a journal in SAGE_DATA_DIR its own Keychain service."
 
-# The route and appearance commands only exist in automation builds: the one
+# The route, appearance, and zoom commands only exist in automation builds: the one
 # call that reads them sits right inside the automation branch, and each
 # handler has one caller.
 gate_line=$(grep -n '} else if (build_options.automation) {' "$main_zig" | cut -d: -f1)
@@ -112,11 +140,13 @@ parse_lines=$(grep -n 'parseAutomationCommand(command\.name)' "$main_zig" | cut 
 [ -n "$gate_line" ] && [ "$(echo "$gate_line" | wc -l)" -eq 1 ] ||
   fail "src/main.zig does not have one automation branch for native commands."
 [ "$parse_lines" = "$((gate_line + 1))" ] ||
-  fail "src/main.zig reads app.route and app.appearance outside its automation branch."
+  fail "src/main.zig reads app.route, app.appearance, and app.zoom outside its automation branch."
 [ "$(grep -c 'try emitAutomationRoute(' "$main_zig")" -eq 1 ] ||
   fail "src/main.zig opens an automation route from more than one place."
 [ "$(grep -c 'window_chrome\.setAppearance(' "$main_zig")" -eq 1 ] ||
   fail "src/main.zig sets the appearance from more than one place."
+[ "$(grep -c 'window_chrome\.setPageZoom(' "$main_zig")" -eq 1 ] ||
+  fail "src/main.zig zooms the page from more than one place."
 
 # The cleanup that stops a crashed copy's processes must stop only processes
 # whose program sits inside the copy's bundle. Run it for real on a fake

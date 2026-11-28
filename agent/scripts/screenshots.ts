@@ -13,29 +13,40 @@ import { fileURLToPath } from "node:url";
 
 import { isMatchingId, requireOk } from "../evals/lib/bridge.ts";
 import {
-  type JournalEntryFixture,
-  loadEntryFiles,
-} from "../evals/lib/dataset.ts";
-import {
   type Automation,
   automationAt,
   BridgeTimeoutError,
   callBridge,
   waitForAutomation,
 } from "./automation.ts";
-import { chatSourceFiles, screenshotChat } from "./screenshot-chat.ts";
-import { localToday, moveToToday } from "./seed-dates.ts";
 
 // Drives a throwaway packaged Sage that scripts/screenshots.sh built with
-// automation on and started on a scratch journal. It fills the journal,
-// opens each screen with `app.route:<route>`, switches light and dark with
-// `app.appearance:<name>`, and captures the window with screencapture.
+// automation on and started on a copy of the dev journal. It opens each
+// screen, each entry, and each chat with `app.route:<route>`, switches light
+// and dark with `app.appearance:<name>`, zooms the page with
+// `app.zoom:<percent>`, and captures the window with screencapture. It reads
+// the entries and chats and never saves one.
 
 export const appearances = ["light", "dark"] as const;
 export type Appearance = (typeof appearances)[number];
 
 /** The window size in points. On a Retina display the PNGs are twice this. */
 export const windowSize = { height: 800, width: 1280 } as const;
+
+/**
+ * How far the page is zoomed for the shots, in percent. The window stays the
+ * same size, so every element looks a little larger. Only this script sends
+ * it, and only automation builds act on it.
+ */
+export const pageZoomPercent = 110;
+
+/** The `app.zoom:` command, which src/main.zig takes from 50 to 200. */
+export function zoomCommand(percent: number): string {
+  if (!Number.isInteger(percent) || percent < 50 || percent > 200) {
+    throw new Error(`Not a zoom app.zoom accepts: ${percent}`);
+  }
+  return `app.zoom:${percent}`;
+}
 
 /**
  * The saved window frame the app opens at. scripts/screenshots.sh writes it
@@ -62,24 +73,83 @@ export const setupShots = [
   { name: "setup-all-set", step: "all_set" },
 ] as const;
 
-/** The seed entry the Journal shot opens. */
-export const journalShotFile = "25-sunday-again.md";
-
-export interface ShotIds {
-  chat: number;
-  journalEntry: number;
+export interface Shot {
+  name: string;
+  route: string;
 }
 
-/** Screens of the unlocked app, each a hash route. */
-export function appShots(ids: ShotIds): { name: string; route: string }[] {
-  return [
-    { name: "new-chat", route: "/chat/new" },
-    { name: "journal", route: `/journal/${ids.journalEntry}` },
-    { name: "chat", route: `/chat/${ids.chat}` },
-    { name: "settings-agent", route: "/settings" },
-    { name: "settings-models", route: "/settings/models" },
-    { name: "settings-data", route: "/settings/data" },
-  ];
+/** Taken first in the unlocked app. */
+export const newChatShot: Shot = { name: "new-chat", route: "/chat/new" };
+
+/** Taken after every entry and chat. */
+export const settingsShots: readonly Shot[] = [
+  { name: "settings-agent", route: "/settings" },
+  { name: "settings-models", route: "/settings/models" },
+  { name: "settings-data", route: "/settings/data" },
+];
+
+/** An entry or a chat, as `journal.list` and `chat.list` give it. */
+export interface ListedRow {
+  id: number;
+  title: string;
+}
+
+/**
+ * The rows of a `journal.list` or `chat.list` answer, oldest id first. A row
+ * with no positive id stops the run, since its shot could not open it.
+ */
+export function listedRows(rows: unknown): ListedRow[] {
+  if (!Array.isArray(rows)) {
+    throw new Error("Sage did not list the journal's entries or chats.");
+  }
+  return rows
+    .map((row: unknown) => {
+      const { id, title } = (row ?? {}) as Record<string, unknown>;
+      if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) {
+        throw new Error(`Sage listed a row with no id: ${JSON.stringify(row)}`);
+      }
+      return { id, title: typeof title === "string" ? title : "" };
+    })
+    .sort((a, b) => a.id - b.id);
+}
+
+const maxSlugLength = 40;
+const apostrophes = /['\u2019]/gu;
+const notWordCharacters = /[^a-z0-9]+/gu;
+const edgeDashes = /^-+|-+$/gu;
+
+/**
+ * A title as a file name part: lowercase words joined by dashes, cut after the
+ * last whole word that fits in 40 characters.
+ */
+export function shotSlug(title: string): string {
+  let slug = title
+    .toLowerCase()
+    .replace(apostrophes, "")
+    .replace(notWordCharacters, "-")
+    .replace(edgeDashes, "");
+  if (slug.length > maxSlugLength) {
+    const cut = slug.slice(0, maxSlugLength + 1);
+    const lastDash = cut.lastIndexOf("-");
+    slug = lastDash > 0 ? cut.slice(0, lastDash) : slug.slice(0, maxSlugLength);
+  }
+  return slug.length > 0 ? slug : "untitled";
+}
+
+/** One shot per entry, such as `entry-25-sunday-again`. */
+export function entryShots(entries: readonly ListedRow[]): Shot[] {
+  return entries.map((entry) => ({
+    name: `entry-${entry.id}-${shotSlug(entry.title)}`,
+    route: `/journal/${entry.id}`,
+  }));
+}
+
+/** One shot per chat, such as `chat-1-show-up-as-awkward`. */
+export function chatShots(chats: readonly ListedRow[]): Shot[] {
+  return chats.map((chat) => ({
+    name: `chat-${chat.id}-${shotSlug(chat.title)}`,
+    route: `/chat/${chat.id}`,
+  }));
 }
 
 /** Taken after the password and Touch ID are on. */
@@ -107,18 +177,17 @@ export function routeCommand(route: string): string {
 }
 
 /**
- * The only bridge commands this script sends. The journal is a throwaway, and
- * its Touch ID key has a Keychain service of its own. Still, nothing here
- * turns Touch ID or the lock off, deletes data, or downloads a model, so a
- * mistake can't reach the Keychain item or the models your own Sage uses.
+ * The only bridge commands this script sends. The journal is a copy, and its
+ * Touch ID key has a Keychain service of its own. Still, nothing here saves
+ * an entry or a chat, turns Touch ID or the lock off, deletes data, or
+ * downloads a model, so a mistake can't reach the Keychain item or the models
+ * your own Sage uses.
  */
 export const allowedBridgeCommands = [
   "chat.list",
-  "chat.save",
   "embeddings.pending",
   "embeddings.status",
   "journal.list",
-  "journal.save",
   "lock.setPassword",
   "lock.setTouchId",
   "lock.status",
@@ -149,20 +218,20 @@ interface Context {
 }
 
 const settleMs = 1500;
+// A seeded chat holds thousands of stream events, which the page reads in
+// chunks before it draws the chat.
+const chatSettleMs = 3000;
 const appearanceSettleMs = 700;
 const focusWaitMs = 120_000;
 const embedWaitMs = 90_000;
 const localAiWaitMs = 60_000;
 
-async function main(): Promise<void> {
+function main(): void {
   const automation = automationAt(requiredEnv("SAGE_AUTOMATION_CWD"));
-  const seedDir = requiredEnv("SAGE_SEED_DIR");
   const out = requiredEnv("SAGE_SCREENSHOTS_OUT");
   const helper = requiredEnv("SAGE_SCREENSHOTS_HELPER");
   const pid = Number(requiredEnv("SAGE_PID"));
   mkdirSync(out, { recursive: true });
-
-  const { entries } = moveToToday(await loadEntryFiles(seedDir), localToday());
 
   waitForAutomation(automation);
   const ctx: Context = {
@@ -173,34 +242,55 @@ async function main(): Promise<void> {
     windowId: windowIdFor(helper, pid),
   };
   console.log(`Sage window ${ctx.windowId}`);
+  checkNoPassword(ctx);
   checkModels(ctx);
 
-  // A new journal opens on Welcome. Each later step is a saved setup state
-  // and a reload, the way a half-finished setup opens on the next launch.
+  const entries = listedRows(
+    resultField(bridge(ctx, "journal.list", {}), "entries")
+  );
+  const chats = listedRows(
+    resultField(bridge(ctx, "chat.list", {}), "conversations")
+  );
+  if (entries.length === 0 || chats.length === 0) {
+    throw new Error(
+      `The dev journal has ${entries.length} entries and ${chats.length} chats. Run make seed-dev CHATS=1, then run make screenshots again.`
+    );
+  }
+  console.log(
+    `The copy has ${entries.length} entries and ${chats.length} chats.`
+  );
+
+  // The page lays out again at the new zoom, and the traffic lights move to
+  // match its title bar. Let both settle before the first shot.
+  sendNativeCommand(ctx, zoomCommand(pageZoomPercent));
+  sleep(settleMs);
+
+  // scripts/screenshots.sh starts the copy as a setup left half done at
+  // Welcome. Each step is a saved setup state and a reload, the way a
+  // half-finished setup opens on the next launch.
   for (const shot of setupShots) {
-    if (shot.step !== "welcome") {
-      bridge(ctx, "onboarding.save", { state: "active", step: shot.step });
-      automate(automation, ["reload"]);
-      sleep(settleMs);
-    }
+    bridge(ctx, "onboarding.save", { state: "active", step: shot.step });
+    automate(automation, ["reload"]);
+    sleep(settleMs);
     capture(ctx, shot.name);
   }
 
   bridge(ctx, "onboarding.save", { state: "done" });
   bridge(ctx, "onboarding.remindersOff", {});
-  const ids = new Map<string, number>();
-  for (const entry of entries) {
-    ids.set(entry.fileName, saveEntry(ctx, entry));
-  }
-  console.log(`Saved ${entries.length} entries.`);
-  const chatId = saveChat(ctx, entries, ids);
   automate(automation, ["reload"]);
   waitForEmbeddings(ctx);
 
-  for (const shot of appShots({
-    chat: chatId,
-    journalEntry: idFor(ids, journalShotFile),
-  })) {
+  openRoute(ctx, newChatShot.route);
+  capture(ctx, newChatShot.name);
+  for (const shot of entryShots(entries)) {
+    openRoute(ctx, shot.route);
+    capture(ctx, shot.name);
+  }
+  for (const shot of chatShots(chats)) {
+    openRoute(ctx, shot.route, chatSettleMs);
+    capture(ctx, shot.name);
+  }
+  for (const shot of settingsShots) {
     openRoute(ctx, shot.route);
     capture(ctx, shot.name);
   }
@@ -224,6 +314,23 @@ async function main(): Promise<void> {
   capture(ctx, lockShotName);
 
   console.log(`Saved the screenshots in ${out}.`);
+}
+
+/**
+ * The run sets a password on the copy for the Security and lock shots. A dev
+ * journal with a password of its own, or with encryption on, opens locked in
+ * the copy, since its Touch ID key and data key stay with the dev app.
+ */
+function checkNoPassword(ctx: Context): void {
+  const status = bridge(ctx, "lock.status", {});
+  if (
+    resultField(status, "passwordSet") === true ||
+    resultField(status, "encrypted") === true
+  ) {
+    throw new Error(
+      "The dev journal has a password. Run make seed-dev CHATS=1 for one without, then run make screenshots again."
+    );
+  }
 }
 
 /**
@@ -296,145 +403,10 @@ function withoutLatest(name: string): string {
   return name.endsWith(":latest") ? name.slice(0, -":latest".length) : name;
 }
 
-function saveChat(
-  ctx: Context,
-  entries: readonly { date: string; fileName: string; title: string }[],
-  ids: Map<string, number>
-): number {
-  const sources = chatSourceFiles.map((fileName) => {
-    const entry = entries.find((item) => item.fileName === fileName);
-    if (entry === undefined) {
-      throw new Error(`The chat cites ${fileName}, which is not in the seed.`);
-    }
-    return { date: entry.date, id: idFor(ids, fileName), title: entry.title };
-  });
-  const chat = screenshotChat(sources, new Date());
-  const id = saveInOneCall(
-    ctx,
-    "chat.save",
-    {
-      baseSeq: 0,
-      chunk: oneChunk(JSON.stringify(chat.events), "The chat"),
-      contextLength: chat.contextLength,
-      done: true,
-      eveSessionId: null,
-      id: null,
-      model: chat.model,
-      offset: 0,
-      streamIndex: chat.events.length,
-      thinking: chat.thinking,
-      title: chat.title,
-    },
-    () => savedChatId(ctx, chat.title)
-  );
-  console.log(`Saved the chat as ${id}.`);
-  return id;
-}
-
-function saveEntry(ctx: Context, entry: JournalEntryFixture): number {
-  return saveInOneCall(
-    ctx,
-    "journal.save",
-    {
-      chunk: oneChunk(entry.body, entry.fileName),
-      date: entry.date,
-      done: true,
-      format: "markdown",
-      id: null,
-      offset: 0,
-      title: entry.title,
-      wordCount: entry.wordCount,
-    },
-    () => savedEntryId(ctx, entry)
-  );
-}
-
-/** The most one bridge call carries, as in agent/scripts/automation.ts. */
-export const maxChunkBytes = 4000;
-
 /**
- * The text of a save that fits in one call. A save split over several calls
- * leaves a half-finished upload when an answer is lost, so the script only
- * saves what fits in one.
+ * Sage embeds any entry or chat message the dev journal had not embedded yet,
+ * in the background. Wait so no progress shows.
  */
-export function oneChunk(text: string, what: string): string {
-  if (Buffer.byteLength(text, "utf8") > maxChunkBytes) {
-    throw new Error(
-      `${what} is longer than ${maxChunkBytes} bytes, too long to save in one call.`
-    );
-  }
-  return text;
-}
-
-const saveTries = 3;
-
-/**
- * A save sent twice makes two copies, so it is never sent again blind. When
- * its answer is lost, `findSaved` looks for what it made, and the save goes
- * again only when nothing is there.
- */
-function saveInOneCall(
-  ctx: Context,
-  command: string,
-  payload: Record<string, unknown>,
-  findSaved: () => number | null
-): number {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      const response = sendBridge(ctx, command, payload, attemptTimeoutMs);
-      requireOk(response, command);
-      const id = resultField(response, "id");
-      if (typeof id !== "number" || id <= 0) {
-        throw new Error(`${command} did not return an id.`);
-      }
-      return id;
-    } catch (error) {
-      if (!(error instanceof BridgeTimeoutError) || attempt >= saveTries) {
-        throw error;
-      }
-      const saved = findSaved();
-      if (saved !== null) {
-        return saved;
-      }
-    }
-  }
-}
-
-function savedEntryId(ctx: Context, entry: JournalEntryFixture): number | null {
-  const entries = resultField(bridge(ctx, "journal.list", {}), "entries");
-  return findSavedId(
-    entries,
-    (row) => row.date === entry.date && row.title === entry.title
-  );
-}
-
-function savedChatId(ctx: Context, title: string): number | null {
-  const chats = resultField(bridge(ctx, "chat.list", {}), "conversations");
-  return findSavedId(chats, (row) => row.title === title);
-}
-
-/** The id of the one row that matches, or null when none or several do. */
-export function findSavedId(
-  rows: unknown,
-  matches: (row: Record<string, unknown>) => boolean
-): number | null {
-  if (!Array.isArray(rows)) {
-    return null;
-  }
-  const found = rows.filter(
-    (row): row is Record<string, unknown> =>
-      row !== null &&
-      typeof row === "object" &&
-      matches(row as Record<string, unknown>)
-  );
-  if (found.length !== 1) {
-    return null;
-  }
-  const { id } = found[0];
-  return typeof id === "number" && id > 0 ? id : null;
-}
-
-/** Sage embeds the new entries in the background. Wait so no progress shows. */
 function waitForEmbeddings(ctx: Context): void {
   const deadline = Date.now() + embedWaitMs;
   while (Date.now() < deadline) {
@@ -454,10 +426,10 @@ function waitForEmbeddings(ctx: Context): void {
   );
 }
 
-function openRoute(ctx: Context, route: string): void {
+function openRoute(ctx: Context, route: string, settle = settleMs): void {
   const command = routeCommand(route);
   sendNativeCommand(ctx, command);
-  sleep(settleMs);
+  sleep(settle);
   // Sending it again clears any focus the new screen took, so no caret shows.
   sendNativeCommand(ctx, command);
 }
@@ -604,8 +576,8 @@ function automate(automation: Automation, args: string[]): void {
  * Commands that change nothing when sent twice. The page makes its own bridge
  * calls, such as Dream's poll of `dream.status`, and the automation server
  * keeps only the last response, so an answer can be lost. These are sent
- * again when that happens. A save looks for what it made first
- * (`saveInOneCall`), and a first password asks `lock.status`.
+ * again when that happens. A first password is not, so when its answer is
+ * lost, the script asks `lock.status` instead.
  */
 export const repeatSafeCommands: ReadonlySet<string> = new Set([
   "chat.list",
@@ -698,14 +670,6 @@ function resultField(response: Record<string, unknown>, key: string): unknown {
   return (result as Record<string, unknown>)[key];
 }
 
-function idFor(ids: Map<string, number>, fileName: string): number {
-  const id = ids.get(fileName);
-  if (id === undefined) {
-    throw new Error(`${fileName} was not saved.`);
-  }
-  return id;
-}
-
 function flagValue(flag: string): string | null {
   const index = process.argv.indexOf(flag);
   const value = index === -1 ? undefined : process.argv[index + 1];
@@ -733,7 +697,7 @@ if (runDirectly) {
   try {
     const stateFile = flagValue("--window-state");
     if (stateFile === null) {
-      await main();
+      main();
     } else {
       mkdirSync(dirname(stateFile), { recursive: true });
       writeFileSync(stateFile, windowStateZon());

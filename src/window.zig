@@ -23,6 +23,8 @@ var frame_observer_installed = false;
 var applying_alignment = false;
 var alignment_received = false;
 var measured_pitch: ?f64 = null;
+/// 1 in every build except an automation build that got `app.zoom:`.
+var page_zoom: f64 = 1;
 const default_button_pitch: f64 = 20;
 
 /// The window that holds the web view. `keyWindow` and `mainWindow` are nil
@@ -218,8 +220,11 @@ pub fn drag(output: []u8) ![]const u8 {
     return writer.buffered();
 }
 
+/// The page sends the inset in CSS pixels. A zoomed page draws its title bar
+/// that much larger, so the traffic lights scale with it.
 fn applyLastAlignment() void {
-    centerTrafficLights(last_height, last_leading);
+    const leading = if (last_leading) |value| value * page_zoom else null;
+    centerTrafficLights(last_height * page_zoom, leading);
 }
 
 /// macOS redraws the hidden inset title bar when light/dark appearance
@@ -320,9 +325,8 @@ fn titlebarFrameChangedImp(self: ?*anyopaque, cmd: *anyopaque, notification: ?*a
     _ = self;
     _ = cmd;
     _ = notification;
-    centerTrafficLights(last_height, last_leading);
+    applyLastAlignment();
 }
-
 
 pub const Appearance = enum { light, dark };
 
@@ -342,6 +346,25 @@ pub fn setAppearance(appearance: Appearance) void {
     const ns_app_class = api.get_class("NSApplication") orelse return;
     const app = objc.msg(api, ns_app_class, objc.sel(api, "sharedApplication")) orelse return;
     _ = objc.msg1(api, app, objc.sel(api, "setAppearance:"), value);
+    if (!alignment_received) return;
+    applyLastAlignment();
+    scheduleDelayedReapply();
+}
+
+/// Automation builds only: zoom the web view the way View > Zoom In does, so
+/// `make screenshots` can show every element a little larger in the same
+/// window. The page lays out in fewer CSS pixels, so the traffic lights move
+/// to match its title bar.
+pub fn setPageZoom(percent: u16) void {
+    if (builtin.os.tag != .macos) return;
+    const api = objc.load() orelse return;
+    const window = appWindow(api) orelse return;
+    const content = objc.msg(api, window, objc.sel(api, "contentView")) orelse return;
+    const web_view = findWebView(api, content, webview_search_depth) orelse return;
+    const setter = objc.sel(api, "setPageZoom:");
+    if (!objc.msgRespondsToSelector(api, web_view, setter)) return;
+    page_zoom = @as(f64, @floatFromInt(percent)) / 100.0;
+    objc.msgVoidF64(api, web_view, setter, page_zoom);
     if (!alignment_received) return;
     applyLastAlignment();
     scheduleDelayedReapply();
