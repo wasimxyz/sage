@@ -54,7 +54,7 @@ The lock’s password hash never wraps anything. That hash is stored in the same
 Each field is encrypted with AES-256-GCM. Three properties protect the result:
 
 - **A fresh random nonce per field**: the same words encrypt differently every time.
-- **A label naming the table and column**: a ciphertext moved to another field, such as from `journal_entry:body` to `journal_entry:title`, fails to open. Chat event labels also name the conversation and the event’s position, so a row moved within `chat_event` fails too.
+- **A label naming the table and column**: a ciphertext moved to another field, such as from `journal_entry:body` to `journal_entry:title`, fails to open. Chat event labels also name the conversation and the event’s position, so a row moved within `chat_event` fails too. A chat conversion encrypts its rows for their place in `chat_event` and holds them in `chat_event_convert` until it swaps them in. That table is empty between conversions, so the encryption passes have nothing there to rewrite.
 - **A 16-byte authentication tag**: any changed byte fails to open.
 
 The stored form is base64 text with a `sage:v1:` prefix. The prefix names the format, but Sage checks the authentication tag before it treats a field as ciphertext.

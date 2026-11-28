@@ -91,6 +91,7 @@ import {
   formatChatSendError,
 } from "@/lib/chat/chat-errors";
 import {
+  eventsToSaveAfterResume,
   historyMessages,
   messageIdAtSeq,
   splitChatLog,
@@ -520,8 +521,11 @@ function ChatTurnSession({
   // every session once the last one can no longer run, show as they were
   // saved, above the live session's messages.
   const resumable = initialSession !== undefined;
-  const [log] = useState(() => splitChatLog(initialEvents, resumable));
+  const [log] = useState(() => splitChatLog(initialEvents, initialSession));
   const [pastMessages] = useState(() => historyMessages(log.history));
+  // How many of the live session's events are saved. Null until the first
+  // render, which holds the events the chat opened with.
+  const savedLiveCountRef = useRef<number | null>(null);
 
   const handleAgentError = useCallback(
     (error: unknown) => {
@@ -574,6 +578,7 @@ function ChatTurnSession({
       handleAgentError(error);
     },
     onFinish: (snapshot) => {
+      savedLiveCountRef.current = snapshot.events.length;
       persistLater({
         events: [...log.history, ...snapshot.events],
         eveSessionId: recoveringRef.current
@@ -613,6 +618,30 @@ function ChatTurnSession({
   const handleAgentErrorRef = useRef(handleAgentError);
   handleAgentErrorRef.current = handleAgentError;
   const sendTurn = agent.send;
+
+  // A turn that settled while no pane was open comes back when the chat
+  // resumes, with no onFinish. Once the session is idle, save it.
+  const { events: liveEvents, session: liveSession, status } = agent;
+  useEffect(() => {
+    if (savedLiveCountRef.current === null) {
+      savedLiveCountRef.current = liveEvents.length;
+      return;
+    }
+    const events = eventsToSaveAfterResume(
+      log,
+      liveEvents,
+      savedLiveCountRef.current
+    );
+    if (status !== "idle" || recoveringRef.current || events === null) {
+      return;
+    }
+    savedLiveCountRef.current = liveEvents.length;
+    persistLater({
+      events,
+      eveSessionId: liveSession?.sessionId ?? null,
+      streamIndex: liveSession?.streamIndex ?? 0,
+    });
+  }, [liveEvents, liveSession, log, persistLater, recoveringRef, status]);
 
   useEffect(() => {
     recoveringRef.current = false;
@@ -743,7 +772,7 @@ function ChatTurnSession({
               events={initialEvents}
               focus={focus}
               messages={messages}
-              resumable={resumable}
+              session={initialSession}
             />
           }
         >
@@ -858,18 +887,18 @@ function SearchMessageFocus({
   events,
   focus,
   messages,
-  resumable,
+  session,
 }: {
   events: readonly SessionStreamEvent[];
   focus?: ChatFocus;
   messages: readonly EveMessage[];
-  resumable: boolean;
+  session: ClientSessionState | undefined;
 }) {
   const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const targetId =
     focus === undefined
       ? null
-      : messageIdAtSeq(events, resumable, focus.seq, messages);
+      : messageIdAtSeq(events, session, focus.seq, messages);
   const hasTarget =
     targetId !== null && messages.some((message) => message.id === targetId);
 

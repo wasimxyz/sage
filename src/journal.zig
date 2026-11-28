@@ -322,8 +322,11 @@ pub fn jsonHas(payload: []const u8, field: []const u8) bool {
 }
 
 const chat_event_insert_sql = "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now'));";
-/// A converted event keeps the time eve recorded it, or none.
-const chat_event_insert_stamped_sql = "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (?1, ?2, ?3, ?4);";
+/// A converted event waits in `chat_event_convert` until the whole chat is
+/// written, and keeps the time eve recorded it, or none.
+const chat_event_stage_sql = "INSERT INTO chat_event_convert (conversation_id, seq, event, saved_at) VALUES (?1, ?2, ?3, ?4);";
+/// Event format of chats saved before eve 1.0, which Chat converts once.
+const legacy_event_format: i64 = 26;
 const chat_event_insert_bytes: usize = 4 * 1024 * 1024;
 
 pub const migrations = [_]native_sdk.relational_store.Migration{
@@ -351,6 +354,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 22, .name = "chat_index_no_role", .sql = @embedFile("schema/0022_chat_index_no_role.sql") },
     .{ .version = 23, .name = "entry_id_counter", .sql = @embedFile("schema/0023_entry_id_counter.sql") },
     .{ .version = 24, .name = "eve_v27_events", .sql = @embedFile("schema/0024_eve_v27_events.sql") },
+    .{ .version = 25, .name = "chat_event_convert", .sql = @embedFile("schema/0025_chat_event_convert.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -2457,7 +2461,7 @@ pub const Store = struct {
                 self.chat_save_thinking,
                 self.chat_save_context_length,
             );
-            try self.insertChatEventRange(created_id, 0, elements, &.{}, null);
+            try self.insertChatEventRange(created_id, 0, elements, &.{}, .saved);
             break :blk created_id;
         } else blk: {
             if (!try self.chatConversationExists(id)) return error.NotFound;
@@ -2747,7 +2751,7 @@ pub const Store = struct {
                 .params = &.{.{ .integer = id }},
             },
         };
-        try self.insertChatEventRange(id, base_seq, elements, &prefix, null);
+        try self.insertChatEventRange(id, base_seq, elements, &prefix, .saved);
     }
 
     /// Replace every event of chat `id` with `elements`, the same transcript
@@ -2756,8 +2760,16 @@ pub const Store = struct {
     /// Each row's `saved_at` is the time eve recorded for its event, or none
     /// when eve recorded none, so a search by time still places old messages.
     /// Event numbers change, so the message index starts over for this chat.
+    ///
+    /// A long chat takes several writes. They go to `chat_event_convert`
+    /// first, and one last write swaps them in, so a conversion that fails
+    /// or stops partway leaves the chat's saved events and its format as
+    /// they were, and the next pass tries again.
     fn convertChatEvents(self: *Store, id: i64, elements: []const []const u8) !void {
-        if (!try self.chatConversationExists(id)) return error.NotFound;
+        const format = try self.chatEventFormat(id) orelse return error.NotFound;
+        // A converted chat may hold turns saved since. Converting it again
+        // would replace them with an older copy.
+        if (format != legacy_event_format) return error.ChatConverted;
 
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
@@ -2766,15 +2778,46 @@ pub const Store = struct {
         for (elements, stamps) |element, *stamp| stamp.* = try convertedEventStamp(a, element);
 
         const id_param = [_]native_sdk.relational_store.Value{.{ .integer = id }};
-        const prefix = [_]native_sdk.relational_store.Statement{
+        // Rows a conversion that stopped partway left behind.
+        const clear = [_]native_sdk.relational_store.Statement{
+            .{ .sql = "DELETE FROM chat_event_convert WHERE conversation_id = ?1;", .params = &id_param },
+        };
+        errdefer _ = self.db.exec(&clear);
+        try self.insertChatEventRange(id, 0, elements, &clear, .{ .staged = stamps });
+
+        const swap = [_]native_sdk.relational_store.Statement{
             .{ .sql = "DELETE FROM chat_event WHERE conversation_id = ?1;", .params = &id_param },
+            .{
+                .sql = "INSERT INTO chat_event (conversation_id, seq, event, saved_at) SELECT conversation_id, seq, event, saved_at FROM chat_event_convert WHERE conversation_id = ?1 ORDER BY seq;",
+                .params = &id_param,
+            },
+            clear[0],
             .{ .sql = "DELETE FROM chat_embedding WHERE conversation_id = ?1;", .params = &id_param },
             .{ .sql = "DELETE FROM chat_index_skip WHERE conversation_id = ?1;", .params = &id_param },
             .{ .sql = "DELETE FROM chat_index_state WHERE conversation_id = ?1;", .params = &id_param },
             .{ .sql = "UPDATE chat_conversation SET event_format = 27 WHERE id = ?1;", .params = &id_param },
         };
+        if (self.db.exec(&swap) != .ok) return error.SqliteWriteFailed;
         self.chat_convert_generation += 1;
-        try self.insertChatEventRange(id, 0, elements, &prefix, stamps);
+    }
+
+    /// Clear rows a conversion left in `chat_event_convert` when the app
+    /// stopped partway. Run at launch, before any conversion.
+    pub fn clearStagedConversions(self: *Store) !void {
+        if (self.db.exec(&.{.{ .sql = "DELETE FROM chat_event_convert;" }}) != .ok) return error.SqliteWriteFailed;
+    }
+
+    fn chatEventFormat(self: *Store, id: i64) !?i64 {
+        var counts = CountRows{};
+        const outcome = self.db.query(
+            "SELECT event_format AS n FROM chat_conversation WHERE id = ?1;",
+            &.{.{ .integer = id }},
+            &counts,
+            CountRows.collect,
+        );
+        if (outcome != .ok) return error.SqliteQueryFailed;
+        if (counts.failed) return error.SqlitePageFailed;
+        return if (counts.found) counts.value else null;
     }
 
     fn chatEventCount(self: *Store, conversation_id: i64) !i64 {
@@ -2802,9 +2845,7 @@ pub const Store = struct {
         base_seq: i64,
         elements: []const []const u8,
         prefix: []const native_sdk.relational_store.Statement,
-        /// When set, the `saved_at` of each element, from a conversion.
-        /// Otherwise each row is stamped with the time of this save.
-        stamps: ?[]const ?[]const u8,
+        target: ChatEventTarget,
     ) !void {
         const max_statements = native_sdk.relational_store.max_exec_statements;
         var index: usize = 0;
@@ -2829,10 +2870,10 @@ pub const Store = struct {
                     self.allocator.free(stored);
                     break;
                 }
-                const stamp: native_sdk.relational_store.Value = if (stamps) |all|
-                    if (all[index]) |at| .{ .text = at } else .null_value
-                else
-                    .null_value;
+                const stamp: native_sdk.relational_store.Value = switch (target) {
+                    .saved => .null_value,
+                    .staged => |all| if (all[index]) |at| .{ .text = at } else .null_value,
+                };
                 writes.append(self.allocator, .{
                     .params = .{
                         .{ .integer = conversation_id },
@@ -2853,12 +2894,9 @@ pub const Store = struct {
             defer statements.deinit(self.allocator);
             if (first) try statements.appendSlice(self.allocator, prefix);
             for (writes.items) |*item| {
-                try statements.append(self.allocator, if (stamps == null) .{
-                    .sql = chat_event_insert_sql,
-                    .params = item.params[0..3],
-                } else .{
-                    .sql = chat_event_insert_stamped_sql,
-                    .params = item.params[0..],
+                try statements.append(self.allocator, switch (target) {
+                    .saved => .{ .sql = chat_event_insert_sql, .params = item.params[0..3] },
+                    .staged => .{ .sql = chat_event_stage_sql, .params = item.params[0..] },
                 });
             }
             first = false;
@@ -6232,9 +6270,18 @@ fn freeChatExportMetaItem(allocator: std.mem.Allocator, item: ChatExportMeta) vo
 }
 
 const ChatEventWrite = struct {
-    /// The fourth value is used only by a stamped insert.
+    /// The fourth value is used only by a staged insert.
     params: [4]native_sdk.relational_store.Value,
     stored: []u8,
+};
+
+/// Where `insertChatEventRange` writes a chat's events.
+const ChatEventTarget = union(enum) {
+    /// Into `chat_event`, each row stamped with the time of this save.
+    saved,
+    /// Into `chat_event_convert`, for a conversion, with the `saved_at` of
+    /// each element.
+    staged: []const ?[]const u8,
 };
 
 const ChatEventRows = struct {
@@ -10304,6 +10351,90 @@ test "a conversion refuses a new chat, a partial rewrite, and a missing chat" {
     _ = id;
     try std.testing.expectError(error.InvalidSaveChunk, store.chatSave("{\"id\":1,\"convert\":true,\"baseSeq\":2,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
     try std.testing.expectError(error.NotFound, store.chatSave("{\"id\":9,\"convert\":true,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
+    try std.testing.expectEqual(@as(i64, 5), try store.countDataRows("SELECT count(*) AS n FROM chat_event;"));
+}
+
+test "a conversion refuses a chat that is already converted" {
+    var store = try testStore();
+    defer store.deinit();
+    const id = try saveChatEvents(&store, "Sleep", v27_chat);
+    try std.testing.expectError(error.ChatConverted, convertChatEventsVia(&store, id, "[{\"type\":\"session.started\",\"data\":{},\"meta\":{\"position\":{\"index\":0,\"line\":0}}}]"));
+    try std.testing.expectEqual(@as(i64, 7), try store.countDataRows("SELECT count(*) AS n FROM chat_event;"));
+}
+
+/// A JSON array of `count` events, each `fmt` with its index.
+fn numberedEvents(allocator: std.mem.Allocator, count: usize, comptime fmt: []const u8) ![]u8 {
+    var list: std.ArrayList(u8) = .empty;
+    errdefer list.deinit(allocator);
+    try list.append(allocator, '[');
+    for (0..count) |i| {
+        if (i > 0) try list.append(allocator, ',');
+        const one = try std.fmt.allocPrint(allocator, fmt, .{i});
+        defer allocator.free(one);
+        try list.appendSlice(allocator, one);
+    }
+    try list.append(allocator, ']');
+    return list.toOwnedSlice(allocator);
+}
+
+test "a conversion that fails partway keeps the chat's saved events" {
+    var store = try testStore();
+    defer store.deinit();
+    const a = std.testing.allocator;
+    // More events than one write holds, so the conversion takes several.
+    const legacy = try numberedEvents(a, 120, "{{\"type\":\"message.received\",\"data\":{{\"message\":\"old {d}\"}}}}");
+    defer a.free(legacy);
+    const converted = try numberedEvents(a, 120, "{{\"type\":\"delivery.consumed\",\"data\":{{\"parts\":[{{\"kind\":\"text\",\"text\":\"new {0d}\"}}]}},\"meta\":{{\"at\":\"2026-10-22T21:36:06.912Z\",\"position\":{{\"index\":0,\"line\":{0d}}}}}}}");
+    defer a.free(converted);
+    const id = try saveChatEvents(&store, "Long", legacy);
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "UPDATE chat_conversation SET event_format = 26;" },
+        // Stands in for a full disk or an I/O error after the first write.
+        .{ .sql = "CREATE TRIGGER fail_stage BEFORE INSERT ON chat_event_convert WHEN NEW.seq = 100 BEGIN SELECT RAISE(ABORT, 'disk full'); END;" },
+    }) == .ok);
+
+    var list_out: [1024]u8 = undefined;
+    const unchanged = struct {
+        fn check(s: *Store, out: []u8) !void {
+            try std.testing.expectEqual(@as(i64, 120), try s.countDataRows("SELECT count(*) AS n FROM chat_event;"));
+            try std.testing.expectEqual(@as(i64, 0), try s.countDataRows("SELECT count(*) AS n FROM chat_event_convert;"));
+            try std.testing.expect(std.mem.indexOf(u8, try s.chatList(out), "\"unconverted\":[1]") != null);
+            var batch = try s.chatMessagesToIndex(1, chat_index_batch_messages);
+            defer batch.deinit(s.allocator);
+            try std.testing.expectEqualStrings("old 0", batch.messages[0].text);
+        }
+    }.check;
+
+    try std.testing.expectError(error.SqliteWriteFailed, convertChatEventsVia(&store, id, converted));
+    try unchanged(&store, &list_out);
+
+    // The last write, which swaps the rows in, fails as one.
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "DROP TRIGGER fail_stage;" },
+        .{ .sql = "CREATE TRIGGER fail_swap BEFORE INSERT ON chat_event WHEN NEW.seq = 100 BEGIN SELECT RAISE(ABORT, 'disk full'); END;" },
+    }) == .ok);
+    try std.testing.expectError(error.SqliteWriteFailed, convertChatEventsVia(&store, id, converted));
+    try unchanged(&store, &list_out);
+
+    try std.testing.expect(store.db.exec(&.{.{ .sql = "DROP TRIGGER fail_swap;" }}) == .ok);
+    try convertChatEventsVia(&store, id, converted);
+    try std.testing.expectEqual(@as(i64, 120), try store.countDataRows("SELECT count(*) AS n FROM chat_event WHERE saved_at = '2026-10-22T21:36:06.912Z';"));
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM chat_event_convert;"));
+    try std.testing.expect(std.mem.indexOf(u8, try store.chatList(&list_out), "\"unconverted\":[]") != null);
+    var batch = try store.chatMessagesToIndex(id, chat_index_batch_messages);
+    defer batch.deinit(store.allocator);
+    try std.testing.expectEqualStrings("new 0", batch.messages[0].text);
+}
+
+test "launch clears rows a stopped conversion left" {
+    var store = try testStore();
+    defer store.deinit();
+    _ = try saveChatEvents(&store, "Sleep", two_turn_chat);
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "INSERT INTO chat_event_convert (conversation_id, seq, event) VALUES (1, 0, '{}');" },
+    }) == .ok);
+    try store.clearStagedConversions();
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM chat_event_convert;"));
     try std.testing.expectEqual(@as(i64, 5), try store.countDataRows("SELECT count(*) AS n FROM chat_event;"));
 }
 

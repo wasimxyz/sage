@@ -159,20 +159,21 @@ function errorCode(error: unknown): string | null {
   return null;
 }
 
-export function isMissingRowError(error: unknown): boolean {
+/** True when the core failed with the error named `code`. */
+export function hasErrorCode(error: unknown, code: string): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 4; depth += 1) {
     if (current === null || current === undefined) {
       break;
     }
-    if (errorCode(current) === missingRowCode) {
+    if (errorCode(current) === code) {
       return true;
     }
     if (current instanceof Error) {
       if (
-        current.message === missingRowCode ||
-        current.message.startsWith(`${missingRowCode}:`) ||
-        current.message.endsWith(`: ${missingRowCode}`)
+        current.message === code ||
+        current.message.startsWith(`${code}:`) ||
+        current.message.endsWith(`: ${code}`)
       ) {
         return true;
       }
@@ -182,6 +183,10 @@ export function isMissingRowError(error: unknown): boolean {
     break;
   }
   return false;
+}
+
+export function isMissingRowError(error: unknown): boolean {
+  return hasErrorCode(error, missingRowCode);
 }
 
 async function invoke(

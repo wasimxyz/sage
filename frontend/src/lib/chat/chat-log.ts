@@ -1,4 +1,5 @@
 import {
+  type ClientSessionState,
   conversationOf,
   type EveMessage,
   type SessionStreamEvent,
@@ -47,12 +48,17 @@ export function splitSessions(
 /**
  * Splits a saved chat into history and the session Chat resumes. With no
  * session to resume, every event is history.
+ *
+ * Chat saves a new session's id before any of its events, at stream index
+ * 0, and its events when a turn finishes. A session saved at 0 has none of
+ * its events in the chat yet, so every saved event is history, and eve
+ * replays the session from its start.
  */
 export function splitChatLog(
   events: readonly SessionStreamEvent[],
-  resumable: boolean
+  session: ClientSessionState | undefined
 ): ChatLog {
-  if (!resumable) {
+  if (session === undefined || session.streamIndex === 0) {
     return { history: [...events], live: [] };
   }
   let start = -1;
@@ -67,6 +73,23 @@ export function splitChatLog(
     return { history: [], live: [...events] };
   }
   return { history: events.slice(0, start), live: events.slice(start) };
+}
+
+/**
+ * The chat's events to save once a resumed session is idle, or null when the
+ * saved chat already holds them. eve calls onFinish only for a turn it sees
+ * settle, so a turn that settled while no pane was open, or that the app quit
+ * during, comes back on resume without one.
+ */
+export function eventsToSaveAfterResume(
+  log: ChatLog,
+  liveEvents: readonly SessionStreamEvent[],
+  savedLiveCount: number
+): SessionStreamEvent[] | null {
+  if (liveEvents.length <= savedLiveCount) {
+    return null;
+  }
+  return [...log.history, ...liveEvents];
 }
 
 /**
@@ -123,7 +146,7 @@ function dataField(event: SessionStreamEvent, name: string): unknown {
  */
 export function messageIdAtSeq(
   events: readonly SessionStreamEvent[],
-  resumable: boolean,
+  session: ClientSessionState | undefined,
   seq: number,
   messages: readonly EveMessage[]
 ): string | null {
@@ -131,7 +154,7 @@ export function messageIdAtSeq(
   if (event === undefined) {
     return null;
   }
-  const { history } = splitChatLog(events, resumable);
+  const { history } = splitChatLog(events, session);
   const prefix =
     seq < history.length
       ? `${historyIdPrefix}${String(historySessionAt(history, seq))}:`

@@ -86,6 +86,8 @@ export function saveChatModelPrefs(prefs: ChatModelPrefs): void {
   }
 }
 
+const unknownModelId = "unknown";
+
 export function lastModelIdFromEvents(
   events: readonly unknown[]
 ): string | null {
@@ -100,7 +102,13 @@ export function lastModelIdFromEvents(
       continue;
     }
     const { modelId } = event.data;
-    if (typeof modelId === "string" && modelId.length > 0) {
+    // eve's converter names the model "unknown" for an old step that named
+    // none. That run tells nothing, so an earlier one decides.
+    if (
+      typeof modelId === "string" &&
+      modelId.length > 0 &&
+      modelId !== unknownModelId
+    ) {
       return normalizeChatModelId(modelId);
     }
   }

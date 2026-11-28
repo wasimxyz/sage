@@ -21,6 +21,7 @@ Later migrations add to `chat_conversation`:
 - `0021_chat_id_counter.sql`: adds `chat_id_counter`, so a chat id is never used twice
 - `0022_chat_index_no_role.sql`: drops `role` from `chat_embedding`, so the index does not say who sent a message
 - `0024_eve_v27_events.sql`: forgets every eve session id, as `0018` did, and adds `event_format`, as [Chats saved before eve 1.0](#chats-saved-before-eve-10) explains
+- `0025_chat_event_convert.sql`: adds `chat_event_convert`, where a conversion writes a chat’s events before it swaps them in
 
 Each conversation row has:
 
@@ -65,7 +66,7 @@ The other fields in the payload follow these rules:
 - The context length is stored when the row is created. A later save writes it only if the stored value is missing.
 - A save for a conversation that no longer exists returns `NotFound`.
 
-A save with `convert: true` replaces every event of a chat with the same transcript in eve 1.0’s format. It needs `baseSeq` 0, takes no title, and changes no other column, as [Chats saved before eve 1.0](#chats-saved-before-eve-10) explains.
+A save with `convert: true` replaces every event of a chat with the same transcript in eve 1.0’s format. It needs `baseSeq` 0 and a chat whose `event_format` is 26, takes no title, and changes no other column, as [Chats saved before eve 1.0](#chats-saved-before-eve-10) explains.
 
 The core keeps one chunked save at a time, so `bridge.ts` sends each save after the one before it ends. A reply’s save and a conversion never mix chunks.
 
@@ -150,14 +151,16 @@ eve 1.0 changed its event format from stream version 26 to 27, and eve 1.0 reads
 
 Opening a chat that is still waiting converts it first. Both ways share one conversion per chat. A chat that fails keeps its events, and the next launch, or opening it, tries again. `frontend/src/lib/chat/legacy-events.ts` and `convert-stored-chats.ts` hold the code.
 
-eve’s converter needs each session to start with `session.started`, and it leaves out a reply with no step event around it. Chats from early eve releases can lack both. When eve cannot convert a session as saved, or its result holds fewer messages than the session, Chat keeps what you and Sage said and converts that instead. Tool calls and thinking from that session are left out.
+eve’s converter needs each session to start with `session.started`, and it leaves out a reply with no step event around it. Chats from early eve releases can lack both. When eve cannot convert a session as saved, or its result holds fewer of your messages or fewer of Sage’s than the session, Chat keeps what you and Sage said and converts that instead. Tool calls and thinking from that session are left out. Each reply keeps the model its step named.
 
-The conversion save runs in one write per batch of rows:
+A long chat takes several writes, so the conversion save writes the new rows to `chat_event_convert` first. One last write then swaps them in. A conversion that fails or stops partway leaves the chat’s events and `event_format` as they were, and the next pass tries again. Sage clears any rows left in `chat_event_convert` at launch. The last write:
 
 - It replaces the chat’s events and sets `event_format` to 27.
 - It keeps `updated_at`, so the chat keeps its place in the list and Dream does not read it again.
 - Each row’s `saved_at` is the time eve recorded on the event, `meta.at`. An event eve recorded no time for gets none, and a search by time uses `unstamped_until` for it, as for events from before `0019`.
 - Event numbers change, so the chat’s message index rows and `chat_index_state` are deleted, and the chat is indexed again. A batch of embeddings read before the conversion is dropped.
+
+The core refuses a conversion with `ChatConverted` once a chat is at 27, so a second conversion can never replace turns saved since. Chat treats that as done.
 
 Until a chat is converted, Sage’s core reads both formats, so search, Dream, `get_chat`, and export work on it.
 

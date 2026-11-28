@@ -10,8 +10,9 @@ import { convertLegacyEvents } from "eve/internal/legacy-events";
  * chat can hold several sessions, and chats from early eve releases can lack
  * a `session.started` or the turn and step events around a message. eve
  * leaves out a reply with no step around it, without an error. So when eve
- * cannot convert a session as saved, or its result holds fewer messages than
- * the session, Chat keeps what you and Sage said and converts that instead.
+ * cannot convert a session as saved, or its result holds fewer of your
+ * messages or fewer of Sage's than the session, Chat keeps what you and Sage
+ * said and converts that instead.
  */
 
 type LegacyEvent = Record<string, unknown> & { type: string };
@@ -69,23 +70,56 @@ function firstAt(events: readonly unknown[]): string {
   return new Date(0).toISOString();
 }
 
-function legacyMessage(
-  event: unknown
-): { role: "assistant" | "user"; text: string } | null {
+type Role = "assistant" | "user";
+
+/** The text of a version 26 message's parts, as eve's converter reads it. */
+function partsText(parts: unknown): string {
+  if (!Array.isArray(parts)) {
+    return "";
+  }
+  return parts
+    .flatMap((part) =>
+      isRecord(part) && part.type === "text" && typeof part.text === "string"
+        ? [part.text]
+        : []
+    )
+    .join("\n");
+}
+
+function legacyMessage(event: unknown): { role: Role; text: string } | null {
   if (!(isLegacyEvent(event) && isRecord(event.data))) {
     return null;
   }
-  const { message } = event.data;
-  if (typeof message !== "string" || message.trim().length === 0) {
-    return null;
-  }
+  const { message, parts } = event.data;
+  const said = typeof message === "string" ? message : "";
   if (event.type === "message.received") {
-    return { role: "user", text: message };
+    // eve reads what you sent from its parts, and Chat saved the same text
+    // in both. Use whichever holds text.
+    const fromParts = partsText(parts);
+    const text = fromParts.trim().length > 0 ? fromParts : said;
+    return text.trim().length > 0 ? { role: "user", text } : null;
   }
-  if (event.type === "message.completed") {
-    return { role: "assistant", text: message };
+  if (event.type === "message.completed" && said.trim().length > 0) {
+    return { role: "assistant", text: said };
   }
   return null;
+}
+
+/** The model a version 26 step named, if any. */
+function legacyModelId(event: unknown): string | undefined {
+  if (
+    !(
+      isLegacyEvent(event) &&
+      event.type === "step.started" &&
+      isRecord(event.data)
+    )
+  ) {
+    return undefined;
+  }
+  const { modelId } = event.data;
+  return typeof modelId === "string" && modelId.length > 0
+    ? modelId
+    : undefined;
 }
 
 /**
@@ -94,27 +128,34 @@ function legacyMessage(
  */
 interface TextTurn {
   question: { at: string; text: string } | null;
-  replies: { at: string; text: string }[];
+  replies: { at: string; modelId: string | undefined; text: string }[];
 }
 
-/** The session's messages as turns: each question, then Sage's text after it. */
+/**
+ * The session's messages as turns: each question, then Sage's text after it.
+ * Each reply keeps the model the step before it named.
+ */
 function textTurns(events: readonly unknown[]): TextTurn[] {
   const turns: TextTurn[] = [];
   let at = firstAt(events);
+  let modelId: string | undefined;
   for (const event of events) {
+    modelId = legacyModelId(event) ?? modelId;
     const message = legacyMessage(event);
     if (message === null) {
       continue;
     }
     at = eventAt(event) ?? at;
-    const said = { at, text: message.text };
     const last = turns.at(-1);
     if (message.role === "user") {
-      turns.push({ question: said, replies: [] });
-    } else if (last === undefined) {
-      turns.push({ question: null, replies: [said] });
+      turns.push({ question: { at, text: message.text }, replies: [] });
+      continue;
+    }
+    const reply = { at, modelId, text: message.text };
+    if (last === undefined) {
+      turns.push({ question: null, replies: [reply] });
     } else {
-      last.replies.push(said);
+      last.replies.push(reply);
     }
   }
   return turns;
@@ -137,8 +178,9 @@ function turnEvents(turn: TextTurn, index: number, at: string): LegacyEvent[] {
   for (const [stepIndex, reply] of turn.replies.entries()) {
     const step = { ...ids, stepIndex };
     const meta = { at: reply.at };
+    const model = reply.modelId === undefined ? {} : { modelId: reply.modelId };
     out.push(
-      { data: step, meta, type: "step.started" },
+      { data: { ...step, ...model }, meta, type: "step.started" },
       {
         data: { ...step, finishReason: "stop", message: reply.text },
         meta,
@@ -168,9 +210,13 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/** User and Sage messages with text among version 27 events. */
-function convertedMessageCount(events: readonly SessionStreamEvent[]): number {
-  let count = 0;
+type RoleCounts = Record<Role, number>;
+
+/** Your messages and Sage's with text among version 27 events. */
+function convertedMessageCounts(
+  events: readonly SessionStreamEvent[]
+): RoleCounts {
+  const counts: RoleCounts = { assistant: 0, user: 0 };
   for (const event of events) {
     const { data } = event as { data?: unknown };
     if (!isRecord(data)) {
@@ -180,16 +226,28 @@ function convertedMessageCount(events: readonly SessionStreamEvent[]): number {
       const text = data.parts.some(
         (part) => isRecord(part) && part.kind === "text" && hasText(part.text)
       );
-      count += text ? 1 : 0;
+      counts.user += text ? 1 : 0;
     } else if (
       event.type === "content.completed" &&
       data.kind === "text" &&
       hasText(data.value)
     ) {
-      count += 1;
+      counts.assistant += 1;
     }
   }
-  return count;
+  return counts;
+}
+
+/** Your messages and Sage's with text among version 26 events. */
+function legacyMessageCounts(events: readonly unknown[]): RoleCounts {
+  const counts: RoleCounts = { assistant: 0, user: 0 };
+  for (const event of events) {
+    const message = legacyMessage(event);
+    if (message !== null) {
+      counts[message.role] += 1;
+    }
+  }
+  return counts;
 }
 
 function convertSession(events: readonly unknown[]): SessionStreamEvent[] {
@@ -205,10 +263,16 @@ function convertSession(events: readonly unknown[]): SessionStreamEvent[] {
           { data: {}, meta: { at: firstAt(legacy) }, type: "session.started" },
           ...legacy,
         ];
-  const expected = legacy.filter((event) => legacyMessage(event) !== null);
+  const expected = legacyMessageCounts(legacy);
   try {
     const converted = convertLegacyEvents(prepared);
-    if (convertedMessageCount(converted) >= expected.length) {
+    // Counted per role, so an extra message of yours cannot hide a reply
+    // eve left out.
+    const counts = convertedMessageCounts(converted);
+    if (
+      counts.user >= expected.user &&
+      counts.assistant >= expected.assistant
+    ) {
       return converted;
     }
   } catch {

@@ -1,4 +1,9 @@
-import { chatConvert, chatGet, chatUnconvertedIds } from "@/bridge";
+import {
+  chatConvert,
+  chatGet,
+  chatUnconvertedIds,
+  hasErrorCode,
+} from "@/bridge";
 
 import { convertChatEvents } from "./legacy-events.ts";
 
@@ -22,7 +27,14 @@ export function convertStoredChat(id: number): Promise<void> {
       return;
     }
     const events = convertChatEvents(conversation.events);
-    await chatConvert(id, JSON.stringify(events));
+    try {
+      await chatConvert(id, JSON.stringify(events));
+    } catch (error) {
+      // The core refuses a chat that is already converted, so it is done.
+      if (!hasErrorCode(error, "ChatConverted")) {
+        throw error;
+      }
+    }
   })().finally(() => {
     converting.delete(id);
   });

@@ -125,12 +125,13 @@ A failed step shows its error as one sentence inside the row. A failed read in a
 
 ## When the screen saves
 
-Saving happens in the lifecycle callbacks, never in the middle of a stream:
+Saving happens at these points, never in the middle of a stream:
 
-1. `onSessionChange` saves the eve session id and stream index when eve assigns them.
-2. `onFinish` saves the events added since the last successful save, when a turn completes.
-3. The first save of a new conversation also sets the title from the first message, cut to 60 characters.
-4. After a save that adds events, the screen calls `embeddings.generate` with the chat’s id until Sage has indexed every new message for `search_chats`. It does not wait, so the next save is not held up. [Chat storage](storage.md#the-message-index) covers what happens when that fails.
+1. `onSessionChange` saves a new eve session id, at stream index 0, before any of its events. eve moves the cursor on every line it stores, so a cursor move alone saves nothing.
+2. `onFinish` saves the events added since the last successful save, with the stream index, when a turn completes.
+3. When a reopened chat has resumed and the session is idle, the screen saves any events the resume brought in. eve calls `onFinish` only for a turn it sees finish, so a reply that finished while the chat was closed, or after the app quit, is saved here.
+4. The first save of a new conversation also sets the title from the first message, cut to 60 characters.
+5. After a save that adds events, the screen calls `embeddings.generate` with the chat’s id until Sage has indexed every new message for `search_chats`. It does not wait, so the next save is not held up. [Chat storage](storage.md#the-message-index) covers what happens when that fails.
 
 Later saves leave the title alone. [Dream](../dream.md) may replace it with a generated title unless you renamed the chat. The chat list reloads when Dream finishes.
 
@@ -143,7 +144,7 @@ Opening a row reads it with `chat.get` and remounts `ChatTurn` with the stored e
 - **History**: the sessions before the last one. Chat draws them with eve's `conversationOf`, as they were saved. Each message id names its session, such as `history-0:turn_0:assistant`, because eve's ids repeat from one session to the next.
 - **The live session**: the last session, when the row has a session id. Its events go to `useEveAgent`, which shows them and resumes the session, so the next message continues where the last one ended.
 
-A row with no session id is all history, and the next message starts a new session. `frontend/src/lib/chat/chat-log.ts` splits the log. A chat saved before eve 1.0 is converted first, as [Chat storage](storage.md#chats-saved-before-eve-10) explains. [Chat storage](storage.md#resuming-a-conversation) covers the storage side.
+A row with no session id is all history, and the next message starts a new session. So is a row whose stream index is 0: its session id was saved before any of that session’s events, so eve replays the session from its start. `frontend/src/lib/chat/chat-log.ts` splits the log. A chat saved before eve 1.0 is converted first, as [Chat storage](storage.md#chats-saved-before-eve-10) explains. [Chat storage](storage.md#resuming-a-conversation) covers the storage side.
 
 ## Recovering a session that ended
 
@@ -178,7 +179,7 @@ Each saved conversation keeps its own model, Thinking setting, and context lengt
 
 - Changing the model or Thinking on a saved chat writes it through `chat.savePrefs` and does not move the row in the list.
 - The context length is set before the first message and never changes after that.
-- Older rows with no stored model use the last `model.started` event’s `modelId`, without eve’s `ollama/` prefix.
+- Older rows with no stored model use the last `model.started` event’s `modelId`, without eve’s `ollama/` prefix. eve’s converter names the model `unknown` for an old step that named none, and Chat skips those.
 - Older rows with no Thinking setting use the last choice for new chats, and older rows with no context length use `32768`.
 
 ## When Ollama is down

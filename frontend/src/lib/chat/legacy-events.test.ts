@@ -88,3 +88,73 @@ test("a session eve cannot read converts from its messages", () => {
     ["assistant", "Hi there."],
   ]);
 });
+
+const at = (second: number) =>
+  `2026-03-01T10:00:${String(second).padStart(2, "0")}.000Z`;
+
+test("a reply eve leaves out is kept when your message is only in its parts", () => {
+  // eve counts the message that has text only in its parts. A plain count
+  // of messages would then hide the reply it left out.
+  const converted = convertChatEvents([
+    { data: { runtime: {} }, meta: { at: at(0) }, type: "session.started" },
+    {
+      data: { sequence: 0, turnId: "turn_0" },
+      meta: { at: at(1) },
+      type: "turn.started",
+    },
+    {
+      data: {
+        message: "",
+        parts: [{ text: "Only in parts", type: "text" }],
+        turnId: "turn_0",
+      },
+      meta: { at: at(1) },
+      type: "message.received",
+    },
+    { data: { turnId: "turn_0" }, meta: { at: at(2) }, type: "turn.completed" },
+    {
+      data: { message: "Late reply", stepIndex: 0, turnId: "turn_0" },
+      meta: { at: at(3) },
+      type: "message.completed",
+    },
+  ]);
+  assert.deepEqual(said(converted), [
+    ["user", "Only in parts"],
+    ["assistant", "Late reply"],
+  ]);
+});
+
+test("a session converted from its messages keeps the model it used", () => {
+  // The reply comes after the turn ended, so eve's converter drops it and
+  // Chat converts from the messages.
+  const converted = convertChatEvents([
+    { data: {}, meta: { at: at(0) }, type: "session.started" },
+    { data: { turnId: "turn_0" }, meta: { at: at(1) }, type: "turn.started" },
+    {
+      data: { message: "Hi", turnId: "turn_0" },
+      meta: { at: at(1) },
+      type: "message.received",
+    },
+    {
+      data: { modelId: "ollama/llama3.2:3b", stepIndex: 0, turnId: "turn_0" },
+      meta: { at: at(2) },
+      type: "step.started",
+    },
+    { data: { turnId: "turn_0" }, meta: { at: at(3) }, type: "turn.completed" },
+    {
+      data: { message: "Hello.", stepIndex: 0, turnId: "turn_0" },
+      meta: { at: at(3) },
+      type: "message.completed",
+    },
+  ]);
+  assert.deepEqual(said(converted), [
+    ["user", "Hi"],
+    ["assistant", "Hello."],
+  ]);
+  const models = converted.flatMap((event) =>
+    event.type === "model.started"
+      ? [(event.data as { modelId: string }).modelId]
+      : []
+  );
+  assert.deepEqual(models, ["ollama/llama3.2:3b"]);
+});

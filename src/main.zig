@@ -3549,6 +3549,11 @@ pub fn main(init: std.process.Init) !void {
     try app.store.setSecureDelete(true);
     syncPendingFlags(&app);
     try markRewriteForPlaintext(&app);
+    // A conversion the last run stopped partway left its rows here. The chat
+    // still has its saved events, and Chat converts it again.
+    app.store.clearStagedConversions() catch |err| {
+        std.log.err("clearing staged chat conversions failed: {s}", .{@errorName(err)});
+    };
     if (app.store.chatSessionIds(std.heap.page_allocator)) |session_ids| {
         defer {
             for (session_ids) |id| std.heap.page_allocator.free(id);
