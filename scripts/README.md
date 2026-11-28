@@ -72,7 +72,7 @@ When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change t
 
 ## Seeding the dev app
 
-`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` has entries in the Journal tab. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand.
+`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` has entries in the Journal tab. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand, or use `CHATS=1`, as [Seeding chats](#seeding-chats) explains.
 
 The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format. A person folder under `agent/evals/content/data/people/` works too: only its top-level `.md` files count, and the script refuses a person with no entries.
 
@@ -102,7 +102,36 @@ The new journal has no lock and no encryption. It has entries, so the next `make
 
 When `make dev` loads the entries, Sage embeds them, as [The journal](../docs/journal.md#writing-and-saving) explains. Start Dream from the sidebar to write summaries and memories.
 
-`make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files parse and that `--check` names a bad file, and `agent/scripts/seed-dates.test.ts`, which checks the date move.
+### Seeding chats
+
+`make seed-dev CHATS=1` also fills the Chat tab with real conversations. Sage's side is the real Chat agent on `qwen3.5:9b` with Thinking on. It calls the real tools against the new journal. A run takes about 15 to 35 minutes, most of it Dream.
+
+The chats are in `scripts/seed/chats.yaml`: Ben's card, then five chats in order. Each chat has Ben's first message, word for word. It also has a beat for each later message, saying what Ben gets to or admits next. The same local model plays Ben. It reads his card, the beat, and the messages so far, and replies to Sage's last one in his voice. It never sees tool calls or Sage's thinking. Nothing goes to a cloud model.
+
+| Chat | Messages from Ben | Shows |
+| --- | --- | --- |
+| `party` | 3 | Working through whether to go to the engagement party |
+| `quiet` | 2 | Naming the going-quiet pattern across entries |
+| `toast` | 3 | Finding what Ben wants to say in Jason's toast |
+| `long-day` | 1 | Listening, with nothing to fix |
+| `booked` | 1 | Finding the `party` chat with `search_chats` |
+
+With `CHATS=1`, the steps change like this:
+
+1. Before the build, `--check` also reads `chats.yaml`, and the script checks that `qwen3.5:9b` and `nomic-embed-text` are downloaded. A bad file, a missing model, or a `SEED` folder with no `chats.yaml` stops the script before anything is deleted.
+2. After the entries are saved, Dream reads them. Chat searches the summaries Dream writes, so the chats need this first.
+3. The script starts an `eve dev` server from `agent/` on a free port. Its session files go in `agent/.eve/.workflow-data`, so `make dev` resumes a seeded chat when you send another message. The server reads the token in the dev app's `agent-server.json`, never the packaged app's.
+4. It holds the chats one at a time. Each finished chat is saved through `chat.save` with the whole event stream, as the Chat screen saves a turn, and its messages are indexed. The title is the first message cut to 60 characters, as the Chat screen does.
+5. It stops the server, and Dream runs again. That pass writes chat titles and summaries, and memories in a memory build.
+6. It prints every chat: Ben's messages, the tools Sage ran, Sage's replies, and any warning.
+
+The chats run on the Mac's clock, a few minutes apart, after the newest entry. Their times are not moved.
+
+Each chat is checked when it ends. Every Sage turn must finish with visible text on `qwen3.5:9b`. A chat with `expect` in `chats.yaml` must run that tool. A chat that fails runs once more on a new session. If it fails again, the script saves the turns before the first bad one, without a session, and prints a warning. A chat with no finished turn is not saved.
+
+The replies change from run to run. Read the printed chats, and run the seed again if one reads badly. To change a chat, edit `chats.yaml`. Keep weekday names out of the messages, because the entries move to a new weekday each run.
+
+`make test` runs `security-tests/seed-dev-dev-only.sh`. It checks that the script names only the dev app, builds only under `zig-out/seed`, reads the seed files and builds before it resets, and gives the app the Chat sessions folder. With `CHATS=1`, it also checks that the models are checked before the reset, that the Chat agent gets the dev app's `agent-server.json`, and that `agent/scripts/seed-dev-chats.ts` names no cloud model or gateway. `make test` also runs `agent/scripts/seed-dev.test.ts`, which checks that the seed files and `chats.yaml` parse and that `--check` names a bad file, and `agent/scripts/seed-dates.test.ts`, which checks the date move. `agent/scripts/seed-dev-chats.test.ts` checks Ben's messages, the checks and the second run, and that a saved chat replays through eve's reducer.
 
 ## Screenshots
 

@@ -76,17 +76,30 @@ export function chatEventsJson(chat: LoadedChat): string {
   return `[${chatEvents(chat).join(",")}]`;
 }
 
+/** The fields of a `chat.save` that are not the events. */
+export interface ChatSaveFields {
+  contextLength: number;
+  eveSessionId: string | null;
+  model: string | null;
+  streamIndex: number;
+  thinking: boolean | null;
+  title: string;
+}
+
 /**
- * Saves one chat through `chat.save`, in chunks, and returns the id Sage gave
- * it. The first chunk has no id, so Sage makes the row. `label` names the
- * request ids, so a repeat run never matches an old answer.
+ * Saves a new chat's events through `chat.save`, in chunks, and returns the id
+ * Sage gave it. The first chunk has no id, so Sage makes the row. `label`
+ * names the request ids, so a repeat run never matches an old answer, and
+ * `name` names the chat in an error.
  */
-export function saveChat(
+export function saveChatEvents(
   call: BridgeCall,
   label: string,
-  chat: LoadedChat
+  eventsJson: string,
+  fields: ChatSaveFields,
+  name: string = label
 ): number {
-  const chunks = utf8Chunks(chatEventsJson(chat), CHAT_CHUNK_BYTES);
+  const chunks = utf8Chunks(eventsJson, CHAT_CHUNK_BYTES);
   let savedId: number | null = null;
   let offset = 0;
   for (const [index, chunk] of chunks.entries()) {
@@ -96,17 +109,17 @@ export function saveChat(
       {
         baseSeq: 0,
         chunk,
-        contextLength: CONTEXT_LENGTH,
+        contextLength: fields.contextLength,
         done,
-        eveSessionId: null,
+        eveSessionId: fields.eveSessionId,
         id: savedId,
-        model: null,
+        model: fields.model,
         offset,
-        streamIndex: 0,
-        thinking: null,
-        title: chat.title,
+        streamIndex: fields.streamIndex,
+        thinking: fields.thinking,
+        title: fields.title,
       },
-      `chat-save-${label}-${chat.index}-${index}`
+      `chat-save-${label}-${index}`
     );
     requireOk(response, "chat.save");
     const id = resultNumber(response, "id");
@@ -116,11 +129,35 @@ export function saveChat(
     offset += Buffer.byteLength(chunk, "utf8");
   }
   if (savedId === null) {
-    throw new Error(
-      `Save did not return an id for ${label} past chat ${chat.index} (${chat.stem}).`
-    );
+    throw new Error(`Save did not return an id for ${name}.`);
   }
   return savedId;
+}
+
+/**
+ * Saves one past chat through `chat.save` and returns the id Sage gave it. It
+ * has no eve session, model, or Thinking setting, like a chat from before
+ * those columns.
+ */
+export function saveChat(
+  call: BridgeCall,
+  label: string,
+  chat: LoadedChat
+): number {
+  return saveChatEvents(
+    call,
+    `${label}-${chat.index}`,
+    chatEventsJson(chat),
+    {
+      contextLength: CONTEXT_LENGTH,
+      eveSessionId: null,
+      model: null,
+      streamIndex: 0,
+      thinking: null,
+      title: chat.title,
+    },
+    `${label} past chat ${chat.index} (${chat.stem})`
+  );
 }
 
 /** Embeds a chat's messages, a batch at a time, until Sage says none are left. */

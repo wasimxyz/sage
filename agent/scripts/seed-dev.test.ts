@@ -19,10 +19,17 @@ const noEntriesPattern = /new-user has no markdown entries/u;
 const movePattern =
   /Dates move -?\d+ days, so the newest is \d{4}-\d{2}-\d{2}\./u;
 const badFilePattern = /02-bad\.md needs a title/u;
+const chatCountPattern = /5 chats in chats\.yaml/u;
+const noChatsPattern = /has no chats\.yaml, so CHATS=1 has no chats to hold/u;
 
-// The script reads these two. --check must need only the first.
-function runCheck(dir: string) {
-  const env: NodeJS.ProcessEnv = { ...process.env, SAGE_SEED_DIR: dir };
+// The script reads SAGE_SEED_DIR and SAGE_AUTOMATION_CWD. --check must need
+// only the first. `chats` turns on CHATS=1, which also reads chats.yaml.
+function runCheck(dir: string, chats = false) {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    SAGE_SEED_CHATS: chats ? "1" : "0",
+    SAGE_SEED_DIR: dir,
+  };
   env.SAGE_AUTOMATION_CWD = undefined;
   return spawnSync(
     process.execPath,
@@ -165,6 +172,32 @@ test("seed-dev --check names the file it cannot read", () => {
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, badFilePattern);
+  } finally {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("seed-dev --check with CHATS=1 counts the chats in scripts/seed", () => {
+  const result = runCheck(seedDir, true);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, entryCountPattern);
+  assert.match(result.stdout, chatCountPattern);
+});
+
+test("seed-dev --check with CHATS=1 refuses a folder with no chats.yaml", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sage-seed-no-chats-"));
+  try {
+    writeFileSync(
+      join(dir, "01-ok.md"),
+      "---\ntitle: Ok\ndate: 2026-10-01\n---\n\nA day.\n"
+    );
+
+    assert.equal(runCheck(dir).status, 0);
+    const result = runCheck(dir, true);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, noChatsPattern);
   } finally {
     rmSync(dir, { force: true, recursive: true });
   }

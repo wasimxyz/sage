@@ -60,6 +60,12 @@ export interface EveDevEnvOptions {
   /** The throwaway Sage's agent-server.json. The server reads the token there. */
   discoveryFile?: string;
   ollamaBaseUrl: string;
+  /**
+   * The day the agent treats as today, as `SAGE_TODAY`. Eval passes give
+   * `EVAL_TODAY`. Without it, the agent reads the Mac's clock, even when the
+   * shell sets `SAGE_TODAY`.
+   */
+  today?: string;
   /** Load the workflow guard ahead of the server, as the packaged app does. */
   withWorkflowGuard: boolean;
 }
@@ -69,7 +75,10 @@ export interface EveDevEnvOptions {
  * gateway keys, the Blob token, and the eval client's token are not here.
  */
 export function eveDevEnv(options: EveDevEnvOptions): Record<string, string> {
-  const base = withoutSageOnly(options.base ?? process.env);
+  // A day the shell pins never reaches the server: only `today` sets one.
+  const { SAGE_TODAY: _shellToday, ...base } = withoutSageOnly(
+    options.base ?? process.env
+  );
   const env: Record<string, string> = {
     ...base,
     EVE_TELEMETRY_DISABLED: "1",
@@ -78,8 +87,10 @@ export function eveDevEnv(options: EveDevEnvOptions): Record<string, string> {
       join(options.agentDir, "node_modules", ".bin"),
       base.PATH
     ),
-    SAGE_TODAY: EVAL_TODAY,
   };
+  if (options.today !== undefined) {
+    env.SAGE_TODAY = options.today;
+  }
   if (options.discoveryFile !== undefined) {
     env.SAGE_DISCOVERY_FILE = options.discoveryFile;
   }

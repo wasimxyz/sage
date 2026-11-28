@@ -44,7 +44,7 @@ import {
   snapshotDream,
 } from "./dream.ts";
 import { withoutSecrets } from "./env.ts";
-import { readServerToken, startEveServer } from "./eve.ts";
+import { EVAL_TODAY, readServerToken, startEveServer } from "./eve.ts";
 import {
   appendMemoryReading,
   type MemoryProbes,
@@ -678,6 +678,7 @@ async function runPrompt(
     logFile: join(unit.personFiles.dir, `eve-${promptName}.log`),
     ollamaBaseUrl: ollamaApiBase(ctx.ollama.host),
     root: overlay.root,
+    today: EVAL_TODAY,
     withWorkflowGuard: true,
   });
   try {

@@ -110,11 +110,12 @@ reset-dev:
 
 # Reset the dev app, then fill its journal with the entries in SEED, dated up
 # to this week. Dream does not run. Never touches the packaged app. YES=1 skips
-# the reset prompt.
+# the reset prompt. CHATS=1 also runs Dream and holds the chats in SEED's
+# chats.yaml with the real Chat agent on qwen3.5:9b, which takes 15 to 35 min.
 SEED ?= $(CURDIR)/scripts/seed
 seed-dev:
 	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
-	YES="$(YES)" SEED="$(SEED)" SAGE_MEMORY="$(SAGE_MEMORY)" SAGE_OLLAMA_PATH="$$ollama_bin" sh scripts/seed-dev.sh
+	YES="$(YES)" SEED="$(SEED)" CHATS="$(CHATS)" SAGE_MEMORY="$(SAGE_MEMORY)" SAGE_OLLAMA_PATH="$$ollama_bin" sh scripts/seed-dev.sh
 
 # Build a throwaway packaged Sage with automation on, fill a scratch journal,
 # and capture each screen in light and dark into zig-out/screenshots, or OUT.

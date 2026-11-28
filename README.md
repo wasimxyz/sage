@@ -40,7 +40,7 @@ A packaged app starts the agent itself on port 2001, using the Node.js bundled i
 | --- | --- |
 | `make setup` | Install frontend, agent, and eval-viewer dependencies |
 | `make dev` | Start the Chat agent, the bundled Ollama, and the app window for development |
-| `make seed-dev` | Reset the dev app and fill its journal with the entries in `scripts/seed`, dated up to this week |
+| `make seed-dev` | Reset the dev app and fill its journal with the entries in `scripts/seed`, dated up to this week. `CHATS=1` also runs Dream and holds five real chats on `qwen3.5:9b` |
 | `make build` | Build the frontend and the release binary in `zig-out/bin/` |
 | `make check` | Check the pinned CLI version, that every version matches `app.json`, `app.json` itself, and the lint and types for the frontend, agent, and eval viewer |
 | `make test` | Run the Zig, frontend, agent, eval-viewer, and security tests |
