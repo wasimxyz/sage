@@ -89,8 +89,9 @@ function sampleResult(overrides: Partial<EveEvalResult> = {}): EveEvalResult {
     error: overrides.error,
     id: overrides.id ?? "chat/0000",
     result: {
+      data: "ok",
       derived: {
-        inputRequests: [],
+        interactions: [],
         messageCount: 1,
         models: [],
         parked: false,
@@ -102,9 +103,9 @@ function sampleResult(overrides: Partial<EveEvalResult> = {}): EveEvalResult {
         toolCalls: [],
       },
       events: [],
-      finalMessage: "ok",
-      output: "ok",
-      status: "waiting",
+      reply: "ok",
+      sessionEnded: false,
+      status: "completed",
       traceContexts: [],
     },
     skipReason: overrides.skipReason,

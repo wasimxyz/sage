@@ -1086,8 +1086,12 @@ fn handleChatDelete(context: *anyopaque, invocation: native_sdk.bridge.Invocatio
         if (self.eve.kind == .ready) {
             if (self.eve.agent_token_hex) |token| {
                 eve_sidecar.cancelSession(self.io, session_id, token);
+                // Ending the session has the Workflow store delete its run's
+                // data, which eve 1.0 keeps in world.db, not in files.
+                eve_sidecar.endSession(self.io, session_id, token);
             }
         }
+        // Files from eve releases before 1.0, if the session is that old.
         eve_sidecar.deleteSessionData(self.io, self.data_dir, session_id);
     }
     return result.json;
@@ -4464,7 +4468,7 @@ test "data.deleteAll refuses while locked and wipes content after unlock" {
         .source = .{},
     };
     try std.testing.expectEqualStrings("{\"entries\":[]}", try handleList(@ptrCast(&rig.app), list, &output));
-    try std.testing.expectEqualStrings("{\"conversations\":[]}", try handleChatList(@ptrCast(&rig.app), list, &output));
+    try std.testing.expectEqualStrings("{\"conversations\":[],\"unconverted\":[]}", try handleChatList(@ptrCast(&rig.app), list, &output));
 
     const status = try handleLockStatus(@ptrCast(&rig.app), list, &output);
     try std.testing.expect(std.mem.indexOf(u8, status, "\"passwordSet\":true") != null);

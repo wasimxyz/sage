@@ -110,8 +110,8 @@ function fakeChat(replies: readonly Reply[]) {
         typeof reply === "string" ? { text: reply, tool: undefined } : reply;
       return Promise.resolve({
         events: [],
-        inputRequests: [],
-        message,
+        interactions: [],
+        reply: message,
         session,
         sessionId: "session-1",
         status: "completed",
@@ -120,6 +120,7 @@ function fakeChat(replies: readonly Reply[]) {
             ? []
             : [
                 {
+                  callId: "call_rent",
                   input: { query: "rent" },
                   name: "search_journal",
                   output: { secret: tool },

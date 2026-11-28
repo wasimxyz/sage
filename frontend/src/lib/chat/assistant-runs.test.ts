@@ -1,18 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { EveDynamicToolPart, EveMessagePart } from "eve/client";
+import type { EveMessagePart, EveToolPart } from "eve/client";
 
 import { assistantRuns } from "./assistant-runs.ts";
 
-function tool(toolName: string, id: string): EveDynamicToolPart {
+function tool(name: string, id: string): EveToolPart {
   return {
+    callId: id,
     input: {},
+    kind: "tool",
+    label: name,
+    name,
     output: {},
-    state: "output-available",
-    toolCallId: id,
-    toolName,
-    type: "dynamic-tool",
+    state: "completed",
+    stepIndex: 0,
+    type: "tool",
   };
 }
 
@@ -35,7 +38,7 @@ test("reads with nothing between them become one run", () => {
   const [run] = runs;
   assert.equal(run?.kind, "reads");
   assert.deepEqual(
-    run?.kind === "reads" ? run.parts.map((part) => part.toolCallId) : [],
+    run?.kind === "reads" ? run.parts.map((part) => part.callId) : [],
     ["a", "b", "c"]
   );
 });
@@ -69,7 +72,6 @@ test("parts that show nothing do not split a run of reads", () => {
   assert.deepEqual(
     kinds([
       read("a"),
-      { type: "step-start" },
       { state: "done", text: "  ", type: "reasoning" },
       { state: "done", text: "", type: "text" },
       read("b"),
@@ -96,9 +98,9 @@ test("a thinking run follows its last part while it streams", () => {
   assert.equal(run?.kind === "reasoning" && run.streaming, true);
 });
 
-test("a step start between thinking parts ends the thinking run", () => {
+test("a new model step between thinking parts ends the thinking run", () => {
   assert.deepEqual(
-    kinds([thinking("One."), { type: "step-start" }, thinking("Two.")]),
+    kinds([thinking("One."), { ...thinking("Two."), stepIndex: 1 }]),
     ["reasoning", "reasoning"]
   );
 });
@@ -121,7 +123,7 @@ test("reads of past chats group apart from reads of entries", () => {
   assert.deepEqual(
     runs.map((run) =>
       run.kind === "reads"
-        ? `${run.toolName}:${run.parts.map((part) => part.toolCallId).join(",")}`
+        ? `${run.toolName}:${run.parts.map((part) => part.callId).join(",")}`
         : run.kind
     ),
     ["get_chat:a,b", "get_journal_entry:c"]

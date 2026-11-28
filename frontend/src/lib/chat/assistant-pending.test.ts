@@ -17,11 +17,7 @@ function message(
 }
 
 const user = message("user", [{ text: "Hello", type: "text" }], "turn_0:user");
-const emptyAssistant = message(
-  "assistant",
-  [{ type: "step-start" }],
-  "turn_0:assistant"
-);
+const emptyAssistant = message("assistant", [], "turn_0:assistant");
 const emptyReasoning = message(
   "assistant",
   [{ state: "streaming", text: "   ", type: "reasoning" }],
@@ -46,11 +42,14 @@ const tool = message(
   "assistant",
   [
     {
+      callId: "call_1",
       input: {},
-      state: "input-available",
-      toolCallId: "call_1",
-      toolName: "search_journal",
-      type: "dynamic-tool",
+      kind: "tool",
+      label: "search_journal",
+      name: "search_journal",
+      state: "running",
+      stepIndex: 0,
+      type: "tool",
     },
   ],
   "turn_0:assistant"
@@ -63,39 +62,44 @@ test("assistantPartIsVisible treats empty text and blank reasoning as hidden", (
     false
   );
   assert.equal(assistantPartIsVisible({ text: "Hi.", type: "text" }), true);
-  assert.equal(assistantPartIsVisible({ type: "step-start" }), false);
+  assert.equal(
+    assistantPartIsVisible({
+      callId: "call_2",
+      hidden: true,
+      kind: "tool",
+      label: "",
+      name: "internal",
+      state: "completed",
+      stepIndex: 0,
+      type: "tool",
+    }),
+    false
+  );
 });
 
 test("shouldShowAssistantPending is true after send before the first token", () => {
-  assert.equal(shouldShowAssistantPending([user], "submitted"), true);
+  assert.equal(shouldShowAssistantPending([user], "busy"), true);
   assert.equal(
-    shouldShowAssistantPending([user, emptyAssistant], "streaming"),
+    shouldShowAssistantPending([user, emptyAssistant], "busy"),
     true
   );
   assert.equal(
-    shouldShowAssistantPending([user, emptyReasoning], "streaming"),
+    shouldShowAssistantPending([user, emptyReasoning], "busy"),
     true
   );
-  assert.equal(
-    shouldShowAssistantPending([user, emptyText], "streaming"),
-    true
-  );
+  assert.equal(shouldShowAssistantPending([user, emptyText], "busy"), true);
 });
 
 test("shouldShowAssistantPending hides once reasoning, text, or a tool appears", () => {
-  assert.equal(
-    shouldShowAssistantPending([user, reasoning], "streaming"),
-    false
-  );
-  assert.equal(shouldShowAssistantPending([user, reply], "streaming"), false);
-  assert.equal(shouldShowAssistantPending([user, tool], "streaming"), false);
+  assert.equal(shouldShowAssistantPending([user, reasoning], "busy"), false);
+  assert.equal(shouldShowAssistantPending([user, reply], "busy"), false);
+  assert.equal(shouldShowAssistantPending([user, tool], "busy"), false);
 });
 
 test("shouldShowAssistantPending stays off when the turn is idle or resuming", () => {
-  assert.equal(shouldShowAssistantPending([user], "ready"), false);
+  assert.equal(shouldShowAssistantPending([user], "idle"), false);
   assert.equal(shouldShowAssistantPending([user], "resuming"), false);
-  assert.equal(shouldShowAssistantPending([user], "error"), false);
-  assert.equal(shouldShowAssistantPending([], "submitted"), false);
+  assert.equal(shouldShowAssistantPending([], "busy"), false);
 });
 
 test("shouldShowAssistantPending shows again on the next user turn", () => {
@@ -110,7 +114,7 @@ test("shouldShowAssistantPending shows again on the next user turn", () => {
     "turn_1:user"
   );
   assert.equal(
-    shouldShowAssistantPending([user, prior, nextUser], "submitted"),
+    shouldShowAssistantPending([user, prior, nextUser], "busy"),
     true
   );
 });

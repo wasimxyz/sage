@@ -8,14 +8,23 @@
  *
  * Timing comes from the event stream, not from a clock in the eval process,
  * so it measures the server's work and not the client's wait:
- * - first visible word: from `message.received` to the first non-blank
- *   `message.appended`. Reasoning events do not count, because the person
- *   sees nothing until the reply starts.
- * - total: from `message.received` to the last event of the turn.
- * - tool time: the time any tool call was running, with overlapping calls
- *   counted once.
+ * - first visible word: from the `delivery.consumed` that took in the
+ *   message to the first non-blank text `content.delta`, or to the first
+ *   text `content.completed` when the model did not stream. eve 1.0 stamps a
+ *   delta with the time of the last line it stored before it, such as the end
+ *   of the model's thinking or the start of its run. With Thinking off, that
+ *   leaves out the model's wait for its first token. Reasoning does not count,
+ *   because the person sees nothing until the reply starts.
+ * - total: from that `delivery.consumed` to the last event of the turn.
+ * - tool time: the time any tool call was running, from `call.requested` to
+ *   `call.settled`, with overlapping calls counted once.
  */
-import type { EveEvalSession, EveEvalToolCall, EveEvalTurn } from "eve/evals";
+import type {
+  EveEvalActionStatus,
+  EveEvalSession,
+  EveEvalToolCall,
+  EveEvalTurn,
+} from "eve/evals";
 import type { Setup, ToolCall, TurnTiming } from "./schema.ts";
 import { setupHeaders } from "./setup.ts";
 
@@ -24,7 +33,7 @@ export interface TurnSender {
   send: EveEvalSession["send"];
 }
 
-/** The fields of a stream event that timing reads. A `MessageStreamEvent` fits. */
+/** The fields of a stream event that timing reads. A `SessionStreamEvent` fits. */
 export interface TimedEvent {
   readonly data?: unknown;
   readonly meta?: { readonly at?: string };
@@ -32,7 +41,7 @@ export interface TimedEvent {
 }
 
 export interface TurnMeasure {
-  /** The model id of each step, in order, as reported on `step.started`. */
+  /** The model id of each model attempt, in order, from `model.started`. */
   stepModelIds: string[];
   timing: TurnTiming;
 }
@@ -62,49 +71,74 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/** The events of the last turn: from its `message.received` on. */
+/** Whether a `delivery.consumed` took in text the person sent. */
+function consumedText(event: TimedEvent): boolean {
+  const parts = field(event, "parts");
+  return (
+    event.type === "delivery.consumed" &&
+    Array.isArray(parts) &&
+    parts.some(
+      (part) => isRecord(part) && part.kind === "text" && hasText(part.text)
+    )
+  );
+}
+
+/** The events of the last turn: from the delivery that took in its message. */
 function lastTurnEvents(events: readonly TimedEvent[]): readonly TimedEvent[] {
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index].type === "message.received") {
+    if (consumedText(events[index])) {
       return events.slice(index);
     }
   }
   return events;
 }
 
+/**
+ * The kind of each content part, from its `content.completed`. A delta may
+ * leave out its kind, and its part's completion names it.
+ */
+function partKinds(events: readonly TimedEvent[]): Map<string, unknown> {
+  const kinds = new Map<string, unknown>();
+  for (const event of events) {
+    const partId = field(event, "partId");
+    if (event.type === "content.completed" && typeof partId === "string") {
+      kinds.set(partId, field(event, "kind"));
+    }
+  }
+  return kinds;
+}
+
+/** Whether an event shows the person reply text: a delta or a finished part. */
+function showsText(event: TimedEvent, kinds: Map<string, unknown>): boolean {
+  if (event.type === "content.delta") {
+    const partId = field(event, "partId");
+    const kind =
+      field(event, "kind") ??
+      (typeof partId === "string" ? kinds.get(partId) : undefined);
+    return kind === "text" && hasText(field(event, "delta"));
+  }
+  return (
+    event.type === "content.completed" &&
+    field(event, "kind") === "text" &&
+    hasText(field(event, "value"))
+  );
+}
+
 /** When the person first sees reply text, if they ever do. */
 function firstVisibleAt(events: readonly TimedEvent[]): number | undefined {
-  const times = (type: string, key: string) =>
-    events.flatMap((event) => {
-      const at = timeOf(event);
-      return event.type === type &&
-        hasText(field(event, key)) &&
-        at !== undefined
-        ? [at]
-        : [];
-    });
-  // A model that does not stream still ends its message with a completed event.
-  return (
-    times("message.appended", "messageDelta")[0] ??
-    times("message.completed", "message")[0]
-  );
-}
-
-function callIdsOf(event: TimedEvent): string[] {
-  const actions = field(event, "actions");
-  if (!Array.isArray(actions)) {
-    return [];
+  const kinds = partKinds(events);
+  for (const event of events) {
+    const at = timeOf(event);
+    if (at !== undefined && showsText(event, kinds)) {
+      return at;
+    }
   }
-  return actions.flatMap((action) =>
-    isRecord(action) && typeof action.callId === "string" ? [action.callId] : []
-  );
+  return undefined;
 }
 
-function resultCallId(event: TimedEvent): string | undefined {
-  const result = field(event, "result");
-  return isRecord(result) && typeof result.callId === "string"
-    ? result.callId
-    : undefined;
+function callIdOf(event: TimedEvent): string | undefined {
+  const callId = field(event, "callId");
+  return typeof callId === "string" ? callId : undefined;
 }
 
 /** Milliseconds covered by at least one interval. */
@@ -130,12 +164,13 @@ function toolMsOf(events: readonly TimedEvent[]): number {
     if (at === undefined) {
       continue;
     }
-    if (event.type === "actions.requested") {
-      for (const id of callIdsOf(event)) {
+    if (event.type === "call.requested") {
+      const id = callIdOf(event);
+      if (id !== undefined) {
         requestedAt.set(id, at);
       }
-    } else if (event.type === "action.result") {
-      const id = resultCallId(event);
+    } else if (event.type === "call.settled") {
+      const id = callIdOf(event);
       const from = id === undefined ? undefined : requestedAt.get(id);
       if (from !== undefined) {
         intervals.push([from, at]);
@@ -154,7 +189,7 @@ export function measureTurn(events: readonly TimedEvent[]): TurnMeasure {
   const times = turnEvents.flatMap((event) => timeOf(event) ?? []);
   const stepModelIds = turnEvents.flatMap((event) => {
     const modelId = field(event, "modelId");
-    return event.type === "step.started" && typeof modelId === "string"
+    return event.type === "model.started" && typeof modelId === "string"
       ? [modelId]
       : [];
   });
@@ -192,6 +227,23 @@ export async function sendTurn(
   return { ...measureTurn(turn.events), turn };
 }
 
+/**
+ * A call's status as a transcript row stores it. A call that was interrupted,
+ * or never ran because its turn ended, did not complete, so it counts as
+ * failed.
+ */
+function transcriptCallStatus(status: EveEvalActionStatus): ToolCall["status"] {
+  switch (status) {
+    case "completed":
+    case "failed":
+    case "pending":
+    case "rejected":
+      return status;
+    default:
+      return "failed";
+  }
+}
+
 /** The tool calls of a turn in the shape a transcript row stores. */
 export function toTranscriptToolCalls(
   calls: readonly EveEvalToolCall[]
@@ -203,8 +255,22 @@ export function toTranscriptToolCalls(
     ...(call.output === undefined
       ? {}
       : { output: call.output as ToolCall["output"] }),
-    status: call.status,
+    status: transcriptCallStatus(call.status),
   }));
+}
+
+/**
+ * A turn's status as the "turn works" check reads it. A turn that waits for
+ * a person is waiting. One that was cancelled, or whose delivery had not
+ * settled when the watch stopped, did not finish, so it counts as failed.
+ */
+export function turnWorksStatus(
+  status: EveEvalTurn["status"] | undefined
+): TurnWorksInput["status"] {
+  if (status === "completed") {
+    return "completed";
+  }
+  return status === "awaiting-input" ? "waiting" : "failed";
 }
 
 // ---------------------------------------------------------------------------

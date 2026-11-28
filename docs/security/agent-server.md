@@ -65,6 +65,8 @@ Each Chat caller gets the token its own way:
 
 The hook reads the file on every request because Sage writes it after the `eve dev` terminal is already up. The terminal’s first `/eve/v1/info` request fails with 401 and the prompt still opens, and later requests carry the token. Health stays public, so `make dev` can wait on it before Sage starts.
 
+`GET /eve/v1/info` returns the agent’s instructions and server paths, so eve serves it only to callers the channel allows. `make eval` reads it before any eval runs, and the `eve dev` terminal reads it too. The Chat channel allows it for a caller with the token in `make dev` and `make eval`. A packaged agent, which Sage starts with `SAGE_AGENT_SOCKET`, allows it to no caller, so it returns 403 even with the token. The Chat screen never reads it.
+
 ## The workflow routes
 
 eve also serves its job runner and webhook routes under `/.well-known/workflow/` on the Chat port, and the Chat channel’s token check never sees them. `agent/agent/lib/workflow-guard.ts` puts the same token in front of that whole prefix:

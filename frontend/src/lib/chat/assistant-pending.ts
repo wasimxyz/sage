@@ -1,7 +1,7 @@
 import type {
-  EveAgentStoreStatus,
   EveMessage,
   EveMessagePart,
+  SessionStoreStatus,
 } from "eve/client";
 
 export function assistantPartIsVisible(part: EveMessagePart): boolean {
@@ -11,7 +11,7 @@ export function assistantPartIsVisible(part: EveMessagePart): boolean {
   if (part.type === "reasoning") {
     return part.text.trim().length > 0;
   }
-  return part.type === "dynamic-tool";
+  return part.type === "tool" && part.hidden !== true;
 }
 
 function assistantHasVisibleContent(message: EveMessage): boolean {
@@ -20,9 +20,9 @@ function assistantHasVisibleContent(message: EveMessage): boolean {
 
 export function shouldShowAssistantPending(
   messages: readonly EveMessage[],
-  status: EveAgentStoreStatus
+  status: SessionStoreStatus
 ): boolean {
-  if (status !== "submitted" && status !== "streaming") {
+  if (status !== "busy") {
     return false;
   }
   for (let index = messages.length - 1; index >= 0; index -= 1) {

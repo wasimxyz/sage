@@ -252,24 +252,15 @@ fn appendTranscriptMessage(
 ) !void {
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, raw_event, .{ .allocate = .alloc_always }) catch return;
     defer parsed.deinit();
-    if (parsed.value != .object) return;
-    const event = parsed.value.object;
-    const type_value = event.get("type") orelse return;
-    if (type_value != .string) return;
-    const role = if (std.mem.eql(u8, type_value.string, "message.received"))
-        "User"
-    else if (std.mem.eql(u8, type_value.string, "message.completed"))
-        "Assistant"
-    else
-        return;
-    const data_value = event.get("data") orelse return;
-    if (data_value != .object) return;
-    const message_value = data_value.object.get("message") orelse return;
-    if (message_value != .string or std.mem.trim(u8, message_value.string, " \t\r\n").len == 0) return;
+    const message = journal.readChatEventText(parsed.value) orelse return;
+    const role = switch (message.role) {
+        .user => "User",
+        .assistant => "Assistant",
+    };
 
     if (!first_message.*) try writer.writeAll("\n\n");
     try writer.print("**{s}:**\n\n", .{role});
-    try writer.writeAll(message_value.string);
+    try writer.writeAll(message.raw);
     first_message.* = false;
 }
 
@@ -536,6 +527,20 @@ fn testConversationEvents(allocator: std.mem.Allocator) ![]u8 {
     }
     try writer.writer.writeByte(']');
     return allocator.dupe(u8, writer.written());
+}
+
+test "appendTranscriptMessage reads eve 1.0 and earlier message events" {
+    var out: [512]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&out);
+    var first = true;
+    const events = [_][]const u8{
+        "{\"type\":\"delivery.consumed\",\"data\":{\"parts\":[{\"kind\":\"text\",\"text\":\"Hello Sage\"}]}}",
+        "{\"type\":\"content.completed\",\"data\":{\"kind\":\"reasoning\",\"value\":\"omit\"}}",
+        "{\"type\":\"content.completed\",\"data\":{\"kind\":\"text\",\"phase\":\"reply\",\"value\":\"Hello. \"}}",
+        "{\"type\":\"message.received\",\"data\":{\"message\":\"An older question\"}}",
+    };
+    for (events) |event| try appendTranscriptMessage(std.testing.allocator, &writer, event, &first);
+    try std.testing.expectEqualStrings("**User:**\n\nHello Sage\n\n**Assistant:**\n\nHello. \n\n**User:**\n\nAn older question", writer.buffered());
 }
 
 test "kebabCase lowercases and hyphenates" {

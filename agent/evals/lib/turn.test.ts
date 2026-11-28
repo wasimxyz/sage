@@ -14,6 +14,7 @@ import {
   type TimedEvent,
   type TurnSender,
   toTranscriptToolCalls,
+  turnWorksStatus,
 } from "./turn.ts";
 
 const notSupportedPattern = /not supported/u;
@@ -32,90 +33,121 @@ function event(
   };
 }
 
-const received = (offsetMs: number) => event("message.received", offsetMs);
-const appended = (offsetMs: number, messageDelta: string) =>
-  event("message.appended", offsetMs, { messageDelta });
-const reasoning = (offsetMs: number) =>
-  event("reasoning.appended", offsetMs, { reasoningDelta: "hmm" });
-const stepStarted = (offsetMs: number, modelId: string) =>
-  event("step.started", offsetMs, { modelId });
-const requested = (offsetMs: number, ...callIds: string[]) =>
-  event("actions.requested", offsetMs, {
-    actions: callIds.map((callId) => ({ callId, kind: "tool-call" })),
+const received = (offsetMs: number, text = "Hi Sage") =>
+  event("delivery.consumed", offsetMs, {
+    parts: [{ kind: "text", text }],
   });
-const result = (offsetMs: number, callId: string) =>
-  event("action.result", offsetMs, { result: { callId } });
+const answered = (offsetMs: number) =>
+  event("delivery.consumed", offsetMs, { parts: [] });
+const delta = (offsetMs: number, value = "Hel", partId = "p", kind?: string) =>
+  event("content.delta", offsetMs, {
+    delta: value,
+    partId,
+    ...(kind === undefined ? {} : { kind }),
+  });
+const stored = (
+  offsetMs: number,
+  value: string,
+  phase = "reply",
+  partId = "p"
+) =>
+  event("content.completed", offsetMs, { kind: "text", partId, phase, value });
+const reasoning = (offsetMs: number, partId = "r") =>
+  event("content.completed", offsetMs, {
+    kind: "reasoning",
+    partId,
+    value: "hmm",
+  });
+const modelStarted = (offsetMs: number, modelId: string) =>
+  event("model.started", offsetMs, { attempt: 0, modelId });
+const requested = (offsetMs: number, callId: string) =>
+  event("call.requested", offsetMs, { callId });
+const settled = (offsetMs: number, callId: string) =>
+  event("call.settled", offsetMs, { callId, outcome: "completed" });
 
-test("first visible time runs from message.received to the first non-blank message.appended", () => {
+test("first visible time runs from delivery.consumed to the first non-blank text delta", () => {
   const { timing } = measureTurn([
     event("turn.started", 0),
     received(10),
-    stepStarted(20, "qwen3:8b"),
-    reasoning(300),
+    modelStarted(20, "qwen3:8b"),
+    delta(300, "Thinking", "r", "reasoning"),
     reasoning(900),
-    appended(1500, "   "),
-    appended(1800, "Hello"),
-    appended(1900, " there"),
-    event("turn.completed", 2500),
-    event("session.waiting", 2600),
+    delta(900, "   ", "p", "text"),
+    delta(1500, "Hello", "p"),
+    stored(1800, "Hello there"),
+    event("turn.settled", 2500, { outcome: "completed" }),
+    event("delivery.settled", 2600),
   ]);
-  assert.equal(timing.firstVisibleMs, 1790);
+  // The delta with no kind is text: its part completes as text.
+  assert.equal(timing.firstVisibleMs, 1490);
   assert.equal(timing.totalMs, 2590);
 });
 
-test("reasoning events do not count as visible text", () => {
+test("a model that does not stream is timed from its stored text", () => {
+  const { timing } = measureTurn([
+    received(0),
+    stored(4000, "All at once."),
+    event("turn.settled", 4100),
+  ]);
+  assert.equal(timing.firstVisibleMs, 4000);
+});
+
+test("reasoning does not count as visible text", () => {
   const { timing } = measureTurn([
     received(0),
     reasoning(100),
     reasoning(200),
-    event("turn.completed", 5000),
+    event("turn.settled", 5000),
   ]);
   assert.equal(timing.firstVisibleMs, null);
   assert.equal(timing.totalMs, 5000);
 });
 
-test("a model that does not stream is timed from message.completed", () => {
+test("text before a tool call is visible text", () => {
   const { timing } = measureTurn([
     received(0),
-    event("message.completed", 4000, { message: "All at once." }),
-    event("turn.completed", 4100),
+    stored(400, "Let me look.", "narration"),
+    requested(450, "a"),
+    settled(900, "a"),
+    stored(4000, "Found it."),
   ]);
-  assert.equal(timing.firstVisibleMs, 4000);
+  assert.equal(timing.firstVisibleMs, 400);
 });
 
 test("tool time counts overlapping calls once", () => {
   const { timing } = measureTurn([
     received(0),
-    requested(1000, "a", "b"),
-    result(1500, "a"),
-    result(2200, "b"),
-    stepStarted(2300, "m"),
+    requested(1000, "a"),
+    requested(1000, "b"),
+    settled(1500, "a"),
+    settled(2200, "b"),
+    modelStarted(2300, "m"),
     requested(3000, "c"),
-    result(3400, "c"),
-    appended(3500, "Done"),
-    event("turn.completed", 3600),
+    settled(3400, "c"),
+    stored(3500, "Done"),
+    event("turn.settled", 3600),
   ]);
   // a and b cover 1000 to 2200, c covers 3000 to 3400.
   assert.equal(timing.toolMs, 1200 + 400);
 });
 
-test("a tool call that never resolved adds no tool time", () => {
+test("a tool call that never settled adds no tool time", () => {
   const { timing } = measureTurn([
     received(0),
     requested(100, "a"),
-    event("turn.failed", 900),
+    event("turn.settled", 900, { outcome: "failed" }),
   ]);
   assert.equal(timing.toolMs, 0);
 });
 
-test("step model ids list every step in order", () => {
+test("model ids list every model attempt in order", () => {
   const { stepModelIds } = measureTurn([
     received(0),
-    stepStarted(10, "qwen3:8b"),
+    modelStarted(10, "qwen3:8b"),
     requested(20, "a"),
-    result(30, "a"),
-    stepStarted(40, "qwen3:8b"),
-    appended(50, "Hi"),
+    settled(30, "a"),
+    modelStarted(40, "qwen3:8b"),
+    stored(50, "Hi"),
   ]);
   assert.deepEqual(stepModelIds, ["qwen3:8b", "qwen3:8b"]);
 });
@@ -123,13 +155,15 @@ test("step model ids list every step in order", () => {
 test("only the last turn of a session is measured", () => {
   const { stepModelIds, timing } = measureTurn([
     received(0),
-    stepStarted(10, "first"),
-    appended(500, "One"),
-    event("turn.completed", 600),
+    modelStarted(10, "first"),
+    stored(500, "One"),
+    event("turn.settled", 600),
     received(10_000),
-    stepStarted(10_010, "second"),
-    appended(10_200, "Two"),
-    event("turn.completed", 10_300),
+    modelStarted(10_010, "second"),
+    // An answer to a question takes in no text, so the turn goes on.
+    answered(10_100),
+    stored(10_200, "Two"),
+    event("turn.settled", 10_300),
   ]);
   assert.deepEqual(stepModelIds, ["second"]);
   assert.equal(timing.firstVisibleMs, 200);
@@ -145,12 +179,12 @@ test("events without a usable time are skipped, and no events time as zero", () 
   const { timing } = measureTurn([
     received(0),
     {
-      data: { messageDelta: "Hi" },
+      data: { kind: "text", value: "Hi" },
       meta: { at: "not a time" },
-      type: "message.appended",
+      type: "content.completed",
     },
-    appended(700, "Hello"),
-    event("turn.completed", 800),
+    stored(700, "Hello"),
+    event("turn.settled", 800),
   ]);
   assert.equal(timing.firstVisibleMs, 700);
 });
@@ -172,7 +206,7 @@ function setupOf(overrides: Record<string, unknown> = {}): Setup {
 }
 
 function fakeTurn(events: TimedEvent[]): EveEvalTurn {
-  const turn = { events, message: "Hello", status: "waiting" };
+  const turn = { events, reply: "Hello", status: "completed" };
   return { ...turn, session: undefined } as unknown as EveEvalTurn;
 }
 
@@ -190,9 +224,9 @@ function recordingSender(events: TimedEvent[]) {
 test("sendTurn passes the x-sage headers and returns the turn with its timing", async () => {
   const { calls, sender } = recordingSender([
     received(0),
-    stepStarted(5, "qwen3:8b"),
-    appended(250, "Hi"),
-    event("turn.completed", 400),
+    modelStarted(5, "qwen3:8b"),
+    stored(250, "Hi"),
+    event("turn.settled", 400),
   ]);
   const sent = await sendTurn(sender, "How was June?", setupOf());
   assert.deepEqual(calls, [
@@ -209,11 +243,11 @@ test("sendTurn passes the x-sage headers and returns the turn with its timing", 
   ]);
   assert.equal(sent.timing.firstVisibleMs, 250);
   assert.deepEqual(sent.stepModelIds, ["qwen3:8b"]);
-  assert.equal(sent.turn.message, "Hello");
+  assert.equal(sent.turn.reply, "Hello");
 });
 
 test("sendTurn passes the headers on every turn of a session, not only the first", async () => {
-  const { calls, sender } = recordingSender([received(0), appended(10, "Hi")]);
+  const { calls, sender } = recordingSender([received(0), stored(10, "Hi")]);
   const setup = setupOf({ thinking: ["on"] });
   await sendTurn(sender, "first", setup);
   await sendTurn(sender, "second", setup);
@@ -242,6 +276,7 @@ test("sendTurn sends nothing when the thinking value is not supported", async ()
 test("toTranscriptToolCalls keeps the name, input, output, and status", () => {
   const calls = toTranscriptToolCalls([
     {
+      callId: "a",
       input: { query: "June" },
       name: "search_journal",
       output: { entries: [] },
@@ -249,10 +284,19 @@ test("toTranscriptToolCalls keeps the name, input, output, and status", () => {
       turnIndex: 0,
     },
     {
+      callId: "b",
       input: {},
       name: "get_chat",
       output: undefined,
       status: "pending",
+      turnIndex: 0,
+    },
+    {
+      callId: "c",
+      input: {},
+      name: "get_chat",
+      output: undefined,
+      status: "interrupted",
       turnIndex: 0,
     },
   ]);
@@ -264,7 +308,17 @@ test("toTranscriptToolCalls keeps the name, input, output, and status", () => {
       status: "completed",
     },
     { input: {}, name: "get_chat", status: "pending" },
+    { input: {}, name: "get_chat", status: "failed" },
   ]);
+});
+
+test("turnWorksStatus reads eve's request status", () => {
+  assert.equal(turnWorksStatus("completed"), "completed");
+  assert.equal(turnWorksStatus("awaiting-input"), "waiting");
+  assert.equal(turnWorksStatus("failed"), "failed");
+  assert.equal(turnWorksStatus("cancelled"), "failed");
+  assert.equal(turnWorksStatus("working"), "failed");
+  assert.equal(turnWorksStatus(undefined), "failed");
 });
 
 // ---------------------------------------------------------------------------

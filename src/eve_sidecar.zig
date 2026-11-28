@@ -418,22 +418,44 @@ const cancel_header_max = 512;
 
 /// HTTP request that asks eve to cancel one session. Empty tokens are rejected
 /// so a cancel is never sent without the agent-server secret.
-pub fn cancelRequestHeader(buf: []u8, session_id: []const u8, token: []const u8) ?[]const u8 {
+/// The session controls Sage sends to the Chat server.
+pub const SessionControl = enum {
+    /// Stops the turn that is running.
+    cancel,
+    /// Retires the session. Its run ends, and the agent's zero retention has
+    /// the Workflow store delete the run's data.
+    end,
+};
+
+pub fn controlRequestHeader(buf: []u8, session_id: []const u8, token: []const u8, control: SessionControl) ?[]const u8 {
     if (token.len == 0) return null;
     return std.fmt.bufPrint(
         buf,
-        "POST /eve/v1/session/{s}/cancel HTTP/1.1\r\nHost: {s}:{d}\r\nAuthorization: Bearer {s}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-        .{ session_id, host, port, token },
+        "POST /eve/v1/session/{s}/{s} HTTP/1.1\r\nHost: {s}:{d}\r\nAuthorization: Bearer {s}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        .{ session_id, @tagName(control), host, port, token },
     ) catch null;
 }
 
 /// Best-effort cancel of an in-flight eve turn. Failures are ignored so chat
-/// deletion can still remove the on-disk session files.
+/// deletion can still go on.
 pub fn cancelSession(io: std.Io, session_id: []const u8, token: []const u8) void {
+    sendSessionControl(io, session_id, token, .cancel);
+}
+
+/// Best-effort end of an eve session, so the Workflow store deletes what the
+/// session's run stored. Since eve 1.0 that is one SQLite file, `world.db`,
+/// with no files of its own to delete. Failures are ignored: a session the
+/// Chat server never hears about ends after 30 idle days, with the same
+/// deletion.
+pub fn endSession(io: std.Io, session_id: []const u8, token: []const u8) void {
+    sendSessionControl(io, session_id, token, .end);
+}
+
+fn sendSessionControl(io: std.Io, session_id: []const u8, token: []const u8, control: SessionControl) void {
     if (!isValidSessionId(session_id)) return;
 
     var header_buffer: [cancel_header_max]u8 = undefined;
-    const header = cancelRequestHeader(&header_buffer, session_id, token) orelse return;
+    const header = controlRequestHeader(&header_buffer, session_id, token, control) orelse return;
 
     const address = std.Io.net.IpAddress.parseIp4(host, port) catch return;
     const stream = std.Io.net.IpAddress.connect(&address, io, .{
@@ -460,7 +482,8 @@ pub fn cancelSession(io: std.Io, session_id: []const u8, token: []const u8) void
 
 /// Remove one session's files from `.eve/.workflow-data`. Missing trees and
 /// individual files are ignored. Invalid ids are rejected so a stored value
-/// cannot walk out of the workflow directory.
+/// cannot walk out of the workflow directory. Only eve releases before 1.0
+/// wrote files per session; since 1.0 `endSession` covers a session.
 pub fn deleteSessionData(io: std.Io, data_dir: []const u8, session_id: []const u8) void {
     if (data_dir.len == 0) return;
     if (!isValidSessionId(session_id)) return;
@@ -1522,15 +1545,17 @@ test "wipeWorkflowDirectoryStrict removes a development agent store" {
     tmp_parent.deleteTree(io, std.fs.path.basename(tmp)) catch {};
 }
 
-test "cancelRequestHeader sends the bearer token" {
+test "controlRequestHeader sends the bearer token" {
     const session_id = "wrun_01AAAAAAAAAAAAAAAAAAAAAAAA";
     const token = "ab" ** 32;
     var buf: [cancel_header_max]u8 = undefined;
-    const header = cancelRequestHeader(&buf, session_id, token).?;
+    const header = controlRequestHeader(&buf, session_id, token, .cancel).?;
     try std.testing.expect(std.mem.indexOf(u8, header, "Authorization: Bearer " ++ token) != null);
     try std.testing.expect(std.mem.startsWith(u8, header, "POST /eve/v1/session/" ++ session_id ++ "/cancel "));
     try std.testing.expect(std.mem.endsWith(u8, header, "\r\n\r\n"));
-    try std.testing.expect(cancelRequestHeader(&buf, session_id, "") == null);
+    try std.testing.expect(controlRequestHeader(&buf, session_id, "", .cancel) == null);
+    const ended = controlRequestHeader(&buf, session_id, token, .end).?;
+    try std.testing.expect(std.mem.startsWith(u8, ended, "POST /eve/v1/session/" ++ session_id ++ "/end "));
 }
 
 test "isValidSessionId accepts workflow run ids only" {

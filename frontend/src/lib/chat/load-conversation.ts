@@ -1,5 +1,10 @@
 import { type ChatConversation, chatGet } from "@/bridge";
 
+import {
+  convertStoredChat,
+  legacyEventFormat,
+} from "./convert-stored-chats.ts";
+
 export type ChatLoadResult =
   | { conversation: ChatConversation | null; kind: "ready" }
   | { kind: "failed"; message: string };
@@ -63,9 +68,22 @@ export const emptyChatLoad: ChatLoadPromise = fulfilledPromise({
   kind: "ready",
 });
 
+/**
+ * Reads a saved chat. A chat saved before eve 1.0 is converted first, so
+ * Chat only ever shows and saves eve's current events.
+ */
+async function readConversation(id: number): Promise<ChatConversation> {
+  const conversation = await chatGet(id);
+  if (conversation.eventFormat !== legacyEventFormat) {
+    return conversation;
+  }
+  await convertStoredChat(id);
+  return chatGet(id);
+}
+
 export function loadConversation(id: number): ChatLoadPromise {
   return trackPromise(
-    chatGet(id)
+    readConversation(id)
       .then(
         (conversation): ChatLoadResult => ({
           conversation,

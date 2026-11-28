@@ -1186,7 +1186,13 @@ export const toolCallSchema = z.strictObject({
 export type ToolCall = z.infer<typeof toolCallSchema>;
 
 export const turnTimingSchema = z.strictObject({
-  /** From `message.received` to the first non-blank `message.appended`. Null if none appeared. */
+  /**
+   * From the message to the first visible reply text. Before eve 1.0, from
+   * `message.received` to the first non-blank `message.appended`. Since eve
+   * 1.0, from `delivery.consumed` to the first non-blank text
+   * `content.delta`, which eve stamps with the time of the line before it.
+   * Null if none appeared.
+   */
   firstVisibleMs: z.number().min(0).nullable(),
   toolMs: z.number().min(0),
   totalMs: z.number().min(0),

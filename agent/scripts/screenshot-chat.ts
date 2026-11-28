@@ -3,6 +3,8 @@
 // scripts/seed. They get their ids when the script saves them, so the search
 // card opens the right entries.
 
+import { chatSessionEvents } from "../evals/lib/chat-events.ts";
+
 export interface ChatSource {
   date: string;
   id: number;
@@ -43,76 +45,35 @@ export const chatAnswer = [
   "Do you want to think about what could fill the middle of next Sunday?",
 ].join("\n");
 
-const turnId = "turn_screenshot";
 const callId = "call_screenshot_search";
 
 /**
  * The eve events of one finished turn: the question, one journal search with
- * its result, and the answer. Each event has `meta.id`, which eve's reducer
- * needs to replay a stored chat.
+ * its result, and the answer, as eve 1.0 saves them.
  */
 export function screenshotChatEvents(
   sources: readonly ChatSource[],
   now: Date
 ): unknown[] {
-  const at = now.toISOString();
-  const bodies: { data: Record<string, unknown>; type: string }[] = [
-    { data: { turnId }, type: "turn.started" },
-    { data: { message: chatQuestion, turnId }, type: "message.received" },
-    { data: { stepIndex: 0, turnId }, type: "step.started" },
-    {
-      data: {
-        actions: [
-          {
-            callId,
-            input: { query: chatSearchQuery },
-            kind: "tool-call",
-            toolName: "search_journal",
-          },
-        ],
-        stepIndex: 0,
-        turnId,
-      },
-      type: "actions.requested",
-    },
-    {
-      data: {
-        result: {
+  return chatSessionEvents(
+    [
+      {
+        question: chatQuestion,
+        reply: chatAnswer,
+        tool: {
           callId,
-          kind: "tool-result",
+          input: { query: chatSearchQuery },
+          name: "search_journal",
           output: sources.map((source) => ({
             date: source.date,
             id: `entry-${source.id}`,
             title: source.title,
           })),
-          toolName: "search_journal",
         },
-        status: "completed",
-        stepIndex: 0,
-        turnId,
       },
-      type: "action.result",
-    },
-    {
-      data: { finishReason: "tool-calls", stepIndex: 0, turnId },
-      type: "step.completed",
-    },
-    { data: { stepIndex: 1, turnId }, type: "step.started" },
-    {
-      data: { finishReason: "stop", message: chatAnswer, stepIndex: 1, turnId },
-      type: "message.completed",
-    },
-    {
-      data: { finishReason: "stop", stepIndex: 1, turnId },
-      type: "step.completed",
-    },
-    { data: { turnId }, type: "turn.completed" },
-  ];
-  return bodies.map((body, sequence) => ({
-    data: { ...body.data, sequence },
-    meta: { at, id: `evt_screenshot_${String(sequence).padStart(3, "0")}` },
-    type: body.type,
-  }));
+    ],
+    { at: now.toISOString(), modelId: chatModel, prefix: "screenshot" }
+  );
 }
 
 export function screenshotChat(

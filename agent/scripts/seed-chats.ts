@@ -20,6 +20,10 @@ import {
   resultRecord,
   utf8Chunks,
 } from "../evals/lib/bridge.ts";
+import {
+  type ChatEventTurn,
+  chatSessionEvents,
+} from "../evals/lib/chat-events.ts";
 import type { LoadedChat } from "../evals/lib/dataset.ts";
 
 /** One bridge call: the command, its payload, and an id that no other call uses. */
@@ -38,27 +42,33 @@ const CONTEXT_LENGTH = 32_768;
 /** The Chat screen stops at 64 rounds of 32 messages. A seeded chat is far shorter. */
 const MAX_INDEX_ROUNDS = 64;
 
-/** The events of a chat as the Chat screen saves them: a User message and a Sage reply for each exchange. */
-export function chatEvents(chat: LoadedChat): string[] {
-  let turnNumber = 0;
-  return chat.turns.map((turn) => {
+/** A chat's messages as exchanges: each User message and the Sage reply after it. */
+export function chatTurns(chat: LoadedChat): ChatEventTurn[] {
+  const turns: ChatEventTurn[] = [];
+  for (const turn of chat.turns) {
+    const last = turns.at(-1);
     if (turn.role === "user") {
-      const turnId = `turn_${turnNumber}`;
-      turnNumber += 1;
-      return JSON.stringify({
-        data: {
-          message: turn.text,
-          parts: [{ text: turn.text, type: "text" }],
-          turnId,
-        },
-        type: "message.received",
-      });
+      turns.push({ question: turn.text });
+    } else if (last === undefined || last.reply !== undefined) {
+      turns.push({ reply: turn.text });
+    } else {
+      last.reply = turn.text;
     }
-    return JSON.stringify({
-      data: { finishReason: "stop", message: turn.text },
-      type: "message.completed",
-    });
-  });
+  }
+  return turns;
+}
+
+/**
+ * The events of a chat as the Chat screen saves them, one JSON text per
+ * event: one eve session with a turn for each exchange. Each event carries
+ * the chat's date. Sage still stamps the rows with the real clock, and the
+ * runner rewrites those.
+ */
+export function chatEvents(chat: LoadedChat): string[] {
+  return chatSessionEvents(chatTurns(chat), {
+    at: `${chat.date}T12:00:00.000Z`,
+    prefix: `chat_${chat.stem}`,
+  }).map((event) => JSON.stringify(event));
 }
 
 /** The `events` text of a save: a JSON array of the chat's events. */

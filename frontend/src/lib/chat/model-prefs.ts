@@ -16,7 +16,7 @@ export interface ChatModelPrefs {
   thinking: boolean;
 }
 
-/** eve reports `ollama/<name>` on `step.started`; Ollama wants the name alone. */
+/** eve reports `ollama/<name>` on `model.started`; Ollama wants the name alone. */
 export function normalizeChatModelId(modelId: string): string {
   if (modelId.startsWith(OLLAMA_MODEL_PREFIX)) {
     return modelId.slice(OLLAMA_MODEL_PREFIX.length);
@@ -91,7 +91,9 @@ export function lastModelIdFromEvents(
 ): string | null {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (!isRecord(event) || event.type !== "step.started") {
+    // Loaded chats hold eve 1.0 events, where each model run names its
+    // model on `model.started`.
+    if (!isRecord(event) || event.type !== "model.started") {
       continue;
     }
     if (!isRecord(event.data)) {

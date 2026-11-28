@@ -1,9 +1,5 @@
 import type { ChatStatus } from "ai";
-import type {
-  ClientSessionState,
-  EveAgentReducerEvent,
-  MessageStreamEvent,
-} from "eve/client";
+import type { ClientSessionState, SessionStreamEvent } from "eve/client";
 import { type EveMessage, useEveAgent } from "eve/react";
 import { ArrowDownIcon, CornerDownLeftIcon } from "lucide-react";
 import { m } from "motion/react";
@@ -18,6 +14,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -94,6 +91,11 @@ import {
   formatChatSendError,
 } from "@/lib/chat/chat-errors";
 import {
+  historyMessages,
+  messageIdAtSeq,
+  splitChatLog,
+} from "@/lib/chat/chat-log";
+import {
   agentDownMessage,
   eveHost,
   withChatAuthorization,
@@ -111,8 +113,6 @@ import {
 import {
   historyClientContext,
   isEndedSessionError,
-  projectedMessageIdAtSeq,
-  sessionNamespacingReducer,
 } from "@/lib/chat/session-recovery";
 import { formatTodayHeading } from "@/lib/format-date";
 import { greetingFor } from "@/lib/greeting";
@@ -120,16 +120,18 @@ import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 interface PersistPatch {
-  events?: EveAgentReducerEvent[];
+  events?: SessionStreamEvent[];
   eveSessionId?: string | null;
   streamIndex?: number;
   title?: string;
 }
 
+// loadConversation converts a chat saved before eve 1.0, so a loaded chat
+// holds eve's current events.
 function eventsFromConversation(
   conversation: ChatConversation | null
-): EveAgentReducerEvent[] {
-  return (conversation?.events ?? []) as EveAgentReducerEvent[];
+): SessionStreamEvent[] {
+  return [...(conversation?.events ?? [])] as SessionStreamEvent[];
 }
 
 function commonPrefixLength(
@@ -291,10 +293,10 @@ function ChatTurn({
   const { setText } = useChatDraftActions();
   const idRef = useRef<number | null>(conversation?.id ?? null);
   const titleRef = useRef(conversation?.title ?? "");
-  const eventsRef = useRef<EveAgentReducerEvent[]>(
+  const eventsRef = useRef<SessionStreamEvent[]>(
     eventsFromConversation(conversation)
   );
-  const persistedEventsRef = useRef<EveAgentReducerEvent[]>(
+  const persistedEventsRef = useRef<SessionStreamEvent[]>(
     eventsFromConversation(conversation)
   );
   const sessionRef = useRef<ClientSessionState | undefined>(
@@ -476,7 +478,7 @@ function ChatTurnSession({
   agentToken: string | null;
   downCopy: string;
   focus?: ChatFocus;
-  initialEvents: EveAgentReducerEvent[];
+  initialEvents: SessionStreamEvent[];
   initialSession: ClientSessionState | undefined;
   persist: (next: PersistPatch) => Promise<void>;
   persistLater: (next: PersistPatch) => void;
@@ -514,9 +516,12 @@ function ChatTurnSession({
       ? historyClientContext(initialEvents)
       : undefined
   );
-  // One reducer per mounted session: it suffixes reused turn ids so a
-  // recovered session's turns never overwrite the restored history.
-  const [messageReducer] = useState(() => sessionNamespacingReducer());
+  // eve resumes only the chat's last session. The sessions before it, and
+  // every session once the last one can no longer run, show as they were
+  // saved, above the live session's messages.
+  const resumable = initialSession !== undefined;
+  const [log] = useState(() => splitChatLog(initialEvents, resumable));
+  const [pastMessages] = useState(() => historyMessages(log.history));
 
   const handleAgentError = useCallback(
     (error: unknown) => {
@@ -547,6 +552,7 @@ function ChatTurnSession({
   );
 
   const agent = useEveAgent({
+    baseUrl: eveHost(),
     headers: (): Record<string, string> => {
       const headers: Record<string, string> = {
         "x-sage-context-length": String(contextLengthRef.current),
@@ -562,15 +568,14 @@ function ChatTurnSession({
       }
       return withChatAuthorization(headers, agentTokenRef.current);
     },
-    host: eveHost(),
-    initialEvents: initialEvents as MessageStreamEvent[],
+    initialEvents: log.live,
     initialSession,
     onError: (error) => {
       handleAgentError(error);
     },
     onFinish: (snapshot) => {
       persistLater({
-        events: [...snapshot.events],
+        events: [...log.history, ...snapshot.events],
         eveSessionId: recoveringRef.current
           ? null
           : (snapshot.session?.sessionId ?? null),
@@ -583,7 +588,11 @@ function ChatTurnSession({
       if (recoveringRef.current) {
         return;
       }
-      if (sameSession(sessionRef.current, session)) {
+      // eve moves the cursor on every line it stores. Only a new session id
+      // is saved here; onFinish saves the cursor with the turn's events.
+      if (
+        (sessionRef.current?.sessionId ?? null) === (session?.sessionId ?? null)
+      ) {
         return;
       }
       persistLater({
@@ -598,8 +607,7 @@ function ChatTurnSession({
             input.clientContext === undefined
               ? { ...input, clientContext: historyContext }
               : input,
-    reducer: messageReducer,
-    resume: initialSession !== undefined,
+    resume: resumable,
   });
 
   const handleAgentErrorRef = useRef(handleAgentError);
@@ -643,16 +651,29 @@ function ChatTurnSession({
     sendTurn,
   ]);
 
-  const busy = agent.status === "submitted" || agent.status === "streaming";
+  const busy = agent.status === "busy";
+  const messages = useMemo(
+    () =>
+      pastMessages.length === 0
+        ? agent.messages
+        : [...pastMessages, ...agent.messages],
+    [agent.messages, pastMessages]
+  );
   // Messages already here when this pane opens do not animate, even if the
   // chat is still streaming. Only ones that arrive after do.
   const [openingMessageIds] = useState(
-    () => new Set(agent.data.messages.map((item) => item.id))
+    () => new Set(messages.map((item) => item.id))
   );
+  const pending = shouldShowAssistantPending(messages, agent.status);
   // eve reports "resuming" while a reattached session catches up; submission
   // would fail against the open resume stream, so block it until ready.
   const resuming = agent.status === "resuming";
-  const submitStatus: ChatStatus = resuming ? "submitted" : agent.status;
+  let submitStatus: ChatStatus = "ready";
+  if (resuming || pending) {
+    submitStatus = "submitted";
+  } else if (busy) {
+    submitStatus = "streaming";
+  }
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
@@ -706,8 +727,6 @@ function ChatTurnSession({
     agent.cancel().catch(() => undefined);
   }, [agent]);
 
-  const { messages } = agent.data;
-  const pending = shouldShowAssistantPending(messages, agent.status);
   // A new chat greets you, with the message box in the middle. The first
   // message moves the box to the bottom. The box stays the same element, so
   // it keeps focus through the move.
@@ -724,6 +743,7 @@ function ChatTurnSession({
               events={initialEvents}
               focus={focus}
               messages={messages}
+              resumable={resumable}
             />
           }
         >
@@ -838,14 +858,18 @@ function SearchMessageFocus({
   events,
   focus,
   messages,
+  resumable,
 }: {
-  events: readonly EveAgentReducerEvent[];
+  events: readonly SessionStreamEvent[];
   focus?: ChatFocus;
   messages: readonly EveMessage[];
+  resumable: boolean;
 }) {
   const { scrollToEnd, scrollToMessage } = useMessageScroller();
   const targetId =
-    focus === undefined ? null : projectedMessageIdAtSeq(events, focus.seq);
+    focus === undefined
+      ? null
+      : messageIdAtSeq(events, resumable, focus.seq, messages);
   const hasTarget =
     targetId !== null && messages.some((message) => message.id === targetId);
 
@@ -1242,8 +1266,8 @@ async function applyPersistPatch(
     | "sessionRef"
     | "thinkingEnabledRef"
   > & {
-    eventsRef: RefObject<EveAgentReducerEvent[]>;
-    persistedEventsRef: RefObject<EveAgentReducerEvent[]>;
+    eventsRef: RefObject<SessionStreamEvent[]>;
+    persistedEventsRef: RefObject<SessionStreamEvent[]>;
     recordCreated: (id: number, title: string) => void;
     refreshList: () => Promise<void>;
     titleRef: RefObject<string>;

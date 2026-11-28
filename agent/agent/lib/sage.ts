@@ -193,6 +193,12 @@ async function loadDiscovery(): Promise<Discovery> {
   throw new Error(sawFile ? unreachableMessage : notRunningMessage);
 }
 
+/** True in a packaged app, where Sage starts the agent and passes its socket. */
+export function packagedChat(): boolean {
+  const socket = process.env.SAGE_AGENT_SOCKET;
+  return socket !== undefined && socket.length > 0;
+}
+
 // Token for the Chat port. Packaged Chat reads the spawn pipe, which the
 // world package caches after the first read. Dev and eval re-read
 // agent-server.json on every check: Sage rewrites that file on each launch,

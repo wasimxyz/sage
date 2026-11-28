@@ -1,6 +1,6 @@
 "use client";
 
-import type { EveDynamicToolPart } from "eve/client";
+import type { EveToolPart } from "eve/client";
 import { type ReactNode, useCallback } from "react";
 
 import { Tool, ToolHeader } from "@/components/ai-elements/tool";
@@ -88,9 +88,7 @@ function chatRows(chats: ChatToolHit[]): ListRow[] {
  * when the result is not one this card knows, so the caller can show the raw
  * call instead.
  */
-export function renderChatSearchCard(
-  part: EveDynamicToolPart
-): ReactNode | null {
+export function renderChatSearchCard(part: EveToolPart): ReactNode | null {
   if (toolPartRunning(part)) {
     return (
       <JournalRunningRow
@@ -110,7 +108,7 @@ export function renderChatSearchCard(
       />
     );
   }
-  if (part.state !== "output-available") {
+  if (part.state !== "completed") {
     return null;
   }
   const chats = chatSearchHits(part.output);
@@ -167,12 +165,12 @@ export function renderChatSearchCard(
  * Reads of past chats that came one after the other, as one row. The same
  * part of a chat read twice shows once.
  */
-export function ChatReadToolCard({ parts }: { parts: EveDynamicToolPart[] }) {
+export function ChatReadToolCard({ parts }: { parts: EveToolPart[] }) {
   if (parts.some(toolPartRunning)) {
     return (
       <JournalRunningRow
         label={`Reading ${chatsLabel(parts.length)}…`}
-        state="input-available"
+        state="running"
         toolName={readChatToolName}
       />
     );
@@ -183,7 +181,7 @@ export function ChatReadToolCard({ parts }: { parts: EveDynamicToolPart[] }) {
   let failed = 0;
   for (const part of parts) {
     const read =
-      !toolPartFailed(part) && part.state === "output-available"
+      !toolPartFailed(part) && part.state === "completed"
         ? chatReadOutput(part.input, part.output)
         : null;
     if (read === null) {
@@ -201,7 +199,7 @@ export function ChatReadToolCard({ parts }: { parts: EveDynamicToolPart[] }) {
     return (
       <JournalFailedRow
         messages={[...errors]}
-        state="output-error"
+        state="failed"
         title={
           failed === 1
             ? "Could not read that chat"
@@ -222,10 +220,10 @@ export function ChatReadToolCard({ parts }: { parts: EveDynamicToolPart[] }) {
     });
   }
   return (
-    <Tool data-tool-name={readChatToolName} data-tool-state="output-available">
+    <Tool data-tool-name={readChatToolName} data-tool-state="completed">
       <ToolHeader
         className={toolHeaderClassName}
-        state="output-available"
+        state="completed"
         title={`Read ${chatsLabel(reads.size)}`}
         toolName={readChatToolName}
       />

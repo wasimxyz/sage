@@ -45,6 +45,7 @@ function toolCall(
   status: EveEvalToolCall["status"] = "completed"
 ): EveEvalToolCall {
   return {
+    callId: `call_${name}`,
     input: input as EveEvalToolCall["input"],
     name,
     output: { ok: true },
@@ -55,25 +56,28 @@ function toolCall(
 
 interface FakeTurn {
   message?: string;
-  status?: "completed" | "failed" | "waiting";
+  status?: EveEvalTurn["status"];
   stepModels?: string[];
   toolCalls?: EveEvalToolCall[];
 }
 
 function turnOf(fake: FakeTurn): EveEvalTurn {
   const events: TimedEvent[] = [
-    event("message.received", 0),
+    event("delivery.consumed", 0, { parts: [{ kind: "text", text: "Hi" }] }),
     ...(fake.stepModels ?? ["qwen3:8b"]).map((modelId) =>
-      event("step.started", 10, { modelId })
+      event("model.started", 10, { modelId })
     ),
-    event("message.appended", 400, { messageDelta: fake.message ?? "" }),
-    event("turn.completed", 900),
+    event("content.completed", 400, {
+      kind: "text",
+      value: fake.message ?? "",
+    }),
+    event("turn.settled", 900),
   ];
   return {
     events,
-    inputRequests: [],
-    message: fake.message,
-    status: fake.status ?? "waiting",
+    interactions: [],
+    reply: fake.message,
+    status: fake.status ?? "completed",
     toolCalls: fake.toolCalls ?? [],
   } as unknown as EveEvalTurn;
 }

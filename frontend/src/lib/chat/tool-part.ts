@@ -1,4 +1,4 @@
-import type { EveDynamicToolPart } from "eve/client";
+import type { EveToolPart } from "eve/client";
 
 export const searchJournalToolName = "search_journal";
 export const readEntryToolName = "get_journal_entry";
@@ -18,33 +18,42 @@ function nonEmpty(text: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function toolPartName(part: EveDynamicToolPart): string {
-  return part.toolMetadata?.eve?.name ?? part.toolName;
+export function toolPartName(part: EveToolPart): string {
+  return part.name;
 }
 
-/** A call whose input is still arriving or whose result has not come back. */
-export function toolPartRunning(part: EveDynamicToolPart): boolean {
-  return part.state === "input-streaming" || part.state === "input-available";
+/**
+ * A call whose input is still arriving or whose result has not come back,
+ * including one that waits on a person.
+ */
+export function toolPartRunning(part: EveToolPart): boolean {
+  return (
+    part.state === "streaming" ||
+    part.state === "requested" ||
+    part.state === "approval" ||
+    part.state === "running" ||
+    part.state === "blocked"
+  );
 }
 
-export function toolPartFailed(part: EveDynamicToolPart): boolean {
-  if (part.state === "output-error") {
+export function toolPartFailed(part: EveToolPart): boolean {
+  if (part.state === "failed") {
     return true;
   }
-  return part.state === "output-available" && isMcpErrorOutput(part.output);
+  return part.state === "completed" && isMcpErrorOutput(part.output);
 }
 
 /**
  * The message a failed call came back with, as plain text. A tool error is
- * either `errorText` or an MCP result whose `content` holds the text. Null
- * when there is none to show.
+ * either eve's error message or an MCP result whose `content` holds the
+ * text. Null when there is none to show.
  */
-export function toolErrorText(part: EveDynamicToolPart): string | null {
-  if (part.state === "output-error") {
-    return nonEmpty(part.errorText);
+export function toolErrorText(part: EveToolPart): string | null {
+  if (part.state === "failed") {
+    return nonEmpty(part.error?.message ?? "");
   }
   if (
-    part.state !== "output-available" ||
+    part.state !== "completed" ||
     !isRecord(part.output) ||
     !Array.isArray(part.output.content)
   ) {

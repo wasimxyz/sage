@@ -3,29 +3,32 @@ import { defineDynamic, defineInstructions } from "eve/instructions";
 import { memoryFeatureEnabled } from "../lib/memory-feature";
 import { sageFetch } from "../lib/sage";
 
-export default defineDynamic({
-  events: {
-    "session.started": async () => {
-      if (!(await memoryFeatureEnabled())) {
-        return null;
-      }
-      const response = await sageFetch("/memory/profile").catch(() => null);
-      if (response === null || !response.ok) {
-        return null;
-      }
-      const facts = profileFacts(await response.json());
-      if (facts.length === 0) {
-        return null;
-      }
-      return defineInstructions({
-        content: [
-          "Stable facts about the journal author, recalled from their journal:",
-          ...facts.map((fact) => `- ${fact}`),
-        ].join("\n"),
-      });
-    },
-  },
+// eve runs this before every model call. The memo reads the profile once per
+// session, as the session.started event did before eve 1.0.
+export default defineDynamic(async (ctx) => {
+  const content = await ctx.memo(["profile", ctx.session.id], () =>
+    profileContent()
+  );
+  return content === null ? null : defineInstructions({ content });
 });
+
+async function profileContent(): Promise<string | null> {
+  if (!(await memoryFeatureEnabled())) {
+    return null;
+  }
+  const response = await sageFetch("/memory/profile").catch(() => null);
+  if (response === null || !response.ok) {
+    return null;
+  }
+  const facts = profileFacts(await response.json());
+  if (facts.length === 0) {
+    return null;
+  }
+  return [
+    "Stable facts about the journal author, recalled from their journal:",
+    ...facts.map((fact) => `- ${fact}`),
+  ].join("\n");
+}
 
 function profileFacts(payload: unknown): string[] {
   if (

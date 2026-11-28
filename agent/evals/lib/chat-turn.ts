@@ -23,6 +23,7 @@ import {
   type TimedTurn,
   type TurnSender,
   toTranscriptToolCalls,
+  turnWorksStatus,
 } from "./turn.ts";
 
 export interface ChatQuestion {
@@ -85,9 +86,9 @@ export function recordTurnWorks(
 ): void {
   const works = checkTurnWorks({
     chatModel: setup.chatModel,
-    parkedOnInput: (sent?.turn.inputRequests.length ?? 0) > 0,
-    replyText: sent?.turn.message ?? "",
-    status: sent?.turn.status ?? "failed",
+    parkedOnInput: sent?.turn.status === "awaiting-input",
+    replyText: sent?.turn.reply ?? "",
+    status: turnWorksStatus(sent?.turn.status),
     stepModelIds: sent?.stepModelIds ?? [],
   });
   const problems =
@@ -144,7 +145,7 @@ export function assistantTurnOf(
     ...(failure === undefined ? {} : { error: failure }),
     role: "assistant",
     stepModelIds: sent?.stepModelIds ?? [],
-    text: sent?.turn.message ?? "",
+    text: sent?.turn.reply ?? "",
     ...(sent === undefined ? {} : { timing: sent.timing }),
     toolCalls: toTranscriptToolCalls(sent?.turn.toolCalls ?? []),
   };
@@ -157,7 +158,8 @@ function transcriptRow(
   failure: string | undefined,
   row: RowKind
 ): TranscriptRow {
-  const failed = sent === undefined || sent.turn.status === "failed";
+  const failed =
+    sent === undefined || turnWorksStatus(sent.turn.status) === "failed";
   return {
     ended: failed ? "error" : "done",
     itemId: item.itemId,

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { defaultMessageReducer, type EveAgentReducerEvent } from "eve/client";
+import { conversationOf, type SessionStreamEvent } from "eve/client";
 
 import { loadEntryFiles } from "../evals/lib/dataset.ts";
 
@@ -195,15 +195,11 @@ test("the stored chat replays as a question, a search card, and an answer", () =
   const events = screenshotChatEvents(
     sources,
     new Date("2026-11-22T12:00:00Z")
-  ) as EveAgentReducerEvent[];
-  const reducer = defaultMessageReducer();
-  let data = reducer.initial();
-  for (const event of events) {
-    data = reducer.reduce(data, event);
-  }
+  ) as SessionStreamEvent[];
+  const { messages } = conversationOf(events);
 
-  const [user, assistant] = data.messages;
-  assert.equal(data.messages.length, 2);
+  const [user, assistant] = messages;
+  assert.equal(messages.length, 2);
   assert.equal(user?.role, "user");
   assert.deepEqual(
     user?.parts.filter((part) => part.type === "text").map((part) => part.text),
@@ -211,11 +207,11 @@ test("the stored chat replays as a question, a search card, and an answer", () =
   );
 
   assert.equal(assistant?.role, "assistant");
-  const tool = assistant?.parts.find((part) => part.type === "dynamic-tool");
-  assert.equal(tool?.type, "dynamic-tool");
-  if (tool?.type === "dynamic-tool") {
-    assert.equal(tool.toolName, "search_journal");
-    assert.equal(tool.state, "output-available");
+  const tool = assistant?.parts.find((part) => part.type === "tool");
+  assert.equal(tool?.type, "tool");
+  if (tool?.type === "tool") {
+    assert.equal(tool.name, "search_journal");
+    assert.equal(tool.state, "completed");
     assert.deepEqual(tool.output, [
       { date: "2026-10-11", id: "entry-13", title: "Sunday" },
       { date: "2026-10-25", id: "entry-17", title: "First Sunday call" },
@@ -226,10 +222,10 @@ test("the stored chat replays as a question, a search card, and an answer", () =
   assert.equal(text?.type === "text" ? text.text : null, chatAnswer);
 });
 
-test("every stored event has its own id", () => {
-  const events = screenshotChatEvents([], new Date()) as {
-    meta: { id: string };
-  }[];
-  const eventIds = events.map((event) => event.meta.id);
-  assert.equal(new Set(eventIds).size, eventIds.length);
+test("every stored event has its own place in the stream", () => {
+  const events = screenshotChatEvents([], new Date()) as SessionStreamEvent[];
+  const places = events.map(
+    (event) => `${event.meta.position.line}:${event.meta.position.index}`
+  );
+  assert.equal(new Set(places).size, places.length);
 });

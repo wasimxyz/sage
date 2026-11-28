@@ -112,13 +112,49 @@ function numberOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value);
 }
 
-/** The text of a `message.received` or `message.completed` event, else null. */
+const messageEventTypes = [
+  "delivery.consumed",
+  "content.completed",
+  "message.received",
+  "message.completed",
+];
+
+function firstTextPart(parts: unknown): unknown {
+  if (!Array.isArray(parts)) {
+    return undefined;
+  }
+  for (const part of parts) {
+    if (part === null || typeof part !== "object") {
+      continue;
+    }
+    const { kind, text: value } = part as { kind?: unknown; text?: unknown };
+    if (kind === "text" && typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function textOf(type: unknown, data: Record<string, unknown>): unknown {
+  if (type === "delivery.consumed") {
+    return firstTextPart(data.parts);
+  }
+  if (type === "content.completed") {
+    return data.kind === "text" ? data.value : undefined;
+  }
+  return data.message;
+}
+
+/**
+ * The text of a User or Sage message event, else null. It reads what Sage's
+ * core reads: eve 1.0's `delivery.consumed` and `content.completed` with
+ * text, and `message.received` and `message.completed` from chats saved
+ * before eve 1.0.
+ */
 export function chatMessageOf(
   raw: string
 ): { role: "assistant" | "user"; text: string } | null {
-  if (
-    !(raw.includes("message.received") || raw.includes("message.completed"))
-  ) {
+  if (!messageEventTypes.some((name) => raw.includes(name))) {
     return null;
   }
   let event: unknown;
@@ -132,16 +168,16 @@ export function chatMessageOf(
   }
   const { data, type } = event as { data?: unknown; type?: unknown };
   let role: "assistant" | "user";
-  if (type === "message.received") {
+  if (type === "delivery.consumed" || type === "message.received") {
     role = "user";
-  } else if (type === "message.completed") {
+  } else if (type === "content.completed" || type === "message.completed") {
     role = "assistant";
   } else {
     return null;
   }
   const message =
     data !== null && typeof data === "object"
-      ? (data as { message?: unknown }).message
+      ? textOf(type, data as Record<string, unknown>)
       : undefined;
   if (typeof message !== "string" || message.trim().length === 0) {
     return null;

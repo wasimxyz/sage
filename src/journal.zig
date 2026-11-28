@@ -242,6 +242,10 @@ pub const ChatIndexBatch = struct {
     /// The chat's `updated_at` when the batch was read. The write checks it,
     /// so a save in between drops the batch instead of indexing old text.
     updated_at: []u8 = &.{},
+    /// `Store.chat_convert_generation` when the batch was read. A conversion
+    /// renumbers events without a new `updated_at`, so the write checks this
+    /// too.
+    convert_generation: u64 = 0,
     /// True when no message without a row comes after this batch.
     last: bool = true,
 
@@ -318,6 +322,8 @@ pub fn jsonHas(payload: []const u8, field: []const u8) bool {
 }
 
 const chat_event_insert_sql = "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now'));";
+/// A converted event keeps the time eve recorded it, or none.
+const chat_event_insert_stamped_sql = "INSERT INTO chat_event (conversation_id, seq, event, saved_at) VALUES (?1, ?2, ?3, ?4);";
 const chat_event_insert_bytes: usize = 4 * 1024 * 1024;
 
 pub const migrations = [_]native_sdk.relational_store.Migration{
@@ -344,6 +350,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 21, .name = "chat_id_counter", .sql = @embedFile("schema/0021_chat_id_counter.sql") },
     .{ .version = 22, .name = "chat_index_no_role", .sql = @embedFile("schema/0022_chat_index_no_role.sql") },
     .{ .version = 23, .name = "entry_id_counter", .sql = @embedFile("schema/0023_entry_id_counter.sql") },
+    .{ .version = 24, .name = "eve_v27_events", .sql = @embedFile("schema/0024_eve_v27_events.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -480,6 +487,7 @@ pub const Store = struct {
     save_body: std.ArrayList(u8) = .empty,
     chat_save_active: bool = false,
     chat_save_new: bool = false,
+    chat_save_convert: bool = false,
     chat_save_has_session: bool = false,
     chat_save_id: i64 = 0,
     chat_save_stream_index: i64 = 0,
@@ -492,6 +500,9 @@ pub const Store = struct {
     chat_save_base_seq: i64 = 0,
     chat_save_generation: u64 = 0,
     chat_write_generation: u64 = 0,
+    /// Counts chat conversions. A conversion rewrites a chat's events without
+    /// moving its `updated_at`, so an index batch read before it checks this.
+    chat_convert_generation: u64 = 0,
     /// Tests set this so `scrubStorage` can return Busy after a successful
     /// rewrite, covering the enable path that leaves `enc.scrub_pending` set.
     fail_next_scrub: bool = false,
@@ -875,6 +886,7 @@ pub const Store = struct {
             }
         }
         return .{
+            .convert_generation = self.chat_convert_generation,
             .last = last,
             .messages = try messages.toOwnedSlice(self.allocator),
             .updated_at = updated_at,
@@ -906,6 +918,7 @@ pub const Store = struct {
         if (meta.failed) return error.SqlitePageFailed;
         if (meta.rows.items.len == 0) return false;
         if (!std.mem.eql(u8, meta.rows.items[0].updated_at, batch.updated_at)) return false;
+        if (batch.convert_generation != self.chat_convert_generation) return false;
 
         const relational = native_sdk.relational_store;
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -1991,7 +2004,7 @@ pub const Store = struct {
         var rows = ChatRows.init(self.allocator);
         defer rows.deinit();
         const outcome = self.db.query(
-            "SELECT id, title, updated_at FROM chat_conversation ORDER BY updated_at DESC, id DESC;",
+            "SELECT id, title, updated_at, event_format FROM chat_conversation ORDER BY updated_at DESC, id DESC;",
             &.{},
             &rows,
             ChatRows.collect,
@@ -2006,6 +2019,15 @@ pub const Store = struct {
             const title = try self.decryptFromStorage(vault_mod.aad_chat_title, row.title);
             defer self.allocator.free(title);
             try writeChatMeta(&writer, row.id, title, row.updated_at);
+        }
+        // Chats whose events an earlier eve wrote, for Chat to convert once.
+        try writer.writeAll("],\"unconverted\":[");
+        var first = true;
+        for (rows.rows.items) |row| {
+            if (row.event_format != 26) continue;
+            if (!first) try writer.writeByte(',');
+            try writer.print("{d}", .{row.id});
+            first = false;
         }
         try writer.writeAll("]}");
         return writer.buffered();
@@ -2252,7 +2274,7 @@ pub const Store = struct {
         var rows = ChatRows.init(self.allocator);
         defer rows.deinit();
         const outcome = self.db.query(
-            "SELECT id, title, eve_session_id, stream_index, created_at, updated_at, model, thinking, context_length FROM chat_conversation WHERE id = ?1;",
+            "SELECT id, title, eve_session_id, stream_index, created_at, updated_at, model, thinking, context_length, event_format FROM chat_conversation WHERE id = ?1;",
             &.{.{ .integer = id }},
             &rows,
             ChatRows.collect,
@@ -2335,6 +2357,8 @@ pub const Store = struct {
         try writeJsonString(&writer, row.created_at);
         try writer.writeAll(",\"updatedAt\":");
         try writeJsonString(&writer, row.updated_at);
+        try writer.writeAll(",\"eventFormat\":");
+        try writer.print("{d}", .{row.event_format});
         try writer.writeAll(",\"events\":[");
         for (opened.items, 0..) |event, index| {
             if (index > 0) try writer.writeByte(',');
@@ -2351,7 +2375,9 @@ pub const Store = struct {
     pub fn chatSave(self: *Store, payload: []const u8, output: []u8) ![]const u8 {
         var string_buf: [128 * 1024]u8 = undefined;
         var used: usize = 0;
-        const title = jsonString(payload, "title", &string_buf, &used) orelse return error.InvalidRequest;
+        const convert = jsonBool(payload, "convert") orelse false;
+        const title = jsonString(payload, "title", &string_buf, &used) orelse
+            if (convert) "" else return error.InvalidRequest;
         const chunk = jsonString(payload, "chunk", &string_buf, &used) orelse return error.InvalidRequest;
         const offset: usize = @intCast(jsonI64(payload, "offset") orelse 0);
         const done = jsonBool(payload, "done") orelse false;
@@ -2376,6 +2402,8 @@ pub const Store = struct {
         if (offset == 0) {
             if (base_seq < 0) return error.InvalidSaveChunk;
             if (new_row and base_seq != 0) return error.InvalidSaveChunk;
+            // A conversion replaces every event of a chat that exists.
+            if (convert and (new_row or base_seq != 0)) return error.InvalidSaveChunk;
             self.chat_save_events.clearRetainingCapacity();
             self.chat_save_title.clearRetainingCapacity();
             self.chat_save_session.clearRetainingCapacity();
@@ -2387,6 +2415,7 @@ pub const Store = struct {
             self.chat_save_context_length = context_length;
             self.chat_save_active = true;
             self.chat_save_new = new_row;
+            self.chat_save_convert = convert;
             self.chat_save_has_session = has_session;
             self.chat_save_id = id;
             self.chat_save_stream_index = stream_index;
@@ -2395,7 +2424,7 @@ pub const Store = struct {
         } else if (self.chat_save_generation != self.chat_write_generation) {
             self.resetPendingChatSave();
             return error.InvalidSaveChunk;
-        } else if (!self.chat_save_active or self.chat_save_new != new_row or self.chat_save_id != id or offset != self.chat_save_events.items.len) {
+        } else if (!self.chat_save_active or self.chat_save_new != new_row or self.chat_save_convert != convert or self.chat_save_id != id or offset != self.chat_save_events.items.len) {
             return error.InvalidSaveChunk;
         }
 
@@ -2416,7 +2445,10 @@ pub const Store = struct {
             if (element.len > chat_event_max_plaintext_bytes) return error.ChatEventTooLarge;
         }
 
-        const written_id = if (new_row) blk: {
+        const written_id = if (self.chat_save_convert) blk: {
+            try self.convertChatEvents(id, elements);
+            break :blk id;
+        } else if (new_row) blk: {
             const created_id = try self.insertChat(
                 self.chat_save_title.items,
                 if (self.chat_save_has_session) self.chat_save_session.items else null,
@@ -2425,7 +2457,7 @@ pub const Store = struct {
                 self.chat_save_thinking,
                 self.chat_save_context_length,
             );
-            try self.insertChatEventRange(created_id, 0, elements, &.{});
+            try self.insertChatEventRange(created_id, 0, elements, &.{}, null);
             break :blk created_id;
         } else blk: {
             if (!try self.chatConversationExists(id)) return error.NotFound;
@@ -2715,7 +2747,34 @@ pub const Store = struct {
                 .params = &.{.{ .integer = id }},
             },
         };
-        try self.insertChatEventRange(id, base_seq, elements, &prefix);
+        try self.insertChatEventRange(id, base_seq, elements, &prefix, null);
+    }
+
+    /// Replace every event of chat `id` with `elements`, the same transcript
+    /// in eve's newer event format, and mark the chat converted. The chat
+    /// keeps its `updated_at`, so the sidebar order and Dream's work stay.
+    /// Each row's `saved_at` is the time eve recorded for its event, or none
+    /// when eve recorded none, so a search by time still places old messages.
+    /// Event numbers change, so the message index starts over for this chat.
+    fn convertChatEvents(self: *Store, id: i64, elements: []const []const u8) !void {
+        if (!try self.chatConversationExists(id)) return error.NotFound;
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const stamps = try a.alloc(?[]const u8, elements.len);
+        for (elements, stamps) |element, *stamp| stamp.* = try convertedEventStamp(a, element);
+
+        const id_param = [_]native_sdk.relational_store.Value{.{ .integer = id }};
+        const prefix = [_]native_sdk.relational_store.Statement{
+            .{ .sql = "DELETE FROM chat_event WHERE conversation_id = ?1;", .params = &id_param },
+            .{ .sql = "DELETE FROM chat_embedding WHERE conversation_id = ?1;", .params = &id_param },
+            .{ .sql = "DELETE FROM chat_index_skip WHERE conversation_id = ?1;", .params = &id_param },
+            .{ .sql = "DELETE FROM chat_index_state WHERE conversation_id = ?1;", .params = &id_param },
+            .{ .sql = "UPDATE chat_conversation SET event_format = 27 WHERE id = ?1;", .params = &id_param },
+        };
+        self.chat_convert_generation += 1;
+        try self.insertChatEventRange(id, 0, elements, &prefix, stamps);
     }
 
     fn chatEventCount(self: *Store, conversation_id: i64) !i64 {
@@ -2743,6 +2802,9 @@ pub const Store = struct {
         base_seq: i64,
         elements: []const []const u8,
         prefix: []const native_sdk.relational_store.Statement,
+        /// When set, the `saved_at` of each element, from a conversion.
+        /// Otherwise each row is stamped with the time of this save.
+        stamps: ?[]const ?[]const u8,
     ) !void {
         const max_statements = native_sdk.relational_store.max_exec_statements;
         var index: usize = 0;
@@ -2767,11 +2829,16 @@ pub const Store = struct {
                     self.allocator.free(stored);
                     break;
                 }
+                const stamp: native_sdk.relational_store.Value = if (stamps) |all|
+                    if (all[index]) |at| .{ .text = at } else .null_value
+                else
+                    .null_value;
                 writes.append(self.allocator, .{
                     .params = .{
                         .{ .integer = conversation_id },
                         .{ .integer = seq },
                         .{ .text = stored },
+                        stamp,
                     },
                     .stored = stored,
                 }) catch |err| {
@@ -2786,8 +2853,11 @@ pub const Store = struct {
             defer statements.deinit(self.allocator);
             if (first) try statements.appendSlice(self.allocator, prefix);
             for (writes.items) |*item| {
-                try statements.append(self.allocator, .{
+                try statements.append(self.allocator, if (stamps == null) .{
                     .sql = chat_event_insert_sql,
+                    .params = item.params[0..3],
+                } else .{
+                    .sql = chat_event_insert_stamped_sql,
                     .params = item.params[0..],
                 });
             }
@@ -5021,7 +5091,7 @@ const SearchMatch = struct {
     }
 };
 
-const ChatEventRole = enum {
+pub const ChatEventRole = enum {
     assistant,
     user,
 
@@ -5400,33 +5470,103 @@ fn chatEventMessage(allocator: std.mem.Allocator, raw: []const u8) !?ChatEventMe
 }
 
 /// Whether a decrypted chat event is a User or Sage message with text. Most
-/// events are not, so a look for the two type names skips parsing them.
+/// events are not, so a look for the type names skips parsing them.
 fn chatEventIsMessage(allocator: std.mem.Allocator, raw: []const u8) !bool {
-    if (std.mem.indexOf(u8, raw, "message.received") == null and
+    if (std.mem.indexOf(u8, raw, "delivery.consumed") == null and
+        std.mem.indexOf(u8, raw, "content.completed") == null and
+        std.mem.indexOf(u8, raw, "message.received") == null and
         std.mem.indexOf(u8, raw, "message.completed") == null) return false;
     const message = try chatEventMessage(allocator, raw) orelse return false;
     allocator.free(message.text);
     return true;
 }
 
-fn readChatEventText(value: std.json.Value) ?struct { role: ChatEventRole, text: []const u8 } {
+pub const ChatEventText = struct {
+    role: ChatEventRole,
+    /// The text with surrounding white space trimmed. Never empty.
+    text: []const u8,
+    /// The text as eve stored it.
+    raw: []const u8,
+};
+
+/// The role and text of a User or Sage message event, or null for any other
+/// event. The text points into `value`.
+///
+/// Chats saved since eve 1.0 hold stream version 27 events: what you sent is
+/// the first text part of `delivery.consumed`, and each piece of Sage's text
+/// is a `content.completed` with `kind` "text", for both the reply and the
+/// narration before a tool call. Chats saved with an earlier eve hold
+/// `message.received` and `message.completed` until Chat converts them, and
+/// both kinds read the same way.
+pub fn readChatEventText(value: std.json.Value) ?ChatEventText {
     if (value != .object) return null;
     const obj = value.object;
     const type_val = obj.get("type") orelse return null;
     if (type_val != .string) return null;
-    const role: ChatEventRole = if (std.mem.eql(u8, type_val.string, "message.received"))
-        .user
-    else if (std.mem.eql(u8, type_val.string, "message.completed"))
-        .assistant
-    else
-        return null;
     const data_val = obj.get("data") orelse return null;
     if (data_val != .object) return null;
-    const message_val = data_val.object.get("message") orelse return null;
+    const data = data_val.object;
+    const role: ChatEventRole, const text_val: ?std.json.Value = if (std.mem.eql(u8, type_val.string, "delivery.consumed"))
+        .{ .user, firstTextPart(data.get("parts")) }
+    else if (std.mem.eql(u8, type_val.string, "content.completed")) blk: {
+        const kind = data.get("kind") orelse return null;
+        if (kind != .string or !std.mem.eql(u8, kind.string, "text")) return null;
+        break :blk .{ .assistant, data.get("value") };
+    } else if (std.mem.eql(u8, type_val.string, "message.received"))
+        .{ .user, data.get("message") }
+    else if (std.mem.eql(u8, type_val.string, "message.completed"))
+        .{ .assistant, data.get("message") }
+    else
+        return null;
+    const message_val = text_val orelse return null;
     if (message_val != .string) return null;
     const trimmed = std.mem.trim(u8, message_val.string, " \t\r\n");
     if (trimmed.len == 0) return null;
-    return .{ .role = role, .text = trimmed };
+    return .{ .role = role, .text = trimmed, .raw = message_val.string };
+}
+
+/// The time eve recorded for a converted event, `meta.at`, when it reads as
+/// one of Sage's timestamps. eve's converter writes the Unix epoch for an
+/// event that had no time, so a year before 2000 counts as none.
+fn convertedEventStamp(allocator: std.mem.Allocator, raw: []const u8) !?[]const u8 {
+    var parsed = std.json.parseFromSlice(std.json.Value, allocator, raw, .{ .allocate = .alloc_always }) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const meta = parsed.value.object.get("meta") orelse return null;
+    if (meta != .object) return null;
+    const at = meta.object.get("at") orelse return null;
+    if (at != .string or !isSavedAtTimestamp(at.string)) return null;
+    if (std.mem.order(u8, at.string[0..4], "2000") == .lt) return null;
+    return try allocator.dupe(u8, at.string);
+}
+
+/// `YYYY-MM-DDTHH:MM:SS.mmmZ`, the shape `saved_at` uses.
+fn isSavedAtTimestamp(text: []const u8) bool {
+    const shape = "dddd-dd-ddTdd:dd:dd.dddZ";
+    if (text.len != shape.len) return false;
+    for (text, shape) |char, want| {
+        if (want == 'd') {
+            if (!std.ascii.isDigit(char)) return false;
+        } else if (char != want) return false;
+    }
+    return true;
+}
+
+/// The first text part with text in a `delivery.consumed` part list. Chat
+/// sends one text part per message.
+fn firstTextPart(parts_val: ?std.json.Value) ?std.json.Value {
+    const parts = parts_val orelse return null;
+    if (parts != .array) return null;
+    for (parts.array.items) |part| {
+        if (part != .object) continue;
+        const kind = part.object.get("kind") orelse continue;
+        if (kind != .string or !std.mem.eql(u8, kind.string, "text")) continue;
+        const text = part.object.get("text") orelse continue;
+        if (text != .string) continue;
+        if (std.mem.trim(u8, text.string, " \t\r\n").len == 0) continue;
+        return text;
+    }
+    return null;
 }
 
 fn profileTextSeen(existing: []const []const u8, incoming: []const NewFact, candidate: []const u8) bool {
@@ -6002,6 +6142,7 @@ const ChatRows = struct {
         thinking: ?i64 = null,
         context_length: ?i64 = null,
         title_locked: i64 = 0,
+        event_format: i64 = 27,
         created_at: []u8 = &.{},
         updated_at: []u8 = &.{},
     };
@@ -6055,6 +6196,8 @@ const ChatRows = struct {
                     row.id = cellInteger(cell);
                 } else if (std.mem.eql(u8, name, "stream_index")) {
                     row.stream_index = cellInteger(cell);
+                } else if (std.mem.eql(u8, name, "event_format")) {
+                    row.event_format = cellInteger(cell);
                 } else if (std.mem.eql(u8, name, "title")) {
                     row.title = try dupeCell(self.allocator, cell);
                 } else if (std.mem.eql(u8, name, "events")) {
@@ -6089,7 +6232,8 @@ fn freeChatExportMetaItem(allocator: std.mem.Allocator, item: ChatExportMeta) vo
 }
 
 const ChatEventWrite = struct {
-    params: [3]native_sdk.relational_store.Value,
+    /// The fourth value is used only by a stamped insert.
+    params: [4]native_sdk.relational_store.Value,
     stored: []u8,
 };
 
@@ -7633,7 +7777,7 @@ test "deleteAllData wipes entries and chats and leaves settings" {
 
     var list_out: [8192]u8 = undefined;
     try std.testing.expectEqualStrings("{\"entries\":[]}", try store.list(&list_out));
-    try std.testing.expectEqualStrings("{\"conversations\":[]}", try store.chatList(&list_out));
+    try std.testing.expectEqualStrings("{\"conversations\":[],\"unconverted\":[]}", try store.chatList(&list_out));
 
     var rows = KvRows.init(std.testing.allocator);
     defer rows.deinit();
@@ -10064,6 +10208,116 @@ test "a chat with nothing new records that its index caught up" {
     try std.testing.expect(!(try store.chatIndexDue(id)));
 }
 
+/// The same kind of chat as `two_turn_chat`, in eve 1.0's event format.
+/// Reasoning, a turn that took in no text, and a file part are not messages.
+const v27_chat =
+    \\[{"type":"session.started","data":{},"meta":{"at":"2026-10-22T21:36:06.909Z","position":{"index":0,"line":0}}},
+    \\{"type":"delivery.consumed","data":{"deliveryId":"d0","turnId":"turn_0","parts":[{"kind":"text","text":"I keep waking at 4am."}]},"meta":{"at":"2026-10-22T21:36:06.912Z","position":{"index":0,"line":1}}},
+    \\{"type":"content.completed","data":{"kind":"reasoning","partId":"p0","phase":"narration","value":"Thinking it over."},"meta":{"at":"1970-01-01T00:00:00.000Z","position":{"index":0,"line":2}}},
+    \\{"type":"content.completed","data":{"kind":"text","partId":"p1","phase":"narration","value":"Let me look."},"meta":{"position":{"index":0,"line":3}}},
+    \\{"type":"content.completed","data":{"kind":"text","partId":"p2","phase":"reply","value":"That sounds tiring."},"meta":{"at":"2026-10-22T21:36:07.100Z","position":{"index":0,"line":4}}},
+    \\{"type":"delivery.consumed","data":{"deliveryId":"d1","turnId":"turn_0","parts":[]},"meta":{"at":"2026-10-22T21:36:07.200Z","position":{"index":0,"line":5}}},
+    \\{"type":"delivery.consumed","data":{"deliveryId":"d2","turnId":"turn_1","parts":[{"kind":"file","mediaType":"image/png"},{"kind":"text","text":"Mostly the move to Lisbon."}]},"meta":{"at":"2026-10-23T08:00:00.000Z","position":{"index":0,"line":6}}}]
+;
+
+/// Sends `events` as a conversion of chat `id`, in chunks, the way Chat does.
+fn convertChatEventsVia(store: *Store, id: i64, events: []const u8) !void {
+    var offset: usize = 0;
+    while (true) {
+        const chunk = utf8Chunk(events, offset, chunk_bytes);
+        const done = offset + chunk.len >= events.len;
+        var payload_buf: [20000]u8 = undefined;
+        var writer = std.Io.Writer.fixed(&payload_buf);
+        try writer.print("{{\"id\":{d},\"convert\":true,\"baseSeq\":0,\"offset\":{d},\"chunk\":", .{ id, offset });
+        try writeJsonString(&writer, chunk);
+        try writer.writeAll(",\"done\":");
+        try writer.writeAll(if (done) "true" else "false");
+        try writer.writeByte('}');
+        var out: [256]u8 = undefined;
+        _ = try store.chatSave(writer.buffered(), &out);
+        if (done) return;
+        offset += chunk.len;
+    }
+}
+
+test "eve 1.0 events read as User and Sage messages" {
+    var store = try testStore();
+    defer store.deinit();
+    const id = try saveChatEvents(&store, "Sleep", v27_chat);
+    var batch = try store.chatMessagesToIndex(id, chat_index_batch_messages);
+    defer batch.deinit(store.allocator);
+    try std.testing.expectEqual(@as(usize, 4), batch.messages.len);
+    try std.testing.expectEqual(@as(i64, 1), batch.messages[0].seq);
+    try std.testing.expectEqualStrings("I keep waking at 4am.", batch.messages[0].text);
+    try std.testing.expectEqualStrings("Let me look.", batch.messages[1].text);
+    try std.testing.expectEqualStrings("That sounds tiring.", batch.messages[2].text);
+    try std.testing.expectEqual(@as(i64, 6), batch.messages[3].seq);
+    try std.testing.expectEqualStrings("Mostly the move to Lisbon.", batch.messages[3].text);
+}
+
+test "a conversion rewrites a chat's events and keeps its place and times" {
+    var store = try testStore();
+    defer store.deinit();
+    const id = try saveChatEvents(&store, "Sleep", two_turn_chat);
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "UPDATE chat_conversation SET event_format = 26, updated_at = '2026-10-23T09:00:00.000Z';" },
+    }) == .ok);
+    var list_out: [1024]u8 = undefined;
+    try std.testing.expect(std.mem.indexOf(u8, try store.chatList(&list_out), "\"unconverted\":[1]") != null);
+    // A batch read before the conversion names the old event numbers.
+    var stale = try store.chatMessagesToIndex(id, chat_index_batch_messages);
+    defer stale.deinit(store.allocator);
+    try std.testing.expectEqual(@as(usize, 4), stale.messages.len);
+    const vec = [_]f32{ 1, 0, 0 };
+    try indexChatWith(&store, id, &vec);
+    try std.testing.expectEqual(@as(i64, 4), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding;"));
+
+    try convertChatEventsVia(&store, id, v27_chat);
+
+    try std.testing.expectEqual(@as(i64, 7), try store.countDataRows("SELECT count(*) AS n FROM chat_event;"));
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_conversation WHERE event_format = 27 AND updated_at = '2026-10-23T09:00:00.000Z';"));
+    // Each row keeps the time eve recorded. The epoch and a missing time are none.
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_event WHERE seq = 1 AND saved_at = '2026-10-22T21:36:06.912Z';"));
+    try std.testing.expectEqual(@as(i64, 2), try store.countDataRows("SELECT count(*) AS n FROM chat_event WHERE saved_at IS NULL AND seq IN (2, 3);"));
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding;"));
+    try std.testing.expect(try store.chatIndexDue(id));
+    try std.testing.expect(std.mem.indexOf(u8, try store.chatList(&list_out), "\"unconverted\":[]") != null);
+
+    const vectors = [_][]const f32{ &vec, &vec, &vec, &vec };
+    try std.testing.expect(!(try store.addChatMessageEmbeddings(id, stale, &vectors, "nomic-embed-text:v1.5")));
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding;"));
+    try indexChatWith(&store, id, &vec);
+    try std.testing.expectEqual(@as(i64, 4), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding;"));
+
+    var get_out: [16384]u8 = undefined;
+    const loaded = try store.chatGet("{\"id\":1}", &get_out);
+    try std.testing.expect(std.mem.indexOf(u8, loaded, "\"eventFormat\":27") != null);
+    try std.testing.expect(std.mem.indexOf(u8, loaded, "\"title\":\"Sleep\"") != null);
+}
+
+test "a conversion refuses a new chat, a partial rewrite, and a missing chat" {
+    var store = try testStore();
+    defer store.deinit();
+    var out: [256]u8 = undefined;
+    try std.testing.expectError(error.InvalidSaveChunk, store.chatSave("{\"id\":null,\"convert\":true,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
+    const id = try saveChatEvents(&store, "Sleep", two_turn_chat);
+    _ = id;
+    try std.testing.expectError(error.InvalidSaveChunk, store.chatSave("{\"id\":1,\"convert\":true,\"baseSeq\":2,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
+    try std.testing.expectError(error.NotFound, store.chatSave("{\"id\":9,\"convert\":true,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
+    try std.testing.expectEqual(@as(i64, 5), try store.countDataRows("SELECT count(*) AS n FROM chat_event;"));
+}
+
+test "migration 24 forgets eve sessions and marks chats with events for conversion" {
+    var store = try upgradedStoreFrom(23, &.{
+        "INSERT INTO chat_conversation (id, title, events, eve_session_id, stream_index, created_at, updated_at) VALUES (1, 'Old', '', 'sess-1', 12, '2026-03-01T10:00:00.000Z', '2026-03-02T10:00:00.000Z');",
+        "INSERT INTO chat_event (conversation_id, seq, event) VALUES (1, 0, '{}');",
+        "INSERT INTO chat_conversation (id, title, events, created_at, updated_at) VALUES (2, 'Empty', '', '2026-10-27T10:00:00.000Z', '2026-10-27T10:00:00.000Z');",
+    });
+    defer store.deinit();
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_conversation WHERE id = 1 AND event_format = 26 AND eve_session_id IS NULL AND stream_index = 0 AND updated_at = '2026-03-02T10:00:00.000Z';"));
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_conversation WHERE id = 2 AND event_format = 27;"));
+}
+
 test "semanticSearchChats ranks messages, keeps two per chat, and leaves out the excluded chat" {
     var store = try testStore();
     defer store.deinit();
@@ -10534,7 +10788,7 @@ test "chat save get list and delete round-trip" {
     try std.testing.expectEqualStrings("sess-1", deleted.session_id.?);
     var empty_out: [256]u8 = undefined;
     const empty = try store.chatList(&empty_out);
-    try std.testing.expectEqualStrings("{\"conversations\":[]}", empty);
+    try std.testing.expectEqualStrings("{\"conversations\":[],\"unconverted\":[]}", empty);
 }
 
 test "encrypted chat save stores ciphertext" {
@@ -11259,7 +11513,7 @@ test "chat save rejects an oversized event and stores nothing" {
 
     var out: [256]u8 = undefined;
     const listed = try store.chatList(&out);
-    try std.testing.expectEqualStrings("{\"conversations\":[]}", listed);
+    try std.testing.expectEqualStrings("{\"conversations\":[],\"unconverted\":[]}", listed);
 }
 
 test "chat save rejects an oversized tail and keeps the stored events" {

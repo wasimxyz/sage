@@ -349,8 +349,13 @@ function saveEntry(ctx: Context, entry: JournalEntryFixture): number {
   );
 }
 
-/** The most one bridge call carries, as in agent/scripts/automation.ts. */
-export const maxChunkBytes = 4000;
+/**
+ * The most one save carries. The Native SDK takes an automation command of up
+ * to 16 KiB, and the chunk goes inside it as an escaped JSON string, so this
+ * leaves room for the escapes and the rest of the command. The screenshot
+ * chat, in eve 1.0's event format, is about 5 KB.
+ */
+export const maxChunkBytes = 8000;
 
 /**
  * The text of a save that fits in one call. A save split over several calls

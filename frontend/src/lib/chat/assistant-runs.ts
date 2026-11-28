@@ -1,4 +1,4 @@
-import type { EveDynamicToolPart, EveMessagePart } from "eve/client";
+import type { EveMessagePart, EveToolPart } from "eve/client";
 
 import { assistantPartIsVisible } from "./assistant-pending.ts";
 import {
@@ -10,13 +10,15 @@ import {
 interface ReasoningRun {
   index: number;
   kind: "reasoning";
+  /** The model step the run's reasoning came from. */
+  stepIndex: number | undefined;
   streaming: boolean;
   texts: string[];
 }
 
 interface ReadsRun {
   kind: "reads";
-  parts: EveDynamicToolPart[];
+  parts: EveToolPart[];
   /** `get_journal_entry` or `get_chat`. A run holds reads of one kind. */
   toolName: string;
 }
@@ -33,11 +35,11 @@ export type AssistantRun = PartRun | ReadsRun | ReasoningRun;
 
 /**
  * Groups an assistant message's parts into what Chat draws as one row each.
- * Consecutive reasoning parts become one thinking row, so a streamed trace
- * does not stack several "Thinking..." triggers. Reads of journal entries, or
- * of past chats, with nothing visible between them become one row. Parts that
- * show nothing, such as a step start or an empty text, do not split a group of
- * reads.
+ * Consecutive reasoning parts of one model step become one thinking row, so a
+ * streamed trace does not stack several "Thinking..." triggers. Reads of
+ * journal entries, or of past chats, with nothing visible between them become
+ * one row. Parts that show nothing, such as an empty text, do not split a
+ * group of reads.
  */
 export function assistantRuns(
   parts: readonly EveMessagePart[]
@@ -54,11 +56,17 @@ export function assistantRuns(
       }
       reads = null;
       const streaming = part.state === "streaming";
-      if (reasoning) {
+      if (reasoning && reasoning.stepIndex === part.stepIndex) {
         reasoning.texts.push(part.text);
         reasoning.streaming = streaming;
       } else {
-        reasoning = { index, kind: "reasoning", streaming, texts: [part.text] };
+        reasoning = {
+          index,
+          kind: "reasoning",
+          stepIndex: part.stepIndex,
+          streaming,
+          texts: [part.text],
+        };
         runs.push(reasoning);
       }
       continue;
@@ -68,8 +76,8 @@ export function assistantRuns(
     if (!visible) {
       continue;
     }
-    const toolName = part.type === "dynamic-tool" ? toolPartName(part) : "";
-    if (part.type === "dynamic-tool" && readToolNames.has(toolName)) {
+    const toolName = part.type === "tool" ? toolPartName(part) : "";
+    if (part.type === "tool" && readToolNames.has(toolName)) {
       if (reads !== null && reads.toolName === toolName) {
         reads.parts.push(part);
       } else {

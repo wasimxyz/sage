@@ -26,6 +26,7 @@ import {
 } from "@/bridge";
 import { useOllama } from "@/components/ollama-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
+import { convertStoredChats } from "@/lib/chat/convert-stored-chats";
 import {
   type AgentHealth,
   agentDownMessage,
@@ -300,6 +301,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     restore("chat", commitChatDelete);
     commitAll("chat")
       .then(() => refreshList())
+      // Chats saved before eve 1.0 are converted once, in the background.
+      // A chat opened first is converted as it opens.
+      .then(() => convertStoredChats())
       .catch(() => undefined);
   }, [refreshList]);
 
@@ -540,6 +544,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           load: readyChatLoad({
             contextLength: prefs.contextLength,
             createdAt: updatedAt,
+            eventFormat: 27,
             events: [],
             eveSessionId: null,
             id,
