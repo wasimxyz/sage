@@ -7,7 +7,7 @@ This page explains how to publish a Sage release and how installed copies find i
 A release has four files, all built from the same commit. The version in a file name is the `version` in `app.json`.
 
 - `Sage-0.1.0-macos.dmg`: the disk image for new installs
-- `Sage.dmg`: the same disk image with no version in its name, so a link to `releases/latest/download/Sage.dmg` always gets the newest release
+- `Sage.dmg`: the same disk image with no version in its name, so a link to `releases/latest/download/Sage.dmg` always gets the newest full release
 - `Sage-0.1.0-macos-update.zip`: the app bundle that installed copies download
 - `native-update.json`: the update feed, signed with the update key
 
