@@ -41,4 +41,4 @@ These pages explain how Sage works once you are past the [README](../README.md).
 
 - [Scripts](../scripts/README.md): packaging the app, uploading eval reports, and resetting and seeding the dev app
 - [Releasing Sage](release.md): the update key, cutting a release, and how installed copies update
-- [AGENTS.md](../AGENTS.md): rules for coding agents in this repo
+- [AGENTS.md](../AGENTS.md): rules for coding agents in this repo. The root file holds the rules every change needs, and the folders it lists have their own `AGENTS.md` next to the code.

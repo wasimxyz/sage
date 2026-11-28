@@ -1,63 +1,56 @@
-# Sage
+# AGENTS.md
 
-Sage is a local-only macOS journal with a Zig core, a React frontend, and an eve Chat agent. Read `docs/README.md` before changing behavior.
+Sage is a local-only macOS journal: a Zig core (`src/`), a React frontend (`frontend/`), and an eve Chat agent (`agent/`). Developer docs start at `docs/README.md`.
 
-## Skills
+## Folder files
 
-Read the matching skill before editing that tree. If it is not installed, install it with `npx skills add` ([CLI](https://www.skills.sh/docs/cli)), then read it:
+These folders have their own `AGENTS.md`: `src/`, `src/schema/`, `src/speech/`, `frontend/`, `agent/`, `agent/evals/`, `eval-viewer/`, `scripts/`, `security-tests/`, `docs/`, and `.github/`. Before you edit a file, read every `AGENTS.md` from the root down to its folder. Some agents load only the root file on their own.
 
-```
-npx skills add https://github.com/vercel-labs/agent-skills --skill vercel-react-best-practices
-```
+Don't add a `CLAUDE.md`. Claude Code reads `AGENTS.md` only when no `CLAUDE.md` exists.
 
-| Area | Skill | Repo fallback |
-| --- | --- | --- |
-| `src/`, `app.json`, packaging, Native SDK automation | [`native-sdk`](https://skills.sh/vercel-labs/native/native-sdk) (then `native skills get zig`; `native skills get automation` when driving a running app) | `docs/architecture.md`, `docs/security/` |
-| `agent/` eve app, tools, channels, memory, world | [`eve`](https://skills.sh/vercel/eve/eve) | `agent/node_modules/eve/docs/`, `docs/agent/eve-app.md` |
-| `agent/` AI SDK / Ollama provider | [`ai-sdk`](https://skills.sh/vercel/ai/ai-sdk) and the Ollama docs below | `docs/agent/eve-app.md` |
-| TipTap editor | [`tiptap`](https://skills.sh/ueberdosis/tiptap/tiptap) | `frontend/src/components/editor.tsx` |
-| `frontend/` or `eval-viewer/` UI | [`shadcn`](https://skills.sh/shadcn/ui/shadcn), [`vercel-react-best-practices`](https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices) | existing components |
-| JS/TS lint and format | [`ultracite`](https://skills.sh/haydenbleasel/ultracite/ultracite) | `frontend/biome.jsonc`, `agent/biome.jsonc`, `eval-viewer/biome.jsonc` |
-| `eval-viewer/` Next.js | [`next-best-practices`](https://skills.sh/vercel-labs/openreview/next-best-practices); [`next-dev-loop`](https://skills.sh/vercel/next.js/next-dev-loop) after a user-visible change | `eval-viewer/` |
-| `docs/` | [`writing-guidelines`](https://skills.sh/vercel-labs/agent-skills/writing-guidelines) | match existing `docs/` voice |
-| UI review | [`web-design-guidelines`](https://skills.sh/vercel-labs/agent-skills/web-design-guidelines) | only when asked |
+## Private data
+
+- Journal entries, chats, and memories stay on this Mac. Don't add a cloud model fallback, and never offer Ollama cloud models.
+- Never write journal or chat text to a log, or to a field that stays readable when encryption is on.
+- Dev, eval, and automation runs set a scratch `SAGE_DATA_DIR`. A packaged build without it opens the real journal and its Keychain item.
+- The eval suite may send the made-up cases in the eval content (`agent/evals/content/`, a checkout of the private sage-evals repo) to the cloud judge and simulated user. Never send real journal entries, chats, or memories to a cloud model, and never point `SAGE_EVAL_CONTENT` at them.
+- People have used Sage since v0.1.0, so a change must not lose their data. Migrate old rows forward.
 
 ## Ollama
 
-Sage ships a pinned Ollama and runs it itself. `scripts/fetch-ollama.sh` holds the version and its SHA-256 checks, and `src/ollama_server.zig` starts, restarts, and stops the server. The mode follows where the executable sits. A Sage inside an app bundle runs its own copy on `127.0.0.1:11435` and never reads `SAGE_OLLAMA_PATH`. Every other launch (`make dev`, `make eval`, `make seed-dev`) runs the copy named by `SAGE_OLLAMA_PATH` on `127.0.0.1:11436`. Sage never uses `127.0.0.1:11434`, where an Ollama you run yourself listens.
-
-Chat and Dream call Ollama on the native `/api` prefix. Do not switch Chat or Dream to `/v1`.
-
-Packaged Chat gets its Ollama address from `src/eve_sidecar.zig`. The dev Chat agent reads `OLLAMA_BASE_URL` from `agent/.env.local` and defaults to `http://127.0.0.1:11436/api`.
-
-On any Ollama question or change, fetch the current docs. Start at [llms.txt](https://docs.ollama.com/llms.txt), then open the page that matches the work:
-
-- [API intro](https://docs.ollama.com/api/introduction)
-- [Chat](https://docs.ollama.com/api/chat) (`POST /api/chat`)
-- [Generate](https://docs.ollama.com/api/generate) (`POST /api/generate`, Dream summaries)
-- [Embed](https://docs.ollama.com/api/embed) (`POST /api/embed`) and [Embeddings](https://docs.ollama.com/capabilities/embeddings)
-- [List models](https://docs.ollama.com/api/tags) (`GET /api/tags`)
-- [Pull](https://docs.ollama.com/api/pull) / [Delete](https://docs.ollama.com/api/delete)
-- [Thinking](https://docs.ollama.com/capabilities/thinking) and [Context length](https://docs.ollama.com/context-length)
-- [Tool calling](https://docs.ollama.com/capabilities/tool-calling)
-- [Errors](https://docs.ollama.com/api/errors) and [Streaming](https://docs.ollama.com/api/streaming)
-- [OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility) (not our path)
-
-Zig client: `src/ollama.zig`. Node Chat path: `ollama-ai-provider-v2` in `agent/`.
+Sage runs its own pinned Ollama: on `127.0.0.1:11435` inside an app bundle, and on `127.0.0.1:11436` for `make dev`, `make eval`, and `make seed-dev`. It never uses `127.0.0.1:11434`, where an Ollama you run yourself listens. Chat and Dream call the native `/api` prefix. Don't switch them to `/v1`.
 
 ## Checks and tests
 
-Before committing and pushing, run `make check` and `make test` and fix failures before you finish. Docs-only changes skip `make test`. If a target cannot run, say so.
+- `make check` checks the Native SDK CLI and release versions, then runs `native check` and the lint and type checks for `frontend/`, `agent/`, and `eval-viewer/`.
+- `make test` runs the Zig tests, each package's tests, the script tests, and `security-tests/`.
+- Run both before you commit and push, and fix failures before you finish. Docs-only changes skip `make test`. If a target can't run, say which one.
+- `sh: ultracite: command not found` means `make package` installed the agent without its dev packages. Run `npm --prefix agent install`.
+- Never run `make eval`, the eval runner, a dry run, or a sweep, and never ask a subagent to. Only the user runs evals.
 
-`make check` runs the lint and type checks for `frontend/`, `agent/`, and `eval-viewer/`.
+## Before you push
 
-Never run `make eval`; only the user runs evals.
+- Reread every comment and docs line you changed, and check it against the code. Docs quote UI copy word for word, so a copy change is also a docs change.
+- After you rename or move something, search for the old name in the `Makefile`, `scripts/`, `security-tests/`, and `docs/`. Several checks grep source text.
 
-## Constraints
+## macOS
 
-- Journal entries, chats, and memories stay on this machine. Do not add a cloud model fallback.
-- The eval suite may send the made-up cases in the eval content (`agent/evals/content/`, a checkout of the private sage-evals repo) to the cloud judge and simulated user. Never send real journal entries, chats, or memories to a cloud model, and never point `SAGE_EVAL_CONTENT` at them.
-- Only the window event-loop thread touches SQLite.
-- New bridge commands go in both `app.json` and `src/main.zig`.
-- Files under `src/schema/` are append-only.
-- Docs and UI copy should match the voice in `docs/`: short sentences, existing names, no new jargon.
+- `sed -i` is BSD `sed` here, so edit files with your edit tool. There is no `timeout` command.
+- Zig isn't on `PATH`. Use the make targets or `native`. The `native` CLI is installed per nvm Node version, so install the version in `.native-sdk-version` for the Node you use.
+- "Port 5173 is already in use" means a `make dev` is already running. Don't kill it.
+- Never kill processes by name or pattern. Signal only process ids you started.
+
+## Releases
+
+Push a version tag only when the user asks, and only after `main`'s CI passes on the merge commit. `docs/release.md` has the steps.
+
+## Skills
+
+- When an `AGENTS.md` names a skill, use it if it is installed. Otherwise load it for the session with `npx skills use <source>@<skill>`, or with `npx skills use <pinned URL>` when the file gives one.
+- Ask before you install a skill that no `AGENTS.md` names, and never pass `-y`.
+- When a skill's advice conflicts with an `AGENTS.md` rule, follow the `AGENTS.md`.
+- `ultracite` (haydenbleasel/ultracite): fixing lint and format errors in `frontend/`, `agent/`, and `eval-viewer/`.
+
+## Voice
+
+Docs and UI copy match the voice in `docs/`: short sentences, existing names, no new jargon. UI copy says "local AI"; code keeps the `ollama.*` names.

@@ -1,6 +1,6 @@
 # Eval suite internals
 
-This page is for people changing the eval runner or the eval files. To run the suite, see [docs/agent/evals.md](../../docs/agent/evals.md). To read results, see [docs/agent/evals-reports.md](../../docs/agent/evals-reports.md). To write people, see [data/README.md](data/README.md).
+This page is for people changing the eval runner or the eval files. To run the suite, see [docs/agent/evals.md](../../docs/agent/evals.md). To read results, see [docs/agent/evals-reports.md](../../docs/agent/evals-reports.md). To write people, see `data/README.md` in the eval content, the private sage-evals repo.
 
 ## The runner
 
@@ -88,7 +88,7 @@ Each file turns `case.yaml` references into eve evals. A pass runs the files its
 - `chat/conversations.eval.ts`: one eval for each conversation and repeat of the pass’s person, picked by the sweep’s `tags`. For `new-user` it adds the `alsoEmpty` conversations of everyone else, as `journal: empty`, and it leaves out people the sweep excludes. A simulated user plays the person (`lib/simulated-user.ts`), and each Sage turn goes through `sendTurn` and records `counted:turn-works` on its own turn. It writes one transcript row of kind `conversation`, with the turns, how it ended, the simulated user’s flags and rating, and a note. A conversation gets 30 minutes, and 2 hours when `maxTurns` is over 12.
 - `grade/conversations.eval.ts`: one eval for each saved conversation. Each Sage reply is graded as a reply, with the turns before it, and the whole conversation gets one more judge call. [Grading conversations](../../docs/agent/evals.md#grading-conversations) has the details.
 - `grade/replies.eval.ts`: one eval for each saved reply, openers and fact questions, with one judge call each. It records the hard checks, the counted checks, the judge’s slips, and the rubric that apply. Before the judge is asked, it records the search checks and the pattern slips, which need no judge. It replaced `grade/facts.eval.ts`.
-- `calibration/agreement.eval.ts`: one eval for each sampled reply that you graded in `calibration/grades.jsonl`. It asks the judge about the reply and records `soft:calibration` with both sets of verdicts in its metadata. The runner turns those into the agreement report. [The calibration README](calibration/README.md) has the formats.
+- `calibration/agreement.eval.ts`: one eval for each sampled reply that you graded in `calibration/grades.jsonl`. It asks the judge about the reply and records `soft:calibration` with both sets of verdicts in its metadata. The runner turns those into the agreement report. `calibration/README.md` in the eval content has the formats.
 - `grade/head-to-head.eval.ts`: one eval for each item of each pair of the top setups of the sweep that `compare` names. It judges the item in both orders and records `soft:head-to-head` with the result. Any other pass gets a skipped placeholder.
 - `evals.config.ts`: the eve config: sequential runs, a ten-minute timeout for each eval, and the result recorder when `SAGE_EVAL_RESULTS` is set. It sets no judge model, because the cloud judge runs through `lib/grader.ts`, where every call counts against the spending cap.
 

@@ -1,4 +1,4 @@
-.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev screenshots eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive
+.PHONY: setup check check-native-sdk-version test fe-build build dev reset-dev seed-dev screenshots eval eval-upload eval-viewer-build eval-viewer-dev eval-viewer-start package package-archive precommit
 
 # `native build` / `native test` drive this repo's ejected build.zig.
 # Pass the global CLI only when it is actually installed; otherwise
