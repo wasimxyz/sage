@@ -8,7 +8,6 @@ import {
   type ChatEventTurn,
   chatSessionEvents,
 } from "../evals/lib/chat-events.ts";
-import { screenshotChatEvents } from "./screenshot-chat.ts";
 import type { BridgeCall } from "./seed-chats.ts";
 import {
   BEN_MAX_CHARS,
@@ -406,12 +405,27 @@ test("a saved chat carries its session and picker, then gets indexed", async () 
   });
 });
 
+/** A real turn's shape: a question, one journal search, and an answer. */
+function searchTurnEvents(): SessionStreamEvent[] {
+  return chatSessionEvents(
+    [
+      {
+        question: "How have my Sundays changed?",
+        reply: "They changed.",
+        tool: {
+          callId: "call_search",
+          input: { query: "Sundays" },
+          name: "search_journal",
+          output: [{ date: "2026-10-11", id: "entry-13", title: "Sunday" }],
+        },
+      },
+    ],
+    { at: "2026-11-27T12:00:00.000Z", modelId: CHAT_MODEL }
+  ) as unknown as SessionStreamEvent[];
+}
+
 test("the saved stream reads through eve's conversationOf as the Chat screen shows it", async () => {
-  // The screenshot chat is a real turn's shape: a question, a search, an answer.
-  const stream = screenshotChatEvents(
-    [{ date: "2026-10-11", id: 13, title: "Sunday" }],
-    new Date("2026-11-27T12:00:00Z")
-  ) as SessionStreamEvent[];
+  const stream = searchTurnEvents();
   const held = await holdChat(
     { beats: [], name: "sundays", opening: "How have my Sundays changed?" },
     deps(

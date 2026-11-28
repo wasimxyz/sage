@@ -1,6 +1,7 @@
 /**
- * Saved Chat events written by hand, for chats that scripts seed or show
- * without a model: the throwaway Sage's past chats and the screenshot chat.
+ * Saved Chat events written by hand, for chats that scripts seed or test
+ * without a model: the throwaway Sage's past chats, and the turns the seed's
+ * tests stand in for.
  *
  * eve 1.0 saves stream version 27 events. Each stored line holds the events
  * of one state change, and each event carries its place as

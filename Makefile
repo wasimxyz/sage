@@ -117,9 +117,10 @@ seed-dev:
 	@ollama_bin="$$(sh scripts/fetch-ollama.sh)" || exit 1; \
 	YES="$(YES)" SEED="$(SEED)" CHATS="$(CHATS)" SAGE_MEMORY="$(SAGE_MEMORY)" SAGE_OLLAMA_PATH="$$ollama_bin" sh scripts/seed-dev.sh
 
-# Build a throwaway packaged Sage with automation on, fill a scratch journal,
-# and capture each screen in light and dark into zig-out/screenshots, or OUT.
-# Never opens your own journal. Needs Screen Recording access for the terminal.
+# Build a throwaway packaged Sage with automation on, start it on a copy of the
+# dev journal (run make seed-dev CHATS=1 first), and capture each screen, entry,
+# and chat in light and dark into zig-out/screenshots, or OUT. Never opens your
+# own journal. Needs Screen Recording access for the terminal.
 screenshots:
 	@OUT="$(OUT)" NATIVE_OPTIMIZE="$(NATIVE_OPTIMIZE)" sh scripts/screenshots.sh
 

@@ -72,7 +72,7 @@ When you say no, the script exits 0. Set `RESET_DEV_DECLINED_STATUS` to change t
 
 ## Seeding the dev app
 
-`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` has entries in the Journal tab. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand, or use `CHATS=1`, as [Seeding chats](#seeding-chats) explains.
+`make seed-dev` runs `seed-dev.sh`. It resets the dev app and fills its journal with sample entries, so the next `make dev` has entries in the Journal tab. It never touches the packaged app’s data, and the models in `~/.ollama` stay. It does not run Dream or start a chat. Run those by hand, or use `CHATS=1`, as [Seeding chats](#seeding-chats) explains. `make screenshots` captures a copy of the seeded journal, as [Screenshots](#screenshots) explains.
 
 The entries are the Markdown files in `scripts/seed/`. Each has a `title` and a `date` in frontmatter, and the rest of the file is the body. `make seed-dev SEED=/path/to/folder` seeds a different folder of files in the same format. A person folder under `agent/evals/content/data/people/` works too: only its top-level `.md` files count, and the script refuses a person with no entries.
 
@@ -135,49 +135,53 @@ The replies change from run to run. Read the printed chats, and run the seed aga
 
 ## Screenshots
 
-`make screenshots` runs `screenshots.sh`. It captures the packaged app's screens in light and dark, for the website and the docs. It saves one PNG per screen and appearance in `zig-out/screenshots/`, such as `chat-dark.png`. `make screenshots OUT=/path/to/folder` saves them somewhere else. It never opens your own journal.
+`make screenshots` runs `screenshots.sh`. It captures the packaged app's screens in light and dark, for the website and the docs. The app runs on a copy of the dev journal that `make seed-dev CHATS=1` fills, so each seeded entry and chat gets its own shot. It saves one PNG per screen and appearance in `zig-out/screenshots/`, such as `chat-1-show-up-as-awkward-instead-of-silent-dark.png`. `make screenshots OUT=/path/to/folder` saves them somewhere else. It never opens your own journal.
 
-The shots are the five setup steps, a new chat, an open entry, a saved chat, the four Settings tabs, and the lock screen. The window is 1280 by 800 points, so the files are 2560 by 1600 on a Retina display. They have no shadow, and the corners outside the window are clear.
+The shots are the five setup steps, a new chat, every entry, every chat, the four Settings tabs, and the lock screen. An entry's file is `entry-<id>-<title>`, and a chat's is `chat-<id>-<title>`, with the title in lowercase words joined by dashes and cut after 40 characters. The window is 1280 by 800 points, so the files are 2560 by 1600 on a Retina display. The page is zoomed 10% in the copy the script drives, so every element looks a little larger. Your own Sage is never zoomed. The shots have no shadow, and the corners outside the window are clear.
 
 ### What it needs
 
+- **A seeded dev journal**: run `make seed-dev CHATS=1` first. The script copies `~/Library/Application Support/com.wasimxyz.sage-dev/app.db` and stops if the copy has no entry or no chat. It also stops if the dev journal has a password or encryption, since the copy can't unlock without the dev app's Keychain item. The dev app can stay open.
 - **Screen Recording access**: the terminal you run it in needs it. Without it, `screencapture` saves only the desktop. The script checks first. If access is off, macOS asks for it, and you run the script again after you restart the terminal.
 - **No other Sage running**: the copy it builds is a packaged app, so it uses ports 11435 and 2001, as your installed Sage does. The script stops if either port is in use.
 - **Sage's two models**: `nomic-embed-text` and `qwen3.5:9b` must already be in `~/.ollama`. Setup's Local AI step downloads any model that's missing as soon as it opens, so the script checks first and stops if one is missing. Download it in your own Sage under Settings > Models. The script ignores `SAGE_EMBED_MODEL` and `SAGE_SUMMARY_MODEL`.
-- **Hands off**: a Sage window opens, comes to the front, and changes screens by itself for about a minute. Keep the pointer off it, since a hover changes what the shot shows. If another app comes to the front, the script asks you to click the Sage title bar and waits.
+- **Hands off**: a Sage window opens, comes to the front, and changes screens by itself for a few minutes. Keep the pointer off it, since a hover changes what the shot shows. If another app comes to the front, the script asks you to click the Sage title bar and waits.
 
 Settings > Models and setup's Local AI step show the models in `~/.ollama` and this Mac's chip and memory.
 
 ### Steps
 
-1. It checks for Screen Recording access and reads the seed files, before the long build.
+1. It checks for Screen Recording access and for the dev journal, before the long build.
 2. It builds a packaged app the way `make package` does, with automation on and memory off, under `zig-out/screenshots-build`. `zig-out/bin` and `zig-out/package` stay as they are. Before the copy script signs the app, it changes the bundle id to `com.wasimxyz.sage.screenshots`. That keeps the copy's web storage apart from your app's. Automation builds don't check for updates at launch, so no update sheet covers the window.
-3. It starts the app from a scratch folder, with `SAGE_DATA_DIR` set to a journal in that folder. The window's saved size and place live there too, so the script writes a 1280 by 800 frame there first. `native automate resize` resizes a canvas, not the window.
-4. `agent/scripts/screenshots.ts` drives the app through the automation server:
-   1. It waits for the copy's local AI to start and checks that both models are installed.
-   2. It captures each setup step on the empty journal, saving the step with `onboarding.save` and reloading the page.
-   3. It finishes setup, turns the reminders off, and saves the entries in `scripts/seed/` with the same date move as `make seed-dev`.
-   4. It saves the chat in `agent/scripts/screenshot-chat.ts`, a question and answer about three Sunday entries with one journal search. The chat is written by hand, so it needs no model and is the same on every run.
-   5. It waits for Sage to embed the new entries, then captures a new chat, the entry, the saved chat, and Settings.
-   6. It sets a random password, turns Touch ID on, and captures Settings > Security. Then it locks the app and captures the lock screen.
-5. It stops Sage and anything the copy left running. Ollama and Chat run apart from Sage, so a copy that crashes would leave them on ports 11435 and 2001. It stops only processes whose program sits inside the copy's `Sage.app`, and none at all if it finds more than 10. Then it deletes the scratch folder, the build, and the copy's web storage and caches under `~/Library` and `/var/folders`. Packaging leaves out the agent's dev modules, so the script installs them again.
+3. It copies the dev journal into a scratch folder with `sqlite3 -readonly` and `.backup`, which reads one consistent state even while the dev app is open. The memory marker comes too. In the copy only, it clears each chat's Chat session: the copy's Chat agent doesn't have the dev app's sessions, and a chat without one opens as its saved transcript. It also marks setup in the copy as left half done at Welcome. Sage skips setup for a journal with entries, and won't reopen setup once it is done.
+4. It starts the app with `SAGE_DATA_DIR` set to the copy. The window's saved size and place live there too, so the script writes a 1280 by 800 frame there first. `native automate resize` resizes a canvas, not the window.
+5. `agent/scripts/screenshots.ts` drives the app through the automation server:
+   1. It checks that the copy has no password, waits for the copy's local AI to start, and checks that both models are installed.
+   2. It lists the entries with `journal.list` and the chats with `chat.list`.
+   3. It zooms the page to 110% with `app.zoom:110`.
+   4. It captures each setup step, saving the step with `onboarding.save` and reloading the page.
+   5. It finishes setup, turns the reminders off, and waits for Sage to embed anything the dev journal had not embedded yet.
+   6. It captures a new chat, each entry, each chat, and Settings. It opens each one by its id, and never saves an entry or a chat.
+   7. It sets a random password, turns Touch ID on, and captures Settings > Security. Then it locks the app and captures the lock screen.
+6. It stops Sage and anything the copy left running. Ollama and Chat run apart from Sage, so a copy that crashes would leave them on ports 11435 and 2001. It stops only processes whose program sits inside the copy's `Sage.app`, and none at all if it finds more than 10. Then it deletes the scratch folder with the copy, the build, and the copy's web storage and caches under `~/Library` and `/var/folders`. Packaging leaves out the agent's dev modules, so the script installs them again.
 
-Encryption stays off, so no data key goes in the Keychain. A journal in `SAGE_DATA_DIR` keeps its Touch ID key under a Keychain service of its own, as [The Keychain item](../docs/security/keychain.md#the-keychain-item) explains, so the copy can't reach the item your own Sage uses. The script still never turns Touch ID or the lock off.
+The password and Touch ID go on the copy, never the dev journal. Encryption stays off, so no data key goes in the Keychain. A journal in `SAGE_DATA_DIR` keeps its Touch ID key under a Keychain service of its own, as [The Keychain item](../docs/security/keychain.md#the-keychain-item) explains, so the copy can't reach the item your own Sage uses. The script still never turns Touch ID or the lock off.
 
 ### Opening a screen
 
-The automation server can't click in the web view, so automation builds take two more commands:
+The automation server can't click in the web view, so automation builds take three more commands:
 
 - `native automate native-command app.route:<route>` opens a screen. The route is the hash route with dots for slashes, such as `app.route:chat.3` for `#/chat/3` or `app.route:settings.models`, because the automation server refuses a command name with a slash in it. The page sets its hash route and clears focus, so no caret shows. Sending the same route again only clears focus.
 - `native automate native-command app.appearance:light` or `app.appearance:dark` holds the app in that appearance, whatever the system uses.
+- `native automate native-command app.zoom:<percent>` zooms the page, as View > Zoom In does, with a whole percent from 50 to 200, such as `app.zoom:110`. The window keeps its size. The page lays out in fewer CSS pixels, and the traffic lights move to match its title bar.
 
 `src/main.zig` handles them only when the build has automation on, so a packaged app ignores them. The automation server reports a command it refuses only as an `error event` line in its snapshot, so the script checks for one after each command. First it sends `app.sync`, a name Sage does nothing with, and waits for the command queue to empty. The server takes one command per frame and writes that frame's snapshot before it takes the next, so by then the snapshot shows any error from the first command. [Testing the lock and encryption](../docs/security/testing.md#driving-a-running-app) has more on the automation server.
 
-The automation server keeps only the last bridge answer, in `bridge-response.txt`. The page makes its own bridge calls, such as Dream's poll of `dream.status`, and one can write over an answer before the script reads it. So the script sends a command again only when repeating it changes nothing, such as `embeddings.pending`. A save sent twice would make two copies, so each entry and the chat go in one call, and when a save's answer is lost, the script looks for it in `journal.list` or `chat.list` before it saves again. A first password can't be set twice either, so when that answer is lost, the script asks `lock.status` instead.
+The automation server keeps only the last bridge answer, in `bridge-response.txt`. The page makes its own bridge calls, such as Dream's poll of `dream.status`, and one can write over an answer before the script reads it. So the script sends a command again only when repeating it changes nothing, such as `embeddings.pending`. A first password can't be set twice, so when that answer is lost, the script asks `lock.status` instead.
 
-To change the shots, edit the lists at the top of `agent/scripts/screenshots.ts`. To change the chat, edit `agent/scripts/screenshot-chat.ts`.
+To change the entries and chats in the shots, change the seed and run `make seed-dev CHATS=1` again. To change the other shots, edit the lists at the top of `agent/scripts/screenshots.ts`.
 
-`make test` runs `security-tests/screenshots-isolated.sh`. It checks that the script keeps the journal in a scratch folder, changes the bundle id before signing, builds only under `zig-out/screenshots-build`, and stops what the copy started before it deletes the build. It also checks that the script never turns Touch ID or the lock off and never downloads a model. `make test` also runs `agent/scripts/screenshots.test.ts`, which reads the chat through eve's `conversationOf` and checks the shot list.
+`make test` runs `security-tests/screenshots-isolated.sh`. It checks that the script keeps the journal in a scratch folder, changes the bundle id before signing, builds only under `zig-out/screenshots-build`, and stops what the copy started before it deletes the build. It checks that the script only reads the dev journal, never names your app's folder, runs `sqlite3` only on the copy otherwise, and copies the journal before Sage starts. It also checks that the script never saves or deletes an entry or a chat, never turns Touch ID or the lock off, and never downloads a model. `make test` also runs `agent/scripts/screenshots.test.ts`, which checks the shot list and the file names.
 
 ## Dictation voice test
 

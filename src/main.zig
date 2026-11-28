@@ -152,17 +152,22 @@ fn originListed(origins: []const []const u8, origin: []const u8) bool {
 
 /// Commands only automation builds act on, sent with
 /// `native automate native-command <name>`. `make screenshots` uses them to
-/// open a screen and to pick light or dark without a click.
+/// open a screen, to pick light or dark, and to zoom the page without a click.
 const AutomationCommand = union(enum) {
     /// A hash route with dots for slashes, such as `chat.3` for `/chat/3`.
     /// The automation server refuses a command name with a slash in it.
     route: []const u8,
     appearance: window_chrome.Appearance,
+    /// The page zoom in percent, such as `110`.
+    zoom: u16,
 };
 
 const route_command_prefix = "app.route:";
 const appearance_command_prefix = "app.appearance:";
+const zoom_command_prefix = "app.zoom:";
 const max_automation_route_len = 63;
+const min_automation_zoom: u16 = 50;
+const max_automation_zoom: u16 = 200;
 
 fn parseAutomationCommand(name: []const u8) ?AutomationCommand {
     if (std.mem.startsWith(u8, name, route_command_prefix)) {
@@ -175,7 +180,24 @@ fn parseAutomationCommand(name: []const u8) ?AutomationCommand {
         if (std.mem.eql(u8, value, "light")) return .{ .appearance = .light };
         if (std.mem.eql(u8, value, "dark")) return .{ .appearance = .dark };
     }
+    if (std.mem.startsWith(u8, name, zoom_command_prefix)) {
+        const percent = parseAutomationZoom(name[zoom_command_prefix.len..]) orelse return null;
+        return .{ .zoom = percent };
+    }
     return null;
+}
+
+/// A whole percent from 50 to 200, digits only, so no sign, fraction, or
+/// stray character gets through.
+fn parseAutomationZoom(value: []const u8) ?u16 {
+    if (value.len == 0 or value.len > 3) return null;
+    for (value) |char| switch (char) {
+        '0'...'9' => {},
+        else => return null,
+    };
+    const percent = std.fmt.parseInt(u16, value, 10) catch return null;
+    if (percent < min_automation_zoom or percent > max_automation_zoom) return null;
+    return percent;
 }
 
 /// Lowercase letters, digits, and dashes in parts joined by single dots, so
@@ -209,13 +231,17 @@ fn emitAutomationRoute(runtime: *native_sdk.Runtime, route: []const u8) !void {
     try runtime.emitWindowEvent(1, "automation:route", detail);
 }
 
-test "automation commands parse routes and appearances" {
+test "automation commands parse routes, appearances, and zoom" {
     try std.testing.expectEqualStrings("chat.3", parseAutomationCommand("app.route:chat.3").?.route);
     try std.testing.expectEqualStrings("settings.models", parseAutomationCommand("app.route:settings.models").?.route);
     try std.testing.expectEqualStrings("chat.new", parseAutomationCommand("app.route:chat.new").?.route);
     try std.testing.expectEqualStrings("journal", parseAutomationCommand("app.route:journal").?.route);
     try std.testing.expectEqual(window_chrome.Appearance.dark, parseAutomationCommand("app.appearance:dark").?.appearance);
     try std.testing.expectEqual(window_chrome.Appearance.light, parseAutomationCommand("app.appearance:light").?.appearance);
+    try std.testing.expectEqual(@as(u16, 110), parseAutomationCommand("app.zoom:110").?.zoom);
+    try std.testing.expectEqual(@as(u16, 100), parseAutomationCommand("app.zoom:100").?.zoom);
+    try std.testing.expectEqual(@as(u16, 50), parseAutomationCommand("app.zoom:50").?.zoom);
+    try std.testing.expectEqual(@as(u16, 200), parseAutomationCommand("app.zoom:200").?.zoom);
 }
 
 test "automation routes turn dots into slashes" {
@@ -237,6 +263,15 @@ test "automation commands refuse anything else" {
     try std.testing.expect(parseAutomationCommand("app.route:" ++ "a" ** (max_automation_route_len + 1)) == null);
     try std.testing.expect(parseAutomationCommand("app.appearance:auto") == null);
     try std.testing.expect(parseAutomationCommand("app.appearance:") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:49") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:201") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:1000") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:+110") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:-110") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:110.5") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:1_0") == null);
+    try std.testing.expect(parseAutomationCommand("app.zoom:abc") == null);
     try std.testing.expect(parseAutomationCommand("app.sync") == null);
 }
 
@@ -246,6 +281,7 @@ test "automation commands refuse anything else" {
 test "automation-only handlers compile in every build" {
     _ = &emitAutomationRoute;
     _ = &window_chrome.setAppearance;
+    _ = &window_chrome.setPageZoom;
 }
 
 test "packaged policy does not trust the vite origin" {
@@ -598,6 +634,7 @@ const App = struct {
                     if (parseAutomationCommand(command.name)) |automation_command| switch (automation_command) {
                         .route => |path| try emitAutomationRoute(runtime, path),
                         .appearance => |appearance| window_chrome.setAppearance(appearance),
+                        .zoom => |percent| window_chrome.setPageZoom(percent),
                     };
                 }
             },
