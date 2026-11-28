@@ -12,11 +12,11 @@ An eve agent is a directory of files, and `agent/agent/` follows that layout:
 - `instructions/user.ts`: loads extra instructions from Settings > Agent when a session starts
 - `instructions/memory.ts`: adds memory guidance in a memory build
 - `instructions/today.ts`: adds today’s date to every turn
-
-eve runs each `defineDynamic` file before every model call, so a turn with three tool calls runs it four times. The instruction files keep their answer with `ctx.memo`: `user.ts`, `profile.ts`, and `memory.ts` ask Sage once per session, and `today.ts` reads the date once per turn.
 - `tools/`: one file per tool: `search_journal.ts`, `get_journal_entry.ts`, `search_chats.ts`, and `get_chat.ts`
 - `memory/`: `facts.ts` and `episodic.ts`, which recall facts and dated events in a memory build. They only read. Dream and the Memories screen write.
 - `channels/eve.ts`: the HTTP channel the frontend talks to, with its token check
+
+eve runs each `defineDynamic` file before every model call, so a turn with three tool calls runs it four times. The instruction files keep their answer with `ctx.memo`: `user.ts`, `profile.ts`, and `memory.ts` ask Sage once per session, and `today.ts` reads the date once per turn.
 
 Shared code lives in `agent/agent/lib/`:
 

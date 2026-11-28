@@ -22,6 +22,7 @@ Later migrations add to `chat_conversation`:
 - `0022_chat_index_no_role.sql`: drops `role` from `chat_embedding`, so the index does not say who sent a message
 - `0024_eve_v27_events.sql`: forgets every eve session id, as `0018` did, and adds `event_format`, as [Chats saved before eve 1.0](#chats-saved-before-eve-10) explains
 - `0025_chat_event_convert.sql`: adds `chat_event_convert`, where a conversion writes a chat’s events before it swaps them in
+- `0026_chat_session_end.sql`: adds `chat_session_end`, the eve sessions of deleted chats that the agent has not ended yet
 
 Each conversation row has:
 
@@ -149,7 +150,11 @@ eve 1.0 changed its event format from stream version 26 to 27, and eve 1.0 reads
 2. For each chat, one at a time, it reads the events with `chat.get` and converts them, one eve session at a time.
 3. It sends them back with a `chat.save` that sets `convert: true`.
 
-Opening a chat that is still waiting converts it first. Both ways share one conversion per chat. A chat that fails keeps its events, and the next launch, or opening it, tries again. `frontend/src/lib/chat/legacy-events.ts` and `convert-stored-chats.ts` hold the code.
+Opening a chat that is still waiting converts it first. Both ways share one conversion per chat. A chat that fails keeps its events, and the next launch, or opening it, tries again. Until then it opens converted in memory only: you can read it, but not reply, since a save would mix the two formats. `frontend/src/lib/chat/legacy-events.ts` and `convert-stored-chats.ts` hold the code.
+
+A message you send while the pass at launch is still running waits for it. Conversion gives a chat new event numbers, and `search_chats` and `get_chat` name messages by them, so a turn must not read a chat between its search and its read while the numbers move. A search hit you open later still finds its message: Chat looks for the hit’s text when the message at its number does not hold it.
+
+Before eve converts a session, Chat fixes two shapes eve would draw badly. A turn the app quit during, with no turn end saved, ends as stopped. A step that started and showed nothing before its turn moved on is left out, so it doesn’t show as an empty Sage message. An event with no time takes the time of the event before it, or of the session’s first event with one.
 
 eve’s converter needs each session to start with `session.started`, and it leaves out a reply with no step event around it. Chats from early eve releases can lack both. When eve cannot convert a session as saved, or its result holds fewer of your messages or fewer of Sage’s than the session, Chat keeps what you and Sage said and converts that instead. Tool calls and thinking from that session are left out. Each reply keeps the model its step named.
 
@@ -158,7 +163,7 @@ A long chat takes several writes, so the conversion save writes the new rows to 
 - It replaces the chat’s events and sets `event_format` to 27.
 - It keeps `updated_at`, so the chat keeps its place in the list and Dream does not read it again.
 - Each row’s `saved_at` is the time eve recorded on the event, `meta.at`. An event eve recorded no time for gets none, and a search by time uses `unstamped_until` for it, as for events from before `0019`.
-- Event numbers change, so the chat’s message index rows and `chat_index_state` are deleted, and the chat is indexed again. A batch of embeddings read before the conversion is dropped.
+- Event numbers change, so the chat’s message index rows and `chat_index_state` are deleted, and Chat queues the chat to be indexed again right away. A batch of embeddings read before the conversion is dropped: each batch keeps the chat’s `event_format`, and a chat converts only once. A batch for another chat is kept.
 
 The core refuses a conversion with `ChatConverted` once a chat is at 27, so a second conversion can never replace turns saved since. Chat treats that as done.
 
@@ -177,14 +182,17 @@ eve keeps its own copy of each session outside Sage’s SQLite file. Since eve 1
 
 [Encryption at rest](../security/encryption.md#chat-workflow-files) covers how that file is encrypted. The SQLite rows in Sage’s own file are the record Sage encrypts and shows in the Chat screen.
 
-The agent sets `experimental.workflow.retention` to `0`. When a session ends, the store deletes its run’s inputs, outputs, events, and stream. It keeps a record of the run: its id, times, status, step names, model, token counts, and its title. Every session’s title is “Sage chat”, set in `agent/channels/eve.ts`, so the record holds nothing you wrote. A session ends when you delete its chat, or after 30 idle days.
+The agent sets `experimental.workflow.retention` to `0`. When a session ends, the store deletes its run’s inputs, outputs, events, and stream. It keeps a record of the run: its id, times, status, step names, model, token counts, and its title. Every session’s title is “Sage chat”, set in `agent/channels/eve.ts`, so the record holds nothing you wrote. A session ends when you delete its chat, or after 30 idle days. When eve compacts a long session, it moves the session to a new run, but the session’s stream stays with its first run, which keeps running until the session ends. So nothing is deleted while the chat can still resume, and ending the session deletes both runs’ data.
 
 Deleting a chat also ends its eve session, found by its `eve_session_id`. Sage does this when the undo toast closes, not when you choose Delete. It takes these steps:
 
 - The id is a workflow run id (`wrun_…`). Sage ignores an id that does not have that shape, so a stored value cannot reach outside the workflow folder.
-- If the packaged agent is running, Sage asks it to cancel the current turn, then to end the session.
+- In a packaged app, the same write that deletes the chat adds the session id to `chat_session_end`.
 - It deletes the session’s files from eve releases before 1.0, which kept a folder of files per session.
-- Deleting still succeeds if the files are already gone or the agent is down. A session the agent never hears about ends after 30 idle days.
+- A worker asks the agent to cancel the current turn, then to end the session. Each request can wait up to a second, so the window never waits on them.
+- The session leaves `chat_session_end` once the agent answers that it ended it, or that the session is already gone (`404`, `409`, or `410`).
+- If the agent is down or refuses, as right after unlock when a delete held over a lock runs before the agent listens, the session stays. Sage tries again after the next delete, or on Chat’s next health check at least 10 seconds after the last try.
+- Deleting still succeeds if the files are already gone or the agent is down.
 
 `make dev` starts the agent on its own, so Sage does not end a session there when you delete its chat.
 

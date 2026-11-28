@@ -139,6 +139,54 @@ function dataField(event: SessionStreamEvent, name: string): unknown {
   return (data as Record<string, unknown>)[name];
 }
 
+const whitespaceRun = /\s+/gu;
+const leadingEllipsis = /^…/u;
+const trailingEllipsis = /…$/u;
+
+/** Text with each run of whitespace as one space, for comparing excerpts. */
+function collapsed(text: string): string {
+  return text.replace(whitespaceRun, " ").trim();
+}
+
+/** What an excerpt quotes, without the "…" that marks text cut off. */
+function quoted(excerpt: string): string {
+  return collapsed(
+    excerpt.replace(leadingEllipsis, "").replace(trailingEllipsis, "")
+  );
+}
+
+function messageText(message: EveMessage): string {
+  return collapsed(
+    message.parts
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join(" ")
+  );
+}
+
+/**
+ * The message a search hit should open at. A chat converted from before eve
+ * 1.0 since the search has new event numbers, so when the message at `seq`
+ * does not hold the hit's text, the first message that does is used.
+ */
+export function focusMessageId(
+  events: readonly SessionStreamEvent[],
+  session: ClientSessionState | undefined,
+  focus: { seq: number; text?: string },
+  messages: readonly EveMessage[]
+): string | null {
+  const atSeq = messageIdAtSeq(events, session, focus.seq, messages);
+  const wanted = focus.text === undefined ? "" : quoted(focus.text);
+  if (wanted.length === 0) {
+    return atSeq;
+  }
+  const holds = (message: EveMessage) => messageText(message).includes(wanted);
+  const found = messages.find((message) => message.id === atSeq);
+  if (found !== undefined && holds(found)) {
+    return atSeq;
+  }
+  return messages.find(holds)?.id ?? atSeq;
+}
+
 /**
  * The id of the message the saved event at `seq` shows in, among `messages`:
  * the history messages, then the live session's. Search hits name an event

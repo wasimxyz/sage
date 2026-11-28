@@ -26,7 +26,7 @@ import {
 } from "@/bridge";
 import { useOllama } from "@/components/ollama-provider";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
-import { convertStoredChats } from "@/lib/chat/convert-stored-chats";
+import { startStoredChatsPass } from "@/lib/chat/convert-stored-chats";
 import {
   type AgentHealth,
   agentDownMessage,
@@ -76,6 +76,12 @@ const emptyMeta = {};
  */
 export interface ChatFocus {
   seq: number;
+  /**
+   * Some of the message's text, as the search showed it. A chat converted
+   * since the search has new event numbers, so Chat looks for the text when
+   * the message at `seq` does not hold it.
+   */
+  text?: string;
 }
 
 export type ChatSelection =
@@ -299,12 +305,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // A delete that was waiting when the app locked or quit runs before the
     // list loads.
     restore("chat", commitChatDelete);
-    commitAll("chat")
-      .then(() => refreshList())
-      // Chats saved before eve 1.0 are converted once, in the background.
-      // A chat opened first is converted as it opens.
-      .then(() => convertStoredChats())
-      .catch(() => undefined);
+    // Chats saved before eve 1.0 are converted once, in the background. A
+    // chat opened first is converted as it opens, and a message sent
+    // meanwhile waits for the pass.
+    startStoredChatsPass(
+      commitAll("chat")
+        .then(() => refreshList())
+        .catch(() => undefined)
+    ).catch(() => undefined);
   }, [refreshList]);
 
   useEffect(

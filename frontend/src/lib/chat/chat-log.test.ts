@@ -10,6 +10,7 @@ import {
 
 import {
   eventsToSaveAfterResume,
+  focusMessageId,
   historyMessages,
   messageIdAtSeq,
   splitChatLog,
@@ -200,4 +201,47 @@ test("a reopened chat saves the turn it missed", async () => {
     store.newSession();
     globalThis.fetch = realFetch;
   }
+});
+
+test("focusMessageId finds a hit by its text when the chat was renumbered", () => {
+  const messages = historyMessages(chat);
+  const [, , , reply] = messages;
+  const replyText = reply?.parts.find((part) => part.type === "text");
+  assert.ok(replyText?.type === "text");
+  const excerpt = `…${replyText.text.slice(2, 14)}…`;
+  // The event at seq 0 shows no message, as an old number can after a
+  // conversion. The excerpt still finds the reply.
+  assert.equal(
+    focusMessageId(chat, undefined, { seq: 0, text: excerpt }, messages),
+    reply?.id
+  );
+  // A message at seq that holds the text wins over an earlier one.
+  const question = chat.findIndex(
+    (event, index) => index > secondStart && event.type === "delivery.consumed"
+  );
+  const asked = messages[2]?.parts.find((part) => part.type === "text");
+  assert.ok(asked?.type === "text");
+  assert.equal(
+    focusMessageId(
+      chat,
+      undefined,
+      { seq: question, text: asked.text },
+      messages
+    ),
+    messages[2]?.id
+  );
+  // Text no message holds keeps the message at seq.
+  assert.equal(
+    focusMessageId(
+      chat,
+      undefined,
+      { seq: question, text: "nowhere" },
+      messages
+    ),
+    messages[2]?.id
+  );
+  assert.equal(
+    focusMessageId(chat, undefined, { seq: question }, messages),
+    messages[2]?.id
+  );
 });

@@ -46,8 +46,8 @@ test("a search by meaning opens each chat at its best hit", () => {
     note: "Showing 3 of 9 matching messages, at most 2 from each chat.",
   };
   assert.deepEqual(chatSearchHits(output), [
-    { date: "2026-10-20", id: 2, seq: 4, title: "Sleep" },
-    { date: "2026-09-01", id: 1, seq: 3, title: "Lisbon" },
+    { date: "2026-10-20", id: 2, seq: 4, text: "Hi", title: "Sleep" },
+    { date: "2026-09-01", id: 1, seq: 3, text: "Hello", title: "Lisbon" },
   ]);
 });
 
@@ -59,7 +59,7 @@ test("a search by time opens each chat at its end", () => {
       ],
       range: { from: "2026-10-19", label: "last week", to: "2026-10-25" },
     }),
-    [{ date: "2026-10-20", id: 3, seq: null, title: "Move" }]
+    [{ date: "2026-10-20", id: 3, seq: null, text: null, title: "Move" }]
   );
   assert.deepEqual(chatSearchHits({ chats: [] }), []);
 });
@@ -84,12 +84,14 @@ test("a chat read names the chat and the message it read around", () => {
     date: "2026-10-21",
     id: 2,
     seq: 4,
+    text: "Hello",
     title: "Sleep",
   });
   assert.deepEqual(chatReadOutput({ id: "chat-2" }, output), {
     date: "2026-10-19",
     id: 2,
     seq: null,
+    text: null,
     title: "Sleep",
   });
   assert.equal(chatReadOutput({}, { id: "entry-2", title: "Walk" }), null);

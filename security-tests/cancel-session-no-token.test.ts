@@ -19,9 +19,16 @@ test("cancelSession must send the agent-server token", () => {
     /pub fn cancelSession\([\s\S]*token: \[\]const u8/,
     "desired: cancelSession takes the token it puts on the request."
   );
+  // Chat delete sends cancel and end from a worker, with a copy of the
+  // token Sage handed the agent.
   assert.match(
     main,
-    /if \(self\.eve\.agent_token_hex\) \|token\| \{\s*eve_sidecar\.cancelSession\(self\.io, session_id, token\);/,
+    /const token = self\.eve\.agent_token_hex orelse return;[\s\S]*\.token = token\.\*/,
     "desired: chat delete passes the same token Sage handed the agent."
+  );
+  assert.match(
+    main,
+    /eve_sidecar\.cancelSession\(io, id, &job\.token\);\s*ended\.\* = eve_sidecar\.endSession\(io, id, &job\.token\);/,
+    "desired: the session-end worker sends that token on cancel and end."
   );
 });

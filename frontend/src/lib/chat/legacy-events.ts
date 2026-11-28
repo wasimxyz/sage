@@ -250,18 +250,104 @@ function legacyMessageCounts(events: readonly unknown[]): RoleCounts {
   return counts;
 }
 
+function turnIdOf(event: LegacyEvent): unknown {
+  return isRecord(event.data) ? event.data.turnId : undefined;
+}
+
+const turnEnds = new Set(["turn.cancelled", "turn.completed", "turn.failed"]);
+
+/**
+ * Gives each event that has no time the time of the event before it, or of
+ * the session's first event with one. eve's converter keeps each event's
+ * time, and Sage stamps each saved row with it, so a search by time can
+ * place the message.
+ */
+function withTimes(events: readonly unknown[]): unknown[] {
+  let at = events.map(eventAt).find((value) => value !== undefined);
+  if (at === undefined) {
+    return [...events];
+  }
+  return events.map((event) => {
+    const own = eventAt(event);
+    if (own !== undefined) {
+      at = own;
+      return event;
+    }
+    if (!isRecord(event)) {
+      return event;
+    }
+    const meta = isRecord(event.meta) ? event.meta : {};
+    return { ...event, meta: { ...meta, at } };
+  });
+}
+
+/**
+ * Leaves out a step that started and showed nothing before its turn moved
+ * on or the session stopped, as when the app quit during a reply. eve would
+ * draw it as an empty Sage message.
+ */
+function withoutEmptySteps(events: readonly unknown[]): unknown[] {
+  return events.filter((event, index) => {
+    if (!(isLegacyEvent(event) && event.type === "step.started")) {
+      return true;
+    }
+    const turnId = turnIdOf(event);
+    const next = events
+      .slice(index + 1)
+      .find((later) => isLegacyEvent(later) && turnIdOf(later) === turnId);
+    return (
+      isLegacyEvent(next) &&
+      next.type !== "step.started" &&
+      !next.type.startsWith("turn.")
+    );
+  });
+}
+
+/**
+ * Ends each turn the session never ended, as stopped. The session will not
+ * run again, so the turn is over.
+ */
+function withTurnsEnded(events: readonly unknown[]): unknown[] {
+  const open = new Set<string>();
+  let at = new Date(0).toISOString();
+  for (const event of events) {
+    at = eventAt(event) ?? at;
+    if (!isLegacyEvent(event)) {
+      continue;
+    }
+    const turnId = turnIdOf(event);
+    if (typeof turnId !== "string") {
+      continue;
+    }
+    if (event.type === "turn.started") {
+      open.add(turnId);
+    } else if (turnEnds.has(event.type)) {
+      open.delete(turnId);
+    }
+  }
+  return [
+    ...events,
+    ...[...open].map((turnId) => ({
+      data: { turnId },
+      meta: { at },
+      type: "turn.cancelled",
+    })),
+  ];
+}
+
 function convertSession(events: readonly unknown[]): SessionStreamEvent[] {
   if (isConvertedLog(events)) {
     return events as SessionStreamEvent[];
   }
-  const legacy = events.filter((event) => !isConvertedEvent(event));
+  const legacy = withTimes(events.filter((event) => !isConvertedEvent(event)));
   const [first] = legacy;
+  const ended = withTurnsEnded(withoutEmptySteps(legacy));
   const prepared =
     isLegacyEvent(first) && first.type === "session.started"
-      ? legacy
+      ? ended
       : [
           { data: {}, meta: { at: firstAt(legacy) }, type: "session.started" },
-          ...legacy,
+          ...ended,
         ];
   const expected = legacyMessageCounts(legacy);
   try {

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { conversationOf, type SessionStreamEvent } from "eve/client";
 
-import { splitSessions } from "./chat-log.ts";
+import { historyMessages, splitSessions } from "./chat-log.ts";
 import {
   convertChatEvents,
   isConvertedEvent,
@@ -157,4 +157,194 @@ test("a session converted from its messages keeps the model it used", () => {
       : []
   );
   assert.deepEqual(models, ["ollama/llama3.2:3b"]);
+});
+
+test("a turn the app quit during keeps your message, with no empty reply", () => {
+  const converted = convertChatEvents([
+    { data: { runtime: {} }, meta: { at: at(0) }, type: "session.started" },
+    {
+      data: { sequence: 0, turnId: "turn_0" },
+      meta: { at: at(1) },
+      type: "turn.started",
+    },
+    {
+      data: {
+        message: "Hello?",
+        parts: [{ text: "Hello?", type: "text" }],
+        turnId: "turn_0",
+      },
+      meta: { at: at(1) },
+      type: "message.received",
+    },
+    {
+      data: { modelId: "qwen3.5:9b", stepIndex: 0, turnId: "turn_0" },
+      meta: { at: at(2) },
+      type: "step.started",
+    },
+  ]);
+  assert.deepEqual(said(converted), [["user", "Hello?"]]);
+  // The turn ends as stopped, so nothing shows it as still running.
+  assert.equal(converted.at(-1)?.type, "delivery.settled");
+  assert.ok(converted.some((event) => event.type === "turn.settled"));
+});
+
+test("a tool call that failed converts as failed, with its error", () => {
+  const turn = { sequence: 0, turnId: "turn_0" };
+  const converted = convertChatEvents([
+    { data: { runtime: {} }, meta: { at: at(0) }, type: "session.started" },
+    { data: turn, meta: { at: at(1) }, type: "turn.started" },
+    {
+      data: {
+        ...turn,
+        message: "Find it",
+        parts: [{ text: "Find it", type: "text" }],
+      },
+      meta: { at: at(1) },
+      type: "message.received",
+    },
+    {
+      data: { ...turn, modelId: "qwen3.5:9b", stepIndex: 0 },
+      meta: { at: at(2) },
+      type: "step.started",
+    },
+    {
+      data: {
+        ...turn,
+        actions: [
+          {
+            callId: "c1",
+            input: { query: "x" },
+            kind: "tool-call",
+            toolName: "search_journal",
+          },
+        ],
+        stepIndex: 0,
+      },
+      meta: { at: at(2) },
+      type: "actions.requested",
+    },
+    {
+      data: {
+        ...turn,
+        error: { code: "tool_error", message: "Local AI is not running." },
+        result: {
+          callId: "c1",
+          kind: "tool-result",
+          toolName: "search_journal",
+        },
+        status: "failed",
+      },
+      meta: { at: at(3) },
+      type: "action.result",
+    },
+    {
+      data: { ...turn, finishReason: "tool-calls", stepIndex: 0 },
+      meta: { at: at(3) },
+      type: "step.completed",
+    },
+    {
+      data: { ...turn, modelId: "qwen3.5:9b", stepIndex: 1 },
+      meta: { at: at(4) },
+      type: "step.started",
+    },
+    {
+      data: {
+        ...turn,
+        finishReason: "stop",
+        message: "I couldn't search.",
+        stepIndex: 1,
+      },
+      meta: { at: at(4) },
+      type: "message.completed",
+    },
+    {
+      data: { ...turn, finishReason: "stop", stepIndex: 1 },
+      meta: { at: at(4) },
+      type: "step.completed",
+    },
+    { data: turn, meta: { at: at(5) }, type: "turn.completed" },
+  ]);
+  assert.deepEqual(said(converted), [
+    ["user", "Find it"],
+    ["assistant", "tool:search_journal:failed", "I couldn't search."],
+  ]);
+  const tool = conversationOf(converted).messages[1]?.parts.find(
+    (part) => part.type === "tool"
+  );
+  assert.equal(
+    tool?.type === "tool" ? tool.error?.message : undefined,
+    "Local AI is not running."
+  );
+});
+
+test("a first message saved before its session.started still shows", () => {
+  // Recovery in eve 0.80 could save the new session's first message ahead
+  // of the session's start.
+  const turn = { sequence: 0, turnId: "turn_0" };
+  const converted = convertChatEvents([
+    ...legacySession,
+    {
+      data: {
+        ...turn,
+        message: "And the week before?",
+        parts: [{ text: "And the week before?", type: "text" }],
+      },
+      meta: { at: at(1) },
+      type: "message.received",
+    },
+    { data: { runtime: {} }, meta: { at: at(2) }, type: "session.started" },
+    { data: turn, meta: { at: at(2) }, type: "turn.started" },
+    {
+      data: { ...turn, modelId: "qwen3.5:9b", stepIndex: 0 },
+      meta: { at: at(3) },
+      type: "step.started",
+    },
+    {
+      data: {
+        ...turn,
+        finishReason: "stop",
+        message: "You slept well.",
+        stepIndex: 0,
+      },
+      meta: { at: at(3) },
+      type: "message.completed",
+    },
+    {
+      data: { ...turn, finishReason: "stop", stepIndex: 0 },
+      meta: { at: at(3) },
+      type: "step.completed",
+    },
+    { data: turn, meta: { at: at(4) }, type: "turn.completed" },
+  ]);
+  // Chat draws each session on its own, as the chat screen does.
+  const texts = historyMessages(converted).map((message) =>
+    message.parts
+      .map((part) => (part.type === "text" ? part.text : ""))
+      .join("")
+  );
+  assert.ok(texts.includes("And the week before?"));
+  assert.ok(texts.includes("You slept well."));
+});
+
+test("an event with no time takes the time of the one before it", () => {
+  const converted = convertChatEvents([
+    { data: {}, meta: { at: at(5) }, type: "session.started" },
+    { data: { turnId: "turn_0" }, type: "turn.started" },
+    { data: { message: "Hi", turnId: "turn_0" }, type: "message.received" },
+    {
+      data: { message: "Hello.", turnId: "turn_0" },
+      meta: { at: at(7) },
+      type: "message.completed",
+    },
+  ]);
+  const consumed = converted.find(
+    (event) => event.type === "delivery.consumed"
+  );
+  assert.equal(consumed?.meta.at, at(5));
+  const reply = converted.find(
+    (event) =>
+      event.type === "content.completed" &&
+      (event.data as { kind?: string }).kind === "text"
+  );
+  assert.equal(reply?.meta.at, at(7));
 });

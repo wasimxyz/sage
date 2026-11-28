@@ -325,7 +325,9 @@ function SearchForm() {
         await showChat();
         openConversation(
           hit.result.conversationId,
-          hit.result.seq === null ? undefined : { seq: hit.result.seq }
+          hit.result.seq === null
+            ? undefined
+            : { seq: hit.result.seq, text: hit.result.excerpt }
         );
         setOpen(false);
         return;

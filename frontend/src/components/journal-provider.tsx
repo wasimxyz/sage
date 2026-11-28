@@ -40,6 +40,7 @@ import { useMemoryFeature } from "@/components/memory-feature-provider";
 import { useSettings } from "@/components/settings-context";
 import { useHiddenIds } from "@/hooks/use-hidden-ids";
 import { createChatIndexQueue } from "@/lib/chat/chat-index-queue";
+import { onChatConverted } from "@/lib/chat/convert-stored-chats";
 import { deleteFailure } from "@/lib/delete-errors";
 import { handlerErrorMessage } from "@/lib/handler-errors";
 import type { ParsedImport } from "@/lib/parse-markdown";
@@ -354,6 +355,17 @@ export function JournalProvider({ children }: { children: ReactNode }) {
       generate: generateChatEmbeddings,
       onOllamaDown: scheduleStaleEmbeddingRetry,
     })
+  );
+
+  // Converting a chat saved before eve 1.0 renumbers its events and deletes
+  // its message index, so the chat search can't find it until it is indexed
+  // again. Queue it now rather than at the next launch.
+  useEffect(
+    () =>
+      onChatConverted((id) => {
+        chatIndexQueue.add([id], embedChainRef.current).catch(() => undefined);
+      }),
+    [chatIndexQueue]
   );
 
   const enqueueEmbed = useCallback((id: number) => {

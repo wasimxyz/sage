@@ -119,7 +119,7 @@ Reads that come one after the other share one row, such as “Read 3 entries”.
 
 A search of past chats works the same way. Its row says “Searched past chats”, and each chat it found shows its title and the date of its best match. Reads of chats share a row such as “Read 2 past chats”, apart from reads of entries. Click a chat to open it, scrolled to the message the model found. A search with no matches says “No matching chats”.
 
-A failed step shows its error as one sentence inside the row. A failed read in a group shows as “Could not read 1 entry”. Other tools, such as `facts__search_memories`, show their parameters and result as plain text.
+A failed step shows its error as one sentence inside the row. A failed read in a group shows as “Could not read 1 entry”. A read you stopped is not a failure: it leaves the group, and a group of stopped reads shows “Stopped”. Other tools, such as `facts__search_memories`, show their parameters and result as plain text.
 
 `frontend/src/lib/chat/assistant-runs.ts` decides which parts share a row. `frontend/src/components/chat/journal-tool-cards.tsx` and `chat-tool-cards.tsx` draw the cards.
 
@@ -144,7 +144,7 @@ Opening a row reads it with `chat.get` and remounts `ChatTurn` with the stored e
 - **History**: the sessions before the last one. Chat draws them with eve's `conversationOf`, as they were saved. Each message id names its session, such as `history-0:turn_0:assistant`, because eve's ids repeat from one session to the next.
 - **The live session**: the last session, when the row has a session id. Its events go to `useEveAgent`, which shows them and resumes the session, so the next message continues where the last one ended.
 
-A row with no session id is all history, and the next message starts a new session. So is a row whose stream index is 0: its session id was saved before any of that session’s events, so eve replays the session from its start. `frontend/src/lib/chat/chat-log.ts` splits the log. A chat saved before eve 1.0 is converted first, as [Chat storage](storage.md#chats-saved-before-eve-10) explains. [Chat storage](storage.md#resuming-a-conversation) covers the storage side.
+A row with no session id is all history, and the next message starts a new session. So is a row whose stream index is 0: its session id was saved before any of that session’s events, so eve replays the session from its start. eve never saves `clientContext` in the session, so while a pane shows history, every message it sends carries the history’s transcript, even once the live session has turns of its own. `frontend/src/lib/chat/chat-log.ts` splits the log. A chat saved before eve 1.0 is converted first, as [Chat storage](storage.md#chats-saved-before-eve-10) explains. [Chat storage](storage.md#resuming-a-conversation) covers the storage side.
 
 ## Recovering a session that ended
 

@@ -92,10 +92,14 @@ import {
 } from "@/lib/chat/chat-errors";
 import {
   eventsToSaveAfterResume,
+  focusMessageId,
   historyMessages,
-  messageIdAtSeq,
   splitChatLog,
 } from "@/lib/chat/chat-log";
+import {
+  legacyEventFormat,
+  storedChatsPassDone,
+} from "@/lib/chat/convert-stored-chats";
 import {
   agentDownMessage,
   eveHost,
@@ -175,6 +179,9 @@ const titleLimit = 60;
 
 const expiredSessionRestoredMessage =
   "The previous session expired. History was restored into a fresh session.";
+
+const unconvertedChatMessage =
+  "Sage could not update this chat from an older version. You can read it but not reply. Sage tries again the next time you open it.";
 
 /**
  * Loads a pane has already read. A running pane keeps its own copy of the
@@ -443,6 +450,9 @@ function ChatTurn({
       key={recoveryCount}
       persist={persist}
       persistLater={persistLater}
+      // A chat that failed to convert opens converted in memory only.
+      // Saving would mix the two formats, so it can't be continued.
+      readOnly={conversation?.eventFormat === legacyEventFormat}
       recoverDeadSession={recoverDeadSession}
       refs={turnRefs}
       setText={setText}
@@ -472,6 +482,7 @@ function ChatTurnSession({
   initialSession,
   persist,
   persistLater,
+  readOnly,
   recoverDeadSession,
   refs,
   setText,
@@ -483,6 +494,7 @@ function ChatTurnSession({
   initialSession: ClientSessionState | undefined;
   persist: (next: PersistPatch) => Promise<void>;
   persistLater: (next: PersistPatch) => void;
+  readOnly: boolean;
   recoverDeadSession: () => boolean;
   refs: TurnRefs;
   setText: (text: string) => void;
@@ -509,20 +521,18 @@ function ChatTurnSession({
     state: { running: dreaming },
   } = useDream();
   const { leave: leaveDictation } = useDictationActions();
-  // Capture once. Later saves replace eventsRef with the new session, and
-  // clientContext lasts only for the current turn, so later sends in this
-  // remount still need the old transcript.
-  const [historyContext] = useState(() =>
-    initialSession === undefined
-      ? historyClientContext(initialEvents)
-      : undefined
-  );
   // eve resumes only the chat's last session. The sessions before it, and
   // every session once the last one can no longer run, show as they were
   // saved, above the live session's messages.
   const resumable = initialSession !== undefined;
   const [log] = useState(() => splitChatLog(initialEvents, initialSession));
   const [pastMessages] = useState(() => historyMessages(log.history));
+  // eve never saves clientContext in the session, so every send in this
+  // pane carries what was said in the history sessions, even once a live
+  // session holds turns of its own.
+  const [historyContext] = useState(() =>
+    log.history.length > 0 ? historyClientContext(log.history) : undefined
+  );
   // How many of the live session's events are saved. Null until the first
   // render, which holds the events the chat opened with.
   const savedLiveCountRef = useRef<number | null>(null);
@@ -712,6 +722,7 @@ function ChatTurnSession({
         agentTokenRef.current === null ||
         busy ||
         resuming ||
+        readOnly ||
         isChatComposerLocked({ agent: chatAgent, dreaming, models })
       ) {
         return;
@@ -724,6 +735,8 @@ function ChatTurnSession({
       leaveDictation("chat");
       setText("");
       const send = async () => {
+        // A turn could read chats the launch pass is still renumbering.
+        await storedChatsPassDone();
         if (idRef.current === null) {
           await persist({ events: [], title: clipTitle(next) });
         }
@@ -747,10 +760,17 @@ function ChatTurnSession({
       models,
       pendingActionRef,
       persist,
+      readOnly,
       resuming,
       setText,
     ]
   );
+
+  useEffect(() => {
+    if (readOnly) {
+      showError(unconvertedChatMessage);
+    }
+  }, [readOnly, showError]);
 
   const stopTurn = useCallback(() => {
     agent.cancel().catch(() => undefined);
@@ -806,7 +826,7 @@ function ChatTurnSession({
           dictation
           onStop={stopTurn}
           onSubmit={handleSubmit}
-          submitBlocked={agentToken === null || resuming}
+          submitBlocked={agentToken === null || resuming || readOnly}
           submitStatus={submitStatus}
         />
       </ChatComposerBar>
@@ -898,7 +918,7 @@ function SearchMessageFocus({
   const targetId =
     focus === undefined
       ? null
-      : messageIdAtSeq(events, session, focus.seq, messages);
+      : focusMessageId(events, session, focus, messages);
   const hasTarget =
     targetId !== null && messages.some((message) => message.id === targetId);
 

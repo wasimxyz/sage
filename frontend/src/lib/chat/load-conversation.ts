@@ -4,6 +4,7 @@ import {
   convertStoredChat,
   legacyEventFormat,
 } from "./convert-stored-chats.ts";
+import { convertChatEvents } from "./legacy-events.ts";
 
 export type ChatLoadResult =
   | { conversation: ChatConversation | null; kind: "ready" }
@@ -70,14 +71,20 @@ export const emptyChatLoad: ChatLoadPromise = fulfilledPromise({
 
 /**
  * Reads a saved chat. A chat saved before eve 1.0 is converted first, so
- * Chat only ever shows and saves eve's current events.
+ * Chat only ever shows and saves eve's current events. When the conversion
+ * fails, the chat opens converted in memory, still marked unconverted, and
+ * the next open tries again.
  */
 async function readConversation(id: number): Promise<ChatConversation> {
   const conversation = await chatGet(id);
   if (conversation.eventFormat !== legacyEventFormat) {
     return conversation;
   }
-  await convertStoredChat(id);
+  try {
+    await convertStoredChat(id);
+  } catch {
+    return { ...conversation, events: convertChatEvents(conversation.events) };
+  }
   return chatGet(id);
 }
 

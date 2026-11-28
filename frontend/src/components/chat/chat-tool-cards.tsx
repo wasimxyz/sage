@@ -12,7 +12,10 @@ import {
   type ListRow,
   toolHeaderClassName,
 } from "@/components/chat/journal-tool-cards";
-import { useOpenConversation } from "@/components/chat-provider";
+import {
+  type ChatFocus,
+  useOpenConversation,
+} from "@/components/chat-provider";
 import { useJournalActions } from "@/components/journal-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,23 +37,27 @@ import {
 } from "@/lib/chat/tool-part";
 import { formatEntryDate, formatShortEntryDate } from "@/lib/format-date";
 
+function focusOf(seq: number, text: string | null): ChatFocus {
+  return text === null ? { seq } : { seq, text };
+}
+
 function chatsLabel(count: number): string {
   return count === 1 ? "1 past chat" : `${count} past chats`;
 }
 
 // A row opens its chat at the message the tool found, or at its end.
-function PastChatRow({ date, id, seq, title }: ChatToolHit) {
+function PastChatRow({ date, id, seq, text, title }: ChatToolHit) {
   const { showChat } = useJournalActions();
   const openConversation = useOpenConversation();
   const open = useCallback(() => {
     showChat()
       .then(() => {
-        openConversation(id, seq === null ? undefined : { seq });
+        openConversation(id, seq === null ? undefined : focusOf(seq, text));
       })
       .catch(() => {
         // showChat flushes the editor; openers toast their own errors.
       });
-  }, [id, openConversation, seq, showChat]);
+  }, [id, openConversation, seq, showChat, text]);
   const name = title.trim() || "New chat";
 
   return (
@@ -180,6 +187,10 @@ export function ChatReadToolCard({ parts }: { parts: EveToolPart[] }) {
   const errors = new Set<string>();
   let failed = 0;
   for (const part of parts) {
+    // Stop ended the read before it came back. That is not a failure.
+    if (part.state === "cancelled") {
+      continue;
+    }
     const read =
       !toolPartFailed(part) && part.state === "completed"
         ? chatReadOutput(part.input, part.output)
@@ -195,6 +206,15 @@ export function ChatReadToolCard({ parts }: { parts: EveToolPart[] }) {
     }
   }
 
+  if (reads.size === 0 && failed === 0) {
+    return (
+      <JournalRunningRow
+        label={`Reading ${chatsLabel(parts.length)}`}
+        state="cancelled"
+        toolName={readChatToolName}
+      />
+    );
+  }
   if (reads.size === 0) {
     return (
       <JournalFailedRow

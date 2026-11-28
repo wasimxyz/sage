@@ -389,6 +389,13 @@ const App = struct {
     agent_queue: *agent_server.Queue,
     agent: agent_server.Server = .{},
     eve: eve_sidecar.Sidecar = .{},
+    /// Ends the eve sessions of deleted chats, from a worker.
+    session_end_queue: *SessionEndQueue,
+    /// A worker is ending sessions, so no second one starts.
+    session_end_running: bool = false,
+    /// When the last worker started, so a session the Chat server keeps
+    /// refusing is tried at most every `session_end_retry_ms`.
+    session_end_last_ms: ?i64 = null,
     ollama_server: ollama_server.Server = .{},
     /// Whether this executable sits in an app bundle with its own Ollama.
     /// `main` sets it with `ollama.port`. It is false for `native dev`, eval,
@@ -571,6 +578,7 @@ const App = struct {
                 drainDreamJobs(self);
                 drainLockJobs(self);
                 drainAgentJobs(self);
+                drainSessionEnds(self);
                 self.dictation.drain(dictationHost(self));
             },
             // Menu item IMPs emit window events directly; these command
@@ -1081,20 +1089,122 @@ fn handleChatDelete(context: *anyopaque, invocation: native_sdk.bridge.Invocatio
     try requireReady(self);
     try requireMemoryModeReady(self);
     var session_id_buf: [64]u8 = undefined;
-    const result = try self.store.chatDelete(invocation.request.payload, output, &session_id_buf);
+    // Packaged Chat ends the chat's eve session, so the Workflow store deletes
+    // its run's data, which eve 1.0 keeps in world.db, not in files. The
+    // session waits in chat_session_end until the agent answers. `make dev`
+    // does not start the agent, so it keeps nothing to end.
+    const result = try self.store.chatDelete(invocation.request.payload, output, &session_id_buf, self.eve.packaged);
     if (result.session_id) |session_id| {
-        if (self.eve.kind == .ready) {
-            if (self.eve.agent_token_hex) |token| {
-                eve_sidecar.cancelSession(self.io, session_id, token);
-                // Ending the session has the Workflow store delete its run's
-                // data, which eve 1.0 keeps in world.db, not in files.
-                eve_sidecar.endSession(self.io, session_id, token);
-            }
-        }
         // Files from eve releases before 1.0, if the session is that old.
         eve_sidecar.deleteSessionData(self.io, self.data_dir, session_id);
     }
+    endPendingSessions(self, true);
     return result.json;
+}
+
+/// The sessions one worker ends, and which of them the Chat server ended.
+const SessionEndJob = struct {
+    ids: [][]u8,
+    /// Written by the worker, read on the loop thread after the wake.
+    ended: []bool,
+    token: [agent_server.token_hex_len]u8,
+
+    fn destroy(self: *SessionEndJob) void {
+        const allocator = std.heap.page_allocator;
+        std.crypto.secureZero(u8, &self.token);
+        for (self.ids) |id| allocator.free(id);
+        allocator.free(self.ids);
+        allocator.free(self.ended);
+        allocator.destroy(self);
+    }
+};
+
+/// Where a session-end worker leaves its finished job for the loop thread.
+const SessionEndQueue = struct {
+    mutex: std.Io.Mutex = .init,
+    done: ?*SessionEndJob = null,
+
+    fn push(self: *SessionEndQueue, io: std.Io, job: *SessionEndJob) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        self.done = job;
+    }
+
+    fn take(self: *SessionEndQueue, io: std.Io) ?*SessionEndJob {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        const job = self.done;
+        self.done = null;
+        return job;
+    }
+};
+
+const session_end_batch: usize = 16;
+const session_end_retry_ms: i64 = 10_000;
+
+/// Start a worker that ends the sessions waiting in `chat_session_end`, when
+/// packaged Chat's agent is running. Each request can wait up to a second,
+/// so the loop thread never sends them. A session the Chat server did not
+/// end stays for the next try: after a delete, or on the next health poll
+/// once `session_end_retry_ms` has passed.
+fn endPendingSessions(self: *App, after_delete: bool) void {
+    if (self.session_end_running) return;
+    if (!self.eve.packaged or self.eve.kind != .ready) return;
+    const token = self.eve.agent_token_hex orelse return;
+    const services = self.services orelse return;
+    const now = std.Io.Clock.awake.now(self.io).toMilliseconds();
+    if (!after_delete) {
+        if (self.session_end_last_ms) |last| {
+            if (now - last < session_end_retry_ms) return;
+        }
+    }
+
+    const allocator = std.heap.page_allocator;
+    const ids = self.store.sessionsToEnd(allocator, session_end_batch) catch return;
+    if (ids.len == 0) {
+        allocator.free(ids);
+        return;
+    }
+    const ended = allocator.alloc(bool, ids.len) catch {
+        for (ids) |id| allocator.free(id);
+        allocator.free(ids);
+        return;
+    };
+    @memset(ended, false);
+    const job = allocator.create(SessionEndJob) catch {
+        for (ids) |id| allocator.free(id);
+        allocator.free(ids);
+        allocator.free(ended);
+        return;
+    };
+    job.* = .{ .ended = ended, .ids = ids, .token = token.* };
+    const thread = std.Thread.spawn(.{}, runSessionEnds, .{ self.io, self.session_end_queue, services, job }) catch {
+        job.destroy();
+        return;
+    };
+    thread.detach();
+    self.session_end_running = true;
+    self.session_end_last_ms = now;
+}
+
+fn runSessionEnds(io: std.Io, queue: *SessionEndQueue, services: native_sdk.platform.PlatformServices, job: *SessionEndJob) void {
+    for (job.ids, job.ended) |id, *ended| {
+        // Stop a turn that is still running, then retire the session.
+        eve_sidecar.cancelSession(io, id, &job.token);
+        ended.* = eve_sidecar.endSession(io, id, &job.token);
+    }
+    queue.push(io, job);
+    services.wake() catch {};
+}
+
+/// Forget each session the worker ended. The rest stay for the next try.
+fn drainSessionEnds(self: *App) void {
+    const job = self.session_end_queue.take(self.io) orelse return;
+    defer job.destroy();
+    self.session_end_running = false;
+    for (job.ids, job.ended) |id, ended| {
+        if (ended) self.store.sessionEnded(id) catch {};
+    }
 }
 
 fn handleChatAgentToken(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
@@ -1114,6 +1224,7 @@ fn handleChatAgent(context: *anyopaque, invocation: native_sdk.bridge.Invocation
     syncEveWorldKey(self);
     if (self.memory_mode_ready) {
         self.eve.ensureRunning();
+        endPendingSessions(self, false);
     } else {
         self.eve.setUnavailable("Chat is unavailable because Sage could not reset old memory sessions.");
     }
@@ -3520,6 +3631,8 @@ pub fn main(init: std.process.Init) !void {
     lock_queue.* = .{};
     const agent_queue = try std.heap.page_allocator.create(agent_server.Queue);
     agent_queue.* = .{};
+    const session_end_queue = try std.heap.page_allocator.create(SessionEndQueue);
+    session_end_queue.* = .{};
 
     var app = App{
         .env_map = init.environ_map,
@@ -3534,6 +3647,7 @@ pub fn main(init: std.process.Init) !void {
         .embed_queue = embed_queue,
         .dream_queue = dream_queue,
         .agent_queue = agent_queue,
+        .session_end_queue = session_end_queue,
         .data_dir = data_dir,
         .ollama_bundled = ollama_bundled,
         .models = ollama.ModelPrefixes.fromEnv(init.environ_map),
@@ -3678,6 +3792,7 @@ const EmbedTestRig = struct {
     dream_queue: dream.Queue = .{},
     lock_queue: LockQueue = .{},
     agent_queue: agent_server.Queue = .{},
+    session_end_queue: SessionEndQueue = .{},
     capture: ResponseCapture = .{},
     // Heap-allocated: a detached worker's final wake may land after the test
     // frame has unwound.
@@ -3719,6 +3834,7 @@ const EmbedTestRig = struct {
                 .embed_queue = undefined,
                 .dream_queue = undefined,
                 .agent_queue = undefined,
+                .session_end_queue = undefined,
                 .memory_mode_ready = true,
                 .file_vault = .unknown,
                 // Never read again: a test must not run `fdesetup`.
@@ -3734,6 +3850,7 @@ const EmbedTestRig = struct {
         self.app.dream_queue = &self.dream_queue;
         self.app.lock_queue = &self.lock_queue;
         self.app.agent_queue = &self.agent_queue;
+        self.app.session_end_queue = &self.session_end_queue;
         self.app.vault = try vault_mod.Vault.init(std.testing.allocator, std.testing.io, &self.app.store.db);
         self.app.store.vault = &self.app.vault;
         self.app.lock = try lock_mod.Lock.init(std.testing.allocator, std.testing.io, &self.app.store.db);
@@ -4540,6 +4657,85 @@ test "conversation wipe keeps workflow files when the database delete fails" {
     var tmp_parent = try std.Io.Dir.openDirAbsolute(io, "/tmp", .{});
     defer tmp_parent.close(io);
     tmp_parent.deleteTree(io, std.fs.path.basename(data_dir)) catch {};
+}
+
+fn saveChatWithSession(rig: *EmbedTestRig, title: []const u8) !void {
+    var payload_buf: [512]u8 = undefined;
+    const payload = try std.fmt.bufPrint(&payload_buf, "{{\"id\":null,\"title\":\"{s}\",\"eveSessionId\":\"wrun_01AAAAAAAAAAAAAAAAAAAAAAAA\",\"streamIndex\":4,\"model\":\"llama3.2\",\"thinking\":false,\"contextLength\":32768,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}}", .{title});
+    var out: [256]u8 = undefined;
+    _ = try rig.app.store.chatSave(payload, &out);
+}
+
+fn deleteChatOne(rig: *EmbedTestRig) !void {
+    const delete = native_sdk.bridge.Invocation{
+        .request = .{ .id = "t-chat-delete", .command = "chat.delete", .payload = "{\"id\":1}" },
+        .source = .{},
+    };
+    var out: [512]u8 = undefined;
+    _ = try handleChatDelete(@ptrCast(&rig.app), delete, &out);
+}
+
+fn countSessionsToEnd(rig: *EmbedTestRig) !usize {
+    const ids = try rig.app.store.sessionsToEnd(std.testing.allocator, session_end_batch);
+    defer {
+        for (ids) |id| std.testing.allocator.free(id);
+        std.testing.allocator.free(ids);
+    }
+    return ids.len;
+}
+
+test "a chat deleted while Chat's agent is not running keeps its session to end later" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    // Packaged, with the agent not started yet, as right after unlock.
+    rig.app.eve.packaged = true;
+    try saveChatWithSession(&rig, "Gone");
+    try deleteChatOne(&rig);
+    try std.testing.expect(!rig.app.session_end_running);
+    try std.testing.expectEqual(@as(usize, 1), try countSessionsToEnd(&rig));
+    // A health poll while the agent is still down starts no worker either.
+    endPendingSessions(&rig.app, false);
+    try std.testing.expect(!rig.app.session_end_running);
+}
+
+test "make dev keeps no session to end, because Sage does not run its agent" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    try saveChatWithSession(&rig, "Gone");
+    try deleteChatOne(&rig);
+    try std.testing.expectEqual(@as(usize, 0), try countSessionsToEnd(&rig));
+}
+
+test "a finished session-end worker forgets only the sessions the agent ended" {
+    var rig: EmbedTestRig = undefined;
+    try rig.init();
+    defer rig.deinit();
+    try std.testing.expect(rig.app.store.db.exec(&.{
+        .{ .sql = "INSERT INTO chat_session_end (session_id) VALUES ('wrun_01AAAAAAAAAAAAAAAAAAAAAAAA'), ('wrun_01BBBBBBBBBBBBBBBBBBBBBBBB');" },
+    }) == .ok);
+    const allocator = std.heap.page_allocator;
+    const ids = try allocator.alloc([]u8, 2);
+    ids[0] = try allocator.dupe(u8, "wrun_01AAAAAAAAAAAAAAAAAAAAAAAA");
+    ids[1] = try allocator.dupe(u8, "wrun_01BBBBBBBBBBBBBBBBBBBBBBBB");
+    const ended = try allocator.alloc(bool, 2);
+    ended[0] = true;
+    ended[1] = false;
+    const job = try allocator.create(SessionEndJob);
+    job.* = .{ .ended = ended, .ids = ids, .token = @splat('a') };
+    rig.app.session_end_running = true;
+    rig.app.session_end_queue.push(std.testing.io, job);
+
+    drainSessionEnds(&rig.app);
+    try std.testing.expect(!rig.app.session_end_running);
+    const left = try rig.app.store.sessionsToEnd(std.testing.allocator, session_end_batch);
+    defer {
+        for (left) |id| std.testing.allocator.free(id);
+        std.testing.allocator.free(left);
+    }
+    try std.testing.expectEqual(@as(usize, 1), left.len);
+    try std.testing.expectEqualStrings("wrun_01BBBBBBBBBBBBBBBBBBBBBBBB", left[0]);
 }
 
 test "stale embed jobs do not write after deleteAllData" {

@@ -242,10 +242,10 @@ pub const ChatIndexBatch = struct {
     /// The chat's `updated_at` when the batch was read. The write checks it,
     /// so a save in between drops the batch instead of indexing old text.
     updated_at: []u8 = &.{},
-    /// `Store.chat_convert_generation` when the batch was read. A conversion
-    /// renumbers events without a new `updated_at`, so the write checks this
-    /// too.
-    convert_generation: u64 = 0,
+    /// The chat's `event_format` when the batch was read. A conversion
+    /// renumbers events without a new `updated_at`, and a chat converts only
+    /// once, so the write checks this too.
+    event_format: i64 = 27,
     /// True when no message without a row comes after this batch.
     last: bool = true,
 
@@ -355,6 +355,7 @@ pub const migrations = [_]native_sdk.relational_store.Migration{
     .{ .version = 23, .name = "entry_id_counter", .sql = @embedFile("schema/0023_entry_id_counter.sql") },
     .{ .version = 24, .name = "eve_v27_events", .sql = @embedFile("schema/0024_eve_v27_events.sql") },
     .{ .version = 25, .name = "chat_event_convert", .sql = @embedFile("schema/0025_chat_event_convert.sql") },
+    .{ .version = 26, .name = "chat_session_end", .sql = @embedFile("schema/0026_chat_session_end.sql") },
 };
 
 /// Shipped Chat system prompt. Settings shows this read-only. The build
@@ -506,7 +507,6 @@ pub const Store = struct {
     chat_write_generation: u64 = 0,
     /// Counts chat conversions. A conversion rewrites a chat's events without
     /// moving its `updated_at`, so an index batch read before it checks this.
-    chat_convert_generation: u64 = 0,
     /// Tests set this so `scrubStorage` can return Busy after a successful
     /// rewrite, covering the enable path that leaves `enc.scrub_pending` set.
     fail_next_scrub: bool = false,
@@ -830,7 +830,7 @@ pub const Store = struct {
         var meta = ChatRows.init(self.allocator);
         defer meta.deinit();
         const meta_outcome = self.db.query(
-            "SELECT id, updated_at FROM chat_conversation WHERE id = ?1;",
+            "SELECT id, updated_at, event_format FROM chat_conversation WHERE id = ?1;",
             &.{.{ .integer = id }},
             &meta,
             ChatRows.collect,
@@ -840,6 +840,7 @@ pub const Store = struct {
         if (meta.rows.items.len == 0) return error.NotFound;
         const updated_at = try self.allocator.dupe(u8, meta.rows.items[0].updated_at);
         errdefer self.allocator.free(updated_at);
+        const event_format = meta.rows.items[0].event_format;
 
         var newest = CountRows{};
         const newest_outcome = self.db.query(
@@ -890,7 +891,7 @@ pub const Store = struct {
             }
         }
         return .{
-            .convert_generation = self.chat_convert_generation,
+            .event_format = event_format,
             .last = last,
             .messages = try messages.toOwnedSlice(self.allocator),
             .updated_at = updated_at,
@@ -913,7 +914,7 @@ pub const Store = struct {
         var meta = ChatRows.init(self.allocator);
         defer meta.deinit();
         const meta_outcome = self.db.query(
-            "SELECT id, updated_at FROM chat_conversation WHERE id = ?1;",
+            "SELECT id, updated_at, event_format FROM chat_conversation WHERE id = ?1;",
             &.{.{ .integer = id }},
             &meta,
             ChatRows.collect,
@@ -922,7 +923,7 @@ pub const Store = struct {
         if (meta.failed) return error.SqlitePageFailed;
         if (meta.rows.items.len == 0) return false;
         if (!std.mem.eql(u8, meta.rows.items[0].updated_at, batch.updated_at)) return false;
-        if (batch.convert_generation != self.chat_convert_generation) return false;
+        if (meta.rows.items[0].event_format != batch.event_format) return false;
 
         const relational = native_sdk.relational_store;
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -2485,7 +2486,10 @@ pub const Store = struct {
         return writer.buffered();
     }
 
-    pub fn chatDelete(self: *Store, payload: []const u8, output: []u8, session_id_buf: []u8) !ChatDeleteResult {
+    /// Delete chat `id` and what Dream took from it. With `end_session`, the
+    /// chat's eve session goes into `chat_session_end` in the same write, so
+    /// it is ended later even when Chat's agent cannot hear about it now.
+    pub fn chatDelete(self: *Store, payload: []const u8, output: []u8, session_id_buf: []u8, end_session: bool) !ChatDeleteResult {
         const id = jsonI64(payload, "id") orelse return error.InvalidRequest;
 
         var session_id: ?[]const u8 = null;
@@ -2539,6 +2543,10 @@ pub const Store = struct {
                 .sql = "DELETE FROM dream_state WHERE source_type = ?1 AND source_id = ?2;",
                 .params = &.{ .{ .text = DreamSource.conversation.sqlName() }, .{ .integer = id } },
             },
+            .{
+                .sql = "INSERT OR IGNORE INTO chat_session_end (session_id) SELECT ?1 WHERE ?2 = 1 AND length(?1) > 0;",
+                .params = &.{ .{ .text = session_id orelse "" }, .{ .integer = @intFromBool(end_session) } },
+            },
         });
         if (outcome != .ok) return error.SqliteWriteFailed;
         var writer = std.Io.Writer.fixed(output);
@@ -2549,6 +2557,43 @@ pub const Store = struct {
             try writeJsonString(&writer, json_session);
         try writer.writeByte('}');
         return .{ .json = writer.buffered(), .session_id = session_id };
+    }
+
+    /// The eve sessions of deleted chats still to end, oldest first, at most
+    /// `max`. The caller owns the slice and each id.
+    pub fn sessionsToEnd(self: *Store, allocator: std.mem.Allocator, max: usize) ![][]u8 {
+        var rows = ChatRows.init(self.allocator);
+        defer rows.deinit();
+        const lookup = self.db.query(
+            "SELECT session_id AS eve_session_id FROM chat_session_end ORDER BY rowid LIMIT ?1;",
+            &.{.{ .integer = @intCast(max) }},
+            &rows,
+            ChatRows.collect,
+        );
+        if (lookup != .ok) return error.SqliteQueryFailed;
+        if (rows.failed) return error.SqlitePageFailed;
+        var ids = std.ArrayList([]u8).empty;
+        errdefer {
+            for (ids.items) |item| allocator.free(item);
+            ids.deinit(allocator);
+        }
+        for (rows.rows.items) |row| {
+            const copy = try allocator.dupe(u8, row.eve_session_id);
+            ids.append(allocator, copy) catch |err| {
+                allocator.free(copy);
+                return err;
+            };
+        }
+        return ids.toOwnedSlice(allocator);
+    }
+
+    /// Forget a session from `chat_session_end` once Chat's agent ended it.
+    pub fn sessionEnded(self: *Store, session_id: []const u8) !void {
+        const outcome = self.db.exec(&.{.{
+            .sql = "DELETE FROM chat_session_end WHERE session_id = ?1;",
+            .params = &.{.{ .text = session_id }},
+        }});
+        if (outcome != .ok) return error.SqliteWriteFailed;
     }
 
     /// Every stored eve session id. Used to sweep orphaned workflow files.
@@ -2798,7 +2843,6 @@ pub const Store = struct {
             .{ .sql = "UPDATE chat_conversation SET event_format = 27 WHERE id = ?1;", .params = &id_param },
         };
         if (self.db.exec(&swap) != .ok) return error.SqliteWriteFailed;
-        self.chat_convert_generation += 1;
     }
 
     /// Clear rows a conversion left in `chat_event_convert` when the app
@@ -3071,6 +3115,8 @@ pub const Store = struct {
             .{ .sql = "DELETE FROM chat_embedding;", .params = &.{} },
             .{ .sql = "DELETE FROM chat_summary;", .params = &.{} },
             .{ .sql = "DELETE FROM chat_conversation;", .params = &.{} },
+            // The wipe deletes eve's workflow data too, sessions and all.
+            .{ .sql = "DELETE FROM chat_session_end;", .params = &.{} },
             .{ .sql = "DELETE FROM semantic_fact;", .params = &.{} },
             .{ .sql = "DELETE FROM episodic_event;", .params = &.{} },
             .{ .sql = "DELETE FROM dream_state WHERE source_type = 'conversation';", .params = &.{} },
@@ -3162,6 +3208,8 @@ pub const Store = struct {
             .{ .sql = "DELETE FROM chat_embedding;", .params = &.{} },
             .{ .sql = "DELETE FROM chat_summary;", .params = &.{} },
             .{ .sql = "DELETE FROM chat_conversation;", .params = &.{} },
+            // The wipe deletes eve's workflow data too, sessions and all.
+            .{ .sql = "DELETE FROM chat_session_end;", .params = &.{} },
             .{ .sql = "DELETE FROM semantic_fact WHERE source_type = 'conversation';", .params = &.{} },
             .{ .sql = "DELETE FROM episodic_event WHERE source_type = 'conversation';", .params = &.{} },
             .{ .sql = "DELETE FROM dream_state WHERE source_type = 'conversation';", .params = &.{} },
@@ -3217,6 +3265,8 @@ pub const Store = struct {
             .{ .sql = "DELETE FROM chat_embedding;", .params = &.{} },
             .{ .sql = "DELETE FROM chat_summary;", .params = &.{} },
             .{ .sql = "DELETE FROM chat_conversation;", .params = &.{} },
+            // The wipe deletes eve's workflow data too, sessions and all.
+            .{ .sql = "DELETE FROM chat_session_end;", .params = &.{} },
             .{ .sql = "DELETE FROM entry_summary;", .params = &.{} },
             .{ .sql = "DELETE FROM entry_embedding;", .params = &.{} },
             .{ .sql = "DELETE FROM journal_entry;", .params = &.{} },
@@ -10026,7 +10076,7 @@ test "a new chat never takes the id of a deleted one" {
     // Delete the newest chat. SQLite hands out MAX(id) + 1, which is its id.
     var out: [256]u8 = undefined;
     var session_buf: [128]u8 = undefined;
-    _ = try store.chatDelete("{\"id\":2}", &out, &session_buf);
+    _ = try store.chatDelete("{\"id\":2}", &out, &session_buf, false);
     const third = try saveChatEvents(&store, "Third", two_turn_chat);
     try std.testing.expectEqual(@as(i64, 3), third);
 
@@ -10055,8 +10105,8 @@ test "an insert that names a chat id moves the counter up and never down" {
     }) == .ok);
     var out: [256]u8 = undefined;
     var session_buf: [128]u8 = undefined;
-    _ = try store.chatDelete("{\"id\":41}", &out, &session_buf);
-    _ = try store.chatDelete("{\"id\":40}", &out, &session_buf);
+    _ = try store.chatDelete("{\"id\":41}", &out, &session_buf, false);
+    _ = try store.chatDelete("{\"id\":40}", &out, &session_buf, false);
     try std.testing.expectEqual(@as(i64, 42), try saveChatEvents(&store, "Next", two_turn_chat));
 }
 
@@ -10352,6 +10402,93 @@ test "a conversion refuses a new chat, a partial rewrite, and a missing chat" {
     try std.testing.expectError(error.InvalidSaveChunk, store.chatSave("{\"id\":1,\"convert\":true,\"baseSeq\":2,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
     try std.testing.expectError(error.NotFound, store.chatSave("{\"id\":9,\"convert\":true,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out));
     try std.testing.expectEqual(@as(i64, 5), try store.countDataRows("SELECT count(*) AS n FROM chat_event;"));
+}
+
+test "search, get_chat, and Dream read eve 1.0 events" {
+    var store = try testStore();
+    defer store.deinit();
+    const id = try saveChatEvents(&store, "Sleep", v27_chat);
+
+    var search_out: [8192]u8 = undefined;
+    const user_json = try store.chatSearch("{\"query\":\"4am\"}", &search_out);
+    try std.testing.expect(std.mem.indexOf(u8, user_json, "\"role\":\"user\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, user_json, "\"seq\":1") != null);
+    var reply_out: [8192]u8 = undefined;
+    const reply_json = try store.chatSearch("{\"query\":\"tiring\"}", &reply_out);
+    try std.testing.expect(std.mem.indexOf(u8, reply_json, "\"role\":\"assistant\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, reply_json, "\"seq\":4") != null);
+    // Reasoning is not something Sage said.
+    var thought_out: [8192]u8 = undefined;
+    const thought_json = try store.chatSearch("{\"query\":\"Thinking it over\"}", &thought_out);
+    try std.testing.expect(std.mem.indexOf(u8, thought_json, "\"seq\":2") == null);
+
+    var window_out: [4096]u8 = undefined;
+    var window = std.Io.Writer.fixed(&window_out);
+    try store.chatWindow(id, 4, &window);
+    const around = window.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, around, "{\"message\":1,\"role\":\"user\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, around, "\"text\":\"That sounds tiring.\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, around, "\"text\":\"Mostly the move to Lisbon.\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, around, "Thinking it over") == null);
+    var reasoning_out: [256]u8 = undefined;
+    var reasoning = std.Io.Writer.fixed(&reasoning_out);
+    try std.testing.expectError(error.MessageNotFound, store.chatWindow(id, 2, &reasoning));
+
+    const loaded = try store.loadConversationText(id);
+    defer {
+        store.allocator.free(loaded.date);
+        store.allocator.free(loaded.text);
+        store.allocator.free(loaded.recent);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, loaded.text, "User: I keep waking at 4am.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, loaded.text, "Sage: That sounds tiring.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, loaded.text, "User: Mostly the move to Lisbon.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, loaded.text, "Thinking it over") == null);
+}
+
+test "converting one chat keeps another chat's index batch" {
+    var store = try testStore();
+    defer store.deinit();
+    const converting = try saveChatEvents(&store, "Old", two_turn_chat);
+    const other = try saveChatEvents(&store, "Other", two_turn_chat);
+    try std.testing.expect(store.db.exec(&.{
+        .{ .sql = "UPDATE chat_conversation SET event_format = 26 WHERE id = 1;" },
+    }) == .ok);
+    var batch = try store.chatMessagesToIndex(other, chat_index_batch_messages);
+    defer batch.deinit(store.allocator);
+    try convertChatEventsVia(&store, converting, v27_chat);
+    const vec = [_]f32{ 1, 0, 0 };
+    const vectors = [_][]const f32{ &vec, &vec, &vec, &vec };
+    try std.testing.expect(try store.addChatMessageEmbeddings(other, batch, &vectors, "nomic-embed-text:v1.5"));
+    try std.testing.expectEqual(@as(i64, 4), try store.countDataRows("SELECT count(*) AS n FROM chat_embedding WHERE conversation_id = 2;"));
+}
+
+test "a deleted chat's eve session waits in chat_session_end, and wipes clear it" {
+    var store = try testStore();
+    defer store.deinit();
+    var out: [512]u8 = undefined;
+    _ = try store.chatSave("{\"id\":null,\"title\":\"Gone\",\"eveSessionId\":\"wrun_01AAAAAAAAAAAAAAAAAAAAAAAA\",\"streamIndex\":4,\"model\":\"llama3.2\",\"thinking\":false,\"contextLength\":32768,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out);
+    _ = try store.chatSave("{\"id\":null,\"title\":\"Kept\",\"eveSessionId\":\"wrun_01BBBBBBBBBBBBBBBBBBBBBBBB\",\"streamIndex\":4,\"model\":\"llama3.2\",\"thinking\":false,\"contextLength\":32768,\"baseSeq\":0,\"offset\":0,\"chunk\":\"[]\",\"done\":true}", &out);
+    _ = try saveChatEvents(&store, "No session", two_turn_chat);
+    var session_buf: [64]u8 = undefined;
+    _ = try store.chatDelete("{\"id\":1}", &out, &session_buf, true);
+    // A chat with no session has nothing to end.
+    _ = try store.chatDelete("{\"id\":3}", &out, &session_buf, true);
+
+    const ids = try store.sessionsToEnd(std.testing.allocator, 16);
+    defer {
+        for (ids) |item| std.testing.allocator.free(item);
+        std.testing.allocator.free(ids);
+    }
+    try std.testing.expectEqual(@as(usize, 1), ids.len);
+    try std.testing.expectEqualStrings("wrun_01AAAAAAAAAAAAAAAAAAAAAAAA", ids[0]);
+    try store.sessionEnded(ids[0]);
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM chat_session_end;"));
+
+    _ = try store.chatDelete("{\"id\":2}", &out, &session_buf, true);
+    try std.testing.expectEqual(@as(i64, 1), try store.countDataRows("SELECT count(*) AS n FROM chat_session_end;"));
+    _ = try store.deleteConversations(&out);
+    try std.testing.expectEqual(@as(i64, 0), try store.countDataRows("SELECT count(*) AS n FROM chat_session_end;"));
 }
 
 test "a conversion refuses a chat that is already converted" {
@@ -10914,7 +11051,7 @@ test "chat save get list and delete round-trip" {
 
     var delete_out: [256]u8 = undefined;
     var session_buf: [64]u8 = undefined;
-    const deleted = try store.chatDelete("{\"id\":1}", &delete_out, &session_buf);
+    const deleted = try store.chatDelete("{\"id\":1}", &delete_out, &session_buf, false);
     try std.testing.expectEqualStrings("{\"ok\":true,\"eveSessionId\":\"sess-1\"}", deleted.json);
     try std.testing.expectEqualStrings("sess-1", deleted.session_id.?);
     var empty_out: [256]u8 = undefined;
@@ -11130,14 +11267,14 @@ test "chat delete removes the conversation" {
     const payload = try std.fmt.bufPrint(&payload_buf, "{{\"id\":{d}}}", .{id});
     var out: [128]u8 = undefined;
     var session_buf: [64]u8 = undefined;
-    const deleted = try store.chatDelete(payload, &out, &session_buf);
+    const deleted = try store.chatDelete(payload, &out, &session_buf, false);
     try std.testing.expectEqualStrings("{\"ok\":true,\"eveSessionId\":null}", deleted.json);
     try std.testing.expect(deleted.session_id == null);
 
     var get_out: [1024]u8 = undefined;
     try std.testing.expectError(error.NotFound, store.chatGet(payload, &get_out));
 
-    const missing = try store.chatDelete("{\"id\":999}", &out, &session_buf);
+    const missing = try store.chatDelete("{\"id\":999}", &out, &session_buf, false);
     try std.testing.expectEqualStrings("{\"ok\":true,\"eveSessionId\":null}", missing.json);
     try std.testing.expect(missing.session_id == null);
 }
@@ -11164,7 +11301,7 @@ test "chat delete removes dreamed memories from that conversation" {
     const payload = try std.fmt.bufPrint(&payload_buf, "{{\"id\":{d}}}", .{id});
     var out: [128]u8 = undefined;
     var session_buf: [64]u8 = undefined;
-    _ = try store.chatDelete(payload, &out, &session_buf);
+    _ = try store.chatDelete(payload, &out, &session_buf, false);
 
     try std.testing.expectEqual(@as(i64, 0), try countSourceFacts(&store, "conversation", id));
     try std.testing.expectEqual(@as(i64, 0), try countSourceEvents(&store, "conversation", id));
@@ -11245,7 +11382,7 @@ test "chatDelete session id removes that run's workflow files" {
     const payload = try std.fmt.bufPrint(&payload_buf, "{{\"id\":{d}}}", .{id});
     var delete_out: [128]u8 = undefined;
     var session_buf: [64]u8 = undefined;
-    const deleted = try store.chatDelete(payload, &delete_out, &session_buf);
+    const deleted = try store.chatDelete(payload, &delete_out, &session_buf, false);
     try std.testing.expectEqualStrings(session, deleted.session_id.?);
 
     eve_sidecar.deleteSessionData(io, data_dir, deleted.session_id.?);

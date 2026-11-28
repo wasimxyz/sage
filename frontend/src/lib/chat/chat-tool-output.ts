@@ -10,6 +10,8 @@ export interface ChatToolHit {
   id: number;
   /** The message to open the chat at, or null to open it at the end. */
   seq: number | null;
+  /** Some of that message's text, to find it if the chat was renumbered. */
+  text: string | null;
   title: string;
 }
 
@@ -18,6 +20,7 @@ export interface ChatToolRead {
   date: string | null;
   id: number;
   seq: number | null;
+  text: string | null;
   title: string;
 }
 
@@ -74,6 +77,7 @@ export function chatSearchHits(output: unknown): ChatToolHit[] | null {
       date: firstDay(best?.date) ?? firstDay(chat.active),
       id,
       seq: messageNumber(best?.message),
+      text: typeof best?.text === "string" ? best.text : null,
       title: chat.title,
     });
   }
@@ -100,6 +104,7 @@ export function chatReadOutput(
       (isRecord(read) ? firstDay(read.date) : null) ?? firstDay(output.active),
     id,
     seq,
+    text: isRecord(read) && typeof read.text === "string" ? read.text : null,
     title: output.title,
   };
 }

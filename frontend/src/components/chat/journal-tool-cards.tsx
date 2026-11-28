@@ -98,7 +98,8 @@ function entryRows(entries: JournalToolEntry[]): ListRow[] {
 }
 
 // A step that has not finished has nothing to open yet, so it is a shimmering
-// label with no chevron.
+// label with no chevron. A step you stopped is the same label, still, with
+// its "Stopped" badge.
 export function JournalRunningRow({
   label,
   state,
@@ -247,6 +248,10 @@ export function JournalReadToolCard({ parts }: { parts: EveToolPart[] }) {
   const errors = new Set<string>();
   let failed = 0;
   for (const part of parts) {
+    // Stop ended the read before it came back. That is not a failure.
+    if (part.state === "cancelled") {
+      continue;
+    }
     const entry =
       !toolPartFailed(part) && part.state === "completed"
         ? journalEntryOutput(part.output)
@@ -259,6 +264,15 @@ export function JournalReadToolCard({ parts }: { parts: EveToolPart[] }) {
     }
   }
 
+  if (entries.size === 0 && failed === 0) {
+    return (
+      <JournalRunningRow
+        label={`Reading ${entriesLabel(parts.length)}`}
+        state="cancelled"
+        toolName={readEntryToolName}
+      />
+    );
+  }
   if (entries.size === 0) {
     return (
       <JournalFailedRow
