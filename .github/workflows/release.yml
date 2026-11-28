@@ -86,8 +86,11 @@ jobs:
             --target macos-aarch64 \
             --private-key "$key" \
             --output zig-out/package/native-update.json
-      # Create the release as a draft and publish it once all three files are
-      # attached, so "latest" never points at a release with a missing ZIP.
+      # Sage.dmg is the same disk image with no version in its name, so
+      # releases/latest/download/Sage.dmg always gets the newest full release.
+      # Create the release as a draft and publish it once all four files are
+      # attached, so "latest" never points at a release with a missing ZIP or
+      # Sage.dmg.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,7 +98,8 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           title="Sage ${GITHUB_REF_NAME#v}"
-          files="zig-out/package/Sage-$VERSION-macos.dmg zig-out/package/Sage-$VERSION-macos-update.zip zig-out/package/native-update.json"
+          cp "zig-out/package/Sage-$VERSION-macos.dmg" zig-out/package/Sage.dmg
+          files="zig-out/package/Sage-$VERSION-macos.dmg zig-out/package/Sage.dmg zig-out/package/Sage-$VERSION-macos-update.zip zig-out/package/native-update.json"
           if [ "$PRERELEASE" = true ]; then
             # shellcheck disable=SC2086
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes --prerelease --title "$title" $files

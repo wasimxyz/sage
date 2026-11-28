@@ -4,9 +4,10 @@ This page explains how to publish a Sage release and how installed copies find i
 
 ## What a release contains
 
-A release has three files, all built from the same commit. The version in the names is the `version` in `app.json`.
+A release has four files, all built from the same commit. The version in a file name is the `version` in `app.json`.
 
 - `Sage-0.1.0-macos.dmg`: the disk image for new installs
+- `Sage.dmg`: the same disk image with no version in its name, so a link to `releases/latest/download/Sage.dmg` always gets the newest release
 - `Sage-0.1.0-macos-update.zip`: the app bundle that installed copies download
 - `native-update.json`: the update feed, signed with the update key
 
@@ -54,7 +55,7 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-To rehearse a release, push a tag such as `v0.1.1-rc.1`. An `rc` tag builds the version in `app.json` and publishes a GitHub prerelease. The feed URL points at the latest full release, so installed copies never see a prerelease.
+To rehearse a release, push a tag such as `v0.1.1-rc.1`. An `rc` tag builds the version in `app.json` and publishes a GitHub prerelease. The feed URL and the `Sage.dmg` link point at the latest full release, so installed copies and new downloads never see a prerelease.
 
 ## What the workflow does
 
@@ -66,7 +67,7 @@ To rehearse a release, push a tag such as `v0.1.1-rc.1`. An `rc` tag builds the 
 4. Runs `native validate app.json`, `make check`, and `make test`.
 5. Runs `make package-archive`, which builds the `.app` with Chat, Node.js, Ollama, and the speech library inside, then the DMG and the update ZIP.
 6. Signs the ZIP into `native-update.json`. The signer also checks that the ZIP holds an arm64 app with the right bundle ID and version.
-7. Creates a draft release with the three files, then publishes it. Publishing last means “latest” never points at a release that is missing its ZIP.
+7. Copies the DMG to `Sage.dmg`, creates a draft release with the four files, then publishes it. Publishing last means “latest” never points at a release that is missing its ZIP or `Sage.dmg`.
 
 GitHub writes the release notes. The feed’s own notes are empty, so the update dialog says only that the version is ready to install.
 
